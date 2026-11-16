@@ -1,0 +1,9 @@
+# Local preview secrets for `pnpm preview:cf` (wrangler dev / preview).
+# Copy to `.dev.vars` (gitignored) and fill in real values — never commit them.
+# Production secrets live in the Cloudflare dashboard / `wrangler secret put`.
+DATABASE_URL="postgresql://user:pass@host:5432/db"
+AUTH_SECRET=""
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+WIDGET_JWT_SECRET=""
+NEXT_PUBLIC_APP_URL="http://localhost:3000"

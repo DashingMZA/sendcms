@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "open-remark",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  // OpenNext Cloudflare adapter output (built by `npx @opennextjs/cloudflare build`).
+  // The app is a dynamic Next.js App Router app (SSR + API routes + Prisma +
+  // Auth.js), so it cannot run as plain static assets — the Worker entry below
+  // serves it, and `.open-next/assets` holds only the static files.
+  "main": ".open-next/worker.js",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
+  // Bindings already configured in the Cloudflare dashboard — they must
+  // also live here, otherwise the next `wrangler deploy` drops them.
+  // NEXT_INC_CACHE_R2_BUCKET is the OpenNext incremental cache
+  // (open-next.config.ts enables the R2 cache); WORKER_SELF_REFERENCE is
+  // the self reference the adapter's queue/revalidation uses; IMAGES
+  // powers Next.js image optimization via Cloudflare Images.
+  "images": {
+    "binding": "IMAGES"
+  },
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "open-remark-opennext-cache"
+    }
+  ],
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "open-remark"
+    }
+  ],
+  "observability": {
+    "enabled": false
+  },
+  "vars": {
+    "AUTH_TRUST_HOST": "true",
+    // Production URL for this Cloudflare deployment (owner decision
+    // 2026-11-13 — keep jadoo.bond here).
+    "NEXT_PUBLIC_APP_URL": "https://jadoo.bond"
+  }
+  // Secrets are NOT stored here. Set them in the Cloudflare dashboard
+  // (or `wrangler secret put`): DATABASE_URL, AUTH_SECRET,
+  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, WIDGET_JWT_SECRET.
+}
