@@ -263,18 +263,14 @@ field config (`FormField`), success message, redirect URL, spam settings,
 submission limits. One form ↔ many domains; many forms ↔ one domain.
 Gate: create form, link 2 domains, toggle active.
 
-**Phase 4 status (2026-11-17, in progress):** no schema change — the Phase 1
-models already carry everything. New: `lib/validators/form.ts` (field-key
-regex, options only for SELECT/CHECKBOX/RADIO, min ≤ max, redirect URL
-http(s)-only, daily limit 1–100000), `lib/services/form-service.ts`
-(CRUD + fields + domain links + notification recipients, all owner-scoped
-with AuditLog), `lib/queries/forms.ts`, REST under `/api/v1/forms/` (forms,
-fields, domains, notifications sub-resources). New forms start with 3
-default fields (name, email, message — all required). Only VERIFIED domains
-can be linked (409 otherwise); field keys are immutable after creation
-(delete + re-add to change a key). Dashboard: `/dashboard/forms` (list),
-`/new`, `[formId]` (settings, fields editor, allowed domains, notification
-recipients, delete) + sidebar Forms item with count badge.
+**Phase 4 status (DONE + PUSHED + CI GREEN 2026-11-17):** commit
+`feat(forms): add form CRUD, fields, domain links and notifications`
+(local 45529a9 → API **865a802**); CI run 44186889051 = SUCCESS. Live
+journey on the dev DB: form created with 3 default fields, PENDING
+domain link rejected 409, 2 verified domains linked 201, duplicate
+link 409, select field + recipient added, active toggled false then
+true, dashboard pages all 200, AuditLog CREATE/UPDATE/DELETE rows
+written. Test users/domains/forms cleaned up; 4 owner accounts remain.
 
 **Phase 5 — Public submission API (`/api/public/v1/submit`).** Validate
 user/form IDs, domain authorization (exact allowlist, verified domain only),
