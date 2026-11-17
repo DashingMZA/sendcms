@@ -7,7 +7,15 @@ import { Copy, Check } from "lucide-react"
 
 // One labelled value with its own copy button — DNS records have two
 // values (name + value) and each must be copied separately.
-export function CopyField({ label, value }: { label: string; value: string }) {
+export function CopyField({
+  label,
+  value,
+  description,
+}: {
+  label: string
+  value: string
+  description?: string
+}) {
   const [copied, setCopied] = useState(false)
 
   async function copy() {
@@ -38,6 +46,11 @@ export function CopyField({ label, value }: { label: string; value: string }) {
       <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">
         <code>{value}</code>
       </pre>
+      {description && (
+        <p className="border-t px-4 py-2 text-xs text-muted-foreground">
+          {description}
+        </p>
+      )}
     </div>
   )
 }

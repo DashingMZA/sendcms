@@ -8,6 +8,7 @@ import {
   RiDashboardLine,
   RiGlobalLine,
   RiLinksLine,
+  RiFileListLine,
   RiSettingsLine,
   RiLogoutBoxLine,
   RiExpandUpDownLine,
@@ -62,6 +63,7 @@ type Props = {
   user: { name?: string | null; email?: string | null; image?: string | null }
   siteCount: number
   domainCount: number
+  formCount: number
   platformRole: PlatformRole
 }
 
@@ -69,6 +71,7 @@ export function AppSidebar({
   user,
   siteCount,
   domainCount,
+  formCount,
   platformRole,
 }: Props) {
   const router = useRouter()
@@ -88,6 +91,12 @@ export function AppSidebar({
           href: "/dashboard/domains",
           icon: RiLinksLine,
           badge: domainCount,
+        },
+        {
+          label: "Forms",
+          href: "/dashboard/forms",
+          icon: RiFileListLine,
+          badge: formCount,
         },
       ],
     },
