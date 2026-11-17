@@ -32,6 +32,87 @@ import {
 import { CopyField } from "../../domains/copy-field"
 import { DomainStatusBadge } from "../../domains/domain-status-badge"
 import { FieldsSection } from "./fields-section"
+import { InstallSnippet } from "@/components/dashboard/install-snippet"
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+}
+
+/** Builds the copy-paste embed snippet for a form: the SDK script tag
+    plus a <form> with this form's fields. The SDK auto-enhances the
+    form — no JavaScript of your own is needed. */
+export function buildEmbedSnippet(appUrl: string, form: FormDetail): string {
+  const lines: string[] = [
+    `<script src="${appUrl}/forms/v1.js" data-user-id="${form.ownerId}" data-form-id="${form.id}"></script>`,
+    `<form data-cms-form>`,
+  ]
+  for (const field of form.fields) {
+    const required = field.required ? " required" : ""
+    const placeholder = field.placeholder
+      ? ` placeholder="${escapeAttr(field.placeholder)}"`
+      : ""
+    const options = Array.isArray(field.options)
+      ? (field.options as unknown[]).filter(
+          (o): o is string => typeof o === "string"
+        )
+      : []
+    const label = escapeAttr(field.label)
+    switch (field.type) {
+      case "TEXTAREA":
+        lines.push(
+          `  <label>${label}`,
+          `    <textarea name="${field.name}"${placeholder}${required}></textarea>`,
+          `  </label>`
+        )
+        break
+      case "SELECT":
+        lines.push(
+          `  <label>${label}`,
+          `    <select name="${field.name}"${required}>`,
+          ...options.map(
+            (o) =>
+              `      <option value="${escapeAttr(o)}">${escapeAttr(o)}</option>`
+          ),
+          `    </select>`,
+          `  </label>`
+        )
+        break
+      case "CHECKBOX":
+      case "RADIO": {
+        const inputType = field.type === "CHECKBOX" ? "checkbox" : "radio"
+        lines.push(`  <fieldset>`, `    <legend>${label}</legend>`)
+        for (const o of options) {
+          lines.push(
+            `    <label><input type="${inputType}" name="${field.name}" value="${escapeAttr(o)}"${required}> ${escapeAttr(o)}</label>`
+          )
+        }
+        lines.push(`  </fieldset>`)
+        break
+      }
+      default: {
+        const inputType =
+          field.type === "EMAIL"
+            ? "email"
+            : field.type === "NUMBER"
+              ? "number"
+              : field.type === "URL"
+                ? "url"
+                : field.type === "TEL"
+                  ? "tel"
+                  : field.type === "DATE"
+                    ? "date"
+                    : "text"
+        lines.push(
+          `  <label>${label}`,
+          `    <input type="${inputType}" name="${field.name}"${placeholder}${required}>`,
+          `  </label>`
+        )
+      }
+    }
+  }
+  lines.push(`  <button type="submit">Send</button>`, `</form>`)
+  return lines.join("\n")
+}
 
 function Section({
   title,
@@ -51,7 +132,13 @@ function Section({
   )
 }
 
-export function FormDetail({ initialForm }: { initialForm: FormDetail }) {
+export function FormDetail({
+  initialForm,
+  appUrl,
+}: {
+  initialForm: FormDetail
+  appUrl: string
+}) {
   const router = useRouter()
   const { data } = useForm(initialForm.id, initialForm)
   const form = data ?? initialForm
@@ -270,6 +357,19 @@ export function FormDetail({ initialForm }: { initialForm: FormDetail }) {
         description="The fields visitors fill in. The key is what arrives in the submission payload."
       >
         <FieldsSection form={form} />
+      </Section>
+
+      <Section
+        title="Embed on your site"
+        description="Paste this where the form should appear. The SDK enhances the form automatically — no JavaScript of your own is needed. Submissions are only accepted from your linked verified domains."
+      >
+        <InstallSnippet code={buildEmbedSnippet(appUrl, form)} />
+        <p className="mt-3 text-sm text-muted-foreground">
+          No JavaScript? A plain{" "}
+          <code className="font-mono text-xs">{"<form>"}</code> posting to{" "}
+          <code className="font-mono text-xs">{`${appUrl}/api/public/v1/submit`}</code>{" "}
+          works too — see the SDK docs.
+        </p>
       </Section>
 
       <DomainsSection form={form} />

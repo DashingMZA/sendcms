@@ -27,3 +27,43 @@ export const SubmitBodySchema = z.object({
 })
 
 export type SubmitBodyInput = z.infer<typeof SubmitBodySchema>
+
+// Top-level body keys for a form-encoded (no-JS) submission. Every
+// other field becomes a submission field under `fields`.
+const FORM_BODY_KEYS = new Set([
+  "userId",
+  "formId",
+  HONEYPOT_FIELD,
+  "idempotencyKey",
+  "pageUrl",
+  "turnstileToken",
+])
+
+/** Converts a form-encoded body (URL-encoded or multipart, e.g. a
+    native <form action="…/api/public/v1/submit" method="POST"> with no
+    JavaScript) into the same shape the JSON API takes. Repeated keys
+    (checkbox groups) become arrays; file values are dropped — the API
+    takes text only. The result still goes through SubmitBodySchema. */
+export function formDataToSubmitBody(
+  formData: FormData
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  const fields: Record<string, unknown> = {}
+  for (const [key, value] of formData.entries()) {
+    if (typeof value !== "string") continue
+    if (FORM_BODY_KEYS.has(key)) {
+      body[key] = value
+      continue
+    }
+    const existing = fields[key]
+    if (existing === undefined) {
+      fields[key] = value
+    } else if (Array.isArray(existing)) {
+      existing.push(value)
+    } else {
+      fields[key] = [existing, value]
+    }
+  }
+  body.fields = fields
+  return body
+}

@@ -8,8 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "prisma generate && pnpm widget:build && next dev --turbopack",
-    "build": "prisma generate && pnpm widget:build && next build",
+    "dev": "prisma generate && pnpm widget:build && pnpm sdk:build && next dev --turbopack",
+    "build": "prisma generate && pnpm widget:build && pnpm sdk:build && next build",
     "prepare": "husky",
     "start": "next start",
     "lint": "eslint",
@@ -30,7 +30,8 @@
     "build:cf": "opennextjs-cloudflare build",
     "preview:cf": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy:cf": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+    "sdk:build": "tsx sdk/build.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

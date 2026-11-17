@@ -291,14 +291,25 @@ takes an optional headers override and the public route passes its
 own `POST, OPTIONS / Content-Type` headers. Test users/forms/domains
 cleaned up; 4 owner accounts remain.
 
-**Phase 6 — JavaScript SDK (`sdk/`, replaces widget).** Vanilla TS,
-dependency-free, small. `<script src="…/forms/v1.js" data-user-id data-form-id>`,
-`<form data-cms-form>` auto-enhance, loading/success/error states, duplicate
-prevention, multiple forms per page, SPA navigation + Astro transitions,
-no style leakage (Shadow DOM or scoped CSS), configurable callbacks/messages.
-Also direct REST docs + native HTML POST fallback (no-JS). Reuse the esbuild
-pipeline (compile-time defines, debug build). Gate: SDK against a local
-static test page + plain-HTML fallback test.
+**Phase 6 status (2026-11-17, in progress):** Vanilla-TS SDK in
+`sdk/` (dependency-free, 7.1 KB minified → `public/forms/v1.js` +
+debug build via `sdk/build.ts`, `pnpm sdk:build` wired into `dev` and
+`build`; `__APP_URL__` compile-time define, runtime prefers the
+script tag's own origin). `<script src="…/forms/v1.js"
+data-user-id data-form-id>` + `<form data-cms-form>` auto-enhance;
+per-form `data-user-id`/`data-form-id`/`data-turnstile-site-key`
+overrides; `window.SendCMS` API (`init`/`enhance`/`submit`/`scan`,
+`version`); loading/success/error states, duplicate prevention,
+honeypot trap, optional invisible Turnstile (fail closed), scoped
+`.sc-*` styles (host inputs untouched), MutationObserver +
+`astro:page-load` for SPA/dynamic forms, live config via WeakMap so
+callbacks registered after page load still apply. No-JS fallback:
+form-encoded POSTs to the same endpoint now parse via
+`formDataToSubmitBody` and answer with a 303 redirect (success →
+form redirectUrl or referer + `?cms_submitted=1`; error → referer +
+`?cms_error=…`). Dashboard form detail shows a copyable embed
+snippet built from the form's fields (`InstallSnippet`). Docs:
+`docs/sdk.md` (usage, options, REST, fallback) + `sdk/docs.md`.
 
 **Phase 7 — Inbox dashboard.** All/unread/read/starred/archived/spam,
 search, filter by domain/form/date, detail view (sender, page URL,

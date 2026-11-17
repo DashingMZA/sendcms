@@ -26,7 +26,10 @@ export default async function FormDetailPage({ params }: Params) {
       />
 
       <div className="p-4 sm:p-6">
-        <FormDetail initialForm={form} />
+        <FormDetail
+          initialForm={form}
+          appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+        />
       </div>
     </div>
   )

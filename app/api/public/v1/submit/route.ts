@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getEffectiveOrigin } from "@/lib/cors"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { SubmitBodySchema } from "@/lib/validators/submission"
+import {
+  formDataToSubmitBody,
+  SubmitBodySchema,
+} from "@/lib/validators/submission"
 import { submitForm } from "@/lib/services/submission-service"
 
 // Public submission API — no session, no cookies. Authorization is the
@@ -9,6 +12,15 @@ import { submitForm } from "@/lib/services/submission-service"
 // a VERIFIED domain linked to the form. CORS headers are only echoed for
 // origins that passed that check, so a rejected origin cannot read the
 // response — including error responses.
+//
+// Two content types are accepted:
+//   - application/json (the SDK and direct REST clients)
+//   - application/x-www-form-urlencoded / multipart/form-data (a native
+//     <form action="…/submit" method="POST"> with no JavaScript). For
+//     form posts the response is a 303 redirect instead of JSON: success
+//     goes to the form's redirectUrl, else the referring page with
+//     ?cms_submitted=1; errors go to the referring page with
+//     ?cms_error=<message> (JSON when there is no referer to go back to).
 
 function publicCorsHeaders(origin: string): Record<string, string> {
   return {
@@ -43,6 +55,11 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const origin = getEffectiveOrigin(req)
+  const referer = req.headers.get("referer")
+  const contentType = req.headers.get("content-type") ?? ""
+  const isFormPost =
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data")
   try {
     // Cheap size guard before parsing: the service also caps the
     // sanitized payload after validation.
@@ -51,8 +68,21 @@ export async function POST(req: NextRequest) {
       throw new ApiError("Submission is too large.", 413)
     }
 
-    const body = await req.json().catch(() => ({}))
-    const parsed = SubmitBodySchema.safeParse(body)
+    const rawBody = isFormPost
+      ? formDataToSubmitBody(await req.formData())
+      : await req.json().catch(() => ({}))
+    // A no-JS form has no pageUrl field; the referer is the page it
+    // was submitted from.
+    if (
+      isFormPost &&
+      typeof rawBody === "object" &&
+      rawBody !== null &&
+      !("pageUrl" in rawBody) &&
+      referer
+    ) {
+      ;(rawBody as Record<string, unknown>).pageUrl = referer
+    }
+    const parsed = SubmitBodySchema.safeParse(rawBody)
     if (!parsed.success) {
       const flat = parsed.error.flatten()
       const messages = [
@@ -68,6 +98,15 @@ export async function POST(req: NextRequest) {
       userAgent: req.headers.get("user-agent"),
     })
 
+    if (isFormPost) {
+      const target =
+        result.redirectUrl ?? withQuery(referer, "cms_submitted", "1")
+      if (target) {
+        return NextResponse.redirect(target, { status: 303 })
+      }
+      // No referer and no redirectUrl: fall through to JSON.
+    }
+
     const headers = origin ? publicCorsHeaders(origin) : undefined
     const payload = {
       ok: true,
@@ -80,6 +119,17 @@ export async function POST(req: NextRequest) {
       headers,
     })
   } catch (err) {
+    // A form post that fails goes back to the page it came from with
+    // the error in the query string (JSON only when there is nowhere
+    // to go back to).
+    if (isFormPost && referer) {
+      const message =
+        err instanceof ApiError ? err.message : "Internal server error"
+      const target = withQuery(referer, "cms_error", message)
+      if (target) {
+        return NextResponse.redirect(target, { status: 303 })
+      }
+    }
     // Only echo CORS headers when the service confirmed the origin is
     // allowed; otherwise the browser cannot read the error at all.
     // Errors use the same public CORS headers as successes (not the
@@ -94,5 +144,22 @@ export async function POST(req: NextRequest) {
       undefined,
       allowedOrigin ? publicCorsHeaders(allowedOrigin) : undefined
     )
+  }
+}
+
+/** Returns url with one query param set, or null when the url is not
+    a parseable absolute URL. */
+function withQuery(
+  url: string | null,
+  key: string,
+  value: string
+): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set(key, value)
+    return parsed.toString()
+  } catch {
+    return null
   }
 }
