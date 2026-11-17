@@ -1,6 +1,6 @@
 {
-  "name": "open-remark",
-  "version": "0.6.2",
+  "name": "sendcms",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@12.19.0",
