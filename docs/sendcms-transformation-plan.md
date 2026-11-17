@@ -1,7 +1,8 @@
 # SendCMS Transformation Plan — OpenRemark → Contact Form Backend SaaS
 
 Repo: `DashingMZA/sendcms` · Base: single commit `44c342c` (copy of open-remark @ `8fcd492`)
-Plan date: 2026-11-17 · Status: **awaiting user approval** — no implementation yet.
+Plan date: 2026-11-17 · Status: **approved 2026-11-17** — Phase 0 done + pushed
+(`d58fe6c`, CI green on `5ee0ac1`); Phase 1 done (see §5).
 
 Conventions: follow `AGENTS.md` + `.agents/skills/project-guidelines/` (layered flow,
 RBAC, schema rules, route templates). Work on branch `feat/contact-form-saas`,
@@ -171,7 +172,14 @@ in Phase 0, migration `20261117224500_switch_auth_to_better_auth`). `Site` → `
 with migration, keep `siteKey`→ public form/user IDs model). Non-destructive:
 new tables first; comment tables dropped only in a later, separately approved
 step. Backup note in migration docs. Gate: `prisma validate`, migration SQL
-reviewed, `prisma generate`, typecheck.
+reviewed, `prisma generate`, typecheck. **Status: DONE 2026-11-17** —
+migration `20261117185033_add_contact_form_models` (10 new tables + 10 enums,
+additive only, generated offline via `migrate diff` — no live Postgres in the
+sandbox); gate green (validate, generate, typecheck clean, lint 0 errors /
+1 pre-existing warning, tests 6/6, build SUCCESS dummy env). `Site` was NOT
+renamed to `Domain`: a fresh `Domain` model was created alongside it, since
+the two concepts have different shapes and `Site` + comment tables stay
+untouched until the separately approved removal step.
 
 **Phase 2 — Auth.** Add GitHub + Facebook OAuth, credentials (email/password)
 with secure hashing, email verification (mandatory before domain registration

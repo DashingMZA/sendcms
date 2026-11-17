@@ -81,13 +81,33 @@ Never edit applied migrations. Create a new one.
 | `PlatformRole`  | PLATFORM_OWNER, PLATFORM_USER          | `User.platformRole`                  |
 | `SiteRole`      | SITE_OWNER, SITE_ADMIN, SITE_MODERATOR | `SiteMember.role`, `SiteInvite.role` |
 | `InviteStatus`  | PENDING, ACCEPTED, REVOKED             | `SiteInvite.status`                  |
+| `DomainStatus`  | PENDING, VERIFIED, SUSPENDED           | `Domain.status`                      |
+| `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE       | `DomainVerification.method`          |
+| `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED | `DomainVerification.status`     |
+| `FormFieldType` | TEXT, EMAIL, TEXTAREA, NUMBER, SELECT, CHECKBOX, RADIO, URL, TEL, DATE | `FormField.type` |
+| `SubmissionStatus` | NEW, READ, STARRED, ARCHIVED, SPAM | `Submission.status`                  |
+| `SubmissionEventType` | CREATED, READ, UNREAD, STARRED, UNSTARRED, ARCHIVED, RESTORED, MARKED_SPAM, EMAIL_SENT, EMAIL_FAILED | `SubmissionEvent.type` |
+| `EmailJobType`  | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET | `EmailJob.type` |
+| `EmailJobStatus` | PENDING, SENDING, SENT, FAILED        | `EmailJob.status`                    |
+| `AuditAction`   | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE | `AuditLog.action`          |
+| `AuditResource` | DOMAIN, FORM, SUBMISSION, USER, SETTINGS | `AuditLog.resourceType`           |
 
 ## Existing Models
 
 | Model             | Relations                                                                                  | Indexes                                                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `User`            | has many Site, Account, Session, SiteMember                                                | `email @unique`                                                                                                         |
+| `User`            | has many Site, Account, Session, SiteMember, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                      |
 | `Site`            | → User; has many Page, SiteMember, SiteInvite, BannedCommenter                             | `@@index([ownerId])`, `domain @unique`, `siteKey @unique`                                                               |
+| `Domain`          | → User; has many DomainVerification, FormDomain                                            | `domain @unique`, `@@index([ownerId])`, `@@index([status, createdAt])`                                                  |
+| `DomainVerification` | → Domain                                                                              | `@@index([domainId])`, `@@index([domainId, status, createdAt])`                                                         |
+| `Form`            | → User; has many FormField, FormDomain, Submission, NotificationSettings, EmailJob          | `@@index([ownerId])`, `@@index([ownerId, active])`                                                                      |
+| `FormDomain`      | → Form + Domain (many-to-many join)                                                        | `@@unique([formId, domainId])`, `@@index([formId])`, `@@index([domainId])`                                              |
+| `FormField`       | → Form                                                                                     | `@@unique([formId, name])`, `@@index([formId, order])`                                                                  |
+| `Submission`      | → Form; has many SubmissionEvent, EmailJob                                                 | `@@unique([formId, idempotencyKey])`, `@@index([formId, status, createdAt])`, `@@index([formId, contentHash, createdAt])` |
+| `SubmissionEvent` | → Submission; → User? (actor, SetNull)                                                     | `@@index([submissionId, createdAt])`, `@@index([submissionId, type, createdAt])`                                        |
+| `NotificationSettings` | → Form                                                                          | `@@unique([formId, email])`, `@@index([formId])`                                                                        |
+| `EmailJob`        | → Form? + Submission? (SetNull)                                                            | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                             |
+| `AuditLog`        | → User? (actor, SetNull)                                                                   | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                        |
 | `Page`            | → Site; has many Comment                                                                   | `@@unique([siteId, slug])`, `@@index([siteId])`                                                                         |
 | `Commenter`       | has many Comment, BannedCommenter                                                          | `email @unique`, `username @unique`                                                                                     |
 | `Comment`         | → Page, self-ref (replies via `@relation("Replies")`); has many CommentLike, ModerationLog | `@@index([pageId, status, createdAt])`, `@@index([parentId])`, `@@index([commenterId])`, `@@index([status, createdAt])` |

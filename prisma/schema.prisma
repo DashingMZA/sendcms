@@ -33,6 +33,91 @@ enum InviteStatus {
   REVOKED
 }
 
+// ─── Contact forms (SendCMS, Phase 1) ───────────────────────────────────────
+
+enum DomainStatus {
+  PENDING // created, ownership not yet verified
+  VERIFIED
+  SUSPENDED // owner/admin suspended; submissions rejected until reactivated
+}
+
+enum DomainVerificationMethod {
+  DNS_TXT
+  META_TAG
+  FILE
+}
+
+enum DomainVerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  EXPIRED
+}
+
+enum FormFieldType {
+  TEXT
+  EMAIL
+  TEXTAREA
+  NUMBER
+  SELECT
+  CHECKBOX
+  RADIO
+  URL
+  TEL
+  DATE
+}
+
+enum SubmissionStatus {
+  NEW // unread
+  READ
+  STARRED
+  ARCHIVED
+  SPAM
+}
+
+enum SubmissionEventType {
+  CREATED
+  READ
+  UNREAD
+  STARRED
+  UNSTARRED
+  ARCHIVED
+  RESTORED
+  MARKED_SPAM
+  EMAIL_SENT
+  EMAIL_FAILED
+}
+
+enum EmailJobType {
+  SUBMISSION_NOTIFICATION
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum EmailJobStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  VERIFY
+  SUSPEND
+  REACTIVATE
+}
+
+enum AuditResource {
+  DOMAIN
+  FORM
+  SUBMISSION
+  USER
+  SETTINGS
+}
+
 // ─── Auth (Better Auth 1.7.x required tables) ────────────────────────────────
 // Better Auth's Prisma adapter expects these exact shapes: User.emailVerified
 // is Boolean (not DateTime), Session is keyed by `token`, Account by
@@ -50,10 +135,14 @@ model User {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  accounts    Account[]
-  sessions    Session[]
-  sites       Site[]
-  memberships SiteMember[]
+  accounts         Account[]
+  sessions         Session[]
+  sites            Site[]
+  memberships      SiteMember[]
+  domains          Domain[]
+  forms            Form[]
+  submissionEvents SubmissionEvent[]
+  auditLogs        AuditLog[]
 }
 
 model Account {
@@ -106,29 +195,29 @@ model Verification {
 // ─── Domain Models ────────────────────────────────────────────────────────────
 
 model Site {
-  id             String   @id @default(cuid())
-  name           String
-  domain         String
-  siteKey        String   @unique @default(cuid())
-  allowedOrigins String   @default("[]")
-  autoApprove     Boolean  @default(false)
-  allowAnonymous  Boolean  @default(false)
-  emailNotificationsEnabled  Boolean  @default(false)
-  likeNotificationLimit      Int      @default(10)
-  emailSubjectPrefix         String?
-  emailLogoUrl               String?
-  emailAccentColor           String?
-  emailFooterText            String?
-  smtpHost                   String?
-  smtpPort                   Int?
-  smtpUser                   String?
-  smtpPass                   String?
-  smtpFrom                   String?
-  theme          String   @default("AUTO")
-  primaryColor   String   @default("#0891b2")
-  radius         Int      @default(8)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  name                      String
+  domain                    String
+  siteKey                   String   @unique @default(cuid())
+  allowedOrigins            String   @default("[]")
+  autoApprove               Boolean  @default(false)
+  allowAnonymous            Boolean  @default(false)
+  emailNotificationsEnabled Boolean  @default(false)
+  likeNotificationLimit     Int      @default(10)
+  emailSubjectPrefix        String?
+  emailLogoUrl              String?
+  emailAccentColor          String?
+  emailFooterText           String?
+  smtpHost                  String?
+  smtpPort                  Int?
+  smtpUser                  String?
+  smtpPass                  String?
+  smtpFrom                  String?
+  theme                     String   @default("AUTO")
+  primaryColor              String   @default("#0891b2")
+  radius                    Int      @default(8)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -157,28 +246,28 @@ model Page {
 }
 
 model Commenter {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  username  String   @unique
-  name      String
-  image     String?
-  notificationsEnabled  Boolean  @default(true)
-  notificationToken     String   @unique @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  username             String   @unique
+  name                 String
+  image                String?
+  notificationsEnabled Boolean  @default(true)
+  notificationToken    String   @unique @default(cuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   comments      Comment[]
   bannedOnSites BannedCommenter[]
 }
 
 model Comment {
-  id                 String        @id @default(cuid())
-  body               String
-  status             CommentStatus @default(PENDING)
-  likeNotifiedCount  Int           @default(0)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  editedAt           DateTime?
+  id                String        @id @default(cuid())
+  body              String
+  status            CommentStatus @default(PENDING)
+  likeNotifiedCount Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  editedAt          DateTime?
 
   pageId String
   page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
@@ -272,4 +361,239 @@ model SiteInvite {
   @@unique([siteId, email])
   @@index([email, status])
   @@index([siteId])
+}
+
+// ─── Contact Forms (SendCMS) ─────────────────────────────────────────────────
+// New product models, added Phase 1 alongside the legacy comment models.
+// `Site` (comment system) is intentionally NOT renamed to `Domain` here: the
+// two concepts have different shapes, and `Site` + the comment tables stay
+// untouched until the separately approved removal step (plan Phase 1:
+// non-destructive, new tables first). `Domain` is the contact-form concept.
+
+model Domain {
+  id         String       @id @default(cuid())
+  name       String
+  // Normalized hostname only (lowercase, no scheme/path) — normalization
+  // happens in the Phase 3 service. @unique: one owner record per domain.
+  domain     String       @unique
+  status     DomainStatus @default(PENDING)
+  verifiedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  verifications DomainVerification[]
+  formLinks     FormDomain[]
+
+  @@index([ownerId])
+  @@index([status, createdAt])
+}
+
+model DomainVerification {
+  id         String                   @id @default(cuid())
+  method     DomainVerificationMethod
+  // Crypto-random challenge token: the DNS TXT value / meta-tag content /
+  // verification-file content the owner must publish.
+  challenge  String
+  status     DomainVerificationStatus @default(PENDING)
+  verifiedAt DateTime?
+  expiresAt  DateTime?
+  attempts   Int                      @default(0)
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@index([domainId, status, createdAt])
+}
+
+model Form {
+  id               String   @id @default(cuid())
+  // Public identifier: the id itself is the public `formId` used by the
+  // SDK / REST API together with the owner's public `userId` (User.id).
+  name             String
+  description      String?
+  active           Boolean  @default(true)
+  successMessage   String?
+  redirectUrl      String?
+  honeypotEnabled  Boolean  @default(true)
+  turnstileEnabled Boolean  @default(false)
+  // Max submissions accepted per calendar day; null = unlimited.
+  dailyLimit       Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  fields               FormField[]
+  domainLinks          FormDomain[]
+  submissions          Submission[]
+  notificationSettings NotificationSettings[]
+  emailJobs            EmailJob[]
+
+  @@index([ownerId])
+  @@index([ownerId, active])
+}
+
+model FormDomain {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, domainId])
+  @@index([formId])
+  @@index([domainId])
+}
+
+model FormField {
+  id          String        @id @default(cuid())
+  name        String // key in the submission payload, e.g. "email"
+  label       String
+  type        FormFieldType
+  required    Boolean       @default(false)
+  placeholder String?
+  // Option list for SELECT / RADIO / CHECKBOX. Json is justified here: the
+  // options are intrinsic to this one field definition, not shared rows.
+  options     Json?
+  minLength   Int?
+  maxLength   Int?
+  order       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, name])
+  @@index([formId, order])
+}
+
+model Submission {
+  id             String           @id @default(cuid())
+  // Submitted field values, keyed by FormField.name. Json: fields vary
+  // per form, so no fixed columns can hold them.
+  data           Json
+  status         SubmissionStatus @default(NEW)
+  // Observed origin host at submit time, validated against the form's
+  // linked domains. Denormalized on purpose: the string records what was
+  // observed even if the Domain link is later removed — an inbox record
+  // must not lose its origin. (See schema rules: denormalize with cause.)
+  originDomain   String
+  ipAddress      String?
+  userAgent      String?
+  pageUrl        String?
+  // Idempotency-Key header value, if the client sent one. The composite
+  // unique is the Phase 5 dedupe key; NULLs don't collide in Postgres.
+  idempotencyKey String?
+  // Hash of the canonical payload, for the Phase 5 content-hash dedupe window.
+  contentHash    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  events    SubmissionEvent[]
+  emailJobs EmailJob[]
+
+  @@unique([formId, idempotencyKey])
+  @@index([formId, status, createdAt])
+  @@index([formId, createdAt])
+  @@index([formId, contentHash, createdAt])
+}
+
+model SubmissionEvent {
+  id        String              @id @default(cuid())
+  type      SubmissionEventType
+  // Extra context (e.g. old/new status). Append-only log row: createdAt
+  // only, same as ModerationLog / CommentLike.
+  detail    Json?
+  createdAt DateTime            @default(now())
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // Who performed the action; null for system events (CREATED, EMAIL_*).
+  // SetNull: the audit trail must survive the actor's deletion.
+  actorId String?
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([submissionId, createdAt])
+  @@index([submissionId, type, createdAt])
+}
+
+model NotificationSettings {
+  id        String   @id @default(cuid())
+  // One row per (form, recipient): "form-specific + multiple recipients"
+  // (Phase 8). A recipient is a row, not an inline list, so enabling /
+  // disabling one address never touches the others.
+  email     String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, email])
+  @@index([formId])
+}
+
+model EmailJob {
+  id                String         @id @default(cuid())
+  type              EmailJobType
+  to                String
+  subject           String
+  status            EmailJobStatus @default(PENDING)
+  attempts          Int            @default(0)
+  nextAttemptAt     DateTime?
+  lastError         String?
+  // Provider-side id (e.g. Resend message id) for delivery tracking.
+  providerMessageId String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Optional links: submission-notification jobs point at a form +
+  // submission; verification / reset jobs point at neither. SetNull keeps
+  // the delivery record if the form or submission is ever removed.
+  formId String?
+  form   Form?   @relation(fields: [formId], references: [id], onDelete: SetNull)
+
+  submissionId String?
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([type, createdAt])
+  @@index([formId])
+  @@index([submissionId])
+}
+
+model AuditLog {
+  id           String        @id @default(cuid())
+  action       AuditAction
+  resourceType AuditResource
+  resourceId   String
+  // What changed (before/after, reason). Append-only log row: createdAt only.
+  detail       Json?
+  ipAddress    String?
+  createdAt    DateTime      @default(now())
+
+  // Who did it; null for system actions. SetNull preserves the log.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@index([createdAt])
 }

@@ -81,6 +81,22 @@ User ──< Site ──< Page ──< Comment ──< Comment (replies, self-re
                               └──< ModerationLog
 ```
 
+Contact forms (SendCMS, Phase 1 — alongside the legacy comment models above):
+
+```
+User ──< Domain ──< DomainVerification
+  │         │
+  │         └──< FormDomain >── Form ──< FormField
+  │                                  ├──< Submission ──< SubmissionEvent
+  │                                  ├──< NotificationSettings
+  │                                  └──< EmailJob (also ──< Submission)
+  └──< AuditLog
+```
+
+- `Domain.domain` is `@unique` (normalized hostname); `Form.id` is the public `formId`.
+- `Submission.data` is `Json` (fields vary per form); `originDomain` is the observed origin host.
+- `EmailJob` is the notification outbox (`PENDING` → `SENT`/`FAILED`, with retries).
+
 - `Comment.status`: PENDING | APPROVED | SPAM | DELETED. Soft delete only — never physically delete domain rows.
 - `Site.siteKey` — public embed identifier. `Site.allowedOrigins` — JSON (Postgres native), enforced on widget POST.
 
