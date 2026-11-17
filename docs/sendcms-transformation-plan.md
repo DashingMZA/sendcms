@@ -272,30 +272,24 @@ link 409, select field + recipient added, active toggled false then
 true, dashboard pages all 200, AuditLog CREATE/UPDATE/DELETE rows
 written. Test users/domains/forms cleaned up; 4 owner accounts remain.
 
-**Phase 5 status (2026-11-17, in progress):** `POST /api/public/v1/submit`
-(+ OPTIONS preflight). No session/cookies — authorization is the Origin
-allowlist (linked VERIFIED domain only, exact match, www-insensitive);
-CORS headers are echoed only for allowed origins. Flow: form lookup by
-public userId+formId (404) → active check (403) → origin check (403) →
-honeypot fake-201 (nothing saved) → Turnstile when enabled (503 if the
-secret is unset, 422 if no token, 403 on failed verification) → field
-validation vs FormField config (422; unknown fields rejected, email/URL/
-date/number/options checked, min/max length, 10k per value, 64KB total)
-→ idempotency-key lookup (200, same submission) → content-hash dedupe
-(10 min window, 200) → DB rate limits (per-form dailyLimit; per-IP
-10/min, 100/hour; 429) → spam heuristics (link count, keyword stuffing
-→ status SPAM, still saved) → transaction creates Submission + CREATED
-event BEFORE the 201 response (P2002 race re-reads the original).
-`lib/services/turnstile.ts` (fail closed, 5s timeout),
-`lib/validators/submission.ts` (honeypot field `_sendcms_honeypot` is
-now reserved in CreateFieldSchema). §1 fixes in this phase: widget JWT
-fallback secret removed (throws when unset); `lib/db.ts` now honors
-`sslmode=verify-full`/`verify-ca` from the URL (verified live against
-the dev DB — raw pg with verify-full connects) instead of stripping the
-query string; other sslmodes keep TLS-without-verification. Deferred
-deliberately: legacy widget CORS helper (empty allowlist allows all —
-comment-system behaviour, being replaced, not touched) and Origin/CSRF
-checks on admin session mutations (separate hardening pass).
+**Phase 5 status (DONE + PUSHED + CI GREEN 2026-11-17):** commit
+`feat(submissions): add public submission API with origin allowlist`
+(local 4621bee → API **f20ab04**); CI run 44196892381 = SUCCESS. Live
+journey on the dev DB (17 scripted checks + 9 re-run checks, all
+passing): allowed origin 201 with CORS echo, unlinked/unknown/no
+origin 403 (no CORS header on rejections), validation 422s (missing
+required, bad email, unknown field), idempotency + content-hash dedupe
+both return the original id, spam (4 links) saved as SPAM, daily
+limit 429 at 2/day, IP hammer 10×201 then 429, honeypot fake 201 with
+no row saved, paused form 403, preflight 204. DB proof: form 1 has
+exactly 2 submissions (1 NEW + 1 SPAM) with CREATED events and content
+hashes; form 2 has 11. Two fixes found live: (1) the first CORS-header
+test failure was a test bug (urllib dict is case-sensitive — headers
+arrive lowercase on the wire); (2) error responses used the legacy
+admin corsHeaders (GET/PATCH/Authorization) — `handleApiError` now
+takes an optional headers override and the public route passes its
+own `POST, OPTIONS / Content-Type` headers. Test users/forms/domains
+cleaned up; 4 owner accounts remain.
 
 **Phase 6 — JavaScript SDK (`sdk/`, replaces widget).** Vanilla TS,
 dependency-free, small. `<script src="…/forms/v1.js" data-user-id data-form-id>`,
