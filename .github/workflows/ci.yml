@@ -18,6 +18,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Prisma client output (generated/prisma) is gitignored, so a fresh
+      # checkout has no client until it is generated. typecheck/lint/test
+      # all import it, so generate before any of them (build does it too,
+      # via its own script, but it runs last).
+      - run: pnpm db:generate
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
