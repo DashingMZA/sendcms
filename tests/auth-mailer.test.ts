@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import nodemailer from "nodemailer"
+import { formatFromAddress } from "@/lib/email/transport"
 import {
   buildPlatformTransporter,
   getPlatformFromAddress,
@@ -39,6 +41,56 @@ describe("buildPlatformTransporter", () => {
     const transport = buildPlatformTransporter()
     expect(transport).not.toBeNull()
     expect(typeof transport!.sendMail).toBe("function")
+  })
+})
+
+describe("formatFromAddress", () => {
+  it("wraps a bare address with the display name", () => {
+    expect(formatFromAddress("SendCMS", "noreply@csofts.com")).toBe(
+      '"SendCMS" <noreply@csofts.com>'
+    )
+  })
+
+  it("uses a full Name <address> mailbox verbatim", () => {
+    expect(formatFromAddress("SendCMS", "SendCMS <noreply@csofts.com>")).toBe(
+      "SendCMS <noreply@csofts.com>"
+    )
+  })
+})
+
+describe("From header serialization", () => {
+  it("renders a clean From header for the user's SMTP_FROM", async () => {
+    const transport = nodemailer.createTransport({
+      streamTransport: true,
+      newline: "unix",
+      buffer: true,
+    })
+    const info = await transport.sendMail({
+      from: formatFromAddress("SendCMS", "SendCMS <noreply@csofts.com>"),
+      to: "admin@example.com",
+      subject: "test",
+      text: "hi",
+    })
+    const raw = info.message.toString()
+    expect(raw).toContain("From: SendCMS <noreply@csofts.com>")
+    expect(raw).not.toContain("SendCMS>")
+  })
+
+  it("documents the old double-wrap bug (regression guard)", async () => {
+    const transport = nodemailer.createTransport({
+      streamTransport: true,
+      newline: "unix",
+      buffer: true,
+    })
+    // The pre-fix construction: display name wrapped around an already
+    // complete mailbox. Nodemailer serializes it as From: "SendCMS>".
+    const info = await transport.sendMail({
+      from: `"SendCMS" <SendCMS <noreply@csofts.com>>`,
+      to: "admin@example.com",
+      subject: "test",
+      text: "hi",
+    })
+    expect(info.message.toString()).toContain('From: "SendCMS>"')
   })
 })
 

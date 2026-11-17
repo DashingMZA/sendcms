@@ -199,10 +199,14 @@ in better-auth 1.7.25 source: Google profile `email_verified`, GitHub
 `/user/emails` verified flag, Facebook none (gets a verification email on
 sign-up). Owner race fixed with a single-statement conditional UPDATE +
 partial unique index (migration `20261117190655_single_platform_owner`).
-Pages: sign-up, forgot-password, reset-password/:token, verify-email;
-sign-in gained an email form; account page gained verification
-status/resend, name, email change (verification to the NEW address),
-password change (revokes other sessions), provider linking. Gate green
+Pages: sign-up, forgot-password, reset-password (query token — the
+email link is /api/auth/reset-password/:token, which redirects here with
+?token=…; the earlier /reset-password/[token] route never received the
+redirect), verify-email; sign-in gained an email form; account page gained
+verification status/resend, name, email change (verification to the NEW
+address), password change (revokes other sessions), provider linking. The
+forgot-password form MUST pass redirectTo "/reset-password" or the reset
+link lands on an error. Gate green
 (typecheck clean, lint 0 errors / 1 pre-existing warning, tests 25/25,
 build SUCCESS dummy env). Manual live journey (real OAuth + SMTP + DB)
 still needs the owner on his machine — see the Phase 2 report checklist.

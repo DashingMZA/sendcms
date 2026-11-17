@@ -26,8 +26,13 @@ export function ForgotPasswordForm() {
     setLoading(true)
     // The endpoint always returns the same message (even for unknown
     // emails) so the form can't leak whether an address is registered.
+    // redirectTo is REQUIRED: the reset email links to
+    // /api/auth/reset-password/:token, which validates the token and
+    // redirects to redirectTo with ?token=… — without it the link lands
+    // on an error instead of this app's /reset-password page.
     const { error } = await authClient.requestPasswordReset({
       email: parsed.data.email,
+      redirectTo: "/reset-password",
     })
     setLoading(false)
     if (error) {

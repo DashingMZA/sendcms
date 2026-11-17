@@ -2,7 +2,11 @@ import { render } from "@react-email/render"
 import { NewCommentEmail } from "./templates/new-comment"
 import { ReplyEmail } from "./templates/reply"
 import { LikeEmail } from "./templates/like"
-import { buildTransporter, getFromAddress } from "./transport"
+import {
+  buildTransporter,
+  formatFromAddress,
+  getFromAddress,
+} from "./transport"
 import appConfig from "@/config/config.json"
 
 type SiteEmailConfig = {
@@ -83,7 +87,7 @@ export async function notifyNewComment(
     )
 
     await transport.sendMail({
-      from: `"${fromName}" <${getFromAddress(site)}>`,
+      from: formatFromAddress(fromName, getFromAddress(site)),
       to: owner.email,
       subject: `${subjectPrefix} ${commenter.name} commented on "${pageTitle}"`,
       html,
@@ -129,7 +133,7 @@ export async function notifyReply(
     )
 
     await transport.sendMail({
-      from: `"${fromName}" <${getFromAddress(site)}>`,
+      from: formatFromAddress(fromName, getFromAddress(site)),
       to: parentCommenter.email,
       subject: `${subjectPrefix} Someone replied to your comment on "${pageTitle}"`,
       html,
@@ -173,7 +177,7 @@ export async function notifyLike(
     )
 
     await transport.sendMail({
-      from: `"${fromName}" <${getFromAddress(site)}>`,
+      from: formatFromAddress(fromName, getFromAddress(site)),
       to: commenter.email,
       subject: `${subjectPrefix} Your comment received ${likeCount} ${likeCount === 1 ? "like" : "likes"} on "${pageTitle}"`,
       html,

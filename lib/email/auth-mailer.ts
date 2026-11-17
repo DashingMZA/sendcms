@@ -1,4 +1,5 @@
 import { render } from "@react-email/render"
+import { formatFromAddress } from "./transport"
 import {
   buildPlatformTransporter,
   getPlatformFromAddress,
@@ -33,7 +34,7 @@ async function deliverOrLog({
   const transport = buildPlatformTransporter()
   if (transport) {
     await transport.sendMail({
-      from: `"${FROM_NAME}" <${getPlatformFromAddress()}>`,
+      from: formatFromAddress(FROM_NAME, getPlatformFromAddress()),
       to,
       subject,
       html,

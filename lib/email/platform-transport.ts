@@ -29,6 +29,12 @@ export function buildPlatformTransporter() {
   } as SMTPTransport.Options)
 }
 
+/**
+ * The platform sender address, verbatim from env: SMTP_FROM may be a full
+ * "Name <address>" mailbox or a bare address. Pass it through
+ * formatFromAddress() before using it as a From header — never wrap it in
+ * another "Name <...>" pair (see transport.ts).
+ */
 export function getPlatformFromAddress(): string {
   if (process.env.SMTP_FROM) return process.env.SMTP_FROM
   const user = process.env.SMTP_USER
