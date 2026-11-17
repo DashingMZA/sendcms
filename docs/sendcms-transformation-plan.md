@@ -291,25 +291,23 @@ takes an optional headers override and the public route passes its
 own `POST, OPTIONS / Content-Type` headers. Test users/forms/domains
 cleaned up; 4 owner accounts remain.
 
-**Phase 6 status (2026-11-17, in progress):** Vanilla-TS SDK in
-`sdk/` (dependency-free, 7.1 KB minified → `public/forms/v1.js` +
-debug build via `sdk/build.ts`, `pnpm sdk:build` wired into `dev` and
-`build`; `__APP_URL__` compile-time define, runtime prefers the
-script tag's own origin). `<script src="…/forms/v1.js"
-data-user-id data-form-id>` + `<form data-cms-form>` auto-enhance;
-per-form `data-user-id`/`data-form-id`/`data-turnstile-site-key`
-overrides; `window.SendCMS` API (`init`/`enhance`/`submit`/`scan`,
-`version`); loading/success/error states, duplicate prevention,
-honeypot trap, optional invisible Turnstile (fail closed), scoped
-`.sc-*` styles (host inputs untouched), MutationObserver +
-`astro:page-load` for SPA/dynamic forms, live config via WeakMap so
-callbacks registered after page load still apply. No-JS fallback:
-form-encoded POSTs to the same endpoint now parse via
-`formDataToSubmitBody` and answer with a 303 redirect (success →
-form redirectUrl or referer + `?cms_submitted=1`; error → referer +
-`?cms_error=…`). Dashboard form detail shows a copyable embed
-snippet built from the form's fields (`InstallSnippet`). Docs:
-`docs/sdk.md` (usage, options, REST, fallback) + `sdk/docs.md`.
+**Phase 6 status (DONE + PUSHED 2026-11-17; CI fix pending owner upload):**
+commit `feat(sdk): add vanilla-TS form SDK and no-JS POST fallback`
+(local 54c5599 → API **7dcd94c**). Live journey on the dev DB: SDK
+bundle + test page serve 200, no-JS valid POST → 303
+`?cms_submitted=1`, missing field → 303 `?cms_error=`, honeypot →
+303 success with no row saved, unknown origin → 303 with the 403
+message, JSON path still 201, DB shows exactly 2 submissions with
+origin/pageUrl/content hash, dashboard renders the embed snippet.
+Tests 104/104 (9 jsdom tests load the real built bundle). **CI run
+44201066914 FAILED on `pnpm test`** — the SDK bundle is gitignored,
+so a fresh checkout has no `public/forms/v1.js` for the tests to
+load. Fix: `pnpm sdk:build` step added to `ci.yml` before test
+(local-only change, verified by simulating a fresh checkout:
+delete `public/forms/` + `generated/` → generate → sdk:build →
+typecheck → lint → test all green). **The updated ci.yml needs the
+owner's web-UI upload** (PAT has no workflow scope, same as Phase 0).
+Test users/forms/domains cleaned up; 4 owner accounts remain.
 
 **Phase 7 — Inbox dashboard.** All/unread/read/starred/archived/spam,
 search, filter by domain/form/date, detail view (sender, page URL,
