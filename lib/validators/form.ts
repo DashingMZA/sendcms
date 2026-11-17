@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { HONEYPOT_FIELD } from "@/lib/validators/submission"
 
 export const FormFieldTypeSchema = z.enum([
   "TEXT",
@@ -28,7 +29,10 @@ const fieldShape = {
     .regex(
       /^[a-zA-Z][a-zA-Z0-9_]*$/,
       "Field key must start with a letter and contain only letters, digits and _"
-    ),
+    )
+    .refine((v) => v !== HONEYPOT_FIELD, {
+      message: "This field key is reserved for spam protection",
+    }),
   label: z.string().trim().min(1, "Enter a label").max(100),
   type: FormFieldTypeSchema,
   required: z.boolean().optional().default(false),

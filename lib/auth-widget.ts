@@ -9,8 +9,15 @@ export type WidgetPayload = {
   exp: number
 }
 
-const secret = () =>
-  new TextEncoder().encode(process.env.WIDGET_JWT_SECRET ?? "fallback-secret")
+const secret = () => {
+  const value = process.env.WIDGET_JWT_SECRET
+  if (!value) {
+    // No fallback: a widget JWT signed with a known default secret would
+    // let anyone forge a commenter identity.
+    throw new Error("WIDGET_JWT_SECRET is not set")
+  }
+  return new TextEncoder().encode(value)
+}
 
 export async function signWidgetToken(payload: {
   email: string

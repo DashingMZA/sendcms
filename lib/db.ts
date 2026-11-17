@@ -6,17 +6,35 @@ function createPrismaClient() {
   const isLocal =
     !rawUrl || rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1")
 
-  // For remote managed databases (Supabase, Neon, AWS RDS), remove conflicting sslmode query params
-  // so pg uses explicit SSL options with rejectUnauthorized: false.
-  const connectionString = isLocal || !rawUrl ? rawUrl : rawUrl.split("?")[0]
+  // Remote DBs: honor the URL's sslmode when it asks for verification
+  // (verify-full / verify-ca) — pg verifies the cert against its CA
+  // bundle (verified live against the Prisma Postgres dev DB). Any other
+  // sslmode keeps the previous behaviour: force TLS without verification.
+  // The query string is no longer stripped — stripping it is what made
+  // sslmode=verify-full silently unenforced.
+  const sslmode = (() => {
+    if (isLocal || !rawUrl) return null
+    try {
+      return new URL(rawUrl).searchParams.get("sslmode")
+    } catch {
+      return null
+    }
+  })()
+  const verifyCert = sslmode === "verify-full" || sslmode === "verify-ca"
 
   const adapter = new PrismaPg({
-    connectionString,
+    connectionString: rawUrl,
     max: 5,
     idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 10000,
     allowExitOnIdle: true,
-    ssl: isLocal ? false : { rejectUnauthorized: false },
+    // Local: no TLS. Remote + verify sslmode: omit ssl so pg honors the
+    // URL. Remote otherwise: force TLS without verification (as before).
+    ...(isLocal
+      ? { ssl: false }
+      : verifyCert
+        ? {}
+        : { ssl: { rejectUnauthorized: false } }),
   })
 
   return new PrismaClient({ adapter })
