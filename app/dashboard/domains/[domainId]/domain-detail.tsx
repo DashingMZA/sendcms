@@ -91,7 +91,7 @@ function verificationInstructions(
         kind: "file",
         title: "Publish this file",
         body: `Upload a file named sendcms-verification.txt to your site's public folder — the same place ads.txt goes — so it is reachable at the URL below. Its entire content must be the code shown.`,
-        url: `https://${domain}/.well-known/sendcms-verification.txt`,
+        url: `https://${domain}/sendcms-verification.txt`,
         value: challenge,
       }
   }

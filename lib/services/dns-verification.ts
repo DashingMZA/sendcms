@@ -276,7 +276,7 @@ async function checkVerificationFile(
   domain: string,
   challenge: string
 ): Promise<VerificationCheckResult> {
-  const path = "/.well-known/sendcms-verification.txt"
+  const path = "/sendcms-verification.txt"
   const fetched = await fetchOwnSite(domain, path)
   if (!fetched.ok) return fetched
   if (fetched.body.trim() === challenge) return { ok: true }
