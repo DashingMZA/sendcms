@@ -23,6 +23,9 @@ jobs:
       # all import it, so generate before any of them (build does it too,
       # via its own script, but it runs last).
       - run: pnpm db:generate
+      # The SDK bundle (public/forms/v1.js) is gitignored too, and the
+      # SDK tests load the real built bundle — build it before testing.
+      - run: pnpm sdk:build
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
