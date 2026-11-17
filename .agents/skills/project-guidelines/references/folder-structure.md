@@ -24,7 +24,7 @@ open-remark/
 │   ├── api/
 │   │   ├── v1/                    # Admin REST API (session-gated)
 │   │   ├── widget/                # Public widget API (JWT-gated)
-│   │   └── auth/[...nextauth]/    # Auth.js handler
+│   │   └── auth/[...all]/        # Better Auth handler
 │   ├── elements/                  # Design system showcase
 │   └── changelog/
 ├── components/
@@ -32,8 +32,8 @@ open-remark/
 │   └── ui/                        # shadcn/ui primitives
 ├── lib/
 │   ├── db.ts                      # Prisma singleton
-│   ├── auth.ts                    # Full auth config (with Prisma)
-│   ├── auth.config.ts             # Edge-safe auth (no Prisma)
+│   ├── auth.ts                    # Better Auth config (with Prisma) + auth() helper
+│   ├── auth-client.ts             # Browser-side Better Auth client
 │   ├── auth-widget.ts             # Widget JWT issue/verify
 │   ├── services/                  # Business logic (server-side, no Next.js imports)
 │   │   ├── comment-service.ts

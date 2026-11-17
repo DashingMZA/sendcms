@@ -18,12 +18,7 @@ import { ApiClientError } from "@/lib/api-client"
 import { useLookupUser, useTransferSite } from "@/lib/queries/sites"
 
 type TransferStep =
-  | "idle"
-  | "looking"
-  | "looked-up"
-  | "transferring"
-  | "success"
-  | "error"
+  "idle" | "looking" | "looked-up" | "transferring" | "success" | "error"
 
 type Props = {
   siteId: string

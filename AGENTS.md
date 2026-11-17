@@ -20,6 +20,8 @@ pnpm build            # prisma generate + widget build + next build
 pnpm start            # production next start
 pnpm typecheck        # tsc --noEmit (run before declaring work done)
 pnpm lint             # eslint
+pnpm test             # vitest run (tests/ — services, validators, SDK)
+pnpm test:watch       # vitest watch mode
 pnpm format           # prettier --write "**/*.{ts,tsx}"
 pnpm format:check     # prettier --check
 
@@ -48,12 +50,12 @@ Detailed rules per section: `project-guidelines` skill (reference file in parent
 
 | System | Who      | Mechanism                                  | Storage              | Routes                    |
 | ------ | -------- | ------------------------------------------ | -------------------- | ------------------------- |
-| Admin  | Owners   | Auth.js v5 + Google OAuth → session cookie | Server session       | `/dashboard`, `/api/v1/*` |
+| Admin  | Owners   | Better Auth 1.7.x + Google OAuth → session cookie | Server session (database) | `/dashboard`, `/api/v1/*` |
 | Widget | Visitors | Google OAuth PKCE → signed Widget JWT      | `localStorage` (JWT) | `/api/widget/*`           |
 
-- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Uses edge-safe `lib/auth.config.ts` (no Prisma adapter).
+- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `lib/auth.ts` (full, with Prisma adapter).
 - Widget: `Authorization: Bearer <jwt>` — no cookies (cross-origin). CSRF n/a; CORS allowlist enforced per `Site.allowedOrigins`.
-- `WIDGET_JWT_SECRET` ≠ `AUTH_SECRET` — do not conflate.
+- `WIDGET_JWT_SECRET` ≠ `BETTER_AUTH_SECRET` — do not conflate.
 
 ### Layered request flow — HARD RULE (`coding-conventions.md`)
 
@@ -98,11 +100,11 @@ User ──< Site ──< Page ──< Comment ──< Comment (replies, self-re
 
 ## Environment
 
-Required env (see `.env.example`): `DATABASE_URL`, `AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WIDGET_JWT_SECRET`, `NEXT_PUBLIC_APP_URL`.
+Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WIDGET_JWT_SECRET`, `NEXT_PUBLIC_APP_URL`.
 
 Google Cloud Console — authorized redirect URIs must include:
 
-- `<APP_URL>/api/auth/callback/google` (admin Auth.js)
+- `<APP_URL>/api/auth/callback/google` (admin Better Auth)
 - `<APP_URL>/api/widget/oauth-callback` (widget visitor flow)
 
 <!-- BEGIN:project-guidelines-rules -->

@@ -6,9 +6,7 @@
 export type PlatformRole = "PLATFORM_OWNER" | "PLATFORM_USER"
 
 export type PlatformCapability =
-  | "VIEW_NOTICE_BOARD"
-  | "VIEW_ADMINISTRATION"
-  | "MANAGE_PLATFORM_SETTINGS"
+  "VIEW_NOTICE_BOARD" | "VIEW_ADMINISTRATION" | "MANAGE_PLATFORM_SETTINGS"
 
 const PLATFORM_PERMISSIONS: Record<
   PlatformRole,
@@ -27,7 +25,7 @@ export const platformCan = (
   cap: PlatformCapability
 ): boolean => PLATFORM_PERMISSIONS[role].includes(cap)
 
-// Platform routes gated by capability — consumed by auth.config.ts + sidebar.
+// Platform routes gated by capability — consumed by proxy.ts + sidebar.
 export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/dashboard/notice-board": "VIEW_NOTICE_BOARD",
   "/dashboard/administration": "VIEW_ADMINISTRATION",

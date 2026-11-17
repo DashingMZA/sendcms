@@ -35,12 +35,7 @@ export const siteCan = (role: SiteRole, cap: SiteCapability): boolean =>
 // (SSOT for which role sees which section). General/install/appearance need
 // only MANAGE_SETTINGS; the rest are owner-only.
 export type SettingsSection =
-  | "general"
-  | "install"
-  | "appearance"
-  | "transfer"
-  | "email"
-  | "danger"
+  "general" | "install" | "appearance" | "transfer" | "email" | "danger"
 
 export const SETTINGS_SECTION_CAPABILITY: Record<
   SettingsSection,

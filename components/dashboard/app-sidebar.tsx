@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { signOut } from "next-auth/react"
+import { usePathname, useRouter } from "next/navigation"
+import { authClient } from "@/lib/auth-client"
 import { useTheme } from "next-themes"
 import {
   RiDashboardLine,
@@ -64,6 +64,7 @@ type Props = {
 }
 
 export function AppSidebar({ user, siteCount, platformRole }: Props) {
+  const router = useRouter()
   const navGroups: NavGroup[] = [
     {
       label: "Application",
@@ -289,7 +290,15 @@ export function AppSidebar({ user, siteCount, platformRole }: Props) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onSelect={() => signOut({ callbackUrl: "/sign-in" })}
+                  onSelect={() =>
+                    authClient.signOut({
+                      fetchOptions: {
+                        onSuccess: () => {
+                          router.push("/sign-in")
+                        },
+                      },
+                    })
+                  }
                   className="cursor-pointer"
                 >
                   <RiLogoutBoxLine className="size-4" aria-hidden="true" />

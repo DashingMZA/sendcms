@@ -10,7 +10,7 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       // Private / non-indexable areas: admin dashboard, auth, APIs, and the
       // internal design-system showcase.
-      disallow: ["/dashboard", "/sign-in", "/api/", "/elements"],
+      disallow: ["/dashboard", "/sign-in", "/api/"],
     },
     sitemap: `${baseUrl}/sitemap.xml`,
     host: baseUrl,

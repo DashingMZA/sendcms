@@ -6,13 +6,14 @@ Two separate auth systems. Never conflate them.
 
 | Aspect | Detail |
 |---|---|
-| Mechanism | Auth.js v5 + Google OAuth |
-| Storage | Server session cookie |
+| Mechanism | Better Auth 1.7.x + Google OAuth |
+| Storage | Server session cookie (database session) |
 | Routes | `/dashboard`, `/api/v1/*` |
 | Gate | `proxy.ts` (root, not `middleware.ts`) |
 | Matcher | `/dashboard/:path*` |
 | Config | `lib/auth.ts` (full, with Prisma) |
-| Edge config | `lib/auth.config.ts` (no Prisma) |
+| Client | `lib/auth-client.ts` (`authClient.signIn` / `signOut`) |
+| Session helper | `auth()` in `lib/auth.ts` — same `await auth()` pattern |
 
 **Route pattern:**
 ```ts
@@ -31,7 +32,7 @@ if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
 | Routes | `/api/widget/*` |
 | Transport | `Authorization: Bearer <jwt>` |
 | CORS | Enforced per `Site.allowedOrigins` |
-| JWT secret | `WIDGET_JWT_SECRET` (distinct from `AUTH_SECRET`) |
+| JWT secret | `WIDGET_JWT_SECRET` (distinct from `BETTER_AUTH_SECRET`) |
 
 **Route pattern:**
 ```ts
@@ -55,7 +56,7 @@ const payload = verifyWidgetToken(req) // throws on invalid
 
 ## Critical Rules
 
-- `WIDGET_JWT_SECRET` ≠ `AUTH_SECRET` — different secrets
+- `WIDGET_JWT_SECRET` ≠ `BETTER_AUTH_SECRET` — different secrets
 - Widget uses Bearer token, no cookies — cross-origin safe
 - CSRF not applicable to widget (no cookies)
 - Admin routes gated by `proxy.ts`, not inline checks

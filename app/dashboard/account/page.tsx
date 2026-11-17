@@ -1,8 +1,7 @@
-import { auth, signOut } from "@/lib/auth"
+import { auth } from "@/lib/auth"
 
 import { PageHeader } from "@/components/dashboard/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -11,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { SignOutButton } from "./sign-out-button"
 
 export default async function AccountPage() {
   const session = await auth()
@@ -44,16 +44,7 @@ export default async function AccountPage() {
 
         <Separator />
 
-        <form
-          action={async () => {
-            "use server"
-            await signOut({ redirectTo: "/sign-in" })
-          }}
-        >
-          <Button variant="outline" type="submit">
-            Sign out
-          </Button>
-        </form>
+        <SignOutButton />
       </div>
     </div>
   )
