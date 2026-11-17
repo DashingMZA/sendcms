@@ -218,6 +218,31 @@ verification-file alternatives, status / reverify / suspend / reactivate.
 DNS checks via DNS-over-HTTPS (portable on Workers) — never Origin/Referer
 alone as proof. Gate: verify a real domain end-to-end.
 
+**Phase 3 status — DONE 2026-11-17.** `lib/services/domain-service.ts`
+(normalize — lowercase, strip scheme/userinfo/port/path, trailing dot,
+leading www; subdomains other than www kept; `assertValidDomain` rejects
+localhost/IPs/wildcards; challenge = 24 random bytes base64url, 7-day TTL,
+10 attempts max) + `lib/services/dns-verification.ts` (DoH: Cloudflare
+first, Google fallback, 5s timeout; TXT segments joined; meta-tag/file
+checks fetch the owner's own site over HTTPS with an SSRF guard — DoH A/AAAA
+lookup first, refuse private/loopback IPs, same-host redirects only, 5s
+timeout, 1 MB cap). Routes: `GET/POST /api/v1/domains`,
+`GET/PATCH/DELETE /api/v1/domains/[domainId]`,
+`POST /verify`, `POST /reverify`. Domain registration gated on the owner's
+email being verified (403 otherwise); suspend/reactivate via PATCH action;
+delete blocked while forms are linked (409). AuditLog rows for
+CREATE/VERIFY/SUSPEND/REACTIVATE/DELETE. Dashboard: `/dashboard/domains`
+(list + badge in sidebar), `/new` (email-verified gate shown when locked),
+`/[domainId]` (per-method instructions with copyable snippets via
+InstallSnippet, check/reverify/suspend/reactivate/delete). Also fixed the
+orphan `app/(dashboard)/layout.tsx` (same sidebar props — it has no pages
+but is still typechecked). Tests 61/61 (new: normalization + DoH parsing +
+meta-tag extraction + mocked resolver fallback). Live DoH verified:
+`_dmarc.google.com` TXT read correctly, nonexistent name → [], failed
+check returns the propagation reason. Full positive end-to-end (a real
+TXT record on the owner's domain) still needs the owner to add the record
+— the challenge is issued per domain from the dashboard.
+
 **Phase 4 — Forms.** CRUD, public `formId`, name/description, active flag,
 allowed-domain links (`FormDomain`, many-to-many), notification emails,
 field config (`FormField`), success message, redirect URL, spam settings,

@@ -7,6 +7,7 @@ import { useTheme } from "next-themes"
 import {
   RiDashboardLine,
   RiGlobalLine,
+  RiLinksLine,
   RiSettingsLine,
   RiLogoutBoxLine,
   RiExpandUpDownLine,
@@ -60,10 +61,16 @@ type NavGroup = {
 type Props = {
   user: { name?: string | null; email?: string | null; image?: string | null }
   siteCount: number
+  domainCount: number
   platformRole: PlatformRole
 }
 
-export function AppSidebar({ user, siteCount, platformRole }: Props) {
+export function AppSidebar({
+  user,
+  siteCount,
+  domainCount,
+  platformRole,
+}: Props) {
   const router = useRouter()
   const navGroups: NavGroup[] = [
     {
@@ -75,6 +82,12 @@ export function AppSidebar({ user, siteCount, platformRole }: Props) {
           href: "/dashboard/sites",
           icon: RiGlobalLine,
           badge: siteCount,
+        },
+        {
+          label: "Domains",
+          href: "/dashboard/domains",
+          icon: RiLinksLine,
+          badge: domainCount,
         },
       ],
     },

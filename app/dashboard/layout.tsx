@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { QueryProvider } from "@/components/dashboard/query-provider"
 import { getSiteCountForUser } from "@/lib/services/site-service"
+import { getDomainCountForUser } from "@/lib/services/domain-service"
 
 export default async function DashboardLayout({
   children,
@@ -14,7 +15,10 @@ export default async function DashboardLayout({
   const session = await auth()
   if (!session?.user) redirect("/sign-in")
 
-  const siteCount = await getSiteCountForUser(session.user.id)
+  const [siteCount, domainCount] = await Promise.all([
+    getSiteCountForUser(session.user.id),
+    getDomainCountForUser(session.user.id),
+  ])
 
   return (
     <QueryProvider>
@@ -23,6 +27,7 @@ export default async function DashboardLayout({
           <AppSidebar
             user={session.user}
             siteCount={siteCount}
+            domainCount={domainCount}
             platformRole={session.user.platformRole}
           />
           <SidebarInset>{children}</SidebarInset>

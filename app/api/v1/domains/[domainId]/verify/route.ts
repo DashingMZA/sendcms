@@ -1,0 +1,21 @@
+import { NextRequest } from "next/server"
+import { revalidatePath } from "next/cache"
+import { auth } from "@/lib/auth"
+import { ok } from "@/lib/api/response"
+import { ApiError, handleApiError } from "@/lib/api/error"
+import { verifyDomainForUser } from "@/lib/services/domain-service"
+
+type Params = { params: Promise<{ domainId: string }> }
+
+export async function POST(_req: NextRequest, { params }: Params) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const { domainId } = await params
+    const result = await verifyDomainForUser(session.user.id, domainId)
+    if (result.verified) revalidatePath("/dashboard", "layout")
+    return ok(result)
+  } catch (err) {
+    return handleApiError(err)
+  }
+}
