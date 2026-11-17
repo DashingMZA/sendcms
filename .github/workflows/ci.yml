@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.19.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/sendcms?sslmode=require
+          BETTER_AUTH_SECRET: dummy-build-secret-32-chars-long-xxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          GOOGLE_CLIENT_ID: dummy
+          GOOGLE_CLIENT_SECRET: dummy
+          WIDGET_JWT_SECRET: dummy-widget-secret-build-only-xxx
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
