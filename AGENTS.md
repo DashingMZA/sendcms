@@ -50,10 +50,10 @@ Detailed rules per section: `project-guidelines` skill (reference file in parent
 
 | System | Who      | Mechanism                                  | Storage              | Routes                    |
 | ------ | -------- | ------------------------------------------ | -------------------- | ------------------------- |
-| Admin  | Owners   | Better Auth 1.7.x + Google OAuth → session cookie | Server session (database) | `/dashboard`, `/api/v1/*` |
+| Admin  | Owners   | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required) → session cookie | Server session (database) | `/dashboard`, `/api/v1/*` |
 | Widget | Visitors | Google OAuth PKCE → signed Widget JWT      | `localStorage` (JWT) | `/api/widget/*`           |
 
-- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `lib/auth.ts` (full, with Prisma adapter).
+- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `lib/auth.ts` (full, with Prisma adapter). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through platform SMTP (`SMTP_*`, `lib/email/auth-mailer.ts`); without SMTP, dev logs the links to the server console and production fails loudly. Phase 8 replaces it with Resend. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
 - Widget: `Authorization: Bearer <jwt>` — no cookies (cross-origin). CSRF n/a; CORS allowlist enforced per `Site.allowedOrigins`.
 - `WIDGET_JWT_SECRET` ≠ `BETTER_AUTH_SECRET` — do not conflate.
 

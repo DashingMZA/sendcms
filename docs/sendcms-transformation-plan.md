@@ -2,7 +2,8 @@
 
 Repo: `DashingMZA/sendcms` · Base: single commit `44c342c` (copy of open-remark @ `8fcd492`)
 Plan date: 2026-11-17 · Status: **approved 2026-11-17** — Phase 0 done + pushed
-(`d58fe6c`, CI green on `5ee0ac1`); Phase 1 done (see §5).
+(`d58fe6c`, CI green on `5ee0ac1`); Phase 1 done (see §5); Phase 2 done
+(see §5).
 
 Conventions: follow `AGENTS.md` + `.agents/skills/project-guidelines/` (layered flow,
 RBAC, schema rules, route templates). Work on branch `feat/contact-form-saas`,
@@ -187,7 +188,24 @@ or submissions; use Better Auth's built-in verification + `Verification`
 table), password reset, account settings,
 logout. Validate OAuth `email_verified` claims; fall back to own verification
 when untrusted. Fix first-user `PLATFORM_OWNER` race. Gate: manual journey
-register → verify → login (all providers).
+register → verify → login (all providers). **Status: DONE 2026-11-17** —
+Better Auth `emailAndPassword` (requireEmailVerification, min 8 chars) +
+`emailVerification` (sendOnSignUp, autoSignInAfterVerification, 24h expiry)
++ GitHub/Facebook OAuth (env-gated via `lib/auth-providers.ts`; UI only
+offers configured providers) + `user.changeEmail`. Auth mail
+(`lib/email/auth-mailer.ts`) via platform SMTP (`SMTP_*`); no SMTP → dev
+logs the link server-side, production throws. Verification trust verified
+in better-auth 1.7.25 source: Google profile `email_verified`, GitHub
+`/user/emails` verified flag, Facebook none (gets a verification email on
+sign-up). Owner race fixed with a single-statement conditional UPDATE +
+partial unique index (migration `20261117190655_single_platform_owner`).
+Pages: sign-up, forgot-password, reset-password/:token, verify-email;
+sign-in gained an email form; account page gained verification
+status/resend, name, email change (verification to the NEW address),
+password change (revokes other sessions), provider linking. Gate green
+(typecheck clean, lint 0 errors / 1 pre-existing warning, tests 25/25,
+build SUCCESS dummy env). Manual live journey (real OAuth + SMTP + DB)
+still needs the owner on his machine — see the Phase 2 report checklist.
 
 **Phase 3 — Domains.** CRUD, normalize (lowercase, strip scheme/path, www/
 subdomain handling), `@unique` + index, ownership verification via DNS TXT
