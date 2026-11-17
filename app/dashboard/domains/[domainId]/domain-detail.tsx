@@ -11,6 +11,7 @@ import {
 import type { DomainDetail } from "@/lib/queries/domains"
 import { ApiClientError } from "@/lib/api-client"
 import { DomainStatusBadge } from "../domain-status-badge"
+import { CopyField } from "../copy-field"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Download } from "lucide-react"
 import type { DomainVerificationMethod } from "@/generated/prisma/client"
 
 const METHOD_LABEL: Record<DomainVerificationMethod, string> = {
@@ -35,21 +37,50 @@ const METHOD_LABEL: Record<DomainVerificationMethod, string> = {
   FILE: "Verification file",
 }
 
+type DnsInstructions = {
+  kind: "dns"
+  title: string
+  body: string
+  name: string
+  value: string
+}
+
+type SnippetInstructions = {
+  kind: "snippet"
+  title: string
+  body: string
+  code: string
+  language: string
+}
+
+type FileInstructions = {
+  kind: "file"
+  title: string
+  body: string
+  url: string
+  value: string
+}
+
+type VerificationInstructions =
+  DnsInstructions | SnippetInstructions | FileInstructions
+
 function verificationInstructions(
   domain: string,
   method: DomainVerificationMethod,
   challenge: string
-): { title: string; body: string; code: string; language: string } {
+): VerificationInstructions {
   switch (method) {
     case "DNS_TXT":
       return {
+        kind: "dns",
         title: "Add this TXT record",
         body: `Add a TXT record to ${domain} at your DNS provider. It usually propagates within a few minutes.`,
-        code: `_contact-verify.${domain}  TXT  ${challenge}`,
-        language: "dns",
+        name: `sendcms._domainkey.${domain}`,
+        value: challenge,
       }
     case "META_TAG":
       return {
+        kind: "snippet",
         title: "Add this meta tag",
         body: `Add this tag inside the <head> of https://${domain}/.`,
         code: `<meta name="sendcms-verification" content="${challenge}">`,
@@ -57,10 +88,11 @@ function verificationInstructions(
       }
     case "FILE":
       return {
+        kind: "file",
         title: "Publish this file",
-        body: `Serve a file at this URL whose entire content is the challenge below.`,
-        code: `https://${domain}/.well-known/sendcms-verification.txt\n\n${challenge}`,
-        language: "text",
+        body: `Upload a file named sendcms-verification.txt to your site's public folder — the same place ads.txt goes — so it is reachable at the URL below. Its entire content must be the code shown.`,
+        url: `https://${domain}/.well-known/sendcms-verification.txt`,
+        value: challenge,
       }
   }
 }
@@ -80,6 +112,16 @@ export function DomainDetail({
   const [method, setMethod] = useState<DomainVerificationMethod>(
     verification?.method ?? "DNS_TXT"
   )
+  const [prevMethod, setPrevMethod] = useState<
+    DomainVerificationMethod | undefined
+  >(verification?.method)
+  // Adjust state during render (not in an effect): the select follows the
+  // server's current method after a switch, because the component keeps
+  // its own state across refreshes.
+  if (prevMethod !== verification?.method) {
+    setPrevMethod(verification?.method)
+    setMethod(verification?.method ?? "DNS_TXT")
+  }
   const [check, setCheck] = useState<{
     verified: boolean
     reason?: string
@@ -112,9 +154,24 @@ export function DomainDetail({
       setError(
         err instanceof ApiClientError
           ? err.message
-          : "Could not start a new verification."
+          : "Could not switch the verification method."
       )
     }
+  }
+
+  // Download the verification file (sendcms-verification.txt) so it can
+  // be uploaded to the site's public folder as-is.
+  function downloadVerificationFile() {
+    if (!verification) return
+    const blob = new Blob([verification.challenge], {
+      type: "text/plain",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "sendcms-verification.txt"
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function onSuspend() {
@@ -198,10 +255,35 @@ export function DomainDetail({
             <CardDescription>{instructions.body}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <InstallSnippet
-              code={instructions.code}
-              language={instructions.language}
-            />
+            {instructions.kind === "dns" && (
+              <>
+                <CopyField label="Record name" value={instructions.name} />
+                <CopyField label="Record value" value={instructions.value} />
+              </>
+            )}
+            {instructions.kind === "snippet" && (
+              <InstallSnippet
+                code={instructions.code}
+                language={instructions.language}
+              />
+            )}
+            {instructions.kind === "file" && (
+              <>
+                <p className="rounded-lg border bg-muted/50 px-4 py-3 font-mono text-sm break-all">
+                  {instructions.url}
+                </p>
+                <CopyField label="File content" value={instructions.value} />
+                <div>
+                  <Button variant="outline" onClick={downloadVerificationFile}>
+                    <Download className="size-4" aria-hidden="true" />
+                    Download sendcms-verification.txt
+                  </Button>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Download the file and upload it as-is — no editing needed.
+                  </p>
+                </div>
+              </>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={onVerify} disabled={verify.isPending}>
                 {verify.isPending ? "Checking…" : "Check verification"}
@@ -244,12 +326,13 @@ export function DomainDetail({
               <Button
                 variant="outline"
                 onClick={onReverify}
-                disabled={reverify.isPending}
+                disabled={reverify.isPending || method === verification.method}
               >
-                {reverify.isPending ? "Issuing…" : "Start a new verification"}
+                {reverify.isPending ? "Switching…" : "Switch method"}
               </Button>
               <span className="text-xs text-muted-foreground">
-                Issues a fresh challenge with the selected method.
+                Switches to the selected method — the verification value stays
+                the same.
               </span>
             </div>
           </CardContent>

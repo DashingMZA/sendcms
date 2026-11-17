@@ -90,7 +90,7 @@ async function checkDnsTxt(
   domain: string,
   challenge: string
 ): Promise<VerificationCheckResult> {
-  const hostname = `_contact-verify.${domain}`
+  const hostname = `sendcms._domainkey.${domain}`
   const records = await lookupTxtRecords(hostname)
   if (records.some((r) => r.trim() === challenge)) return { ok: true }
   if (records.length === 0) {

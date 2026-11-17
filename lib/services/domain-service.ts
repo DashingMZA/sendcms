@@ -54,8 +54,11 @@ export function assertValidDomain(raw: string): string {
   return domain
 }
 
+// 36 random bytes = 48 base64url chars (288 bits): long enough that the
+// value is practically unique forever (never collides with another
+// site's value).
 export function newChallenge(): string {
-  return randomBytes(24).toString("base64url")
+  return randomBytes(36).toString("base64url")
 }
 
 function challengeExpiresAt(): Date {
@@ -157,8 +160,10 @@ export async function createDomainForUser(
   return created
 }
 
-// Start a fresh verification round (new challenge). Expires any older
-// pending challenge so only one is ever active.
+// Switch the verification method. The challenge value is the SAME for
+// all three methods — switching methods never issues a new one. A fresh
+// challenge is only created when no pending verification exists (the old
+// one expired or failed its attempts).
 export async function startVerificationForUser(
   userId: string,
   domainId: string,
@@ -178,21 +183,24 @@ export async function startVerificationForUser(
     input.method ??
     domain.verifications[0]?.method ??
     DomainVerificationMethod.DNS_TXT
-  const verification = await db.$transaction(async (tx) => {
-    await tx.domainVerification.updateMany({
-      where: { domainId, status: DomainVerificationStatus.PENDING },
-      data: { status: DomainVerificationStatus.EXPIRED },
+  const pending = domain.verifications.find(
+    (v) => v.status === DomainVerificationStatus.PENDING
+  )
+  if (pending) {
+    if (pending.method === method) return pending
+    return db.domainVerification.update({
+      where: { id: pending.id },
+      data: { method },
     })
-    return tx.domainVerification.create({
-      data: {
-        domainId,
-        method,
-        challenge: newChallenge(),
-        expiresAt: challengeExpiresAt(),
-      },
-    })
+  }
+  return db.domainVerification.create({
+    data: {
+      domainId,
+      method,
+      challenge: newChallenge(),
+      expiresAt: challengeExpiresAt(),
+    },
   })
-  return verification
 }
 
 export async function verifyDomainForUser(userId: string, domainId: string) {

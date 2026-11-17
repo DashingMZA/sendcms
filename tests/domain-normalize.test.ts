@@ -51,10 +51,10 @@ describe("assertValidDomain", () => {
 })
 
 describe("newChallenge", () => {
-  it("returns a 32-char base64url token, unique each time", () => {
+  it("returns a 48-char base64url token, unique each time", () => {
     const a = newChallenge()
     const b = newChallenge()
-    expect(a).toMatch(/^[A-Za-z0-9_-]{32}$/)
+    expect(a).toMatch(/^[A-Za-z0-9_-]{48}$/)
     expect(a).not.toBe(b)
   })
 })

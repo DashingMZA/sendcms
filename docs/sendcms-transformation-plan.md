@@ -213,7 +213,7 @@ still needs the owner on his machine — see the Phase 2 report checklist.
 
 **Phase 3 — Domains.** CRUD, normalize (lowercase, strip scheme/path, www/
 subdomain handling), `@unique` + index, ownership verification via DNS TXT
-(`_contact-verify.<domain>`, crypto-random challenge), HTML meta-tag and
+(`sendcms._domainkey.<domain>`, crypto-random challenge), HTML meta-tag and
 verification-file alternatives, status / reverify / suspend / reactivate.
 DNS checks via DNS-over-HTTPS (portable on Workers) — never Origin/Referer
 alone as proof. Gate: verify a real domain end-to-end.
@@ -242,6 +242,20 @@ meta-tag extraction + mocked resolver fallback). Live DoH verified:
 check returns the propagation reason. Full positive end-to-end (a real
 TXT record on the owner's domain) still needs the owner to add the record
 — the challenge is issued per domain from the dashboard.
+
+**Phase 3 follow-up (owner feedback 2026-11-17, after jadoo.bond verified
+via DNS):** (1) TXT record name changed from `_contact-verify.<domain>` to
+`sendcms._domainkey.<domain>` (Resend-style); already-verified domains are
+unaffected. (2) Challenge is now 36 random bytes = 48 base64url chars
+(was 24 bytes / 32 chars) so the value is practically unique forever. (3) The challenge
+value is the SAME for all three methods — switching methods keeps the
+value; a fresh challenge is only issued when no pending verification
+exists. (4) DNS instructions now show Name and Value as two separate
+copy fields. (5) File instructions explain the public folder (like
+ads.txt), copy copies only the code, and a Download button saves
+`sendcms-verification.txt` ready to upload. (6) The "Start a new
+verification" button is now "Switch method" (disabled when the selected
+method is already active).
 
 **Phase 4 — Forms.** CRUD, public `formId`, name/description, active flag,
 allowed-domain links (`FormDomain`, many-to-many), notification emails,

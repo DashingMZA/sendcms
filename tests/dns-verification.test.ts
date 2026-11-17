@@ -61,7 +61,7 @@ describe("lookupTxtRecords", () => {
       ])
     )
     vi.stubGlobal("fetch", fetchMock)
-    const records = await lookupTxtRecords("_contact-verify.example.com")
+    const records = await lookupTxtRecords("sendcms._domainkey.example.com")
     expect(records).toEqual(["sendcms-token-1", "ab"])
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("cloudflare-dns.com")
@@ -70,7 +70,7 @@ describe("lookupTxtRecords", () => {
   it("returns an empty list on NXDOMAIN (Status 3)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(dohResponse(3, [])))
     await expect(
-      lookupTxtRecords("_contact-verify.example.com")
+      lookupTxtRecords("sendcms._domainkey.example.com")
     ).resolves.toEqual([])
   })
 
@@ -80,7 +80,7 @@ describe("lookupTxtRecords", () => {
       .mockRejectedValueOnce(new Error("network down"))
       .mockResolvedValueOnce(dohResponse(0, [{ type: 16, data: '"tok"' }]))
     vi.stubGlobal("fetch", fetchMock)
-    const records = await lookupTxtRecords("_contact-verify.example.com")
+    const records = await lookupTxtRecords("sendcms._domainkey.example.com")
     expect(records).toEqual(["tok"])
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("dns.google")
   })
@@ -88,10 +88,10 @@ describe("lookupTxtRecords", () => {
   it("throws a 502 when both resolvers are unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")))
     await expect(
-      lookupTxtRecords("_contact-verify.example.com")
+      lookupTxtRecords("sendcms._domainkey.example.com")
     ).rejects.toMatchObject({ status: 502 })
     try {
-      await lookupTxtRecords("_contact-verify.example.com")
+      await lookupTxtRecords("sendcms._domainkey.example.com")
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError)
     }
