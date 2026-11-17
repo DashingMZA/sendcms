@@ -291,23 +291,13 @@ takes an optional headers override and the public route passes its
 own `POST, OPTIONS / Content-Type` headers. Test users/forms/domains
 cleaned up; 4 owner accounts remain.
 
-**Phase 6 status (DONE + PUSHED 2026-11-17; CI fix pending owner upload):**
-commit `feat(sdk): add vanilla-TS form SDK and no-JS POST fallback`
-(local 54c5599 → API **7dcd94c**). Live journey on the dev DB: SDK
-bundle + test page serve 200, no-JS valid POST → 303
-`?cms_submitted=1`, missing field → 303 `?cms_error=`, honeypot →
-303 success with no row saved, unknown origin → 303 with the 403
-message, JSON path still 201, DB shows exactly 2 submissions with
-origin/pageUrl/content hash, dashboard renders the embed snippet.
-Tests 104/104 (9 jsdom tests load the real built bundle). **CI run
-44201066914 FAILED on `pnpm test`** — the SDK bundle is gitignored,
-so a fresh checkout has no `public/forms/v1.js` for the tests to
-load. Fix: `pnpm sdk:build` step added to `ci.yml` before test
-(local-only change, verified by simulating a fresh checkout:
-delete `public/forms/` + `generated/` → generate → sdk:build →
-typecheck → lint → test all green). **The updated ci.yml needs the
-owner's web-UI upload** (PAT has no workflow scope, same as Phase 0).
-Test users/forms/domains cleaned up; 4 owner accounts remain.
+**Phase 6 status (DONE + PUSHED + CI GREEN 2026-11-17):** commit
+`feat(sdk): add vanilla-TS form SDK and no-JS POST fallback` (local
+54c5599 → API **7dcd94c**); docs commit 922964f. **CI run 44201066914
+FAILED on `pnpm test`** (fresh checkout has no gitignored SDK
+bundle) — fixed by a `pnpm sdk:build` step in ci.yml, uploaded by the
+owner via web UI (commit **02a4690**, byte-identical); **CI run
+44202653039 = SUCCESS.**
 
 **Phase 7 — Inbox dashboard.** All/unread/read/starred/archived/spam,
 search, filter by domain/form/date, detail view (sender, page URL,
