@@ -15,6 +15,8 @@ const nextConfig = {
     "@sendcms/notifications",
     "@sendcms/users",
     "@sendcms/analytics",
+    "@sendcms/api-client",
+    "@sendcms/sdk",
   ],
   turbopack: {
     root: __dirname,

@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
-import { ok } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { listSubmissionsForUser } from "@sendcms/inbox"
 import { InboxListQuerySchema } from "@sendcms/inbox/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
 export async function GET(req: NextRequest) {
   try {

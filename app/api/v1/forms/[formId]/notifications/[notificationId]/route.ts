@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { ok, noContent } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import {
   deleteNotificationEmailForUser,
   updateNotificationEmailForUser,
 } from "@sendcms/forms"
 import { UpdateNotificationEmailSchema } from "@sendcms/forms/validators"
+import { ApiError, handleApiError, noContent, ok } from "@sendcms/api-client"
 
 type Params = {
   params: Promise<{ formId: string; notificationId: string }>

@@ -45,8 +45,8 @@ takes no credentials — the `Origin` allowlist is its authorization.
 
 | Guard                           | Location                      | Used By                                                                             |
 | ------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------- |
-| `platformCan(role, capability)` | `lib/permissions/platform.ts` | Dashboard nav visibility                                                            |
-| `getEffectiveOrigin(req)`       | `lib/cors.ts`                 | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
+| `platformCan(role, capability)` | `packages/permissions/src/platform.ts` | Dashboard nav visibility                                                            |
+| `getEffectiveOrigin(req)`       | `@sendcms/api-client`         | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
 
 ## Critical Rules
 

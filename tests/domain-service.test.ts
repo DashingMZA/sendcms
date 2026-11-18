@@ -30,8 +30,7 @@ import {
   verifyDomainForUser,
 } from "@sendcms/domains"
 import { checkVerification } from "@sendcms/domains/dns-verification"
-
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/api-client"
 
 function makeDomain(overrides: Record<string, unknown> = {}) {
   return {

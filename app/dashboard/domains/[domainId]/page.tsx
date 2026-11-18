@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
-import { ApiError } from "@/lib/api/error"
 import { getDomainForUser } from "@sendcms/domains"
+import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
 import { DomainDetail } from "./domain-detail"

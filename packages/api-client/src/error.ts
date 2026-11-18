@@ -3,7 +3,7 @@ import { ApiError } from "@sendcms/shared"
 export { ApiError }
 
 import { NextResponse } from "next/server"
-import { corsHeaders } from "@/lib/cors"
+import { corsHeaders } from "./cors"
 
 export function handleApiError(
   err: unknown,

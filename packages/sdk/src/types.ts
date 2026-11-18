@@ -1,6 +1,15 @@
-// Public types for the SendCMS form SDK (sdk/src).
+// Public types for the SendCMS form SDK (packages/sdk/src).
 // Dependency-free vanilla TypeScript — no framework, no imports from
-// the Next.js app. The bundle is built by sdk/build.ts.
+// the Next.js app, except the honeypot field name from
+// @sendcms/shared/constants (inlined into the bundle at build time).
+// The bundle is built by packages/sdk/build.ts.
+
+import { HONEYPOT_FIELD } from "@sendcms/shared/constants"
+
+// The honeypot field name is the shared server/SDK contract (see
+// @sendcms/shared constants) — re-exported so the SDK's api.ts keeps
+// importing it from here.
+export { HONEYPOT_FIELD }
 
 export type SendCMSMessages = {
   /** Shown on the submit button while a submission is in flight. */
@@ -70,8 +79,6 @@ export type ResolvedFormConfig = {
   onError: SendCMSOptions["onError"]
   onSubmit: SendCMSOptions["onSubmit"]
 }
-
-export const HONEYPOT_FIELD = "_sendcms_honeypot"
 
 export const DEFAULT_MESSAGES: Required<SendCMSMessages> = {
   sending: "Sending…",

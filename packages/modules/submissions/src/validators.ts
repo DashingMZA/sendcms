@@ -1,10 +1,13 @@
 import { z } from "zod"
+import { HONEYPOT_FIELD } from "@sendcms/shared/constants"
 
 // Public submission API request body (POST /api/public/v1/submit).
 // `userId` + `formId` are the PUBLIC identifiers shown on the form detail
 // page — no secrets travel in the browser bundle.
 
-export const HONEYPOT_FIELD = "_sendcms_honeypot"
+// Re-exported so form validators (which forbid the honeypot name as a
+// field name) keep importing it from here.
+export { HONEYPOT_FIELD }
 
 export const SubmitBodySchema = z.object({
   userId: z.string().min(1, "userId is required"),

@@ -27,7 +27,7 @@ import {
   updateFormForUser,
 } from "@sendcms/forms"
 
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/api-client"
 
 function makeForm(overrides: Record<string, unknown> = {}) {
   return {

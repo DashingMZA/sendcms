@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { ok, created } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { addNotificationEmailToForm, getFormForUser } from "@sendcms/forms"
 import { AddNotificationEmailSchema } from "@sendcms/forms/validators"
+import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
 
 type Params = { params: Promise<{ formId: string }> }
 

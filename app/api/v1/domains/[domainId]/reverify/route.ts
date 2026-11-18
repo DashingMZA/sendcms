@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { created } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { startVerificationForUser } from "@sendcms/domains"
 import { ReverifyDomainSchema } from "@sendcms/domains/validators"
+import { ApiError, created, handleApiError } from "@sendcms/api-client"
 
 type Params = { params: Promise<{ domainId: string }> }
 

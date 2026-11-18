@@ -19,7 +19,7 @@ vi.mock("next/server", async (importOriginal) => {
 
 import { NextRequest } from "next/server"
 import { OPTIONS, POST } from "@/app/api/public/v1/submit/route"
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/api-client"
 import { notificationDeps } from "@/lib/email/notification-deps"
 
 const URL = "http://localhost:3000/api/public/v1/submit"

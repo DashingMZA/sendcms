@@ -4,20 +4,23 @@
 
 Vanilla TypeScript embed that enhances `<form data-cms-form>` on any
 page. Bundles to `public/forms/v1.js` via esbuild. No framework, no
-dependencies — all DOM work is imperative. It replaced the old comment
-widget (`widget/`) for contact forms; that widget was removed with the
-comment system on 2026-11-18.
+runtime dependencies — all DOM work is imperative. (The honeypot field
+name comes from `@sendcms/shared/constants` at build time and is
+inlined into the bundle; nothing is fetched from the server.) It
+replaced the old comment widget (`widget/`) for contact forms; that
+widget was removed with the comment system on 2026-11-18.
 
 ## Source layout
 
 ```
-sdk/src/
+packages/sdk/src/
   index.ts      — SendCMS global, auto-init, SPA observer, resolveConfig
   enhance.ts    — enhanceForm: honeypot, submit handler, states, redirects
   api.ts        — fetch wrapper for POST /api/public/v1/submit
   turnstile.ts  — optional Cloudflare Turnstile (invisible widget)
   styles.ts     — scoped .sc-* CSS, injected once
   types.ts      — public option/result types
+  snippet.ts    — embed-snippet builders for the dashboard API page
 ```
 
 ## Build
@@ -38,7 +41,7 @@ the compile-time `__APP_URL__` constant. The bundle prefers the
 |---|---|
 | `__APP_URL__` | `NEXT_PUBLIC_APP_URL` env var |
 
-**Never** read `process.env` in `sdk/src`.
+**Never** read `process.env` in `packages/sdk/src`.
 
 ## Rendering model
 

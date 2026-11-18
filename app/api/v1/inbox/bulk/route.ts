@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { ok } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { bulkUpdateSubmissionsForUser } from "@sendcms/inbox"
 import { BulkUpdateSubmissionsSchema } from "@sendcms/inbox/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
 export async function POST(req: NextRequest) {
   try {

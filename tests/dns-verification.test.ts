@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/api-client"
 import {
   extractMetaTagToken,
   joinTxtSegments,

@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { ok, noContent } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import {
   deleteDomainForUser,
   getDomainForUser,
   setDomainStatusForUser,
 } from "@sendcms/domains"
 import { DomainActionSchema } from "@sendcms/domains/validators"
+import { ApiError, handleApiError, noContent, ok } from "@sendcms/api-client"
 
 type Params = { params: Promise<{ domainId: string }> }
 

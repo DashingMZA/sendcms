@@ -5,8 +5,7 @@
 ```ts
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { ok, created, noContent } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
+import { ApiError, created, handleApiError, noContent, ok } from "@sendcms/api-client"
 import { someService } from "@sendcms/<module>"
 import { SomeSchema } from "@sendcms/<module>/validators"
 
@@ -41,8 +40,21 @@ export async function GET(
 ## Public API Route Pattern
 
 ```ts
-import { getEffectiveOrigin } from "@/lib/cors"
+import { getEffectiveOrigin } from "@sendcms/api-client"
 import { submitForm } from "@sendcms/submissions"
+
+// Route-local CORS headers for the public submit API (POST/OPTIONS).
+// The admin routes use corsHeaders() from @sendcms/api-client; the
+// public route defines its own because its method/header set differs.
+function publicCorsHeaders(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  }
+}
 
 export async function OPTIONS(req: NextRequest) {
   return new Response(null, {

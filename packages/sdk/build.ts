@@ -37,8 +37,8 @@ function loadEnvFile(path: string) {
 }
 
 // Load .env then .env.local (local overrides)
-const envPath = resolve(import.meta.dirname, "../.env")
-const envLocalPath = resolve(import.meta.dirname, "../.env.local")
+const envPath = resolve(import.meta.dirname, "../../.env")
+const envLocalPath = resolve(import.meta.dirname, "../../.env.local")
 loadEnvFile(envPath)
 loadEnvFile(envLocalPath)
 
@@ -59,12 +59,12 @@ const commonOptions = {
 await build({
   ...commonOptions,
   minify: true,
-  outfile: resolve(import.meta.dirname, "../public/forms/v1.js"),
+  outfile: resolve(import.meta.dirname, "../../public/forms/v1.js"),
 })
 
 // Debug / non-minified build
 await build({
   ...commonOptions,
   minify: false,
-  outfile: resolve(import.meta.dirname, "../public/forms/v1.debug.js"),
+  outfile: resolve(import.meta.dirname, "../../public/forms/v1.debug.js"),
 })

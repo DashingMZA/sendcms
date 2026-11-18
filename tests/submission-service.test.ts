@@ -28,8 +28,7 @@ import { enqueueSubmissionNotifications } from "@sendcms/notifications"
 import { submitForm } from "@sendcms/submissions"
 import type { SubmitResult } from "@sendcms/submissions"
 import { verifyTurnstileToken } from "@sendcms/submissions/turnstile"
-
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/api-client"
 
 /** Narrows a non-honeypot result so `result.submission` typechecks. */
 function submissionId(result: SubmitResult): string {

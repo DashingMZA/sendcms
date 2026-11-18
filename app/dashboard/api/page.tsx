@@ -11,7 +11,7 @@ import {
   buildFormExample,
   buildRestExample,
   buildSdkScriptTag,
-} from "@/lib/sdk-snippet"
+} from "@sendcms/sdk/snippet"
 
 export default async function ApiPage() {
   const session = await auth()

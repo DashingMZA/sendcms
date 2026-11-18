@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server"
-import { ok } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { processEmailOutbox } from "@sendcms/notifications"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 import { notificationDeps } from "@/lib/email/notification-deps"
 
 // Email outbox worker (Phase 8). Hit on a schedule by the platform

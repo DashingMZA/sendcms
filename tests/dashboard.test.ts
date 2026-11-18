@@ -5,7 +5,7 @@ import {
   buildFormExample,
   buildRestExample,
   buildSdkScriptTag,
-} from "@/lib/sdk-snippet"
+} from "@sendcms/sdk/snippet"
 
 const NOW = new Date("2026-11-17T12:00:00.000Z")
 

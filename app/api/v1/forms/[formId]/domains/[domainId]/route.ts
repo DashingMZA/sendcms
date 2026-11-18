@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
-import { noContent } from "@/lib/api/response"
-import { ApiError, handleApiError } from "@/lib/api/error"
 import { unlinkDomainFromForm } from "@sendcms/forms"
+import { ApiError, handleApiError, noContent } from "@sendcms/api-client"
 
 type Params = { params: Promise<{ formId: string; domainId: string }> }
 

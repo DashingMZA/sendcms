@@ -19,7 +19,7 @@ app/api/**          →  route handler (thin: parse, auth, call service, respond
 packages/modules/<name>/src/service.ts →  business logic (NO Next.js imports)
 @sendcms/database   →  Prisma singleton `db` (only services import this)
 packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + services)
-lib/api/            →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported)
+@sendcms/api-client →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported) + cors.ts (getEffectiveOrigin, normalizeOrigin, corsHeaders)
 ```
 
 Route handlers must NOT import `@sendcms/database` directly. Services must NOT import from `next/*`.
@@ -164,16 +164,16 @@ Routes that mutate data call `revalidatePath("/dashboard", "layout")` after writ
 
 ## Permissions (RBAC)
 
-Single source of truth in `lib/permissions/`:
+Single source of truth in `packages/permissions/`:
 
 | File                          | Purpose                                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------------- |
-| `lib/permissions/platform.ts` | `PlatformRole`, `PlatformCapability`, `platformCan()`, `PLATFORM_ROUTE_CAPABILITY` |
-| `lib/permissions/index.ts`    | Barrel re-export                                                                   |
+| `packages/permissions/src/platform.ts` | `PlatformRole`, `PlatformCapability`, `platformCan()`, `PLATFORM_ROUTE_CAPABILITY` |
+| `packages/permissions/src/index.ts`    | Barrel re-export                                                                   |
 
 **Platform capabilities:** `VIEW_NOTICE_BOARD`, `VIEW_ADMINISTRATION`, `MANAGE_PLATFORM_SETTINGS` (only `PLATFORM_OWNER` has any)
 
-**Import from:** `@/lib/permissions` (barrel), never deep paths.
+**Import from:** `@sendcms/permissions` (barrel), never deep paths.
 
 ## Key Conventions
 

@@ -79,8 +79,8 @@ PostgreSQL (Prisma adapter-pg)
 - Route handlers never import `@sendcms/database` — they call services.
 - Zod schemas: `packages/modules/<name>/src/validators.ts`, shared by routes + services.
 - Client hooks: `packages/modules/<name>/src/queries.ts` (React Query); `apiFetch` lives in `@sendcms/shared`.
-- `ApiError` lives in `@sendcms/shared` (re-exported from `lib/api/error.ts`); `pingDatabase` lives in `@sendcms/database`.
-- Response/error helpers: `lib/api/`.
+- `ApiError` lives in `@sendcms/shared` (re-exported from `@sendcms/api-client`); `pingDatabase` lives in `@sendcms/database`.
+- Response/error helpers: `@sendcms/api-client` (response.ts, error.ts, cors.ts).
 
 ### Data model (`database-schema.md`)
 
@@ -109,7 +109,7 @@ User ──< Domain ──< DomainVerification
 - `packages/database/prisma.config.ts` — Prisma schema/migrations config.
 - `config/config.json` — feature flags + app config. All new config goes here, not `.env` or hardcoded.
 
-### Form SDK specifics (`sdk/`)
+### Form SDK specifics (`packages/sdk/`)
 
 - Dependency-free vanilla TS, built by esbuild to `public/forms/v1.js`
   (~7 KB minified). Config resolves form data attrs > `init()` options >
