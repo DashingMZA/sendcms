@@ -9,6 +9,7 @@ import {
   RiGlobalLine,
   RiLinksLine,
   RiFileListLine,
+  RiInboxLine,
   RiSettingsLine,
   RiLogoutBoxLine,
   RiExpandUpDownLine,
@@ -64,6 +65,7 @@ type Props = {
   siteCount: number
   domainCount: number
   formCount: number
+  inboxCount: number
   platformRole: PlatformRole
 }
 
@@ -72,6 +74,7 @@ export function AppSidebar({
   siteCount,
   domainCount,
   formCount,
+  inboxCount,
   platformRole,
 }: Props) {
   const router = useRouter()
@@ -97,6 +100,12 @@ export function AppSidebar({
           href: "/dashboard/forms",
           icon: RiFileListLine,
           badge: formCount,
+        },
+        {
+          label: "Inbox",
+          href: "/dashboard/inbox",
+          icon: RiInboxLine,
+          badge: inboxCount,
         },
       ],
     },
