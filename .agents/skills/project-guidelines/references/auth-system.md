@@ -51,6 +51,5 @@ takes no credentials — the `Origin` allowlist is its authorization.
 
 - Admin routes gated by `proxy.ts`, not inline checks
 - Public submit route: no cookies, no session — Origin allowlist only;
-  it exports `OPTIONS` for CORS preflight and echoes CORS headers only
-  for allowed origins
-- Widget uses `corsHeaders(origin)` on all responses
+  it exports `OPTIONS` for CORS preflight and echoes `corsHeaders(origin)`
+  on all responses for allowed origins

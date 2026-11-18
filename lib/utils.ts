@@ -29,7 +29,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-const FALLBACK_APP_URL = "https://openremark.bond"
+// Production URL fallback for canonical SEO metadata (sitemap, robots,
+// JSON-LD). This is the live Cloudflare deployment URL (wrangler vars set
+// the same value); when the final production domain is decided, change it
+// here and in wrangler.jsonc together.
+const FALLBACK_APP_URL = "https://jadoo.bond"
 
 // Absolute, trailing-slash-free base URL for canonical SEO metadata
 // (sitemap, robots, JSON-LD). Falls back to the production URL when

@@ -32,12 +32,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}
     >
-      <script
-        async
-        crossOrigin="anonymous"
-        src="https://tweakcn.com/live-preview.min.js"
-      />
-
       {/* Meta Informations */}
       {/* Favicon */}
       <link rel="icon" type="image/png" href={config.site.favicon} />
