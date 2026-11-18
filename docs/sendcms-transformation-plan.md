@@ -417,11 +417,22 @@ from `docs/embed-html.md` (SDK form + no-JS form) serves 200, SDK-shape
 JSON submit → 201, no-JS form POST → 303 with `?cms_submitted=1`,
 2 submissions in DB + inbox, landing page 200 with no comment copy /
 no Paddle / no demo.html, API & SDK page shows the userId; 4 owner
-accounts intact. Still NOT fixed in Phase 10 (deploy config, not docs):
-`vercel.json` still redirects openremark.vercel.app → openremark.bond,
-`wrangler.jsonc` worker name still `open-remark`, `prisma/seed.ts`
-still seeds legacy comment demo data — all flagged for the production
-domain decision (§6).
+accounts intact. Follow-up DONE 2026-11-18 (owner: "vercel ko update kr
+do, wrangler worker ko b, seed sirf SendCMS"): `vercel.json` DELETED (it
+only held the stale openremark.vercel.app → openremark.bond redirect;
+no production domain exists to redirect to yet); `wrangler.jsonc`
+worker name + self-reference service → `sendcms`, secrets comment
+updated to Better Auth names; `prisma/seed.ts` rewritten SendCMS-only
+(demo user verified, VERIFIED domain + DNS_TXT record, form
+demo-form-001 with default fields, link, notification, 3 sample
+submissions incl. 1 SPAM — no Site/Page/Comment/Commenter rows at all).
+Seed verified live on the dev DB (run twice: idempotent, still 3
+submissions; demo data cleaned up after, 4 owner accounts intact).
+Remaining: R2 bucket still `open-remark-opennext-cache` (a real
+Cloudflare resource — rename needs a new bucket in the dashboard);
+`lib/utils.ts` FALLBACK_APP_URL still openremark.bond (production
+domain §6 undecided); `NEXT_PUBLIC_APP_URL` in wrangler vars stays
+https://jadoo.bond per the owner's 2026-11-13 decision.
 
 **Phase 11 — Testing + deployment verification.** Automated tests for new
 functionality (validators, services, SDK, API happy/edge paths); full
