@@ -299,11 +299,28 @@ bundle) — fixed by a `pnpm sdk:build` step in ci.yml, uploaded by the
 owner via web UI (commit **02a4690**, byte-identical); **CI run
 44202653039 = SUCCESS.**
 
-**Phase 7 — Inbox dashboard.** All/unread/read/starred/archived/spam,
-search, filter by domain/form/date, detail view (sender, page URL,
-timestamps), mark read/unread, archive/delete, bulk ops. Strict user-level
-isolation (every query scoped by owner). Reuse table/search/filter patterns.
-Gate: seeded submissions exercised through the UI journey.
+**Phase 7 status (DONE + PUSHED + CI GREEN 2026-11-17):** commit
+`feat(inbox): add inbox dashboard with tabs, search, filters and
+bulk actions` (API **3571cfa**); **CI run 44208441902 = SUCCESS.**
+Inbox service in `submission-service.ts` (owner-scoped through
+`form.ownerId` on every query): list with tabs (All = NEW+READ+
+STARRED; Unread/Read/Starred/Archived/Spam), search (`data::text`
+ILIKE + origin/pageUrl), form/domain/date filters, 20/page,
+per-status counts; detail with event timeline; status actions
+(read/unread/star/unstar/archive/restore/spam/not-spam) with a
+SubmissionEvent in the same transaction; bulk update; hard delete;
+unread count for the sidebar badge. Routes
+`GET /api/v1/inbox`, `POST /api/v1/inbox/bulk`,
+`GET/PATCH/DELETE /api/v1/inbox/[id]`; pages
+`/dashboard/inbox` + `/dashboard/inbox/[id]` (opening a NEW
+submission marks it read). Tests 120/120 (16 new). Live journey
+43/43 checks on the dev DB: 6 seeded submissions (1 auto-SPAM),
+all filters/tabs/actions/bulk/delete, cross-user isolation
+(404 for another user, 401 without a cookie), pages 200.
+Journey users cleaned up; 4 owner accounts intact. Note: node
+`fetch` sends no Origin header — Better Auth 1.7.x rejects such
+calls with `MISSING_OR_NULL_ORIGIN`; the journey script sends
+`Origin: http://localhost:3000` explicitly.
 
 **Phase 8 — Email notifications.** Platform transactional email (Resend
 recommended — no user SMTP for basic notifications), form-specific +
