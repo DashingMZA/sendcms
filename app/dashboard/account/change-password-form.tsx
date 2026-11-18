@@ -3,9 +3,7 @@
 import { useState } from "react"
 import { authClient } from "@/lib/auth-client"
 import { ChangePasswordSchema } from "@/lib/validators/auth"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Button, Input, Label } from "@sendcms/ui"
 
 export function ChangePasswordForm() {
   const [currentPassword, setCurrentPassword] = useState("")

@@ -3,19 +3,20 @@ import type { LucideIcon } from "lucide-react"
 import Link from "next/link"
 import config from "@/config/config.json"
 import pkg from "@/package.json"
-import { cn } from "@/lib/utils"
+import { cn } from "@sendcms/shared"
 import { getListPage } from "@/lib/content"
 import { markdownify } from "@/lib/text-converter"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
+  Badge,
+  Button,
   Card,
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
-} from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+  Separator,
+} from "@sendcms/ui"
+
 import {
   MessageSquare,
   Globe,

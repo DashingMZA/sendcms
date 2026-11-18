@@ -2,7 +2,8 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { listFormsForUser } from "@/lib/services/form-service"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
+
 import { RiAddLine } from "@remixicon/react"
 import { FormsTable } from "./forms-table"
 

@@ -7,7 +7,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@/components/ui/chart"
+} from "@sendcms/ui"
+
 import type { DayCount } from "@/lib/services/dashboard-service"
 
 const chartConfig: ChartConfig = {

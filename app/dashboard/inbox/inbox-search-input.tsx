@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useRef } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { Input } from "@/components/ui/input"
+import { Input } from "@sendcms/ui"
+
 import { Search, X } from "lucide-react"
 
 const DEBOUNCE_MS = 300

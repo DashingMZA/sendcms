@@ -1,7 +1,8 @@
 "use client"
 
 import { authClient } from "@/lib/auth-client"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
+
 import type { OAuthProviderId } from "@/lib/auth-providers"
 
 const PROVIDER_LABEL: Record<OAuthProviderId, string> = {

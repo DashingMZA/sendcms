@@ -3,9 +3,7 @@
 import { useState } from "react"
 import { authClient } from "@/lib/auth-client"
 import { ChangeEmailSchema } from "@/lib/validators/auth"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Button, Input, Label } from "@sendcms/ui"
 
 export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   const [email, setEmail] = useState("")

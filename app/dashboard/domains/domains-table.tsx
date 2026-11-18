@@ -4,15 +4,16 @@ import Link from "next/link"
 import { useDomains } from "@/lib/queries/domains"
 import type { DomainWithVerification } from "@/lib/queries/domains"
 import { DomainStatusBadge } from "./domain-status-badge"
-import { Button } from "@/components/ui/button"
 import {
+  Button,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@sendcms/ui"
+
 import { RiAddLine, RiGlobalLine } from "@remixicon/react"
 
 const METHOD_LABEL: Record<string, string> = {

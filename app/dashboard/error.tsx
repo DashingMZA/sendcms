@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect } from "react"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
+
 import { AlertTriangle } from "lucide-react"
 
 export default function DashboardError({

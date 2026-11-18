@@ -3,16 +3,19 @@ import { getUserAuthMethods } from "@/lib/services/user-service"
 import { getConfiguredOAuthProviders } from "@/lib/auth-providers"
 
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Badge,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+  Separator,
+} from "@sendcms/ui"
+
 import { SignOutButton } from "./sign-out-button"
 import { ResendVerificationButton } from "./resend-verification-button"
 import { UpdateNameForm } from "./update-name-form"

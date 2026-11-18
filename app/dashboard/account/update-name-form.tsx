@@ -4,9 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
 import { UpdateProfileSchema } from "@/lib/validators/auth"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Button, Input, Label } from "@sendcms/ui"
 
 export function UpdateNameForm({
   currentName,

@@ -8,23 +8,21 @@ import {
   type EmailJobListResult,
 } from "@/lib/queries/email-jobs"
 import {
+  Badge,
+  Button,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+} from "@sendcms/ui"
 
 const TABS: { key: "all" | "PENDING" | "SENT" | "FAILED"; label: string }[] = [
   { key: "all", label: "All" },

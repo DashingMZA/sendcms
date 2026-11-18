@@ -4,7 +4,7 @@
 
 **Config:** `components.json` — style: radix-luma, baseColor: mauve, cssVariables: true, iconLibrary: remixicon
 
-**Add new component:** `npx shadcn@latest add <component>`
+**Add new component:** `npx shadcn@latest add <component>` — lands in `packages/ui/src/components/` (see `components.json` aliases); import it from `@sendcms/ui` like the rest.
 
 ## Design Tokens
 
@@ -32,54 +32,54 @@
 
 ## shadcn/ui Primitives
 
-| Component    | Import                        | Used By                                     |
-| ------------ | ----------------------------- | ------------------------------------------- |
-| Button       | `components/ui/button`        | Everywhere                                  |
-| ButtonGroup  | `components/ui/button-group`  | —                                           |
-| Card         | `components/ui/card`          | Settings sections, stat cards               |
-| Dialog       | `components/ui/dialog`        | Delete confirm, edit, profile, transfer     |
-| Sheet        | `components/ui/sheet`         | Mobile sidebar                              |
-| Table        | `components/ui/table`         | Inbox, forms tables                         |
-| Tabs         | `components/ui/tabs`          | Inbox tabs, notifications tabs              |
-| Select       | `components/ui/select`        | Filters, theme picker                       |
-| Badge        | `components/ui/badge`         | Role badges, status badges, nav counts      |
-| Skeleton     | `components/ui/skeleton`      | All `loading.tsx` files                     |
-| Avatar       | `components/ui/avatar`        | User display                                |
-| Input        | `components/ui/input`         | Forms, search                               |
-| Textarea     | `components/ui/textarea`      | Form fields, messages                       |
-| Checkbox     | `components/ui/checkbox`      | Bulk select                                 |
-| Switch       | `components/ui/switch`        | Toggle settings                             |
-| Tooltip      | `components/ui/tooltip`       | Icon hints                                  |
-| Separator    | `components/ui/separator`     | Visual dividers                             |
-| Label        | `components/ui/label`         | Form labels                                 |
-| ScrollArea   | `components/ui/scroll-area`   | Sidebar, filter panel                       |
-| Sonner       | `components/ui/sonner`        | Toast notifications (via `toast.success()`) |
-| Chart        | `components/ui/chart`         | Recharts wrapper                            |
-| DropdownMenu | `components/ui/dropdown-menu` | Row actions, user menu                      |
+| Component    | Import        | Used By                                     |
+| ------------ | ------------- | ------------------------------------------- |
+| Button       | `@sendcms/ui` | Everywhere                                  |
+| ButtonGroup  | `@sendcms/ui` | —                                           |
+| Card         | `@sendcms/ui` | Settings sections, stat cards               |
+| Dialog       | `@sendcms/ui` | Delete confirm, edit, profile, transfer     |
+| Sheet        | `@sendcms/ui` | Mobile sidebar                              |
+| Table        | `@sendcms/ui` | Inbox, forms tables                         |
+| Tabs         | `@sendcms/ui` | Inbox tabs, notifications tabs              |
+| Select       | `@sendcms/ui` | Filters, theme picker                       |
+| Badge        | `@sendcms/ui` | Role badges, status badges, nav counts      |
+| Skeleton     | `@sendcms/ui` | All `loading.tsx` files                     |
+| Avatar       | `@sendcms/ui` | User display                                |
+| Input        | `@sendcms/ui` | Forms, search                               |
+| Textarea     | `@sendcms/ui` | Form fields, messages                       |
+| Checkbox     | `@sendcms/ui` | Bulk select                                 |
+| Switch       | `@sendcms/ui` | Toggle settings                             |
+| Tooltip      | `@sendcms/ui` | Icon hints                                  |
+| Separator    | `@sendcms/ui` | Visual dividers                             |
+| Label        | `@sendcms/ui` | Form labels                                 |
+| ScrollArea   | `@sendcms/ui` | Sidebar, filter panel                       |
+| Sonner       | `@sendcms/ui` | Toast notifications (via `toast.success()`) |
+| Chart        | `@sendcms/ui` | Recharts wrapper                            |
+| DropdownMenu | `@sendcms/ui` | Row actions, user menu                      |
 
 ## Dashboard Components
 
-| Component                   | Path                                                       | Type   | Use                                              |
-| --------------------------- | ---------------------------------------------------------- | ------ | ------------------------------------------------ |
-| `AppSidebar`                | `dashboard/app-sidebar`                                    | Client | Main nav sidebar                                 |
-| `PageHeader`                | `dashboard/page-header`                                    | Server | Page title + description + action slot           |
-| `InboxTable`                | `dashboard/inbox/inbox-table`                              | Client | Submission list + tabs, search, filters, bulk actions |
-| `SubmissionDetail`          | `dashboard/inbox/submission-detail`                        | Client | Sender, field values, history timeline, actions    |
-| `SubmissionStatusBadge`     | `dashboard/inbox/submission-status-badge`                  | Server | Status chip: NEW/READ/STARRED/ARCHIVED/SPAM        |
-| `InboxSearchInput`          | `dashboard/inbox/inbox-search-input`                       | Client | Debounced search → URL `?search=`                  |
-| `SubmissionActivityChart`   | `dashboard/submission-activity-chart`                      | Client | 14/30-day area chart: `{ data: {date, count}[] }`  |
-| `DomainsTable`              | `dashboard/domains/domains-table`                          | Client | Domain list + status badges                        |
-| `DomainDetail`              | `dashboard/domains/[domainId]/domain-detail`               | Client | Verification instructions + copy fields            |
-| `DomainStatusBadge`         | `dashboard/domains/domain-status-badge`                    | Server | Status chip: PENDING/VERIFIED/SUSPENDED            |
-| `CopyField`                 | `dashboard/domains/copy-field`                             | Client | Label + mono value + copy button                   |
-| `FormsTable`                | `dashboard/forms/forms-table`                              | Client | Form list + counts                                 |
-| `FormDetail`                | `dashboard/forms/[formId]/form-detail`                     | Client | Settings, fields, domains, notifications, embed    |
-| `FieldsSection`             | `dashboard/forms/[formId]/fields-section`                  | Client | Add/edit field form                                |
-| `EmailJobsTable`            | `dashboard/notifications/email-jobs-table`                 | Client | Delivery log + status tabs                         |
-| `InstallSnippet`            | `dashboard/install-snippet`                                | Client | Code display + clipboard copy                      |
-| `InstallSnippetSection`     | `dashboard/site-settings-form/install-snippet-section`     | Server | Embed code card                                  |
-| `ThemeToggle`               | `components/theme-toggle`                                  | Client | Dark/light mode                                  |
-| `Logo`                      | `components/logo`                                          | Server | Brand logo from config                           |
+| Component                 | Path                                                   | Type   | Use                                                   |
+| ------------------------- | ------------------------------------------------------ | ------ | ----------------------------------------------------- |
+| `AppSidebar`              | `dashboard/app-sidebar`                                | Client | Main nav sidebar                                      |
+| `PageHeader`              | `dashboard/page-header`                                | Server | Page title + description + action slot                |
+| `InboxTable`              | `dashboard/inbox/inbox-table`                          | Client | Submission list + tabs, search, filters, bulk actions |
+| `SubmissionDetail`        | `dashboard/inbox/submission-detail`                    | Client | Sender, field values, history timeline, actions       |
+| `SubmissionStatusBadge`   | `dashboard/inbox/submission-status-badge`              | Server | Status chip: NEW/READ/STARRED/ARCHIVED/SPAM           |
+| `InboxSearchInput`        | `dashboard/inbox/inbox-search-input`                   | Client | Debounced search → URL `?search=`                     |
+| `SubmissionActivityChart` | `dashboard/submission-activity-chart`                  | Client | 14/30-day area chart: `{ data: {date, count}[] }`     |
+| `DomainsTable`            | `dashboard/domains/domains-table`                      | Client | Domain list + status badges                           |
+| `DomainDetail`            | `dashboard/domains/[domainId]/domain-detail`           | Client | Verification instructions + copy fields               |
+| `DomainStatusBadge`       | `dashboard/domains/domain-status-badge`                | Server | Status chip: PENDING/VERIFIED/SUSPENDED               |
+| `CopyField`               | `dashboard/domains/copy-field`                         | Client | Label + mono value + copy button                      |
+| `FormsTable`              | `dashboard/forms/forms-table`                          | Client | Form list + counts                                    |
+| `FormDetail`              | `dashboard/forms/[formId]/form-detail`                 | Client | Settings, fields, domains, notifications, embed       |
+| `FieldsSection`           | `dashboard/forms/[formId]/fields-section`              | Client | Add/edit field form                                   |
+| `EmailJobsTable`          | `dashboard/notifications/email-jobs-table`             | Client | Delivery log + status tabs                            |
+| `InstallSnippet`          | `dashboard/install-snippet`                            | Client | Code display + clipboard copy                         |
+| `InstallSnippetSection`   | `dashboard/site-settings-form/install-snippet-section` | Server | Embed code card                                       |
+| `ThemeToggle`             | `components/theme-toggle`                              | Client | Dark/light mode                                       |
+| `Logo`                    | `components/logo`                                      | Server | Brand logo from config                                |
 
 ## Loading / Error / Empty States
 

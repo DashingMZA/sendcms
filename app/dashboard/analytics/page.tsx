@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
 import { SubmissionStatusBadge } from "../inbox/submission-status-badge"
-import { Separator } from "@/components/ui/separator"
+import { Separator } from "@sendcms/ui"
+
 import {
   RiInboxLine,
   RiFileListLine,

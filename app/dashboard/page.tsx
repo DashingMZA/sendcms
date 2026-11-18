@@ -6,10 +6,8 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
 import { SubmissionStatusBadge } from "./inbox/submission-status-badge"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
+import { Avatar, AvatarFallback, Badge, Button, Separator } from "@sendcms/ui"
+
 import { formatDistanceToNow } from "date-fns"
 import {
   RiInboxLine,

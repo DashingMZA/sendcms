@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
+
 import { Copy, Check } from "lucide-react"
 
 // One labelled value with its own copy button — DNS records have two

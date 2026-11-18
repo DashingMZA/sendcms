@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { authClient } from "@/lib/auth-client"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
 
 /** Sign-out button (Better Auth: client-side signOut, then /sign-in). */
 export function SignOutButton() {

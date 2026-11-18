@@ -1,5 +1,5 @@
 import Image from "next/image"
-import { cn } from "@/lib/utils"
+import { cn } from "@sendcms/shared"
 import config from "@/config/config.json"
 
 const { logo, logo_darkmode, logo_width, logo_height, logo_text } = config.site

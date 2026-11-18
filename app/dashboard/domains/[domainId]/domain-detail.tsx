@@ -13,21 +13,20 @@ import { ApiClientError } from "@/lib/api-client"
 import { DomainStatusBadge } from "../domain-status-badge"
 import { CopyField } from "../copy-field"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
-import { Button } from "@/components/ui/button"
 import {
+  Button,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@sendcms/ui"
+
 import { Download } from "lucide-react"
 import type { DomainVerificationMethod } from "@/generated/prisma/client"
 

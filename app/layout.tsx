@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/sonner"
+import { Toaster } from "@sendcms/ui"
 
 export const metadata: Metadata = {
   title: "SendCMS - A Contact-Form Backend for Static and Modern Websites",

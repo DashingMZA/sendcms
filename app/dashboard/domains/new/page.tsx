@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
+
 import { AddDomainForm } from "./add-domain-form"
 
 export default async function NewDomainPage() {

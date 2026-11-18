@@ -1,10 +1,9 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import { defineConfig, globalIgnores } from "eslint/config"
+import baseConfig from "@sendcms/config/eslint/base.mjs"
 
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
+  // Shared SendCMS base (Next.js presets from @sendcms/config).
+  ...baseConfig,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -22,6 +21,6 @@ const eslintConfig = defineConfig([
     // traverse into them and pick up their node_modules.
     ".claude/worktrees/**",
   ]),
-]);
+])
 
-export default eslintConfig;
+export default eslintConfig

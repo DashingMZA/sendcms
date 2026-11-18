@@ -14,10 +14,10 @@
   "rtl": false,
   "aliases": {
     "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
+    "utils": "@sendcms/shared",
+    "ui": "packages/ui/src/components",
     "lib": "@/lib",
-    "hooks": "@/hooks"
+    "hooks": "packages/ui/src/hooks"
   },
   "menuColor": "inverted",
   "menuAccent": "subtle",

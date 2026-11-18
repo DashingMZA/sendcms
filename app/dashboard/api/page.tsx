@@ -4,7 +4,8 @@ import { listFormsForUser } from "@/lib/services/form-service"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
 import { CopyField } from "../domains/copy-field"
-import { Separator } from "@/components/ui/separator"
+import { Separator } from "@sendcms/ui"
+
 import {
   buildFormExample,
   buildRestExample,

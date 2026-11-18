@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
+
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { QueryProvider } from "@/components/dashboard/query-provider"
 import { getDomainCountForUser } from "@/lib/services/domain-service"

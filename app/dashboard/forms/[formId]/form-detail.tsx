@@ -17,19 +17,20 @@ import { useDomains } from "@/lib/queries/domains"
 import { useSendTestEmail } from "@/lib/queries/email-jobs"
 import type { FormDetail } from "@/lib/queries/forms"
 import { ApiClientError } from "@/lib/api-client"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import {
+  Badge,
+  Button,
+  Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+  Switch,
+  Textarea,
+} from "@sendcms/ui"
+
 import { CopyField } from "../../domains/copy-field"
 import { DomainStatusBadge } from "../../domains/domain-status-badge"
 import { FieldsSection } from "./fields-section"

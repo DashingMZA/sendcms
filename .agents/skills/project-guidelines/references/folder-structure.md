@@ -38,7 +38,11 @@ sendcms/
 │   ├── product-schema.tsx         # JSON-LD product schema
 │   ├── theme-provider.tsx
 │   ├── theme-toggle.tsx
-│   └── ui/                        # shadcn/ui primitives
+│   └── (no ui/ — primitives live in packages/ui, imported as @sendcms/ui)
+├── packages/
+│   ├── config/                    # Shared tsconfig base + ESLint base (@sendcms/config)
+│   ├── shared/                    # Framework-free helpers: cn() (@sendcms/shared)
+│   └── ui/                        # shadcn/ui primitives + use-mobile (@sendcms/ui)
 ├── lib/
 │   ├── db.ts                      # Prisma singleton
 │   ├── auth.ts                    # Better Auth config (with Prisma) + auth() helper
@@ -69,9 +73,7 @@ sendcms/
 │   ├── submission-display.ts      # sender/preview helpers (client-safe)
 │   ├── content.ts                 # Markdown content loader (homepage, terms, changelog)
 │   ├── text-converter.ts          # Markdown → HTML
-│   └── utils.ts                   # cn() + getBaseUrl()
-├── hooks/
-│   └── use-mobile.ts
+│   └── utils.ts                   # getBaseUrl() (cn() moved to packages/shared)
 ├── generated/prisma/              # Prisma client output (do not edit)
 ├── prisma/                        # Schema + migrations + seed
 ├── sdk/                           # Form SDK (vanilla TS) → public/forms/v1.js
@@ -84,9 +86,12 @@ sendcms/
 
 ## Key Path Aliases
 
-| Alias | Points to |
-|---|---|
-| `@/` | Project root |
-| `@/lib/*` | Shared utilities |
-| `@/components/*` | UI components |
-| `@/generated/prisma` | Prisma client |
+| Alias                | Points to                                               |
+| -------------------- | ------------------------------------------------------- |
+| `@/`                 | Project root                                            |
+| `@/lib/*`            | Shared utilities                                        |
+| `@/components/*`     | UI components                                           |
+| `@/generated/prisma` | Prisma client                                           |
+| `@sendcms/ui`        | shadcn/ui primitives + `useIsMobile` (`packages/ui`)    |
+| `@sendcms/shared`    | Framework-free helpers, e.g. `cn()` (`packages/shared`) |
+| `@sendcms/config`    | Shared tsconfig + ESLint base (`packages/config`)       |

@@ -3,16 +3,17 @@
 import Link from "next/link"
 import { useForms } from "@/lib/queries/forms"
 import type { FormWithCounts } from "@/lib/queries/forms"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
+  Badge,
+  Button,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@sendcms/ui"
+
 import { RiAddLine, RiInboxLine } from "@remixicon/react"
 
 function formatDate(value: string | Date | null) {

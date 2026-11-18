@@ -13,16 +13,17 @@ import {
 } from "@/lib/queries/inbox"
 import { getSubmissionSender } from "@/lib/submission-display"
 import { SubmissionStatusBadge } from "./submission-status-badge"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
+  Badge,
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@sendcms/ui"
+
 import { ArrowLeft, ExternalLink, Star, Trash2 } from "lucide-react"
 
 const EVENT_LABELS: Record<string, string> = {

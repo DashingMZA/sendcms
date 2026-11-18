@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { authClient } from "@/lib/auth-client"
-import { Button } from "@/components/ui/button"
+import { Button } from "@sendcms/ui"
 
 export function ResendVerificationButton({ email }: { email: string }) {
   const [sent, setSent] = useState(false)
