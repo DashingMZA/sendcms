@@ -442,6 +442,20 @@ build chain: `prisma generate && sdk build && build:cf`; security headers;
 resolve `jadoo.bond` vs `openremark.bond`); final factual report
 (implemented / removed / tests / limitations / deployment requirements).
 
+**Phase 11 status — DONE (2026-11-18).** 67 new tests (suite 139 → 206/206):
+`submission-service` (18), `submit-route` (13), `domain-service` (16),
+`form-service` (10), `email-outbox-process` (10). Full 16-step journey
+43/43 live (`~/workspace/scripts/phase11-journey.mjs`). Cloudflare:
+`build:cf` now runs `prisma generate && widget:build && sdk:build &&
+opennextjs-cloudflare build` (package.json scripts + `wrangler.jsonc`
+`build.command`); `public/_headers` adds nosniff/referrer/frame/
+permissions policies (no CSP on purpose — Next inlines scripts/styles,
+a CSP would need `unsafe-inline`); worker + SDK bundle + headers verified
+in `.open-next`. Bugs fixed: test-file type errors that broke `build:cf`;
+eslint OOM on `.open-next` (now in `globalIgnores`). Final report:
+`docs/sendcms-final-report.md`. Production domain still undecided (§6);
+no live deploy was done in this phase.
+
 ## 6. Decisions needed from the user (before / during implementation)
 
 1. **Approve this plan** (or say what to change). Implementation starts only after approval.
