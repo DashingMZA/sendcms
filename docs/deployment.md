@@ -33,8 +33,10 @@ this document assumes a particular host.
 | `WIDGET_JWT_SECRET` | yes | Secret for the legacy comment widget's JWTs. Required at build/start even though the widget UI is removed — the widget API routes still exist. |
 
 Copy `.env.example` to `.env` for local development. Never commit
-`.env` (it is gitignored). The seed script (`pnpm db:seed`) still seeds
-legacy comment-system demo data — do not run it for a SendCMS instance.
+`.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
+SendCMS demo data — a verified demo user, domain, form, and sample
+submissions. It is idempotent and safe to re-run; demo data only, never
+run it against a production database.
 
 ## Database
 
@@ -95,9 +97,10 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
 - Set every variable above in the project settings before the first
   deploy. `NEXT_PUBLIC_APP_URL` must be the production URL or SDK
   snippets and email links will point at the wrong host.
-- The `vercel.json` in the repo still redirects the old
-  `openremark.vercel.app` host to `openremark.bond` — update or remove
-  it when the production domain is decided.
+- The `vercel.json` redirect to the old `openremark.bond` host was
+  removed — there is no production domain to redirect to yet. When the
+  production domain is decided, add the redirect (or a `vercel.json`
+  cron entry — see above) then.
 
 ## Cloudflare notes
 
@@ -108,8 +111,13 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
   values (`NEXT_PUBLIC_APP_URL`, Google client id) must come from the
   dashboard build environment, or the built output bakes in localhost
   and empty ids.
-- The wrangler worker name is still `open-remark` — rename it when the
-  production domain is decided.
+- The wrangler worker name is `sendcms` (with the self-reference
+  service binding matching). The R2 cache bucket is still
+  `open-remark-opennext-cache` — it is a real Cloudflare resource, so
+  renaming it needs a new bucket created in the dashboard first; the
+  cache can be recreated empty. The next `wrangler deploy` creates a
+  new `sendcms` worker; delete the old `open-remark` worker in the
+  dashboard once the new one is live.
 - The app needs the Node.js runtime for the dashboard proxy (the session
   lookup hits Prisma), so it is not edge-safe; keep the OpenNext
   Node.js compat flag on.

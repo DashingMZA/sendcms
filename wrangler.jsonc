@@ -1,11 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "open-remark",
+  "name": "sendcms",
   "compatibility_date": "2026-11-13",
   "compatibility_flags": ["nodejs_compat"],
   // OpenNext Cloudflare adapter output (built by `npx @opennextjs/cloudflare build`).
   // The app is a dynamic Next.js App Router app (SSR + API routes + Prisma +
-  // Auth.js), so it cannot run as plain static assets — the Worker entry below
+  // Better Auth), so it cannot run as plain static assets — the Worker entry below
   // serves it, and `.open-next/assets` holds only the static files.
   "main": ".open-next/worker.js",
   "assets": {
@@ -30,7 +30,7 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "open-remark"
+      "service": "sendcms"
     }
   ],
   "observability": {
@@ -43,6 +43,7 @@
     "NEXT_PUBLIC_APP_URL": "https://jadoo.bond"
   }
   // Secrets are NOT stored here. Set them in the Cloudflare dashboard
-  // (or `wrangler secret put`): DATABASE_URL, AUTH_SECRET,
-  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, WIDGET_JWT_SECRET.
+  // (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET,
+  // BETTER_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+  // WIDGET_JWT_SECRET, RESEND_API_KEY, CRON_SECRET.
 }

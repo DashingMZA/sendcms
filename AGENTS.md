@@ -39,7 +39,7 @@ pnpm format:check     # prettier --check
 # Database (PostgreSQL, Prisma)
 pnpm db:migrate       # prisma migrate dev — create + apply
 pnpm db:generate      # regenerate Prisma client (output: generated/prisma)
-pnpm db:seed          # tsx prisma/seed.ts — LEGACY comment-system demo data; do not run for SendCMS
+pnpm db:seed          # tsx prisma/seed.ts — SendCMS demo data (demo user, verified domain, form, sample submissions); idempotent, safe to re-run
 pnpm db:studio        # Prisma Studio GUI
 pnpm db:status        # scripts/db-manager.ts status
 pnpm db:reset         # DESTRUCTIVE — requires typed confirmation
