@@ -6,24 +6,19 @@ import { authClient } from "@/lib/auth-client"
 import { useTheme } from "next-themes"
 import {
   RiDashboardLine,
-  RiGlobalLine,
   RiLinksLine,
   RiFileListLine,
   RiInboxLine,
   RiNotificationLine,
-  RiSettingsLine,
+  RiBarChartLine,
+  RiCodeSSlashLine,
   RiLogoutBoxLine,
   RiExpandUpDownLine,
   RiAddLine,
   RiSunLine,
   RiMoonLine,
   RiUserLine,
-  RiMegaphoneLine,
-  RiShieldUserLine,
-  RiQuestionLine,
 } from "@remixicon/react"
-import config from "@/config/config.json"
-import { platformCan, type PlatformRole } from "@/lib/permissions"
 import {
   Sidebar,
   SidebarContent,
@@ -47,7 +42,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Logo } from "@/components/logo"
-import { ProductHuntBadge } from "@/components/product-hunt-badge"
 
 type NavItem = {
   label: string
@@ -63,20 +57,16 @@ type NavGroup = {
 
 type Props = {
   user: { name?: string | null; email?: string | null; image?: string | null }
-  siteCount: number
   domainCount: number
   formCount: number
   inboxCount: number
-  platformRole: PlatformRole
 }
 
 export function AppSidebar({
   user,
-  siteCount,
   domainCount,
   formCount,
   inboxCount,
-  platformRole,
 }: Props) {
   const router = useRouter()
   const navGroups: NavGroup[] = [
@@ -84,12 +74,6 @@ export function AppSidebar({
       label: "Application",
       items: [
         { label: "Overview", href: "/dashboard", icon: RiDashboardLine },
-        {
-          label: "Sites",
-          href: "/dashboard/sites",
-          icon: RiGlobalLine,
-          badge: siteCount,
-        },
         {
           label: "Domains",
           href: "/dashboard/domains",
@@ -113,42 +97,24 @@ export function AppSidebar({
           href: "/dashboard/notifications",
           icon: RiNotificationLine,
         },
+        {
+          label: "Analytics",
+          href: "/dashboard/analytics",
+          icon: RiBarChartLine,
+        },
+        {
+          label: "API & SDK",
+          href: "/dashboard/api",
+          icon: RiCodeSSlashLine,
+        },
       ],
     },
     {
       label: "My Account",
       items: [
         { label: "Profile", href: "/dashboard/account", icon: RiUserLine },
-        ...(platformCan(platformRole, "MANAGE_PLATFORM_SETTINGS")
-          ? [
-              {
-                label: "Settings",
-                href: "/dashboard/settings",
-                icon: RiSettingsLine,
-              },
-            ]
-          : []),
       ],
     },
-    ...(platformCan(platformRole, "VIEW_ADMINISTRATION")
-      ? [
-          {
-            label: "System",
-            items: [
-              {
-                label: "Notice Board",
-                href: "/dashboard/notice-board",
-                icon: RiMegaphoneLine,
-              },
-              {
-                label: "Administration",
-                href: "/dashboard/administration",
-                icon: RiShieldUserLine,
-              },
-            ],
-          },
-        ]
-      : []),
   ]
 
   const pathname = usePathname()
@@ -170,7 +136,7 @@ export function AppSidebar({
               size="lg"
               className="flex items-center p-0 hover:bg-transparent"
             >
-              <Link href="/dashboard/sites" className="max-h-[42px] pl-0">
+              <Link href="/dashboard" className="max-h-[42px] pl-0">
                 <Logo />
               </Link>
             </SidebarMenuButton>
@@ -180,20 +146,20 @@ export function AppSidebar({
 
       {/* ── Content ─────────────────────────────────────── */}
       <SidebarContent>
-        {/* New site shortcut */}
+        {/* New form shortcut */}
         <SidebarGroup>
           <SidebarGroupContent className="group-data-[collapsible=icon]:px-0">
             <SidebarMenu className="group-data-[collapsible=icon]:items-center">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  tooltip="New site"
+                  tooltip="New form"
                   className="border-2 border-dashed border-primary/40 bg-primary/5 py-5 text-primary/70 transition-colors duration-200 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:text-sidebar-foreground hover:bg-primary/10 hover:text-primary group-data-[collapsible=icon]:hover:bg-primary/10 group-data-[collapsible=icon]:hover:text-primary"
                 >
-                  <Link href="/dashboard/sites/new">
+                  <Link href="/dashboard/forms/new">
                     <RiAddLine className="size-4 shrink-0" aria-hidden="true" />
                     <span className="text-sm font-medium group-data-[collapsible=icon]:hidden">
-                      New site
+                      New form
                     </span>
                   </Link>
                 </SidebarMenuButton>
@@ -242,28 +208,6 @@ export function AppSidebar({
       {/* ── Footer / user ───────────────────────────────── */}
       <SidebarFooter>
         <SidebarMenu className="gap-1">
-          <SidebarMenuItem className="group-data-[collapsible=icon]:hidden">
-            <ProductHuntBadge className="flex justify-start px-2 py-1 [&_img]:h-auto [&_img]:w-full [&_img]:max-w-[180px]" />
-          </SidebarMenuItem>
-          {config.need_help.enable && (
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip={config.need_help.label}>
-                <Link
-                  href={config.need_help.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <RiQuestionLine
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span className="group-data-[collapsible=icon]:hidden">
-                    {config.need_help.label}
-                  </span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={resolvedTheme === "dark" ? "Dark mode" : "Light mode"}

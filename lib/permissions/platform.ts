@@ -25,9 +25,9 @@ export const platformCan = (
   cap: PlatformCapability
 ): boolean => PLATFORM_PERMISSIONS[role].includes(cap)
 
-// Platform routes gated by capability — consumed by proxy.ts + sidebar.
-export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
-  "/dashboard/notice-board": "VIEW_NOTICE_BOARD",
-  "/dashboard/administration": "VIEW_ADMINISTRATION",
-  "/dashboard/settings": "MANAGE_PLATFORM_SETTINGS",
-}
+// Platform routes gated by capability — consumed by proxy.ts.
+// Empty since Phase 9: the only gated routes were the comment-system
+// admin pages (notice board, administration, settings), which were
+// removed. The platform-role primitive (platformCan) stays for
+// future use.
+export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {}

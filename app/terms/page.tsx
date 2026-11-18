@@ -4,8 +4,8 @@ import { Logo } from "@/components/logo"
 import { getListPage } from "@/lib/content"
 
 export const metadata: Metadata = {
-  title: "Terms of Service — OpenRemark",
-  description: "The terms that govern your use of OpenRemark.",
+  title: "Terms of Service — SendCMS",
+  description: "The terms that govern your use of SendCMS.",
 }
 
 type TermsSection = {

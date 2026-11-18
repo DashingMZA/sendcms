@@ -1,15 +1,14 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { GoogleTagManager } from "@next/third-parties/google"
 import config from "@/config/config.json"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 
 export const metadata: Metadata = {
-  title: "OpenRemark - An Open-source Comment System for Static Websites",
+  title: "SendCMS - A Contact-Form Backend for Static and Modern Websites",
   description:
-    "OpenRemark is an open-source comment system for static sites built with Astro, Hugo, or Next.js. It aims to provide a fully featured commenting experience with minimal setup.",
+    "SendCMS is a contact-form backend for static and modern sites built with Astro, Hugo, or Next.js. Add one script tag and every form submission lands in a dashboard inbox.",
 }
 
 const fontSans = Geist({
@@ -33,11 +32,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}
     >
-      {/* google tag manager */}
-      {config.google_tag_manager.enable && (
-        <GoogleTagManager gtmId={config.google_tag_manager.gtm_id} />
-      )}
-
       <script
         async
         crossOrigin="anonymous"

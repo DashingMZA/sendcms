@@ -1,44 +1,26 @@
 {
+  "branding": {
+    "enable": false,
+    "powered_by_html": "Powered by <a href=\"https://github.com/DashingMZA/sendcms\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"z-footer-link\">SendCMS</a>"
+  },
+  "email": {
+    "defaultAccentColor": "#0891b2",
+    "defaultFooterText": "You're receiving this because you get notifications for this form.",
+    "defaultSubjectPrefix": "[New Submission]",
+    "fromName": "SendCMS"
+  },
+  "metadata": {
+    "meta_author": "SendCMS",
+    "meta_description": "SendCMS - a contact-form backend for static and modern websites. Add one script tag and every form submission lands in a dashboard inbox.",
+    "meta_image": "/images/og-image.png"
+  },
   "site": {
-    "title": "OpenRemark",
     "favicon": "/images/favicon.png",
     "logo": "/images/logo.png",
     "logo_darkmode": "/images/logo-darkmode.png",
-    "logo_width": "208",
     "logo_height": "50",
-    "logo_text": "OpenRemark"
-  },
-  "metadata": {
-    "meta_author": "cSofts",
-    "meta_image": "/images/og-image.png",
-    "meta_description": "OpenRemark - An open-source comment system for static websites, built with Next.js and Prisma."
-  },
-
-  "google_tag_manager": {
-    "enable": true,
-    "gtm_id": "GTM-PTDPPT6L"
-  },
-
-  "product_hunt": {
-    "enable": false,
-    "product_tag_link": "<a href=\"https://www.producthunt.com/products/openremark?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-openremark\" target=\"_blank\" rel=\"noopener noreferrer\"><img alt=\"OpenRemark - An open-source comment system for static websites | Product Hunt\" width=\"250\" height=\"54\" src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1165618&amp;theme=light&amp;t=1780902903085\"></a>"
-  },
-
-  "need_help": {
-    "enable": true,
-    "label": "Need Help?",
-    "link": "https://csofts.com/estimate-project"
-  },
-
-  "branding": {
-    "enable": true,
-    "_note": "powered_by_html must include class=\"z-footer-link\" to receive widget styles",
-    "powered_by_html": "Powered by <a href=\"https://openremark.bond\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"z-footer-link\">Open-Remark</a>"
-  },
-  "email": {
-    "fromName": "OpenRemark",
-    "defaultSubjectPrefix": "[New Comment]",
-    "defaultAccentColor": "#6366f1",
-    "defaultFooterText": "You're receiving this because you commented on this site."
+    "logo_text": "SendCMS",
+    "logo_width": "208",
+    "title": "SendCMS"
   }
 }

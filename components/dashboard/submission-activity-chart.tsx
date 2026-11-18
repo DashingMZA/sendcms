@@ -8,22 +8,19 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-
-type Props = {
-  data: { date: string; count: number }[]
-}
+import type { DayCount } from "@/lib/services/dashboard-service"
 
 const chartConfig: ChartConfig = {
   count: {
-    label: "Comments",
+    label: "Submissions",
     color: "var(--chart-1)",
   },
 }
 
-export function CommentActivityChart({ data }: Props) {
+export function SubmissionActivityChart({ data }: { data: DayCount[] }) {
   const formatted = data.map((d) => ({
     ...d,
-    label: format(new Date(d.date), "MMM d"),
+    label: format(new Date(`${d.date}T00:00:00Z`), "MMM d"),
   }))
 
   return (
@@ -33,34 +30,27 @@ export function CommentActivityChart({ data }: Props) {
         margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
       >
         <defs>
-          <linearGradient id="commentGradient" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="submissionGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.2} />
             <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid vertical={false} stroke="var(--border)" />
+        <CartesianGrid vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
           tickLine={false}
           axisLine={false}
-          interval={6}
+          tickMargin={8}
+          minTickGap={24}
         />
-        <YAxis
-          tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-          tickLine={false}
-          axisLine={false}
-          allowDecimals={false}
-        />
+        <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
         <ChartTooltip content={<ChartTooltipContent />} />
         <Area
           type="monotone"
           dataKey="count"
           stroke="var(--chart-1)"
-          strokeWidth={1.5}
-          fill="url(#commentGradient)"
-          dot={false}
-          activeDot={{ r: 3, strokeWidth: 0 }}
+          fill="url(#submissionGradient)"
+          strokeWidth={2}
         />
       </AreaChart>
     </ChartContainer>

@@ -1,123 +1,147 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
-import { getUserOverview } from "@/lib/services/moderation-service"
+import { getDashboardOverview } from "@/lib/services/dashboard-service"
+import { listFormsForUser } from "@/lib/services/form-service"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatCard } from "@/components/dashboard/stat-card"
-import { CommentActivityChart } from "@/components/dashboard/comment-activity-chart"
-import { CommentStatusChart } from "@/components/dashboard/comment-status-chart"
+import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
+import { SubmissionStatusBadge } from "./inbox/submission-status-badge"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { SiteLogo } from "@/components/ui/site-logo"
 import { Separator } from "@/components/ui/separator"
 import { formatDistanceToNow } from "date-fns"
 import {
-  RiMessage2Line,
-  RiCheckboxCircleLine,
+  RiInboxLine,
+  RiLinksLine,
+  RiFileListLine,
   RiTimeLine,
-  RiGlobalLine,
   RiArrowRightLine,
 } from "@remixicon/react"
 
 export default async function OverviewPage() {
   const session = await auth()
-  const overview = await getUserOverview(session!.user!.id as string)
-
-  const approvalRate =
-    overview.totalComments > 0
-      ? Math.round((overview.approvedComments / overview.totalComments) * 100)
-      : 0
+  const userId = session!.user!.id as string
+  const [overview, forms] = await Promise.all([
+    getDashboardOverview(userId),
+    listFormsForUser(userId),
+  ])
 
   return (
     <div>
       <PageHeader
         title="Overview"
-        description="Summary of all your sites and comments"
+        description="Summary of your domains, forms and submissions"
       />
 
       <div className="flex flex-col gap-8 p-8">
         {/* Stat cards */}
         <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Total Sites"
-            value={overview.totalSites}
-            icon={RiGlobalLine}
-          />
-          <StatCard
-            title="Total Comments"
-            value={overview.totalComments}
-            icon={RiMessage2Line}
-          />
-          <StatCard
-            title="Pending Review"
-            value={overview.pendingComments}
-            icon={RiTimeLine}
-            variant="warning"
+            title="Domains"
+            value={overview.domainCount}
+            icon={RiLinksLine}
             description={
-              overview.pendingComments > 0 ? "Needs attention" : "All clear"
+              overview.domainCount > 0
+                ? `${overview.verifiedDomainCount} verified`
+                : "Add your first domain"
             }
           />
           <StatCard
-            title="Approved"
-            value={overview.approvedComments}
-            icon={RiCheckboxCircleLine}
-            variant="success"
+            title="Forms"
+            value={overview.formCount}
+            icon={RiFileListLine}
             description={
-              overview.totalComments > 0
-                ? `${approvalRate}% approval rate`
-                : undefined
+              overview.formCount > 0
+                ? `${overview.activeFormCount} active`
+                : "Create your first form"
+            }
+          />
+          <StatCard
+            title="Submissions"
+            value={overview.submissionCount}
+            icon={RiInboxLine}
+          />
+          <StatCard
+            title="Unread"
+            value={overview.unreadCount}
+            icon={RiTimeLine}
+            variant="warning"
+            description={
+              overview.unreadCount > 0 ? "Needs attention" : "All caught up"
             }
           />
         </div>
 
-        {/* Charts row */}
+        {/* Activity chart + status breakdown */}
         <div className="flex flex-wrap gap-8 border-b pb-8">
-          {/* Activity chart */}
           <div className="flex w-full max-w-[750px] flex-col gap-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                Comment Activity
+                Submission Activity
               </h2>
               <span className="text-xs text-muted-foreground">
-                Last 30 days
+                Last 14 days
               </span>
             </div>
             <Separator />
-            <CommentActivityChart data={overview.commentActivity} />
+            <SubmissionActivityChart data={overview.activity} />
           </div>
 
-          {/* Status breakdown */}
           <div className="flex flex-col gap-3">
             <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
               Status Breakdown
             </h2>
             <Separator />
-            <div className="flex flex-1 items-center py-2">
-              {overview.totalComments === 0 ? (
+            <div className="flex flex-1 flex-col justify-center gap-2 py-2">
+              {overview.submissionCount === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No comments yet.
+                  No submissions yet.
                 </p>
               ) : (
-                <CommentStatusChart
-                  approved={overview.approvedComments}
-                  pending={overview.pendingComments}
-                  spam={overview.spamComments}
-                />
+                <>
+                  <p className="text-sm">
+                    <span className="font-medium">{overview.unreadCount}</span>{" "}
+                    unread
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-medium">{overview.spamCount}</span>{" "}
+                    marked as spam
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {overview.submissionCount -
+                        overview.unreadCount -
+                        overview.spamCount}
+                    </span>{" "}
+                    read or handled
+                  </p>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 w-fit"
+                  >
+                    <Link href="/dashboard/inbox">
+                      Open inbox <RiArrowRightLine className="size-3.5" />
+                    </Link>
+                  </Button>
+                </>
               )}
             </div>
           </div>
         </div>
 
-        {/* Sites list + Recent comments */}
+        {/* Forms list + Recent submissions */}
         <div className="grid gap-8 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                Your Sites
+                Your Forms
               </h2>
               <Button asChild variant="ghost" size="sm">
                 <Link
-                  href="/dashboard/sites"
+                  href="/dashboard/forms"
                   className="flex items-center gap-1"
                 >
                   View all <RiArrowRightLine className="size-3.5" />
@@ -126,43 +150,39 @@ export default async function OverviewPage() {
             </div>
             <Separator />
             <div className="flex flex-col">
-              {overview.sites.length === 0 ? (
+              {forms.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  No sites yet.
+                  No forms yet.{" "}
+                  <Link
+                    href="/dashboard/forms/new"
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Create your first form
+                  </Link>
                 </p>
               ) : (
-                overview.sites.map((site) => (
+                forms.map((form) => (
                   <Link
-                    key={site.id}
-                    href={`/dashboard/sites/${site.id}`}
+                    key={form.id}
+                    href={`/dashboard/forms/${form.id}`}
                     className="flex items-center gap-4 border-l-2 border-transparent py-4 transition-all hover:border-primary hover:bg-primary/5 hover:pl-3"
                   >
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                      <SiteLogo
-                        domain={site.domain}
-                        size={22}
-                        className="rounded-sm"
-                      />
-                    </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
-                        {site.name}
+                        {form.name}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {site.domain}
+                        {form._count.domainLinks} domain
+                        {form._count.domainLinks !== 1 ? "s" : ""} linked
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-                      <span>
-                        {site._count.pages} page
-                        {site._count.pages !== 1 ? "s" : ""}
-                      </span>
-                      <span>
-                        {site.pages.reduce(
-                          (acc, p) => acc + p._count.comments,
-                          0
-                        )}{" "}
-                        comments
+                    <div className="flex shrink-0 items-center gap-3">
+                      <Badge variant={form.active ? "default" : "secondary"}>
+                        {form.active ? "Active" : "Paused"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {form._count.submissions} submission
+                        {form._count.submissions !== 1 ? "s" : ""}
                       </span>
                     </div>
                   </Link>
@@ -172,57 +192,52 @@ export default async function OverviewPage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              Recent Comments
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
+                Recent Submissions
+              </h2>
+              <Button asChild variant="ghost" size="sm">
+                <Link
+                  href="/dashboard/inbox"
+                  className="flex items-center gap-1"
+                >
+                  View all <RiArrowRightLine className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
             <Separator />
             <div className="flex flex-col">
-              {overview.recentComments.length === 0 ? (
+              {overview.recentSubmissions.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  No comments yet.
+                  No submissions yet.
                 </p>
               ) : (
-                overview.recentComments.map((comment) => (
+                overview.recentSubmissions.map((submission) => (
                   <Link
-                    key={comment.id}
-                    href={`/dashboard/sites/${comment.page.site.id}/comments?status=${comment.status}`}
+                    key={submission.id}
+                    href={`/dashboard/inbox/${submission.id}`}
                     className="flex items-center gap-4 border-l-2 border-transparent py-4 transition-all hover:border-primary hover:bg-primary/5 hover:pl-3"
                   >
                     <Avatar className="size-8 shrink-0">
                       <AvatarFallback className="text-xs">
-                        {comment.commenter.name.slice(0, 2).toUpperCase()}
+                        {(submission.senderName ?? "?")
+                          .slice(0, 2)
+                          .toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">
-                          {comment.commenter.name}
+                          {submission.senderName ?? "Unknown"}
                         </p>
-                        <Badge
-                          variant={
-                            comment.status === "APPROVED"
-                              ? "default"
-                              : comment.status === "PENDING"
-                                ? "secondary"
-                                : "outline"
-                          }
-                          className={
-                            comment.status === "SPAM"
-                              ? "h-4 border-amber-200 bg-amber-50 px-1 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400"
-                              : comment.status === "DELETED"
-                                ? "h-4 border-border bg-muted px-1 text-xs text-muted-foreground"
-                                : "h-4 px-1 text-xs"
-                          }
-                        >
-                          {comment.status.toLowerCase()}
-                        </Badge>
+                        <SubmissionStatusBadge status={submission.status} />
                       </div>
                       <p className="truncate text-xs text-muted-foreground">
-                        {comment.page.site.name} · {comment.page.slug}
+                        {submission.preview} · {submission.formName}
                       </p>
                     </div>
-                    <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">
-                      {formatDistanceToNow(new Date(comment.createdAt), {
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(submission.createdAt), {
                         addSuffix: true,
                       })}
                     </span>

@@ -4,8 +4,8 @@ import { Logo } from "@/components/logo"
 import { getListPage } from "@/lib/content"
 
 export const metadata: Metadata = {
-  title: "Changelog — OpenRemark",
-  description: "What's new in OpenRemark. Notes from each release.",
+  title: "Changelog — SendCMS",
+  description: "What's new in SendCMS. Notes from each release.",
 }
 
 type ChangelogEntry = {

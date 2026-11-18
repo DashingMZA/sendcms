@@ -29,7 +29,6 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Logo } from "@/components/logo"
 import { HeroVideo } from "@/components/hero-video"
-import { ProductHuntBadge } from "@/components/product-hunt-badge"
 import { ProductSchema } from "@/components/product-schema"
 
 export const metadata: Metadata = {
@@ -84,10 +83,10 @@ export default function HomePage() {
           <div className="flex items-center gap-3">
             <Button asChild variant="ghost">
               <Link
-                href="https://github.com/dashingmza/open-remark"
+                href="https://github.com/DashingMZA/sendcms"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Open OpenRemark GitHub repository"
+                aria-label="Open SendCMS GitHub repository"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -99,18 +98,6 @@ export default function HomePage() {
                 </svg>
               </Link>
             </Button>
-            <ProductHuntBadge className="hidden sm:block" />
-            {config.need_help.enable && (
-              <Button asChild variant="outline">
-                <Link
-                  href={config.need_help.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {config.need_help.label}
-                </Link>
-              </Button>
-            )}
             <Button asChild className="hidden sm:inline-flex">
               <Link href="/sign-in">
                 Get started
@@ -405,14 +392,14 @@ export default function HomePage() {
           <Logo />
 
           <p>
-            An open source project by{" "}
+            An open source project —{" "}
             <Link
-              href="https://csofts.com?ref=openremark"
+              href="https://github.com/DashingMZA/sendcms"
               target="_blank"
               rel="noopener"
               className="underline underline-offset-4 hover:text-foreground"
             >
-              cSofts
+              view it on GitHub
             </Link>
           </p>
         </div>
