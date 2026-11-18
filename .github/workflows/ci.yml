@@ -36,5 +36,4 @@ jobs:
           BETTER_AUTH_URL: http://localhost:3000
           GOOGLE_CLIENT_ID: dummy
           GOOGLE_CLIENT_SECRET: dummy
-          WIDGET_JWT_SECRET: dummy-widget-secret-build-only-xxx
           NEXT_PUBLIC_APP_URL: http://localhost:3000
