@@ -6,12 +6,13 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { formatDistanceToNow, format } from "date-fns"
 import {
+  type InboxSubmissionDetail,
+  useDeleteSubmission,
   useSubmission,
   useUpdateSubmissionStatus,
-  useDeleteSubmission,
-  type InboxSubmissionDetail,
-} from "@/lib/queries/inbox"
-import { getSubmissionSender } from "@/lib/submission-display"
+} from "@sendcms/inbox/queries"
+import { getSubmissionSender } from "@sendcms/shared"
+
 import { SubmissionStatusBadge } from "./submission-status-badge"
 import {
   Badge,

@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok, created } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { getFormForUser, linkDomainToForm } from "@/lib/services/form-service"
-import { LinkDomainSchema } from "@/lib/validators/form"
+import { getFormForUser, linkDomainToForm } from "@sendcms/forms"
+import { LinkDomainSchema } from "@sendcms/forms/validators"
 
 type Params = { params: Promise<{ formId: string }> }
 

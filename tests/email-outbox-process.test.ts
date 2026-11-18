@@ -17,15 +17,21 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
-vi.mock("@/lib/email/provider", () => ({
-  sendPlatformEmail: vi.fn(),
-}))
-
 import {
   enqueueSubmissionNotifications,
   processEmailOutbox,
-} from "@/lib/services/email-outbox"
-import { sendPlatformEmail } from "@/lib/email/provider"
+} from "@sendcms/notifications"
+
+const mockSendEmail = vi.hoisted(() =>
+  vi.fn(async () => ({ messageId: "msg-1", provider: "resend" }))
+)
+const mockRenderNotification = vi.hoisted(() =>
+  vi.fn(async () => ({ html: "<p>hi</p>", text: "hi" }))
+)
+const deps = {
+  sendEmail: mockSendEmail,
+  renderNotification: mockRenderNotification,
+}
 
 function makeSubmission(overrides: Record<string, unknown> = {}) {
   return {
@@ -74,7 +80,7 @@ beforeEach(() => {
   })
   mockDb.emailJob.updateMany.mockResolvedValue({ count: 1 })
   mockDb.emailJob.update.mockResolvedValue({})
-  vi.mocked(sendPlatformEmail).mockResolvedValue({
+  mockSendEmail.mockResolvedValue({
     messageId: "msg-1",
     provider: "resend",
   })
@@ -117,14 +123,14 @@ describe("enqueueSubmissionNotifications", () => {
 
 describe("processEmailOutbox", () => {
   it("does nothing when no jobs are due", async () => {
-    const result = await processEmailOutbox()
+    const result = await processEmailOutbox(deps)
     expect(result).toEqual({ processed: 0, sent: 0, failed: 0 })
-    expect(sendPlatformEmail).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
   it("marks a delivered job SENT with the provider message id", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
-    const result = await processEmailOutbox()
+    const result = await processEmailOutbox(deps)
     expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
     expect(mockDb.emailJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -140,8 +146,8 @@ describe("processEmailOutbox", () => {
 
   it("keeps a failed job PENDING with a backoff retry time", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
-    vi.mocked(sendPlatformEmail).mockRejectedValue(new Error("provider down"))
-    const result = await processEmailOutbox()
+    mockSendEmail.mockRejectedValue(new Error("provider down"))
+    const result = await processEmailOutbox(deps)
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null; lastError: string }
@@ -153,8 +159,8 @@ describe("processEmailOutbox", () => {
 
   it("marks a job FAILED when its attempts are exhausted", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob({ attempts: 4 })])
-    vi.mocked(sendPlatformEmail).mockRejectedValue(new Error("provider down"))
-    const result = await processEmailOutbox()
+    mockSendEmail.mockRejectedValue(new Error("provider down"))
+    const result = await processEmailOutbox(deps)
     expect(result.failed).toBe(1)
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null }
@@ -170,7 +176,7 @@ describe("processEmailOutbox", () => {
       form: { id: "form-1", name: "Contact us" },
       submission: null,
     })
-    const result = await processEmailOutbox()
+    const result = await processEmailOutbox(deps)
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
@@ -181,8 +187,8 @@ describe("processEmailOutbox", () => {
   it("skips a job claimed by another processor", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     mockDb.emailJob.updateMany.mockResolvedValue({ count: 0 })
-    const result = await processEmailOutbox()
+    const result = await processEmailOutbox(deps)
     expect(result).toEqual({ processed: 1, sent: 0, failed: 0 })
-    expect(sendPlatformEmail).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
   })
 })

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { authClient } from "@sendcms/auth/client"
 
-import { ResetPasswordSchema } from "@/lib/validators/auth"
+import { ResetPasswordSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function ResetPasswordForm({ token }: { token: string }) {

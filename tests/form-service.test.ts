@@ -25,7 +25,8 @@ import {
   createFormForUser,
   linkDomainToForm,
   updateFormForUser,
-} from "@/lib/services/form-service"
+} from "@sendcms/forms"
+
 import { ApiError } from "@/lib/api/error"
 
 function makeForm(overrides: Record<string, unknown> = {}) {

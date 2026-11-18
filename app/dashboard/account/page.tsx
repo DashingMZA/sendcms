@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth"
-import { getUserAuthMethods } from "@/lib/services/user-service"
+import { getUserAuthMethods } from "@sendcms/users"
+
 import { getConfiguredOAuthProviders } from "@sendcms/auth"
 
 import { PageHeader } from "@/components/dashboard/page-header"

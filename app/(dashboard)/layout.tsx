@@ -3,9 +3,9 @@ import { redirect } from "next/navigation"
 import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
-import { getDomainCountForUser } from "@/lib/services/domain-service"
-import { getFormCountForUser } from "@/lib/services/form-service"
-import { getUnreadSubmissionCountForUser } from "@/lib/services/submission-service"
+import { getDomainCountForUser } from "@sendcms/domains"
+import { getFormCountForUser } from "@sendcms/forms"
+import { getUnreadSubmissionCountForUser } from "@sendcms/inbox"
 
 export default async function DashboardLayout({
   children,

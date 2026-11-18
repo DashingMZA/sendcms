@@ -4,15 +4,16 @@ import { resolveEmailProvider, sendPlatformEmail } from "@/lib/email/provider"
 import {
   buildSubmissionNotificationSubject,
   nextAttemptDelayMs,
-} from "@/lib/services/email-outbox"
+} from "@sendcms/notifications"
+import {
+  EmailJobListQuerySchema,
+  TestEmailSchema,
+} from "@sendcms/notifications/validators"
+
 import {
   SubmissionNotification,
   submissionNotificationText,
 } from "@/lib/email/templates/submission-notification"
-import {
-  EmailJobListQuerySchema,
-  TestEmailSchema,
-} from "@/lib/validators/email-jobs"
 
 const ENV_KEYS = [
   "RESEND_API_KEY",

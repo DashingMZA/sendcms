@@ -1,9 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch } from "@/lib/api-client"
-import type {
-  DomainDetail,
-  DomainWithVerification,
-} from "@/lib/services/domain-service"
+import { apiFetch } from "@sendcms/shared"
+import type { DomainDetail, DomainWithVerification } from "./service"
 import type {
   DomainVerification,
   DomainVerificationMethod,

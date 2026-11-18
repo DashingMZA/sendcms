@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
-import { getDashboardOverview } from "@/lib/services/dashboard-service"
-import { listFormsForUser } from "@/lib/services/form-service"
+import { getDashboardOverview } from "@sendcms/analytics"
+import { listFormsForUser } from "@sendcms/forms"
+
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"

@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { bulkUpdateSubmissionsForUser } from "@/lib/services/submission-service"
-import { BulkUpdateSubmissionsSchema } from "@/lib/validators/inbox"
+import { bulkUpdateSubmissionsForUser } from "@sendcms/inbox"
+import { BulkUpdateSubmissionsSchema } from "@sendcms/inbox/validators"
 
 export async function POST(req: NextRequest) {
   try {

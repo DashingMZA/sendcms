@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useDomains } from "@/lib/queries/domains"
-import type { DomainWithVerification } from "@/lib/queries/domains"
+import { useDomains } from "@sendcms/domains/queries"
+import type { DomainWithVerification } from "@sendcms/domains/queries"
+
 import { DomainStatusBadge } from "./domain-status-badge"
 import {
   Button,

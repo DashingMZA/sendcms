@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { CreateFieldSchema } from "@sendcms/forms/validators"
 import {
   computeContentHash,
   detectSpam,
@@ -6,8 +7,8 @@ import {
   isOriginAllowedForForm,
   sanitizeString,
   validateSubmissionFields,
-} from "@/lib/services/submission-service"
-import { CreateFieldSchema } from "@/lib/validators/form"
+} from "@sendcms/submissions"
+
 import type { FormField } from "@sendcms/database"
 
 function field(overrides: Partial<FormField>): FormField {

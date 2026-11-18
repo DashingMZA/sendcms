@@ -16,23 +16,23 @@
 
 ```
 app/api/**          →  route handler (thin: parse, auth, call service, respond)
-lib/services/**     →  business logic (NO Next.js imports)
+packages/modules/<name>/src/service.ts →  business logic (NO Next.js imports)
 @sendcms/database   →  Prisma singleton `db` (only services import this)
-lib/validators/     →  Zod schemas (shared by routes + services)
-lib/api/            →  response.ts (ok, created, noContent) + error.ts (ApiError, handleApiError)
+packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + services)
+lib/api/            →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported)
 ```
 
 Route handlers must NOT import `@sendcms/database` directly. Services must NOT import from `next/*`.
 
 ## Server Components vs Client Components
 
-| Aspect        | Server Component                   | Client Component                                |
-| ------------- | ---------------------------------- | ----------------------------------------------- |
-| Directive     | None (default)                     | `"use client"` at top                           |
-| Data fetching | Direct service calls               | `lib/queries/<resource>.ts` hooks (React Query) |
-| Mutations     | Not allowed                        | `useMutation` hooks from `lib/queries/**`       |
-| Usage         | Page shells, layouts, data loaders | Forms, tables, interactive UI                   |
-| State         | No useState/useEffect              | Full React hooks                                |
+| Aspect        | Server Component                   | Client Component                                     |
+| ------------- | ---------------------------------- | ---------------------------------------------------- |
+| Directive     | None (default)                     | `"use client"` at top                                |
+| Data fetching | Direct service calls               | `@sendcms/<module>/queries` hooks (React Query)      |
+| Mutations     | Not allowed                        | `useMutation` hooks from `@sendcms/<module>/queries` |
+| Usage         | Page shells, layouts, data loaders | Forms, tables, interactive UI                        |
+| State         | No useState/useEffect              | Full React hooks                                     |
 
 **Pattern:** Server component fetches data via the service layer → passes it as `initialData` into a client component's React Query hook. The hook owns refetch/cache/mutation from there.
 
@@ -59,18 +59,18 @@ export function InboxTable({ initialData, filters }: Props) {
 All client-side reads and writes go through `@tanstack/react-query`, never raw `fetch()` in a component.
 
 ```
-lib/api-client.ts    →  apiFetch<T>(path, init) — typed wrapper, throws ApiClientError({ message, status, details })
-lib/queries/**       →  one file per resource (domains.ts, forms.ts, inbox.ts, email-jobs.ts)
+@sendcms/shared (api-client.ts) →  apiFetch<T>(path, init) — typed wrapper, throws ApiClientError({ message, status, details })
+@sendcms/<module>/queries →  one file per module (domains, forms, inbox, notifications)
                          exports a query-key factory + useXQuery / useXMutation hooks
 ```
 
-- Components call hooks from `lib/queries/<resource>.ts`. They never call `apiFetch` or `fetch` directly.
+- Components call hooks from `@sendcms/<module>/queries`. They never call `apiFetch` or `fetch` directly.
 - `QueryClientProvider` is mounted once in `app/dashboard/layout.tsx` (dashboard-only — public pages don't need it).
 - Errors surface via a **global default**: the `QueryClient`'s `queryCache`/`mutationCache` `onError` shows a sonner toast automatically. Pass `meta: { silent: true }` on a query/mutation only when the call site needs custom error UX instead.
 - Initial render uses `initialData` from the server-fetched props (no `dehydrate`/`HydrationBoundary` — one query per page, not nested trees).
 
 ```ts
-// lib/queries/domains.ts
+// packages/modules/domains/src/queries.ts
 export const domainKeys = { detail: (id: string) => ["domains", id] as const }
 
 export function useDomain(id: string, initialData?: DomainDetail) {
@@ -109,7 +109,7 @@ List-shaped optimistic updates (inbox table, forms table) follow the same `onMut
 
 ## Forms
 
-No react-hook-form. No form library. Native HTML forms + a `lib/queries/**` mutation hook:
+No react-hook-form. No form library. Native HTML forms + a `@sendcms/<module>/queries` mutation hook:
 
 ```tsx
 "use client"
@@ -152,7 +152,7 @@ export default async function Page({
 | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | Route handlers           | `try { ... } catch (err) { return handleApiError(err) }`                                                       |
 | Services                 | `throw new ApiError("message", statusCode)`                                                                    |
-| Client fetcher           | `lib/api-client.ts` throws `ApiClientError(message, status, details)`                                          |
+| Client fetcher           | `@sendcms/shared` `apiFetch` throws `ApiClientError(message, status, details)`                                 |
 | Client queries/mutations | `QueryClient`'s default `onError` → `toast.error()` via sonner. Override per-call only when UX needs to differ |
 | Error boundaries         | `error.tsx` files at route levels                                                                              |
 

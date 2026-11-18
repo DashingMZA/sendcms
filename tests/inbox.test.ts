@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { resolveStatusAction } from "@/lib/services/submission-service"
-import {
-  getSubmissionSender,
-  previewSubmissionText,
-} from "@/lib/submission-display"
+import { resolveStatusAction } from "@sendcms/inbox"
 import {
   BulkUpdateSubmissionsSchema,
   InboxListQuerySchema,
   UpdateSubmissionStatusSchema,
-} from "@/lib/validators/inbox"
+} from "@sendcms/inbox/validators"
+import { getSubmissionSender, previewSubmissionText } from "@sendcms/shared"
+
 import { SubmissionEventType, SubmissionStatus } from "@sendcms/database"
 
 describe("resolveStatusAction", () => {

@@ -6,10 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockSubmitForm = vi.hoisted(() => vi.fn())
 const mockProcessOutbox = vi.hoisted(() => vi.fn(async () => ({})))
 const mockAfter = vi.hoisted(() => vi.fn())
-vi.mock("@/lib/services/submission-service", () => ({
+vi.mock("@sendcms/submissions", () => ({
   submitForm: mockSubmitForm,
 }))
-vi.mock("@/lib/services/email-outbox", () => ({
+vi.mock("@sendcms/notifications", () => ({
   processEmailOutbox: mockProcessOutbox,
 }))
 vi.mock("next/server", async (importOriginal) => {
@@ -20,6 +20,7 @@ vi.mock("next/server", async (importOriginal) => {
 import { NextRequest } from "next/server"
 import { OPTIONS, POST } from "@/app/api/public/v1/submit/route"
 import { ApiError } from "@/lib/api/error"
+import { notificationDeps } from "@/lib/email/notification-deps"
 
 const URL = "http://localhost:3000/api/public/v1/submit"
 const ORIGIN = "https://example.com"
@@ -233,6 +234,8 @@ describe("POST /api/public/v1/submit", () => {
     expect(mockAfter).toHaveBeenCalledTimes(1)
     const [callback] = mockAfter.mock.calls[0] as [() => Promise<void>]
     await callback()
-    expect(mockProcessOutbox).toHaveBeenCalledWith({ limit: 25 })
+    expect(mockProcessOutbox).toHaveBeenCalledWith(notificationDeps, {
+      limit: 25,
+    })
   })
 })

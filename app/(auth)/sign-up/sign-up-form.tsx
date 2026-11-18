@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
-import { SignUpSchema } from "@/lib/validators/auth"
+import { SignUpSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function SignUpForm() {

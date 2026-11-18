@@ -41,35 +41,25 @@ sendcms/
 │   └── (no ui/ — primitives live in packages/ui, imported as @sendcms/ui)
 ├── packages/
 │   ├── config/                    # Shared tsconfig base + ESLint base (@sendcms/config)
-│   ├── shared/                    # Framework-free helpers: cn() (@sendcms/shared)
+│   ├── shared/                    # Framework-free helpers: cn(), ApiError, apiFetch, submission-display (@sendcms/shared)
 │   ├── ui/                        # shadcn/ui primitives + use-mobile (@sendcms/ui)
-│   ├── database/                  # Prisma schema + migrations + client (@sendcms/database)
+│   ├── database/                  # Prisma schema + migrations + client + pingDatabase (@sendcms/database)
 │   ├── auth/                      # Better Auth factory + providers + browser client (@sendcms/auth)
-│   └── permissions/               # Platform roles + capabilities (@sendcms/permissions)
+│   ├── permissions/               # Platform roles + capabilities (@sendcms/permissions)
+│   └── modules/                   # Business modules (server service + validators + client queries)
+│       ├── domains/               # domain service + dns-verification (@sendcms/domains)
+│       ├── forms/                 # form CRUD, fields, domain links (@sendcms/forms)
+│       ├── submissions/           # public submit flow + Turnstile (@sendcms/submissions)
+│       ├── inbox/                 # inbox reads + status/bulk actions (@sendcms/inbox)
+│       ├── notifications/         # EmailJob outbox, retries, test email — sender + renderer injected (@sendcms/notifications)
+│       ├── users/                 # auth methods, user lookup, auth validators (@sendcms/users)
+│       └── analytics/             # overview + analytics aggregates (@sendcms/analytics)
 ├── lib/
 │   ├── auth.ts                    # Thin wrapper: wires the app mailer into @sendcms/auth; betterAuth/auth()/AdminSession
-│   ├── services/                  # Business logic (server-side, no Next.js imports)
-│   │   ├── domain-service.ts      # register/verify/suspend domains
-│   │   ├── form-service.ts        # form CRUD, fields, domain links, notifications
-│   │   ├── submission-service.ts  # public submit flow + inbox actions
-│   │   ├── dns-verification.ts    # DNS TXT / meta-tag / file checks (DoH)
-│   │   ├── email-outbox.ts        # EmailJob queue, retries, test email
-│   │   ├── dashboard-service.ts   # overview + analytics aggregates
-│   │   ├── user-service.ts        # auth methods, user lookup
-│   │   ├── system-service.ts      # DB health ping
-│   │   └── turnstile.ts           # Cloudflare Turnstile verification
-│   ├── api-client.ts              # apiFetch<T>() — typed client fetch wrapper, throws ApiClientError
-│   ├── queries/                   # Client-side React Query hooks, one file per resource
-│   │   ├── domains.ts
-│   │   ├── forms.ts
-│   │   ├── inbox.ts
-│   │   └── email-jobs.ts
-│   ├── validators/                # Zod schemas (auth, domain, form, inbox, email-jobs, submission)
-│   ├── api/                       # response.ts + error.ts
-│   ├── email/                     # provider.ts, platform-transport.ts, transport.ts, auth-mailer.ts, templates/
+│   ├── api/                       # response.ts + error.ts (ApiError re-exported from @sendcms/shared)
+│   ├── email/                     # provider.ts, platform-transport.ts, transport.ts, auth-mailer.ts, templates/, notification-deps.ts
 │   ├── cors.ts                    # getEffectiveOrigin, normalizeOrigin, corsHeaders
 │   ├── sdk-snippet.ts             # SDK + REST snippet builders
-│   ├── submission-display.ts      # sender/preview helpers (client-safe)
 │   ├── content.ts                 # Markdown content loader (homepage, terms, changelog)
 │   ├── text-converter.ts          # Markdown → HTML
 │   └── utils.ts                   # getBaseUrl() (cn() moved to packages/shared)
@@ -83,15 +73,23 @@ sendcms/
 
 ## Key Path Aliases
 
-| Alias                  | Points to                                               |
-| ---------------------- | ------------------------------------------------------- |
-| `@/`                   | Project root                                            |
-| `@/lib/*`              | Shared utilities                                        |
-| `@/components/*`       | UI components                                           |
-| `@sendcms/database`    | Prisma client + `db` singleton (`packages/database`)    |
-| `@sendcms/auth`        | Better Auth factory + providers (`packages/auth`)       |
-| `@sendcms/auth/client` | Browser-side Better Auth client (`packages/auth`)       |
-| `@sendcms/permissions` | Platform roles + capabilities (`packages/permissions`)  |
-| `@sendcms/ui`          | shadcn/ui primitives + `useIsMobile` (`packages/ui`)    |
-| `@sendcms/shared`      | Framework-free helpers, e.g. `cn()` (`packages/shared`) |
-| `@sendcms/config`      | Shared tsconfig + ESLint base (`packages/config`)       |
+| Alias                    | Points to                                                                 |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `@/`                     | Project root                                                              |
+| `@/lib/*`                | Shared utilities                                                          |
+| `@/components/*`         | UI components                                                             |
+| `@sendcms/database`      | Prisma client + `db` singleton (`packages/database`)                      |
+| `@sendcms/auth`          | Better Auth factory + providers (`packages/auth`)                         |
+| `@sendcms/auth/client`   | Browser-side Better Auth client (`packages/auth`)                         |
+| `@sendcms/permissions`   | Platform roles + capabilities (`packages/permissions`)                    |
+| `@sendcms/ui`            | shadcn/ui primitives + `useIsMobile` (`packages/ui`)                      |
+| `@sendcms/shared`        | `cn()`, `ApiError`, `apiFetch`, `getSubmissionSender` (`packages/shared`) |
+| `@sendcms/domains`       | Domain service + validators + queries (`packages/modules/domains`)        |
+| `@sendcms/forms`         | Form service + validators + queries (`packages/modules/forms`)            |
+| `@sendcms/submissions`   | Public submit flow + Turnstile (`packages/modules/submissions`)           |
+| `@sendcms/inbox`         | Inbox service + validators + queries (`packages/modules/inbox`)           |
+| `@sendcms/notifications` | EmailJob outbox (`packages/modules/notifications`)                        |
+| `@sendcms/users`         | User service + auth validators (`packages/modules/users`)                 |
+| `@sendcms/analytics`     | Overview + analytics (`packages/modules/analytics`)                       |
+| `@sendcms/shared`        | Framework-free helpers, e.g. `cn()` (`packages/shared`)                   |
+| `@sendcms/config`        | Shared tsconfig + ESLint base (`packages/config`)                         |

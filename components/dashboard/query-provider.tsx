@@ -8,7 +8,7 @@ import {
   MutationCache,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { ApiClientError } from "@/lib/api-client"
+import { ApiClientError } from "@sendcms/shared"
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiClientError

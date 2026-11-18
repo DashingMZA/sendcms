@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
-import { getFormForUser } from "@/lib/services/form-service"
+import { getFormForUser } from "@sendcms/forms"
+
 import { PageHeader } from "@/components/dashboard/page-header"
 import { ApiError } from "@/lib/api/error"
 import { FormDetail } from "./form-detail"

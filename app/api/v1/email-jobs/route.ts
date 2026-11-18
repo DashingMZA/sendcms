@@ -2,8 +2,8 @@ import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { ok } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { listEmailJobsForUser } from "@/lib/services/email-outbox"
-import { EmailJobListQuerySchema } from "@/lib/validators/email-jobs"
+import { listEmailJobsForUser } from "@sendcms/notifications"
+import { EmailJobListQuerySchema } from "@sendcms/notifications/validators"
 
 export async function GET(req: NextRequest) {
   try {

@@ -6,8 +6,8 @@ import { ApiError, handleApiError } from "@/lib/api/error"
 import {
   deleteNotificationEmailForUser,
   updateNotificationEmailForUser,
-} from "@/lib/services/form-service"
-import { UpdateNotificationEmailSchema } from "@/lib/validators/form"
+} from "@sendcms/forms"
+import { UpdateNotificationEmailSchema } from "@sendcms/forms/validators"
 
 type Params = {
   params: Promise<{ formId: string; notificationId: string }>

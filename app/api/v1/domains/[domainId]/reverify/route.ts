@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { created } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { startVerificationForUser } from "@/lib/services/domain-service"
-import { ReverifyDomainSchema } from "@/lib/validators/domain"
+import { startVerificationForUser } from "@sendcms/domains"
+import { ReverifyDomainSchema } from "@sendcms/domains/validators"
 
 type Params = { params: Promise<{ domainId: string }> }
 

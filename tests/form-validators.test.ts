@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest"
+import { defaultFormFields } from "@sendcms/forms"
 import {
   AddNotificationEmailSchema,
   CreateFieldSchema,
   CreateFormSchema,
   LinkDomainSchema,
   UpdateFieldSchema,
-} from "@/lib/validators/form"
-import { defaultFormFields } from "@/lib/services/form-service"
+} from "@sendcms/forms/validators"
 
 describe("CreateFormSchema", () => {
   it("accepts a minimal form", () => {

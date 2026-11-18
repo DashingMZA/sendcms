@@ -5,9 +5,11 @@ import {
   useAddField,
   useDeleteField,
   useUpdateField,
-} from "@/lib/queries/forms"
-import type { FormDetail } from "@/lib/queries/forms"
-import { ApiClientError } from "@/lib/api-client"
+} from "@sendcms/forms/queries"
+import type { FormDetail } from "@sendcms/forms/queries"
+import type { CreateFieldInput } from "@sendcms/forms/validators"
+import { ApiClientError } from "@sendcms/shared"
+
 import {
   Badge,
   Button,
@@ -23,8 +25,6 @@ import {
 } from "@sendcms/ui"
 
 import type { FormField, FormFieldType } from "@sendcms/database"
-
-import type { CreateFieldInput } from "@/lib/validators/form"
 
 const FIELD_TYPES: FormFieldType[] = [
   "TEXT",

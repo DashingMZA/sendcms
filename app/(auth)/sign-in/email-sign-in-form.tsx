@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { authClient } from "@sendcms/auth/client"
 
-import { SignInSchema } from "@/lib/validators/auth"
+import { SignInSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function EmailSignInForm() {

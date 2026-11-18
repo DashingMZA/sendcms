@@ -7,7 +7,7 @@ import {
   db,
 } from "@sendcms/database"
 
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/shared"
 
 import type {
   AddNotificationEmailInput,
@@ -17,7 +17,7 @@ import type {
   UpdateFieldInput,
   UpdateFormInput,
   UpdateNotificationEmailInput,
-} from "@/lib/validators/form"
+} from "./validators"
 
 // Forms (Phase 4). A form's `id` IS its public `formId`, used together
 // with the owner's public `userId` (User.id) by the SDK / REST API

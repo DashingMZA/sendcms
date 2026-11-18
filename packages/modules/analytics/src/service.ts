@@ -1,9 +1,6 @@
 import { SubmissionStatus, db } from "@sendcms/database"
 
-import {
-  getSubmissionSender,
-  previewSubmissionText,
-} from "@/lib/submission-display"
+import { getSubmissionSender, previewSubmissionText } from "@sendcms/shared"
 
 export type DayCount = { date: string; count: number }
 

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { HONEYPOT_FIELD } from "@/lib/validators/submission"
+import { HONEYPOT_FIELD } from "@sendcms/submissions/validators"
 
 export const FormFieldTypeSchema = z.enum([
   "TEXT",

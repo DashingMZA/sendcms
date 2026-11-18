@@ -1,9 +1,10 @@
 import { auth } from "@/lib/auth"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { listSubmissionsForUser } from "@/lib/services/submission-service"
-import { listFormsForUser } from "@/lib/services/form-service"
-import { listDomainsForUser } from "@/lib/services/domain-service"
-import { InboxListQuerySchema } from "@/lib/validators/inbox"
+import { listDomainsForUser } from "@sendcms/domains"
+import { listFormsForUser } from "@sendcms/forms"
+import { listSubmissionsForUser } from "@sendcms/inbox"
+import { InboxListQuerySchema } from "@sendcms/inbox/validators"
+
 import { InboxTable } from "./inbox-table"
 
 type Props = {

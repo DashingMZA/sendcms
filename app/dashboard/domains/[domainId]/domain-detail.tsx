@@ -7,9 +7,10 @@ import {
   useReverifyDomain,
   useSetDomainStatus,
   useVerifyDomain,
-} from "@/lib/queries/domains"
-import type { DomainDetail } from "@/lib/queries/domains"
-import { ApiClientError } from "@/lib/api-client"
+} from "@sendcms/domains/queries"
+import type { DomainDetail } from "@sendcms/domains/queries"
+import { ApiClientError } from "@sendcms/shared"
+
 import { DomainStatusBadge } from "../domain-status-badge"
 import { CopyField } from "../copy-field"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"

@@ -3,11 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok, created } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import {
-  createFormForUser,
-  listFormsForUser,
-} from "@/lib/services/form-service"
-import { CreateFormSchema } from "@/lib/validators/form"
+import { createFormForUser, listFormsForUser } from "@sendcms/forms"
+import { CreateFormSchema } from "@sendcms/forms/validators"
 
 export async function GET() {
   try {

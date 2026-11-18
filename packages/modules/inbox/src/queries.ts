@@ -1,10 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch } from "@/lib/api-client"
-import type {
-  InboxListResult,
-  InboxSubmissionDetail,
-} from "@/lib/services/submission-service"
-import type { InboxActionInput, InboxTabInput } from "@/lib/validators/inbox"
+import { apiFetch } from "@sendcms/shared"
+import type { InboxListResult, InboxSubmissionDetail } from "./service"
+import type { InboxActionInput, InboxTabInput } from "./validators"
 
 export type { InboxListResult, InboxSubmissionDetail }
 

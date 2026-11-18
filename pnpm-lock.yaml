@@ -184,21 +184,42 @@ importers:
       '@remixicon/react':
         specifier: ^4.9.0
         version: 4.9.0(react@19.3.1)
+      '@sendcms/analytics':
+        specifier: workspace:*
+        version: link:packages/modules/analytics
       '@sendcms/auth':
         specifier: workspace:*
         version: link:packages/auth
       '@sendcms/database':
         specifier: workspace:*
         version: link:packages/database
+      '@sendcms/domains':
+        specifier: workspace:*
+        version: link:packages/modules/domains
+      '@sendcms/forms':
+        specifier: workspace:*
+        version: link:packages/modules/forms
+      '@sendcms/inbox':
+        specifier: workspace:*
+        version: link:packages/modules/inbox
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:packages/modules/notifications
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:packages/permissions
       '@sendcms/shared':
         specifier: workspace:*
         version: link:packages/shared
+      '@sendcms/submissions':
+        specifier: workspace:*
+        version: link:packages/modules/submissions
       '@sendcms/ui':
         specifier: workspace:*
         version: link:packages/ui
+      '@sendcms/users':
+        specifier: workspace:*
+        version: link:packages/modules/users
       '@tanstack/react-query':
         specifier: ^5.108.0
         version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
@@ -388,6 +409,181 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/analytics:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/domains:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/forms:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@sendcms/submissions':
+        specifier: workspace:*
+        version: link:../submissions
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/inbox:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/notifications:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/submissions:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/domains':
+        specifier: workspace:*
+        version: link:../domains
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/users:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
       typescript:
         specifier: 6.0.3
         version: 6.0.3

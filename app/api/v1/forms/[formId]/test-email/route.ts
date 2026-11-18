@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { ok } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { sendTestSubmissionEmail } from "@/lib/services/email-outbox"
-import { TestEmailSchema } from "@/lib/validators/email-jobs"
+import { sendTestSubmissionEmail } from "@sendcms/notifications"
+import { TestEmailSchema } from "@sendcms/notifications/validators"
+import { notificationDeps } from "@/lib/email/notification-deps"
 
 type Params = { params: Promise<{ formId: string }> }
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       )
     }
     const result = await sendTestSubmissionEmail(
+      notificationDeps,
       session.user.id,
       formId,
       parsed.data.to

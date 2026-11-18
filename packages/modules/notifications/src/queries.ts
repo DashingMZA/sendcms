@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch } from "@/lib/api-client"
-import type { EmailJobListResult } from "@/lib/services/email-outbox"
+import { apiFetch } from "@sendcms/shared"
+import type { EmailJobListResult } from "./service"
 
 export type { EmailJobListResult }
 

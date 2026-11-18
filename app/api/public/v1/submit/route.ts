@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { getEffectiveOrigin } from "@/lib/cors"
 import { ApiError, handleApiError } from "@/lib/api/error"
+import { processEmailOutbox } from "@sendcms/notifications"
+import { notificationDeps } from "@/lib/email/notification-deps"
+import { submitForm } from "@sendcms/submissions"
 import {
-  formDataToSubmitBody,
   SubmitBodySchema,
-} from "@/lib/validators/submission"
-import { submitForm } from "@/lib/services/submission-service"
-import { processEmailOutbox } from "@/lib/services/email-outbox"
+  formDataToSubmitBody,
+} from "@sendcms/submissions/validators"
 
 // Public submission API — no session, no cookies. Authorization is the
 // Origin allowlist (enforced in the service): the submitting site must be
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       // sent — failures stay queued for the cron worker to retry.
       after(async () => {
         try {
-          await processEmailOutbox({ limit: 25 })
+          await processEmailOutbox(notificationDeps, { limit: 25 })
         } catch (err) {
           console.error("[notifications] outbox run failed:", err)
         }

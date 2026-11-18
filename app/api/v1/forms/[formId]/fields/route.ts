@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok, created } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { addFieldToForm, getFormForUser } from "@/lib/services/form-service"
-import { CreateFieldSchema } from "@/lib/validators/form"
+import { addFieldToForm, getFormForUser } from "@sendcms/forms"
+import { CreateFieldSchema } from "@sendcms/forms/validators"
 
 type Params = { params: Promise<{ formId: string }> }
 

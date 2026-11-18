@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useCreateForm } from "@/lib/queries/forms"
-import { ApiClientError } from "@/lib/api-client"
+import { useCreateForm } from "@sendcms/forms/queries"
+import { ApiClientError } from "@sendcms/shared"
+
 import { Button, Input, Label, Switch, Textarea } from "@sendcms/ui"
 
 export function NewFormForm() {

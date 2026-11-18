@@ -7,7 +7,7 @@ import {
   SignInSchema,
   SignUpSchema,
   UpdateProfileSchema,
-} from "@/lib/validators/auth"
+} from "@sendcms/users/validators"
 
 describe("SignUpSchema", () => {
   it("accepts a valid sign-up", () => {

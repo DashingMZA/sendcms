@@ -3,20 +3,21 @@
 import Link from "next/link"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useDomains } from "@sendcms/domains/queries"
 import {
+  useAddNotificationEmail,
   useDeleteForm,
+  useDeleteNotificationEmail,
   useForm,
   useLinkDomain,
   useUnlinkDomain,
   useUpdateForm,
-  useAddNotificationEmail,
   useUpdateNotificationEmail,
-  useDeleteNotificationEmail,
-} from "@/lib/queries/forms"
-import { useDomains } from "@/lib/queries/domains"
-import { useSendTestEmail } from "@/lib/queries/email-jobs"
-import type { FormDetail } from "@/lib/queries/forms"
-import { ApiClientError } from "@/lib/api-client"
+} from "@sendcms/forms/queries"
+import type { FormDetail } from "@sendcms/forms/queries"
+import { useSendTestEmail } from "@sendcms/notifications/queries"
+import { ApiClientError } from "@sendcms/shared"
+
 import {
   Badge,
   Button,

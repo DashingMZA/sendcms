@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useCreateDomain } from "@/lib/queries/domains"
-import { ApiClientError } from "@/lib/api-client"
+import { useCreateDomain } from "@sendcms/domains/queries"
+import { ApiClientError } from "@sendcms/shared"
+
 import {
   Button,
   Input,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
-  formDataToSubmitBody,
   SubmitBodySchema,
-} from "@/lib/validators/submission"
+  formDataToSubmitBody,
+} from "@sendcms/submissions/validators"
 
 describe("formDataToSubmitBody (no-JS fallback)", () => {
   it("splits top-level keys from submission fields", () => {

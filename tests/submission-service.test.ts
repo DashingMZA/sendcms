@@ -17,17 +17,18 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
-vi.mock("@/lib/services/email-outbox", () => ({
+vi.mock("@sendcms/notifications", () => ({
   enqueueSubmissionNotifications: vi.fn(async () => 1),
 }))
-vi.mock("@/lib/services/turnstile", () => ({
+vi.mock("@sendcms/submissions/turnstile", () => ({
   verifyTurnstileToken: vi.fn(async () => true),
 }))
 
-import { submitForm } from "@/lib/services/submission-service"
-import type { SubmitResult } from "@/lib/services/submission-service"
-import { enqueueSubmissionNotifications } from "@/lib/services/email-outbox"
-import { verifyTurnstileToken } from "@/lib/services/turnstile"
+import { enqueueSubmissionNotifications } from "@sendcms/notifications"
+import { submitForm } from "@sendcms/submissions"
+import type { SubmitResult } from "@sendcms/submissions"
+import { verifyTurnstileToken } from "@sendcms/submissions/turnstile"
+
 import { ApiError } from "@/lib/api/error"
 
 /** Narrows a non-honeypot result so `result.submission` typechecks. */

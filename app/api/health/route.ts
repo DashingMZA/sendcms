@@ -1,6 +1,6 @@
 import { ok } from "@/lib/api/response"
 import { handleApiError } from "@/lib/api/error"
-import { pingDatabase } from "@/lib/services/system-service"
+import { pingDatabase } from "@sendcms/database"
 
 export const dynamic = "force-dynamic"
 

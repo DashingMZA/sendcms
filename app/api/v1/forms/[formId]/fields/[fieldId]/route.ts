@@ -3,11 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok, noContent } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import {
-  deleteFieldForUser,
-  updateFieldForUser,
-} from "@/lib/services/form-service"
-import { UpdateFieldSchema } from "@/lib/validators/form"
+import { deleteFieldForUser, updateFieldForUser } from "@sendcms/forms"
+import { UpdateFieldSchema } from "@sendcms/forms/validators"
 
 type Params = { params: Promise<{ formId: string; fieldId: string }> }
 

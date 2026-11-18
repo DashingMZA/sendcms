@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
-import { ChangePasswordSchema } from "@/lib/validators/auth"
+import { ChangePasswordSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function ChangePasswordForm() {

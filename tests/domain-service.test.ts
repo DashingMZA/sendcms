@@ -18,7 +18,7 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
-vi.mock("@/lib/services/dns-verification", () => ({
+vi.mock("@sendcms/domains/dns-verification", () => ({
   checkVerification: vi.fn(),
 }))
 
@@ -28,8 +28,9 @@ import {
   setDomainStatusForUser,
   startVerificationForUser,
   verifyDomainForUser,
-} from "@/lib/services/domain-service"
-import { checkVerification } from "@/lib/services/dns-verification"
+} from "@sendcms/domains"
+import { checkVerification } from "@sendcms/domains/dns-verification"
+
 import { ApiError } from "@/lib/api/error"
 
 function makeDomain(overrides: Record<string, unknown> = {}) {

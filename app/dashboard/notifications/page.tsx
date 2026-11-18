@@ -1,8 +1,9 @@
 import { auth } from "@/lib/auth"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { listEmailJobsForUser } from "@/lib/services/email-outbox"
-import { listFormsForUser } from "@/lib/services/form-service"
-import { EmailJobListQuerySchema } from "@/lib/validators/email-jobs"
+import { listFormsForUser } from "@sendcms/forms"
+import { listEmailJobsForUser } from "@sendcms/notifications"
+import { EmailJobListQuerySchema } from "@sendcms/notifications/validators"
+
 import { EmailJobsTable } from "./email-jobs-table"
 
 type Props = {

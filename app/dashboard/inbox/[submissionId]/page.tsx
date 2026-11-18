@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { ApiError } from "@/lib/api/error"
-import { getSubmissionForUser } from "@/lib/services/submission-service"
+import { getSubmissionForUser } from "@sendcms/inbox"
+
 import { PageHeader } from "@/components/dashboard/page-header"
 import { SubmissionDetail } from "../submission-detail"
 

@@ -4,7 +4,7 @@ import {
   extractMetaTagToken,
   joinTxtSegments,
   lookupTxtRecords,
-} from "@/lib/services/dns-verification"
+} from "@sendcms/domains/dns-verification"
 
 describe("joinTxtSegments", () => {
   it("unquotes a single segment", () => {

@@ -7,8 +7,8 @@ import {
   deleteSubmissionForUser,
   getSubmissionForUser,
   updateSubmissionStatusForUser,
-} from "@/lib/services/submission-service"
-import { UpdateSubmissionStatusSchema } from "@/lib/validators/inbox"
+} from "@sendcms/inbox"
+import { UpdateSubmissionStatusSchema } from "@sendcms/inbox/validators"
 
 type Params = { params: Promise<{ submissionId: string }> }
 

@@ -69,7 +69,7 @@ The legacy widget visitor auth (Google OAuth PKCE → signed Widget JWT,
 ```
 app/api/**          route handler  — thin: parse, auth, call service, respond (≤25 lines)
   ↓
-lib/services/**     business logic — NO Next.js imports (must be framework-agnostic)
+packages/modules/** business logic — NO Next.js imports (must be framework-agnostic)
   ↓
 @sendcms/database   Prisma singleton (`db`) — ONLY services may import this
   ↓
@@ -77,7 +77,9 @@ PostgreSQL (Prisma adapter-pg)
 ```
 
 - Route handlers never import `@sendcms/database` — they call services.
-- Zod schemas: `lib/validators/`, shared by routes + services.
+- Zod schemas: `packages/modules/<name>/src/validators.ts`, shared by routes + services.
+- Client hooks: `packages/modules/<name>/src/queries.ts` (React Query); `apiFetch` lives in `@sendcms/shared`.
+- `ApiError` lives in `@sendcms/shared` (re-exported from `lib/api/error.ts`); `pingDatabase` lives in `@sendcms/database`.
 - Response/error helpers: `lib/api/`.
 
 ### Data model (`database-schema.md`)

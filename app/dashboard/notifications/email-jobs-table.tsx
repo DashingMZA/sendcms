@@ -3,10 +3,11 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import {
-  useEmailJobs,
   type EmailJobListParams,
   type EmailJobListResult,
-} from "@/lib/queries/email-jobs"
+  useEmailJobs,
+} from "@sendcms/notifications/queries"
+
 import {
   Badge,
   Button,

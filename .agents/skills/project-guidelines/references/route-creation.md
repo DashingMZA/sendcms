@@ -7,10 +7,13 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { ok, created, noContent } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { someService } from "@/lib/services/some-service"
-import { SomeSchema } from "@/lib/validators/some"
+import { someService } from "@sendcms/<module>"
+import { SomeSchema } from "@sendcms/<module>/validators"
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ siteId: string }> }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ siteId: string }> }
+) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
@@ -25,24 +28,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ site
 
 ## Patterns
 
-| Type | Path | Auth | Notes |
-|---|---|---|---|
-| Admin API | `app/api/v1/<resource>/route.ts` | Session cookie | No CORS needed |
-| Public API | `app/api/public/v1/submit/route.ts` | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
-| Dashboard page | `app/dashboard/<section>/page.tsx` | Server component | Fetch data, pass to client |
-| Detail page | `app/dashboard/forms/[formId]/page.tsx` | Server component | Owner-scoped fetch, 404 → `notFound()` |
-| Service | `lib/services/<name>-service.ts` | N/A | No Next.js imports |
-| Validator | `lib/validators/<name>.ts` | N/A | Zod schema, shared |
-| Hook | `hooks/use-<name>.ts` | N/A | Client-side only |
+| Type           | Path                                        | Auth                    | Notes                                                 |
+| -------------- | ------------------------------------------- | ----------------------- | ----------------------------------------------------- |
+| Admin API      | `app/api/v1/<resource>/route.ts`            | Session cookie          | No CORS needed                                        |
+| Public API     | `app/api/public/v1/submit/route.ts`         | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
+| Dashboard page | `app/dashboard/<section>/page.tsx`          | Server component        | Fetch data, pass to client                            |
+| Detail page    | `app/dashboard/forms/[formId]/page.tsx`     | Server component        | Owner-scoped fetch, 404 → `notFound()`                |
+| Service        | `packages/modules/<name>/src/service.ts`    | N/A                     | No Next.js imports                                    |
+| Validator      | `packages/modules/<name>/src/validators.ts` | N/A                     | Zod schema, shared                                    |
+| Hook           | `hooks/use-<name>.ts`                       | N/A                     | Client-side only                                      |
 
 ## Public API Route Pattern
 
 ```ts
 import { getEffectiveOrigin } from "@/lib/cors"
-import { submitForm } from "@/lib/services/submission-service"
+import { submitForm } from "@sendcms/submissions"
 
 export async function OPTIONS(req: NextRequest) {
-  return new Response(null, { status: 204, headers: publicCorsHeaders(getEffectiveOrigin(req) ?? "*") })
+  return new Response(null, {
+    status: 204,
+    headers: publicCorsHeaders(getEffectiveOrigin(req) ?? "*"),
+  })
 }
 
 export async function POST(req: NextRequest) {
@@ -60,13 +66,19 @@ export async function POST(req: NextRequest) {
 ## Validation Pattern
 
 ```ts
-import { SomeSchema } from "@/lib/validators/some"
+import { SomeSchema } from "@sendcms/<module>/validators"
 
 const parsed = SomeSchema.safeParse(body)
 if (!parsed.success) {
   const flat = parsed.error.flatten()
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(Boolean)
-  return NextResponse.json({ error: messages.join("; ") || "Validation failed" }, { status: 422 })
+  const messages = [
+    ...flat.formErrors,
+    ...Object.values(flat.fieldErrors).flat(),
+  ].filter(Boolean)
+  return NextResponse.json(
+    { error: messages.join("; ") || "Validation failed" },
+    { status: 422 }
+  )
 }
 ```
 
@@ -84,8 +96,8 @@ revalidatePath("/dashboard", "layout")
 - [ ] Model (if needed) with `id`, `createdAt`, `updatedAt`
 - [ ] Indexes on all FKs and common query fields
 - [ ] Enums for status/role fields
-- [ ] Service in `lib/services/` (no Next.js imports)
-- [ ] Validator in `lib/validators/` (Zod)
+- [ ] Service in `packages/modules/<name>/src/service.ts` (no Next.js imports)
+- [ ] Validator in `packages/modules/<name>/src/validators.ts` (Zod)
 - [ ] Route handler (thin, try/catch + handleApiError)
 - [ ] Public API route: OPTIONS + CORS echo only for allowed origins; durable save before the success response; idempotency key honored
 - [ ] `pnpm typecheck` passes

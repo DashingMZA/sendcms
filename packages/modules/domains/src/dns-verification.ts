@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/shared"
 import type { DomainVerificationMethod } from "@sendcms/database"
 
 // Ownership-proof checks for the three verification methods (Phase 3).

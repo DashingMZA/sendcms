@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
-import { getSubmissionAnalytics } from "@/lib/services/dashboard-service"
+import { getSubmissionAnalytics } from "@sendcms/analytics"
+
 import { PageHeader } from "@/components/dashboard/page-header"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"

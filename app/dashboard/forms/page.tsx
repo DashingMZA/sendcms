@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
-import { listFormsForUser } from "@/lib/services/form-service"
+import { listFormsForUser } from "@sendcms/forms"
+
 import { PageHeader } from "@/components/dashboard/page-header"
 import { Button } from "@sendcms/ui"
 

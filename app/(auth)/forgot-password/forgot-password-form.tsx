@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
-import { ForgotPasswordSchema } from "@/lib/validators/auth"
+import { ForgotPasswordSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function ForgotPasswordForm() {

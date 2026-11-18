@@ -7,8 +7,8 @@ import {
   deleteFormForUser,
   getFormForUser,
   updateFormForUser,
-} from "@/lib/services/form-service"
-import { UpdateFormSchema } from "@/lib/validators/form"
+} from "@sendcms/forms"
+import { UpdateFormSchema } from "@sendcms/forms/validators"
 
 type Params = { params: Promise<{ formId: string }> }
 

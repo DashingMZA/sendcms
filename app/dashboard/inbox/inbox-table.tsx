@@ -5,14 +5,16 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import {
-  useInbox,
-  useUpdateSubmissionStatus,
-  useDeleteSubmission,
-  useBulkUpdateSubmissions,
   type InboxListParams,
   type InboxListResult,
-} from "@/lib/queries/inbox"
-import type { InboxTabInput, InboxActionInput } from "@/lib/validators/inbox"
+  useBulkUpdateSubmissions,
+  useDeleteSubmission,
+  useInbox,
+  useUpdateSubmissionStatus,
+} from "@sendcms/inbox/queries"
+import type { InboxActionInput, InboxTabInput } from "@sendcms/inbox/validators"
+import { previewSubmissionText } from "@sendcms/shared"
+
 import {
   Badge,
   Button,
@@ -45,7 +47,7 @@ import {
 
 import { InboxSearchInput } from "./inbox-search-input"
 import { SubmissionStatusBadge } from "./submission-status-badge"
-import { previewSubmissionText } from "@/lib/submission-display"
+
 import { MoreHorizontal, Trash2 } from "lucide-react"
 
 const TABS: { key: InboxTabInput; label: string }[] = [

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server"
 import { ok } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { processEmailOutbox } from "@/lib/services/email-outbox"
+import { processEmailOutbox } from "@sendcms/notifications"
+import { notificationDeps } from "@/lib/email/notification-deps"
 
 // Email outbox worker (Phase 8). Hit on a schedule by the platform
 // cron (Vercel Cron / Cloudflare Cron Triggers) — see
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     if (header !== `Bearer ${secret}`) {
       throw new ApiError("Unauthorized", 401)
     }
-    const result = await processEmailOutbox({ limit: 100 })
+    const result = await processEmailOutbox(notificationDeps, { limit: 100 })
     return ok(result)
   } catch (err) {
     return handleApiError(err)

@@ -2,8 +2,8 @@ import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { ok } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { listSubmissionsForUser } from "@/lib/services/submission-service"
-import { InboxListQuerySchema } from "@/lib/validators/inbox"
+import { listSubmissionsForUser } from "@sendcms/inbox"
+import { InboxListQuerySchema } from "@sendcms/inbox/validators"
 
 export async function GET(req: NextRequest) {
   try {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch } from "@/lib/api-client"
-import type { FormDetail, FormWithCounts } from "@/lib/services/form-service"
+import { apiFetch } from "@sendcms/shared"
+import type { FormDetail, FormWithCounts } from "./service"
 import type {
   FormDomain,
   FormField,
@@ -13,7 +13,7 @@ import type {
   CreateFormInput,
   UpdateFieldInput,
   UpdateFormInput,
-} from "@/lib/validators/form"
+} from "./validators"
 
 export type { FormDetail, FormWithCounts }
 

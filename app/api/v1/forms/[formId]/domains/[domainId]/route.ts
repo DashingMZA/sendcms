@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { noContent } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import { unlinkDomainFromForm } from "@/lib/services/form-service"
+import { unlinkDomainFromForm } from "@sendcms/forms"
 
 type Params = { params: Promise<{ formId: string; domainId: string }> }
 

@@ -1,4 +1,3 @@
-import { render } from "@react-email/render"
 import {
   EmailJobStatus,
   EmailJobType,
@@ -7,21 +6,53 @@ import {
   type EmailJob,
   type Submission,
 } from "@sendcms/database"
-
-import { ApiError } from "@/lib/api/error"
-import { sendPlatformEmail } from "@/lib/email/provider"
-import {
-  SubmissionNotification,
-  submissionNotificationText,
-  type SubmissionNotificationField,
-} from "@/lib/email/templates/submission-notification"
-import { getSubmissionSender } from "@/lib/submission-display"
+import { ApiError, getSubmissionSender } from "@sendcms/shared"
 
 // Email outbox (Phase 8). Submissions are saved first and notification
 // jobs are queued after — email can never lose a submission, and a
 // provider outage only delays the notification. Delivery is attempted
 // immediately after submit (the public route's `after()` hook) and
 // retried by the cron worker route.
+
+/**
+ * What the app injects (Phase 9 owns the email transport + templates, so
+ * this module must not import app code — same pattern as the auth
+ * factory in packages/auth). The cron + test-email routes pass the
+ * app's `sendPlatformEmail` and a renderer built on the app's template.
+ */
+export type SubmissionNotificationField = {
+  label: string
+  value: string
+}
+
+export type SubmissionNotificationProps = {
+  formName: string
+  senderName: string | null
+  senderEmail: string | null
+  fields: SubmissionNotificationField[]
+  pageUrl: string | null
+  originDomain: string
+  receivedAt: Date
+  inboxUrl: string
+  accentColor: string
+  footerText: string
+}
+
+export type NotificationEmailSender = (input: {
+  to: string
+  subject: string
+  html: string
+  text?: string
+}) => Promise<{ messageId: string; provider: string }>
+
+export type NotificationRenderer = (
+  props: SubmissionNotificationProps
+) => Promise<{ html: string; text: string }>
+
+export type NotificationDeps = {
+  sendEmail: NotificationEmailSender
+  renderNotification: NotificationRenderer
+}
 
 export const EMAIL_JOB_PAGE_SIZE = 20
 export const MAX_EMAIL_ATTEMPTS = 5
@@ -109,6 +140,7 @@ function truncateError(message: string): string {
 }
 
 async function renderNotification(
+  deps: NotificationDeps,
   submission: SubmissionWithForm
 ): Promise<{ subject: string; html: string; text: string }> {
   const sender = getSubmissionSender(submission.data)
@@ -116,7 +148,7 @@ async function renderNotification(
     submission.form.name,
     sender.name
   )
-  const props = {
+  const props: SubmissionNotificationProps = {
     formName: submission.form.name,
     senderName: sender.name,
     senderEmail: sender.email,
@@ -129,13 +161,14 @@ async function renderNotification(
     footerText:
       "You're receiving this because you get notifications for this form.",
   }
-  const html = await render(SubmissionNotification(props))
-  return { subject, html, text: submissionNotificationText(props) }
+  const { html, text } = await deps.renderNotification(props)
+  return { subject, html, text }
 }
 
 /** Sends one due job. Returns "sent" | "failed" | "skipped" (claimed
     by another processor, or its submission is gone). */
 async function processOneJob(
+  deps: NotificationDeps,
   job: EmailJob
 ): Promise<"sent" | "failed" | "skipped"> {
   // Claim: only the processor that flips PENDING → SENDING owns it.
@@ -157,11 +190,11 @@ async function processOneJob(
     if (!full?.submission || !full.form) {
       throw new Error("Submission or form no longer exists.")
     }
-    const { subject, html, text } = await renderNotification({
+    const { subject, html, text } = await renderNotification(deps, {
       ...full.submission,
       form: full.form,
     })
-    const { messageId } = await sendPlatformEmail({
+    const { messageId } = await deps.sendEmail({
       to: full.to,
       subject: full.subject || subject,
       html,
@@ -201,9 +234,10 @@ async function processOneJob(
 /** Sends due PENDING jobs (never attempted, or past their retry time).
     Returns the outcome counts. Safe to call from the cron route and
     from the submit route's `after()` hook. */
-export async function processEmailOutbox({
-  limit = 25,
-}: { limit?: number } = {}): Promise<{
+export async function processEmailOutbox(
+  deps: NotificationDeps,
+  { limit = 25 }: { limit?: number } = {}
+): Promise<{
   processed: number
   sent: number
   failed: number
@@ -219,7 +253,7 @@ export async function processEmailOutbox({
   let sent = 0
   let failed = 0
   for (const job of due) {
-    const outcome = await processOneJob(job)
+    const outcome = await processOneJob(deps, job)
     if (outcome === "sent") sent++
     if (outcome === "failed") failed++
   }
@@ -298,6 +332,7 @@ export async function listEmailJobsForUser(
     provider (not via the outbox — there is no submission to render
     from, and the point is to test the provider right now). */
 export async function sendTestSubmissionEmail(
+  deps: NotificationDeps,
   userId: string,
   formId: string,
   to: string
@@ -329,13 +364,13 @@ export async function sendTestSubmissionEmail(
     accentColor: "#0891b2",
     footerText: "This is a test email from SendCMS.",
   }
-  const html = await render(SubmissionNotification(props))
+  const { html, text } = await deps.renderNotification(props)
   try {
-    const { messageId, provider } = await sendPlatformEmail({
+    const { messageId, provider } = await deps.sendEmail({
       to,
       subject: `Test notification from ${form.name}`,
       html,
-      text: submissionNotificationText(props),
+      text,
     })
     return { messageId, provider }
   } catch (err) {

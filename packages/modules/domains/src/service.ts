@@ -8,14 +8,14 @@ import {
   db,
 } from "@sendcms/database"
 
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/shared"
 
-import { checkVerification } from "@/lib/services/dns-verification"
+import { checkVerification } from "./dns-verification"
 import type {
   CreateDomainInput,
   DomainActionInput,
   ReverifyDomainInput,
-} from "@/lib/validators/domain"
+} from "./validators"
 
 // Domain ownership (Phase 3). One record per normalized hostname
 // (Domain.domain is @unique). A domain can only receive submissions once

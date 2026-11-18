@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { bucketByDay } from "@/lib/services/dashboard-service"
+import { bucketByDay } from "@sendcms/analytics"
+
 import {
   buildFormExample,
   buildRestExample,

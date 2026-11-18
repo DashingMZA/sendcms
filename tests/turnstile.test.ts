@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { verifyTurnstileToken } from "@/lib/services/turnstile"
+import { verifyTurnstileToken } from "@sendcms/submissions/turnstile"
 
 afterEach(() => {
   vi.unstubAllGlobals()

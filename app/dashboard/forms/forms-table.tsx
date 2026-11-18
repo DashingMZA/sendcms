@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useForms } from "@/lib/queries/forms"
-import type { FormWithCounts } from "@/lib/queries/forms"
+import { useForms } from "@sendcms/forms/queries"
+import type { FormWithCounts } from "@sendcms/forms/queries"
+
 import {
   Badge,
   Button,

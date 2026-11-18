@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
-import { ChangeEmailSchema } from "@/lib/validators/auth"
+import { ChangeEmailSchema } from "@sendcms/users/validators"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {

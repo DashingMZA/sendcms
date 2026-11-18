@@ -9,7 +9,7 @@ import {
   type ChartConfig,
 } from "@sendcms/ui"
 
-import type { DayCount } from "@/lib/services/dashboard-service"
+import type { DayCount } from "@sendcms/analytics"
 
 const chartConfig: ChartConfig = {
   count: {

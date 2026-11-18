@@ -1,6 +1,6 @@
 import { db } from "@sendcms/database"
 
-import { ApiError } from "@/lib/api/error"
+import { ApiError } from "@sendcms/shared"
 
 export async function lookupUserByEmail(email: string) {
   const normalized = email.toLowerCase()

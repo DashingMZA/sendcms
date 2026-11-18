@@ -3,7 +3,7 @@ import {
   assertValidDomain,
   newChallenge,
   normalizeDomain,
-} from "@/lib/services/domain-service"
+} from "@sendcms/domains"
 
 describe("normalizeDomain", () => {
   it.each([

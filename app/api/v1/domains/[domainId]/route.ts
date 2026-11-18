@@ -7,8 +7,8 @@ import {
   deleteDomainForUser,
   getDomainForUser,
   setDomainStatusForUser,
-} from "@/lib/services/domain-service"
-import { DomainActionSchema } from "@/lib/validators/domain"
+} from "@sendcms/domains"
+import { DomainActionSchema } from "@sendcms/domains/validators"
 
 type Params = { params: Promise<{ domainId: string }> }
 

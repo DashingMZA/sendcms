@@ -3,11 +3,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { ok, created } from "@/lib/api/response"
 import { ApiError, handleApiError } from "@/lib/api/error"
-import {
-  createDomainForUser,
-  listDomainsForUser,
-} from "@/lib/services/domain-service"
-import { CreateDomainSchema } from "@/lib/validators/domain"
+import { createDomainForUser, listDomainsForUser } from "@sendcms/domains"
+import { CreateDomainSchema } from "@sendcms/domains/validators"
 
 export async function GET() {
   try {
