@@ -38,18 +38,18 @@ Route handlers must NOT import `lib/db.ts` directly. Services must NOT import fr
 
 ```tsx
 // Server component (page.tsx)
-export default async function CommentsPage({ params }: { params: Promise<{ siteId: string }> }) {
-  const { siteId } = await params
+export default async function InboxPage({ searchParams }: PageProps) {
   const session = await auth()
-  const comments = await getCommentsBySite(siteId, { page: 1, limit: 50 })
-  return <CommentsTable siteId={siteId} initialComments={comments.items} />
+  const filters = InboxListQuerySchema.parse(await searchParams)
+  const inbox = await listSubmissionsForUser(session.user.id, filters)
+  return <InboxTable initialData={inbox} filters={filters} />
 }
 
-// Client component (comments-table.tsx)
+// Client component (inbox-table.tsx)
 "use client"
-export function CommentsTable({ siteId, initialComments }: Props) {
-  const { data: comments } = useComments(siteId, initialComments)
-  const updateStatus = useUpdateCommentStatus(siteId)
+export function InboxTable({ initialData, filters }: Props) {
+  const { data: inbox } = useInbox(filters, initialData)
+  const updateStatus = useUpdateSubmissionStatus()
   // interactive UI, mutations via React Query
 }
 ```
@@ -60,46 +60,46 @@ All client-side reads and writes go through `@tanstack/react-query`, never raw `
 
 ```
 lib/api-client.ts    →  apiFetch<T>(path, init) — typed wrapper, throws ApiClientError({ message, status, details })
-lib/queries/**       →  one file per resource (sites.ts, comments.ts, users.ts, team.ts, pages.ts)
+lib/queries/**       →  one file per resource (domains.ts, forms.ts, inbox.ts, email-jobs.ts)
                          exports a query-key factory + useXQuery / useXMutation hooks
 ```
 
 - Components call hooks from `lib/queries/<resource>.ts`. They never call `apiFetch` or `fetch` directly.
-- `QueryClientProvider` is mounted once in `app/dashboard/layout.tsx` (dashboard-only — public/widget pages don't need it).
+- `QueryClientProvider` is mounted once in `app/dashboard/layout.tsx` (dashboard-only — public pages don't need it).
 - Errors surface via a **global default**: the `QueryClient`'s `queryCache`/`mutationCache` `onError` shows a sonner toast automatically. Pass `meta: { silent: true }` on a query/mutation only when the call site needs custom error UX instead.
 - Initial render uses `initialData` from the server-fetched props (no `dehydrate`/`HydrationBoundary` — one query per page, not nested trees).
 
 ```ts
-// lib/queries/sites.ts
-export const siteKeys = { detail: (id: string) => ["sites", id] as const }
+// lib/queries/domains.ts
+export const domainKeys = { detail: (id: string) => ["domains", id] as const }
 
-export function useSite(id: string, initialData?: Site) {
+export function useDomain(id: string, initialData?: DomainDetail) {
   return useQuery({
-    queryKey: siteKeys.detail(id),
-    queryFn: () => apiFetch<Site>(`/api/v1/sites/${id}`),
+    queryKey: domainKeys.detail(id),
+    queryFn: () => apiFetch<DomainDetail>(`/api/v1/domains/${id}`),
     initialData,
   })
 }
 
-export function useUpdateSite(id: string) {
+export function useUpdateDomain(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: Partial<Site>) =>
-      apiFetch<Site>(`/api/v1/sites/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    mutationFn: (body: Partial<DomainDetail>) =>
+      apiFetch<DomainDetail>(`/api/v1/domains/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     onMutate: async (body) => {
-      const previous = qc.getQueryData<Site>(siteKeys.detail(id))
-      qc.setQueryData(siteKeys.detail(id), (old: Site) => ({ ...old, ...body }))
+      const previous = qc.getQueryData<DomainDetail>(domainKeys.detail(id))
+      qc.setQueryData(domainKeys.detail(id), (old: DomainDetail) => ({ ...old, ...body }))
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(siteKeys.detail(id), ctx.previous)
+      if (ctx?.previous) qc.setQueryData(domainKeys.detail(id), ctx.previous)
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: siteKeys.detail(id) }),
+    onSettled: () => qc.invalidateQueries({ queryKey: domainKeys.detail(id) }),
   })
 }
 ```
 
-List-shaped optimistic updates (comments table, users table) follow the same `onMutate`/`onError` snapshot-and-rollback shape over the list's query key.
+List-shaped optimistic updates (inbox table, forms table) follow the same `onMutate`/`onError` snapshot-and-rollback shape over the list's query key.
 
 ## Forms
 
@@ -107,12 +107,12 @@ No react-hook-form. No form library. Native HTML forms + a `lib/queries/**` muta
 
 ```tsx
 "use client"
-export function GeneralSection({ site }: Props) {
-  const updateSite = useUpdateSite(site.id)
+export function FormSettingsForm({ form }: Props) {
+  const updateForm = useUpdateForm(form.id)
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    updateSite.mutate({ name: form.get('name') as string })
+    const data = new FormData(e.currentTarget)
+    updateForm.mutate({ name: data.get('name') as string })
   }
   return <form onSubmit={handleSubmit}>...</form>
 }
@@ -158,13 +158,8 @@ Single source of truth in `lib/permissions/`:
 
 | File                          | Purpose                                                                                       |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
-| `lib/permissions/site.ts`     | `SiteRole`, `SiteCapability`, `siteCan()`, `SETTINGS_SECTION_CAPABILITY`, `GrantableSiteRole` |
 | `lib/permissions/platform.ts` | `PlatformRole`, `PlatformCapability`, `platformCan()`, `PLATFORM_ROUTE_CAPABILITY`            |
 | `lib/permissions/index.ts`    | Barrel re-export                                                                              |
-
-**Site roles:** `SITE_OWNER` > `SITE_ADMIN` > `SITE_MODERATOR`
-
-**Site capabilities:** `MODERATE`, `MANAGE_SETTINGS`, `MANAGE_EMAIL_SETTINGS`, `MANAGE_MODERATORS`, `MANAGE_ADMINS`, `DELETE_SITE`, `TRANSFER_SITE`
 
 **Platform capabilities:** `VIEW_NOTICE_BOARD`, `VIEW_ADMINISTRATION`, `MANAGE_PLATFORM_SETTINGS` (only `PLATFORM_OWNER` has any)
 

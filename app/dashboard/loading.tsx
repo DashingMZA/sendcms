@@ -48,7 +48,7 @@ export default function DashboardLoading() {
           </div>
         </div>
 
-        {/* Sites list + Recent comments */}
+        {/* Stats + Recent submissions */}
         <div className="grid gap-8 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">

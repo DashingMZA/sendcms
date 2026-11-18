@@ -111,7 +111,7 @@ export function SignInPanel() {
       {/* Hero copy */}
       <div className="relative space-y-6">
         <p className="text-4xl leading-[1.15] font-semibold tracking-tight text-pretty">
-          Comments that belong
+          Forms that belong
           <br />
           to your site — not
           <br />
@@ -122,7 +122,7 @@ export function SignInPanel() {
           {[
             "Self-hosted, open source, yours forever",
             "Drop-in embed — one script tag",
-            "Moderation, spam filtering, full control",
+            "Spam filtering, full control",
           ].map((item) => (
             <li key={item} className="flex items-center gap-2.5">
               <svg

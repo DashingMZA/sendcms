@@ -103,7 +103,6 @@ ones:
 | `RESEND_API_KEY`       | Resend API key (email notifications)                                             |
 | `RESEND_FROM`          | Sending address on a verified Resend domain                                      |
 | `CRON_SECRET`          | Bearer token for the email-outbox cron                                           |
-| `WIDGET_JWT_SECRET`    | JWT secret for the legacy comment widget's tokens (still required at runtime)    |
 
 ## License
 

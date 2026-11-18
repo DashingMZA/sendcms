@@ -2,7 +2,6 @@ import { betterAuth as createBetterAuth } from "better-auth"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { headers } from "next/headers"
 import { db } from "@/lib/db"
-import { claimPendingInvites } from "@/lib/services/membership-service"
 import { getConfiguredOAuthProviders } from "@/lib/auth-providers"
 import {
   sendPasswordResetEmail,
@@ -25,9 +24,6 @@ import type { PlatformRole } from "@/lib/permissions"
  * with `emailVerified: false` and get a verification email on sign-up
  * (`emailVerification.sendOnSignUp`) — they can sign in, but domain
  * registration / submissions (Phase 3/5) require a verified email.
- *
- * The widget visitor flow is separate (`lib/auth-widget.ts`,
- * WIDGET_JWT_SECRET) — never conflate the secrets.
  *
  * The instance is exported as `betterAuth` (not `auth`) so the `auth()`
  * helper below keeps its name — all existing `await auth()` call sites
@@ -136,21 +132,6 @@ export const betterAuth = createBetterAuth({
               )`
           } catch (err) {
             console.error("[auth] platform-owner promotion failed:", err)
-          }
-        },
-      },
-    },
-    session: {
-      create: {
-        // Runs on every sign-in (a new session row is created). Claims any
-        // site invites sent to this email after the account was created.
-        after: async (session) => {
-          const user = await db.user.findUnique({
-            where: { id: session.userId },
-            select: { email: true },
-          })
-          if (user?.email) {
-            await claimPendingInvites(session.userId, user.email)
           }
         },
       },

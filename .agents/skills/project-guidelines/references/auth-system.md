@@ -34,44 +34,23 @@ const session = await auth()
 if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
 ```
 
-## Widget Auth
+## Visitor Auth
 
-| Aspect | Detail |
-|---|---|
-| Mechanism | Google OAuth PKCE → Widget JWT (jose) |
-| JWT Storage | `localStorage` (7-day TTL) |
-| PKCE State | `sessionStorage` (OAuth flow only, cleared after) |
-| Routes | `/api/widget/*` |
-| Transport | `Authorization: Bearer <jwt>` |
-| CORS | Enforced per `Site.allowedOrigins` |
-| JWT secret | `WIDGET_JWT_SECRET` (distinct from `BETTER_AUTH_SECRET`) |
-
-**Route pattern:**
-```ts
-import { verifyWidgetToken } from "@/lib/auth-widget"
-// OPTIONS handler always exported for CORS preflight
-export async function OPTIONS() { return new Response(null, { status: 204, headers: corsHeaders(origin) }) }
-// Write routes require Bearer token
-const payload = verifyWidgetToken(req) // throws on invalid
-```
+There is none. The comment system's visitor auth (Google OAuth PKCE →
+with it on 2026-11-18. Visitors never sign in; the public submission API
+takes no credentials — the `Origin` allowlist is its authorization.
 
 ## Permission Guards
 
 | Guard | Location | Used By |
 |---|---|---|
-| `requireSiteAccess(siteId, userId, capability)` | `lib/services/membership-service.ts` | All site-scoped admin routes |
-| `siteCan(role, capability)` | `lib/permissions/site.ts` | Settings visibility, role checks |
 | `platformCan(role, capability)` | `lib/permissions/platform.ts` | Dashboard nav visibility |
-| `isOriginAllowed(origin, allowedOriginsJson)` | `lib/cors.ts` | Widget POST routes — takes raw JSON string from `Site.allowedOrigins` |
-| `getEffectiveOrigin(req)` | `lib/cors.ts` | Resolves origin from `origin` header, falls back to `referer` |
-| `isCommenterBannedOnSite(...)` | `lib/services/user-service.ts` | Widget write routes |
+| `getEffectiveOrigin(req)` | `lib/cors.ts` | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
 
 ## Critical Rules
 
-- `WIDGET_JWT_SECRET` ≠ `BETTER_AUTH_SECRET` — different secrets
-- Widget uses Bearer token, no cookies — cross-origin safe
-- CSRF not applicable to widget (no cookies)
 - Admin routes gated by `proxy.ts`, not inline checks
-- Widget every route exports `OPTIONS` handler for CORS preflight
+- Public submit route: no cookies, no session — Origin allowlist only;
+  it exports `OPTIONS` for CORS preflight and echoes CORS headers only
+  for allowed origins
 - Widget uses `corsHeaders(origin)` on all responses
-- Widget rate-limited: auth 5/min, comments 10/min via `rateLimit()`

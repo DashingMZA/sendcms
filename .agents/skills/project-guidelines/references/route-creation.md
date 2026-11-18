@@ -28,31 +28,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ site
 | Type | Path | Auth | Notes |
 |---|---|---|---|
 | Admin API | `app/api/v1/<resource>/route.ts` | Session cookie | No CORS needed |
-| Widget API | `app/api/widget/<action>/route.ts` | Bearer JWT | Export `OPTIONS` + CORS headers |
+| Public API | `app/api/public/v1/submit/route.ts` | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
 | Dashboard page | `app/dashboard/<section>/page.tsx` | Server component | Fetch data, pass to client |
-| Site page | `app/dashboard/sites/[siteId]/<section>/page.tsx` | Server component | Access check first |
+| Detail page | `app/dashboard/forms/[formId]/page.tsx` | Server component | Owner-scoped fetch, 404 → `notFound()` |
 | Service | `lib/services/<name>-service.ts` | N/A | No Next.js imports |
 | Validator | `lib/validators/<name>.ts` | N/A | Zod schema, shared |
 | Hook | `hooks/use-<name>.ts` | N/A | Client-side only |
 
-## Widget Route Extra Pattern
+## Public API Route Pattern
 
 ```ts
-import { corsHeaders } from "@/lib/cors"
-import { rateLimit } from "@/lib/rate-limit"
-import { verifyWidgetToken } from "@/lib/auth-widget"
+import { getEffectiveOrigin } from "@/lib/cors"
+import { submitForm } from "@/lib/services/submission-service"
 
-export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: corsHeaders("*") })
+export async function OPTIONS(req: NextRequest) {
+  return new Response(null, { status: 204, headers: publicCorsHeaders(getEffectiveOrigin(req) ?? "*") })
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const origin = req.headers.get("origin")
-    const rate = rateLimit(`widget:${ip}`, 10, 60_000)
-    if (!rate.ok) throw new ApiError("Rate limit exceeded", 429)
-    // ... CORS origin check, auth, service call ...
-    return NextResponse.json(data, { headers: corsHeaders(origin!) })
+    // ... content-length check, Zod parse, submitForm(body, meta) ...
+    // Success: 201 created / 200 duplicate, CORS headers echoed.
+    // Errors: ApiError carries originAllowed — handleApiError only echoes
+    // CORS headers when the origin passed the allowlist.
   } catch (err) {
     return handleApiError(err)
   }
@@ -89,7 +87,6 @@ revalidatePath("/dashboard", "layout")
 - [ ] Service in `lib/services/` (no Next.js imports)
 - [ ] Validator in `lib/validators/` (Zod)
 - [ ] Route handler (thin, try/catch + handleApiError)
-- [ ] Site-scoped admin routes: call `requireSiteAccess(siteId, userId, capability)` from `membership-service`
-- [ ] Widget route: OPTIONS + CORS headers + rate limiting
+- [ ] Public API route: OPTIONS + CORS echo only for allowed origins; durable save before the success response; idempotency key honored
 - [ ] `pnpm typecheck` passes
 - [ ] Migration with descriptive name (if schema changed)

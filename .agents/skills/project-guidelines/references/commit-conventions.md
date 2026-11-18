@@ -28,13 +28,14 @@ Scope is optional. No scope when change is project-wide.
 | `authz` | Authorization, permissions, RBAC |
 | `db` | Database schema, migrations |
 | `dashboard` | Dashboard UI, pages, layout |
-| `settings` | Site settings forms |
-| `sites` | Site management |
-| `widget` | Embed widget (vanilla TS) |
-| `team` | Team/member management |
+| `settings` | Account settings, notification settings |
+| `domains` | Domain registration + verification |
+| `forms` | Form CRUD, fields, domain links |
+| `inbox` | Submission inbox |
+| `notifications` | Email outbox, delivery log |
+| `sdk` | Form SDK (vanilla TS) |
 | `permissions` | Role/permission logic |
 | `homepage` | Landing/marketing page |
-| `elements` | Design system showcase |
 | `content` | Markdown content files |
 | `branding` | Logo, brand config |
 | `typography` | Font, text styles |

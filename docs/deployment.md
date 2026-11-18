@@ -30,7 +30,6 @@ this document assumes a particular host.
 | `CRON_SECRET` | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run. |
 | `TURNSTILE_SECRET_KEY` | for Turnstile | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | for Turnstile | Turnstile site key (public, baked into the SDK). |
-| `WIDGET_JWT_SECRET` | yes | Secret for the legacy comment widget's JWTs. Required at build/start even though the widget UI is removed — the widget API routes still exist. |
 
 Copy `.env.example` to `.env` for local development. Never commit
 `.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
@@ -53,15 +52,15 @@ confirmation for that reason).
 ## Build and run
 
 ```bash
-pnpm build            # prisma generate + widget build + SDK build + next build
+pnpm build            # prisma generate + SDK build + next build
 pnpm start            # production server
 ```
 
 `pnpm dev` does the same generation steps, then starts the dev server
-with Turbopack. Both the widget bundle (`public/embed.js`) and the SDK
-bundle (`public/forms/v1.js`) are built from source and gitignored —
-never commit them, and make sure CI builds them before testing (the CI
-workflow runs `pnpm db:generate` and `pnpm sdk:build`).
+with Turbopack. The SDK bundle (`public/forms/v1.js`) is built from
+source and gitignored — never commit it, and make sure CI builds it
+before testing (the CI workflow runs `pnpm db:generate` and
+`pnpm sdk:build`).
 
 ## Email outbox cron
 
@@ -107,11 +106,11 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
 - The Worker entry is `.open-next/worker.js` (OpenNext adapter);
   `wrangler.jsonc` holds the R2 cache bucket, the Images binding, and
   the self-reference service binding. The build command must be the
-  full chain — `pnpm db:generate && pnpm widget:build && pnpm sdk:build
+  full chain — `pnpm db:generate && pnpm sdk:build
   && npx @opennextjs/cloudflare build` (also in `wrangler.jsonc`'s
   `build.command` and as the `build:cf` script). A bare
   `npx @opennextjs/cloudflare build` bakes a stale Prisma client and
-  missing widget/SDK bundles. Set the same command in the dashboard's
+  a missing SDK bundle. Set the same command in the dashboard's
   Build command field; build-time values (`NEXT_PUBLIC_APP_URL`, Google
   client id) must come from the dashboard build environment, or the
   built output bakes in localhost and empty ids.

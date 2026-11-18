@@ -25,7 +25,7 @@ claimed live unless it was verified live.
 - Comment dashboard UI: `app/dashboard/sites/`, `administration/`, `notice-board/`, `settings/`, comment charts, Product Hunt badge, site switcher, GTM.
 - `vercel.json` (only held the stale openremark.vercel.app → openremark.bond redirect).
 - Legacy widget demo (`components/hero-video.tsx`) from the landing page.
-- **Not removed (separately approved step, still open):** the legacy comment tables (`Site`/`Page`/`Comment`/`ModerationLog`) and the `/api/widget/*` + `/api/v1/sites/*` routes still exist in schema and code. The dashboard no longer exposes them.
+- **Removed 2026-11-18 (owner-approved, after Phase 11):** the legacy comment system is gone entirely — tables `Site`/`Page`/`Comment`/`Commenter`/`CommentLike`/`ModerationLog`/`BannedCommenter`/`SiteMember`/`SiteInvite` dropped via migration, `/api/widget/*` + `/api/v1/sites/*` + `/api/v1/comments/*` routes, `widget/`, comment services/validators/queries/components, per-site SMTP service, and the `WIDGET_JWT_SECRET` env var all deleted. The dev DB held 0 rows in every legacy table, so no data was lost.
 
 ## Tests — 206/206 pass
 
@@ -104,7 +104,7 @@ owner accounts intact).
    `https://jadoo.bond`) vs `openremark.bond` (Vercel). The SDK URL and
    all embed snippets follow from this choice.
 2. **Cloudflare dashboard:** Build command must be
-   `pnpm db:generate && pnpm widget:build && pnpm sdk:build && npx @opennextjs/cloudflare build`
+   `pnpm db:generate && pnpm sdk:build && npx @opennextjs/cloudflare build`
    (also set in `wrangler.jsonc` `build.command`). Then `wrangler deploy`
    creates a NEW `sendcms` worker — delete the old `open-remark` worker
    once the new one is live.
@@ -113,7 +113,7 @@ owner accounts intact).
    needs a new bucket created in the dashboard first.
 4. **Secrets in the deployment env:** `DATABASE_URL`,
    `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`,
-   `GOOGLE_CLIENT_SECRET`, `WIDGET_JWT_SECRET`, `RESEND_API_KEY`,
+   `GOOGLE_CLIENT_SECRET`, `RESEND_API_KEY`,
    `RESEND_FROM` (a `csofts.tech` address, e.g.
    `SendCMS <notifications@csofts.tech>`), `CRON_SECRET`. Optional:
    GitHub/Facebook OAuth, `TURNSTILE_SECRET_KEY`.
@@ -123,5 +123,5 @@ owner accounts intact).
    Bearer-protected `/api/cron/email-outbox` needs an external scheduler
    (or a header-adding proxy). Without the cron, failed notifications
    retry only via the submit route's `after()` hook.
-7. **Env:** `WIDGET_JWT_SECRET` is still required at build/start even
-   though the widget UI is removed — the widget API routes still exist.
+7. **Env:** `WIDGET_JWT_SECRET` no longer exists — it was removed with
+   the comment system. Do not set it anywhere.

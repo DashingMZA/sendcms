@@ -15,9 +15,9 @@ filtering and email notifications.
 The repo started as OpenRemark (a comment system) and was rebuilt into
 SendCMS on branch `feat/contact-form-saas` (see
 `docs/sendcms-transformation-plan.md`, 11 phases). The legacy comment
-models (`Site`/`Page`/`Comment`) and `/api/widget/*` still exist, but the
-dashboard no longer exposes them — their removal is a separately
-approved step. Do not build new features on the comment system.
+system (`Site`/`Page`/`Comment` models, `/api/widget/*`,
+`/api/v1/sites/*`, `widget/`) was removed entirely on 2026-11-18
+(owner-approved) — nothing of it remains.
 
 Beta: APIs and schema may change without migration paths.
 
@@ -26,8 +26,8 @@ Beta: APIs and schema may change without migration paths.
 Package manager: **pnpm** (v12).
 
 ```bash
-pnpm dev              # prisma generate + widget build + SDK build + next dev (turbopack)
-pnpm build            # prisma generate + widget build + SDK build + next build
+pnpm dev              # prisma generate + SDK build + next dev (turbopack)
+pnpm build            # prisma generate + SDK build + next build
 pnpm start            # production next start
 pnpm typecheck        # tsc --noEmit (run before declaring work done)
 pnpm lint             # eslint
@@ -43,33 +43,26 @@ pnpm db:seed          # tsx prisma/seed.ts — SendCMS demo data (demo user, ver
 pnpm db:studio        # Prisma Studio GUI
 pnpm db:status        # scripts/db-manager.ts status
 pnpm db:reset         # DESTRUCTIVE — requires typed confirmation
-pnpm db:benchmark:seed
-pnpm db:benchmark:run
-
-# Widget bundle (legacy comment widget — still built, UI removed in Phase 9)
-pnpm widget:build     # minified → public/embed.js (+ debug → public/embed.debug.js)
-pnpm widget:dev       # non-minified, faster
 
 # Form SDK bundle (SendCMS)
 pnpm sdk:build        # minified → public/forms/v1.js (+ debug → public/forms/v1.debug.js)
 ```
 
-`pnpm dev` regenerates Prisma client and rebuilds both bundles every start — don't skip it. Both bundles are gitignored; CI builds them before testing.
+`pnpm dev` regenerates the Prisma client and rebuilds the SDK bundle every start — don't skip it. The bundle is gitignored; CI builds it before testing.
 
 ## Architecture
 
 Detailed rules per section: `project-guidelines` skill (reference file in parentheses).
 
-### Two auth systems, kept separate (`auth-system.md`)
+### Auth (`auth-system.md`)
 
-| System | Who      | Mechanism                                  | Storage              | Routes                    |
-| ------ | -------- | ------------------------------------------ | -------------------- | ------------------------- |
-| Admin  | Owners   | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required) → session cookie | Server session (database) | `/dashboard`, `/api/v1/*` |
-| Widget | Visitors | Google OAuth PKCE → signed Widget JWT      | `localStorage` (JWT) | `/api/widget/*`           |
+One auth system: owners sign in with Better Auth 1.7.x — Google/GitHub/
+Facebook OAuth + email/password (verification required) → session cookie
+(stored server-side in the database). Routes: `/dashboard`, `/api/v1/*`.
+The legacy widget visitor auth (Google OAuth PKCE → signed Widget JWT,
+`/api/widget/*`) was removed with the comment system.
 
 - Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `lib/auth.ts` (full, with Prisma adapter). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`lib/email/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
-- Widget: `Authorization: Bearer <jwt>` — no cookies (cross-origin). CSRF n/a; CORS allowlist enforced per `Site.allowedOrigins`.
-- `WIDGET_JWT_SECRET` ≠ `BETTER_AUTH_SECRET` — do not conflate.
 
 ### Layered request flow — HARD RULE (`coding-conventions.md`)
 
@@ -101,22 +94,11 @@ User ──< Domain ──< DomainVerification
   └──< AuditLog
 ```
 
-Legacy comment models (schema + `/api/widget/*` + `/api/v1/sites/*`
-still exist; dashboard UI removed in Phase 9):
-
-```
-User ──< Site ──< Page ──< Comment ──< Comment (replies, self-ref via @relation("Replies"))
-                              │
-                              └──< ModerationLog
-```
-
 - `Domain.domain` is `@unique` (normalized hostname); `Form.id` is the public `formId`.
 - `Submission.data` is `Json` (fields vary per form); `originDomain` is the observed origin host.
 - `EmailJob` is the notification outbox (`PENDING` → `SENT`/`FAILED`, with retries).
 - `DomainVerification.challenge` is a 48-char random token, shared across the DNS TXT / meta-tag / file methods; 7-day TTL, 10 attempts.
 - `Submission.status`: NEW | READ | STARRED | ARCHIVED | SPAM.
-- `Comment.status`: PENDING | APPROVED | SPAM | DELETED. Soft delete only — never physically delete domain rows.
-- `Site.siteKey` — public embed identifier. `Site.allowedOrigins` — JSON (Postgres native), enforced on widget POST.
 
 ### Non-obvious gotchas (`folder-structure.md`)
 
@@ -138,21 +120,13 @@ User ──< Site ──< Page ──< Comment ──< Comment (replies, self-re
   `<script>` element appended to jsdom runs in its own vm context, so
   `window.SendCMS` and mocked `fetch` would not be shared).
 
-### Widget specifics (legacy comment widget)
-
-- Shadow DOM — CSS isolated. Visuals: `widget/src/styles.css`.
-- Compile-time constants via esbuild `define`: `__APP_URL__`, `__GOOGLE_CLIENT_ID__`, `__STYLES__`. **Never** read `process.env` in widget source.
-- `widget/build.ts` loads `.env` then `.env.local` — widget needs `NEXT_PUBLIC_APP_URL` + `GOOGLE_CLIENT_ID` at build time.
-- Auth flow (PKCE): popup → `accounts.google.com` (with `code_challenge`) → redirect to `/api/widget/oauth-callback` → `postMessage({type: "ZEON_GOOGLE_CODE", code, state})` to opener → `POST /api/widget/auth` exchanges `code` + `code_verifier` → server verifies with Google → issues 7-day Widget JWT.
-
 ## Environment
 
-Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WIDGET_JWT_SECRET`, `NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET`. Optional: `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET` (OAuth providers are offered only when their credentials are set), `SMTP_*` (fallback when no Resend key), `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY`.
+Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET`. Optional: `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET` (OAuth providers are offered only when their credentials are set), `SMTP_*` (fallback when no Resend key), `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY`.
 
 Google Cloud Console — authorized redirect URIs must include:
 
 - `<APP_URL>/api/auth/callback/google` (admin Better Auth)
-- `<APP_URL>/api/widget/oauth-callback` (widget visitor flow)
 
 <!-- BEGIN:project-guidelines-rules -->
 

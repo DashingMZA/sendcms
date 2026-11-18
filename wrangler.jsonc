@@ -5,12 +5,12 @@
   "compatibility_flags": ["nodejs_compat"],
   // Build chain for `wrangler deploy` / `wrangler dev` (the Cloudflare
   // dashboard's own Build command setting must match — see
-  // docs/deployment.md): generate the Prisma client, build the widget
-  // and the SDK bundles, then the OpenNext Cloudflare build. The plain
+  // docs/deployment.md): generate the Prisma client, build the SDK
+  // bundle, then the OpenNext Cloudflare build. The plain
   // `opennextjs-cloudflare build` alone bakes a stale client and
   // missing bundles.
   "build": {
-    "command": "pnpm db:generate && pnpm widget:build && pnpm sdk:build && npx @opennextjs/cloudflare build"
+    "command": "pnpm db:generate && pnpm sdk:build && npx @opennextjs/cloudflare build"
   },
   // The app is a dynamic Next.js App Router app (SSR + API routes + Prisma +
   // Better Auth), so it cannot run as plain static assets — the Worker entry below
@@ -53,5 +53,5 @@
   // Secrets are NOT stored here. Set them in the Cloudflare dashboard
   // (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET,
   // BETTER_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-  // WIDGET_JWT_SECRET, RESEND_API_KEY, CRON_SECRET.
+  // RESEND_API_KEY, CRON_SECRET.
 }

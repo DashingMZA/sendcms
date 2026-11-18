@@ -4,9 +4,9 @@
 
 Vanilla TypeScript embed that enhances `<form data-cms-form>` on any
 page. Bundles to `public/forms/v1.js` via esbuild. No framework, no
-dependencies — all DOM work is imperative. Replaces the old comment
-widget (`widget/`) for contact forms; the widget stays until the
-comment system is removed in a separately approved step.
+dependencies — all DOM work is imperative. It replaced the old comment
+widget (`widget/`) for contact forms; that widget was removed with the
+comment system on 2026-11-18.
 
 ## Source layout
 

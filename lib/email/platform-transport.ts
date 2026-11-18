@@ -3,8 +3,8 @@ import type SMTPTransport from "nodemailer/lib/smtp-transport"
 
 /**
  * Platform SMTP transport for transactional auth mail (email verification,
- * password reset). Reads SMTP_* env vars — the platform's own mailbox, NOT
- * per-site SMTP (Site.smtp* is the legacy comment-notification config).
+ * password reset). Reads SMTP_* env vars — the platform's own mailbox.
+ * (Per-site SMTP was removed with the comment system.)
  *
  * Returns null when unconfigured; callers decide what to do (see
  * lib/email/auth-mailer.ts). Never enables nodemailer's logger/debug

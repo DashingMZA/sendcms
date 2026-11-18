@@ -3,10 +3,9 @@
 SendCMS is a contact-form backend. Any website embeds a form with one
 script tag; submissions go to a public REST endpoint, are validated and
 spam-checked, saved durably in Postgres, queued for email notification,
-and read back in a dashboard inbox. The legacy comment system (sites,
-pages, comments, widget auth) still exists in the schema and in
-`/api/widget/*` + `/api/v1/sites/*`, but the dashboard no longer exposes
-it — its removal is a separately approved step.
+and read back in a dashboard inbox. The legacy comment system was
+removed entirely on 2026-11-18 (owner-approved); nothing of it remains
+in the schema, routes, or code.
 
 ## System diagram
 
@@ -77,8 +76,6 @@ it — its removal is a separately approved step.
 
 There is no visitor auth: visitors never sign in, and the public API
 takes no credentials — the `Origin` allowlist is its authorization.
-(The legacy comment widget still uses Google OAuth + Widget JWTs under
-`/api/widget/*`; that system is not part of SendCMS.)
 
 Admin routes are gated by `proxy.ts` (Next middleware — named
 `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session

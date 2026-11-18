@@ -15,17 +15,20 @@ open-remark/
 │   │   └── sites/
 │   │       ├── new/
 │   │       └── [siteId]/
-│   │           ├── page.tsx
-│   │           ├── settings/
-│   │           ├── comments/
-│   │           ├── users/
-│   │           ├── team/
-│   │           └── install/
+│   │           ├── page.tsx           # Overview
+│   │           ├── domains/           # register / verify / detail
+│   │           ├── forms/             # CRUD / fields / domain links / notifications
+│   │           ├── inbox/             # submissions + detail
+│   │           ├── notifications/     # email delivery log
+│   │           ├── analytics/         # 30-day stats
+│   │           ├── api/               # SDK snippet + REST reference
+│   │           └── account/           # profile, email, password, connected accounts
 │   ├── api/
-│   │   ├── v1/                    # Admin REST API (session-gated)
-│   │   ├── widget/                # Public widget API (JWT-gated)
+│   │   ├── v1/                    # Admin REST API (session-gated): domains, forms, inbox, email-jobs
+│   │   ├── public/v1/submit/      # Public submission API (Origin allowlist, no auth)
+│   │   ├── cron/email-outbox/     # Email retry worker (Bearer <redacted>)
+│   │   ├── health/                # DB health ping
 │   │   └── auth/[...all]/        # Better Auth handler
-│   ├── elements/                  # Design system showcase
 │   └── changelog/
 ├── components/
 │   ├── dashboard/                 # Dashboard-specific components
@@ -34,34 +37,32 @@ open-remark/
 │   ├── db.ts                      # Prisma singleton
 │   ├── auth.ts                    # Better Auth config (with Prisma) + auth() helper
 │   ├── auth-client.ts             # Browser-side Better Auth client
-│   ├── auth-widget.ts             # Widget JWT issue/verify
 │   ├── services/                  # Business logic (server-side, no Next.js imports)
-│   │   ├── comment-service.ts
-│   │   ├── membership-service.ts  # requireSiteAccess() — all site-scoped auth checks
-│   │   ├── moderation-service.ts
-│   │   ├── page-service.ts
-│   │   ├── site-service.ts
-│   │   └── user-service.ts
+│   │   ├── domain-service.ts      # register/verify/suspend domains
+│   │   ├── form-service.ts        # form CRUD, fields, domain links, notifications
+│   │   ├── submission-service.ts  # public submit flow + inbox actions
+│   │   ├── dns-verification.ts    # DNS TXT / meta-tag / file checks (DoH)
+│   │   ├── email-outbox.ts        # EmailJob queue, retries, test email
+│   │   ├── dashboard-service.ts   # overview + analytics aggregates
+│   │   ├── user-service.ts        # auth methods, user lookup
+│   │   └── system-service.ts      # DB health ping
 │   ├── api-client.ts              # apiFetch<T>() — typed client fetch wrapper, throws ApiClientError
 │   ├── queries/                   # Client-side React Query hooks, one file per resource
-│   │   ├── sites.ts
-│   │   ├── comments.ts
-│   │   ├── users.ts
-│   │   ├── team.ts
-│   │   └── pages.ts
-│   ├── validators/                # Zod schemas
+│   │   ├── domains.ts
+│   │   ├── forms.ts
+│   │   ├── inbox.ts
+│   │   └── email-jobs.ts
+│   ├── validators/                # Zod schemas (auth, domain, form, inbox, email-jobs, submission)
 │   ├── api/                       # response.ts + error.ts
-│   ├── permissions/               # RBAC: site.ts, platform.ts, index.ts
-│   ├── email/                     # email-service.ts, transport.ts, templates/
-│   ├── cors.ts                    # isOriginAllowed, corsHeaders, getEffectiveOrigin
-│   ├── rate-limit.ts              # In-memory LRU, 10 req/min default
-│   ├── sanitize.ts
+│   ├── permissions/               # platform.ts, index.ts (site rules removed with the comment system)
+│   ├── email/                     # provider.ts, platform-transport.ts, transport.ts, auth-mailer.ts, templates/
+│   ├── cors.ts                    # getEffectiveOrigin, normalizeOrigin, corsHeaders
 │   └── utils.ts
 ├── hooks/
 │   └── use-mobile.ts
 ├── generated/prisma/              # Prisma client output (do not edit)
 ├── prisma/                        # Schema + migrations
-├── widget/src/                    # Embed widget (vanilla TS)
+├── sdk/                           # Form SDK (vanilla TS) → public/forms/v1.js
 ├── config/config.json             # App configuration
 ├── proxy.ts                       # Next middleware (not middleware.ts)
 └── public/                        # Static assets

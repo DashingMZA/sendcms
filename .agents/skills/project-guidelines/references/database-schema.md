@@ -13,19 +13,19 @@
 | Enums                 | Use for status/role/action fields. Never `String`.                                           |
 | Indexes               | Every FK, every status+timestamp filter, every WHERE field                                   |
 | Composite index order | Column order must match query WHERE/ORDER BY                                                 |
-| Unique                | `@unique` on natural identifiers (`email`, `domain`, `siteKey`)                              |
+| Unique                | `@unique` on natural identifiers (`email`, `domain`)                                          |
 | Cascade               | `onDelete: Cascade` for clearly child rows only                                              |
 
 ## Naming
 
 | Element            | Convention                | Example                    |
 | ------------------ | ------------------------- | -------------------------- |
-| Models             | PascalCase                | `Comment`, `ModerationLog` |
+| Models             | PascalCase                | `Submission`, `SubmissionEvent` |
 | Fields             | camelCase                 | `authorName`, `createdAt`  |
-| Relations (1:N)    | plural                    | `comments`, `replies`      |
-| Relations (N:1)    | singular                  | `page`, `site`             |
+| Relations (1:N)    | plural                    | `submissions`, `events`    |
+| Relations (N:1)    | singular                  | `form`, `domain`           |
 | Enum values        | UPPER_SNAKE_CASE          | `PENDING`, `APPROVED`      |
-| Self-ref relations | explicit `@relation` name | `@relation("Replies")`     |
+| Self-ref relations | explicit `@relation` name | none in the current schema |
 
 ## Normalization
 
@@ -63,7 +63,7 @@ model Detail {
 }
 ```
 
-> In this codebase, `EmbedConfig` is the live instance of this pattern (appearance fields extracted off `Site`).
+> In this codebase, `DomainVerification` is the live instance of this pattern (challenge, attempts and expiry live on the verification row, not on `Domain`).
 
 ## Migration Workflow
 
@@ -77,10 +77,7 @@ Never edit applied migrations. Create a new one.
 
 | Enum            | Values                                 | Used By                              |
 | --------------- | -------------------------------------- | ------------------------------------ |
-| `CommentStatus` | PENDING, APPROVED, SPAM, DELETED       | `Comment.status`                     |
 | `PlatformRole`  | PLATFORM_OWNER, PLATFORM_USER          | `User.platformRole`                  |
-| `SiteRole`      | SITE_OWNER, SITE_ADMIN, SITE_MODERATOR | `SiteMember.role`, `SiteInvite.role` |
-| `InviteStatus`  | PENDING, ACCEPTED, REVOKED             | `SiteInvite.status`                  |
 | `DomainStatus`  | PENDING, VERIFIED, SUSPENDED           | `Domain.status`                      |
 | `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE       | `DomainVerification.method`          |
 | `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED | `DomainVerification.status`     |
@@ -96,8 +93,7 @@ Never edit applied migrations. Create a new one.
 
 | Model             | Relations                                                                                  | Indexes                                                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `User`            | has many Site, Account, Session, SiteMember, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                      |
-| `Site`            | → User; has many Page, SiteMember, SiteInvite, BannedCommenter                             | `@@index([ownerId])`, `domain @unique`, `siteKey @unique`                                                               |
+| `User`            | has many Account, Session, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                      |
 | `Domain`          | → User; has many DomainVerification, FormDomain                                            | `domain @unique`, `@@index([ownerId])`, `@@index([status, createdAt])`                                                  |
 | `DomainVerification` | → Domain                                                                              | `@@index([domainId])`, `@@index([domainId, status, createdAt])`                                                         |
 | `Form`            | → User; has many FormField, FormDomain, Submission, NotificationSettings, EmailJob          | `@@index([ownerId])`, `@@index([ownerId, active])`                                                                      |
@@ -108,14 +104,6 @@ Never edit applied migrations. Create a new one.
 | `NotificationSettings` | → Form                                                                          | `@@unique([formId, email])`, `@@index([formId])`                                                                        |
 | `EmailJob`        | → Form? + Submission? (SetNull)                                                            | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                             |
 | `AuditLog`        | → User? (actor, SetNull)                                                                   | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                        |
-| `Page`            | → Site; has many Comment                                                                   | `@@unique([siteId, slug])`, `@@index([siteId])`                                                                         |
-| `Commenter`       | has many Comment, BannedCommenter                                                          | `email @unique`, `username @unique`                                                                                     |
-| `Comment`         | → Page, self-ref (replies via `@relation("Replies")`); has many CommentLike, ModerationLog | `@@index([pageId, status, createdAt])`, `@@index([parentId])`, `@@index([commenterId])`, `@@index([status, createdAt])` |
-| `CommentLike`     | → Comment                                                                                  | `@@unique([commentId, userEmail])`, `@@index([commentId])`                                                              |
-| `ModerationLog`   | → Comment                                                                                  | `@@index([commentId, createdAt])`, `@@index([adminEmail, createdAt])`                                                   |
-| `SiteMember`      | → User + Site                                                                              | `@@unique([userId, siteId])`, `@@index([userId])`, `@@index([siteId, role])`                                            |
-| `SiteInvite`      | → Site                                                                                     | `@@unique([siteId, email])`, `@@index([email, status])`, `@@index([siteId])`                                            |
-| `BannedCommenter` | → Site + Commenter                                                                         | `@@unique([siteId, commenterId])`, `@@index([siteId])`, `@@index([commenterId])`                                        |
 
 ## Anti-Patterns
 

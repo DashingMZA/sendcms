@@ -1,5 +1,5 @@
-// Builds the SendCMS form SDK bundle with esbuild — same pattern as
-// widget/build.ts: compile-time defines, minified production build +
+// Builds the SendCMS form SDK bundle with esbuild — compile-time
+// defines, minified production build +
 // non-minified debug build.
 //
 //   pnpm sdk:build   # minified → public/forms/v1.js + debug → public/forms/v1.debug.js

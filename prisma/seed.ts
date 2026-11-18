@@ -1,6 +1,6 @@
 // SendCMS demo seed — seeds ONLY SendCMS data (demo user, verified domain,
-// form with default fields, sample submissions). No comment-system models
-// (Site / Page / Comment / Commenter / ModerationLog) are touched.
+// form with default fields, sample submissions). The comment system was
+// removed entirely, so no legacy models exist to seed.
 // Safe to re-run: existing rows are upserted, submissions are created only
 // when the demo form has none yet. Demo data only — never run against a
 // production database.
