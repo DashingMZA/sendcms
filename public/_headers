@@ -1,2 +1,12 @@
+# Security headers (Cloudflare Workers Assets reads this file from the
+# asset directory). No Content-Security-Policy here on purpose: Next.js
+# inlines scripts/styles, so a CSP needs `unsafe-inline` to work at all
+# and adds nothing then — a real CSP is a separate, tested pass.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable

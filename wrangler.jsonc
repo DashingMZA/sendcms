@@ -3,7 +3,15 @@
   "name": "sendcms",
   "compatibility_date": "2026-11-13",
   "compatibility_flags": ["nodejs_compat"],
-  // OpenNext Cloudflare adapter output (built by `npx @opennextjs/cloudflare build`).
+  // Build chain for `wrangler deploy` / `wrangler dev` (the Cloudflare
+  // dashboard's own Build command setting must match — see
+  // docs/deployment.md): generate the Prisma client, build the widget
+  // and the SDK bundles, then the OpenNext Cloudflare build. The plain
+  // `opennextjs-cloudflare build` alone bakes a stale client and
+  // missing bundles.
+  "build": {
+    "command": "pnpm db:generate && pnpm widget:build && pnpm sdk:build && npx @opennextjs/cloudflare build"
+  },
   // The app is a dynamic Next.js App Router app (SSR + API routes + Prisma +
   // Better Auth), so it cannot run as plain static assets — the Worker entry below
   // serves it, and `.open-next/assets` holds only the static files.

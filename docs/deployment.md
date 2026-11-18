@@ -106,11 +106,20 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
 
 - The Worker entry is `.open-next/worker.js` (OpenNext adapter);
   `wrangler.jsonc` holds the R2 cache bucket, the Images binding, and
-  the self-reference service binding. The build command is
-  `npx @opennextjs/cloudflare build` with no env prefix, so build-time
-  values (`NEXT_PUBLIC_APP_URL`, Google client id) must come from the
-  dashboard build environment, or the built output bakes in localhost
-  and empty ids.
+  the self-reference service binding. The build command must be the
+  full chain — `pnpm db:generate && pnpm widget:build && pnpm sdk:build
+  && npx @opennextjs/cloudflare build` (also in `wrangler.jsonc`'s
+  `build.command` and as the `build:cf` script). A bare
+  `npx @opennextjs/cloudflare build` bakes a stale Prisma client and
+  missing widget/SDK bundles. Set the same command in the dashboard's
+  Build command field; build-time values (`NEXT_PUBLIC_APP_URL`, Google
+  client id) must come from the dashboard build environment, or the
+  built output bakes in localhost and empty ids.
+- Security headers come from `public/_headers` (nosniff, referrer
+  policy, SAMEORIGIN framing, no camera/mic/geolocation). There is no
+  Content-Security-Policy yet — Next.js inlines scripts/styles, so a
+  CSP would need `unsafe-inline` and add nothing; a real CSP is a
+  separate, tested pass.
 - The wrangler worker name is `sendcms` (with the self-reference
   service binding matching). The R2 cache bucket is still
   `open-remark-opennext-cache` — it is a real Cloudflare resource, so

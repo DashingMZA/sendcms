@@ -27,9 +27,9 @@
     "db:benchmark:seed": "npx tsx scripts/benchmark/seed-benchmark-data.ts",
     "db:benchmark:run": "npx tsx scripts/benchmark/run-benchmark.ts",
     "widget:build": "tsx widget/build.ts",
-    "build:cf": "opennextjs-cloudflare build",
-    "preview:cf": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy:cf": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "build:cf": "prisma generate && pnpm widget:build && pnpm sdk:build && opennextjs-cloudflare build",
+    "preview:cf": "pnpm build:cf && opennextjs-cloudflare preview",
+    "deploy:cf": "pnpm build:cf && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "sdk:build": "tsx sdk/build.ts"
   },
