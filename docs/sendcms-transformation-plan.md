@@ -456,6 +456,38 @@ eslint OOM on `.open-next` (now in `globalIgnores`). Final report:
 `docs/sendcms-final-report.md`. Production domain still undecided (§6);
 no live deploy was done in this phase.
 
+## Post-Phase 11 — comment-system removal + branch shift (2026-11-18)
+
+**Comment-system removal — DONE 2026-11-18 (owner-approved "yes remove
+kr do").** The separately approved removal step is complete: 9 tables
+(`Site`, `Page`, `Commenter`, `Comment`, `CommentLike`, `ModerationLog`,
+`BannedCommenter`, `SiteMember`, `SiteInvite`) + 3 enums dropped via
+migration `20261118084500_remove_comment_system` (applied to the dev DB —
+all 9 tables held 0 rows, so no data was lost; 4 owner accounts, 2
+domains, 1 form intact). Deleted: `widget/`, `/api/widget/*`,
+`/api/v1/sites/*`, `/api/v1/comments/*`, `/api/v1/users/lookup`,
+`/api/subscribe`, `/api/unsubscribe`, 6 comment services, `lib/auth-widget.ts`,
+`lib/rate-limit.ts`, `lib/email/email-service.ts`, `lib/sanitize.ts`,
+comment email templates, `lib/permissions/site.ts`, 5 query files, 3
+validators, `lib/types/commenter.ts`, the administration + site-settings-form
++ team component folders, 9 orphaned dashboard components, benchmark
+scripts, `public/demo.html`. `lib/cors.ts` kept minus the legacy
+`isOriginAllowed` (the public submit route still uses
+`getEffectiveOrigin`); `WIDGET_JWT_SECRET` removed from `.env.example`,
+`.dev.vars.example`, wrangler comments, AGENTS.md, README, deployment
+docs; terms.md rewritten SendCMS-only; skill references updated to
+SendCMS. Gate green: format, typecheck clean, lint 0 errors / 1
+pre-existing warning, tests 202/202 (4 `siteCan` tests removed with the
+feature), `pnpm build` + `pnpm build:cf` SUCCESS (`.open-next` has no
+`embed.js` anymore), full 16-step journey 43/43 live.
+
+**Branch shift — DONE 2026-11-18 (owner: "main branch empty kr k, just
+1 branch ho").** `main` was force-updated to the `feat/contact-form-saas`
+tip and the feat branch deleted; the repo now has exactly one branch
+(`main`) holding the SendCMS code. The old `main` tip (`44c342c`, the
+original open-remark copy) is superseded — the original open-remark repo
+is untouched. CI runs on pushes to `main`.
+
 ## 6. Decisions needed from the user (before / during implementation)
 
 1. **Approve this plan** (or say what to change). Implementation starts only after approval.
