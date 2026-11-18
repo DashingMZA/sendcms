@@ -56,7 +56,7 @@ async function status() {
   }
 
   try {
-    run("npx prisma migrate status")
+    run("pnpm --filter @sendcms/database exec prisma migrate status")
   } catch {
     console.log("   Could not connect or no migrations\n")
   }
@@ -92,7 +92,7 @@ async function reset() {
 
   console.log("\n💥 Resetting database...")
   try {
-    run("npx prisma migrate reset --force")
+    run("pnpm --filter @sendcms/database exec prisma migrate reset --force")
     console.log("✅ Database reset complete")
   } catch (e) {
     console.error("❌ Reset failed:", e)
@@ -103,7 +103,7 @@ async function reset() {
 async function validate() {
   banner("VALIDATE SCHEMA")
   try {
-    run("npx prisma validate")
+    run("pnpm --filter @sendcms/database exec prisma validate")
     console.log("✅ Schema is valid")
   } catch {
     console.error("❌ Schema validation failed")

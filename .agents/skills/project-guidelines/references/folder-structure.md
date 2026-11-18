@@ -42,12 +42,12 @@ sendcms/
 ├── packages/
 │   ├── config/                    # Shared tsconfig base + ESLint base (@sendcms/config)
 │   ├── shared/                    # Framework-free helpers: cn() (@sendcms/shared)
-│   └── ui/                        # shadcn/ui primitives + use-mobile (@sendcms/ui)
+│   ├── ui/                        # shadcn/ui primitives + use-mobile (@sendcms/ui)
+│   ├── database/                  # Prisma schema + migrations + client (@sendcms/database)
+│   ├── auth/                      # Better Auth factory + providers + browser client (@sendcms/auth)
+│   └── permissions/               # Platform roles + capabilities (@sendcms/permissions)
 ├── lib/
-│   ├── db.ts                      # Prisma singleton
-│   ├── auth.ts                    # Better Auth config (with Prisma) + auth() helper
-│   ├── auth-client.ts             # Browser-side Better Auth client
-│   ├── auth-providers.ts          # Env-gated OAuth providers
+│   ├── auth.ts                    # Thin wrapper: wires the app mailer into @sendcms/auth; betterAuth/auth()/AdminSession
 │   ├── services/                  # Business logic (server-side, no Next.js imports)
 │   │   ├── domain-service.ts      # register/verify/suspend domains
 │   │   ├── form-service.ts        # form CRUD, fields, domain links, notifications
@@ -66,7 +66,6 @@ sendcms/
 │   │   └── email-jobs.ts
 │   ├── validators/                # Zod schemas (auth, domain, form, inbox, email-jobs, submission)
 │   ├── api/                       # response.ts + error.ts
-│   ├── permissions/               # platform.ts, index.ts (platform-only)
 │   ├── email/                     # provider.ts, platform-transport.ts, transport.ts, auth-mailer.ts, templates/
 │   ├── cors.ts                    # getEffectiveOrigin, normalizeOrigin, corsHeaders
 │   ├── sdk-snippet.ts             # SDK + REST snippet builders
@@ -74,8 +73,6 @@ sendcms/
 │   ├── content.ts                 # Markdown content loader (homepage, terms, changelog)
 │   ├── text-converter.ts          # Markdown → HTML
 │   └── utils.ts                   # getBaseUrl() (cn() moved to packages/shared)
-├── generated/prisma/              # Prisma client output (do not edit)
-├── prisma/                        # Schema + migrations + seed
 ├── sdk/                           # Form SDK (vanilla TS) → public/forms/v1.js
 ├── config/config.json             # App configuration (site, metadata, branding, email)
 ├── content/                       # Editable markdown: homepage.md, terms.md, changelog.md
@@ -86,12 +83,15 @@ sendcms/
 
 ## Key Path Aliases
 
-| Alias                | Points to                                               |
-| -------------------- | ------------------------------------------------------- |
-| `@/`                 | Project root                                            |
-| `@/lib/*`            | Shared utilities                                        |
-| `@/components/*`     | UI components                                           |
-| `@/generated/prisma` | Prisma client                                           |
-| `@sendcms/ui`        | shadcn/ui primitives + `useIsMobile` (`packages/ui`)    |
-| `@sendcms/shared`    | Framework-free helpers, e.g. `cn()` (`packages/shared`) |
-| `@sendcms/config`    | Shared tsconfig + ESLint base (`packages/config`)       |
+| Alias                  | Points to                                               |
+| ---------------------- | ------------------------------------------------------- |
+| `@/`                   | Project root                                            |
+| `@/lib/*`              | Shared utilities                                        |
+| `@/components/*`       | UI components                                           |
+| `@sendcms/database`    | Prisma client + `db` singleton (`packages/database`)    |
+| `@sendcms/auth`        | Better Auth factory + providers (`packages/auth`)       |
+| `@sendcms/auth/client` | Browser-side Better Auth client (`packages/auth`)       |
+| `@sendcms/permissions` | Platform roles + capabilities (`packages/permissions`)  |
+| `@sendcms/ui`          | shadcn/ui primitives + `useIsMobile` (`packages/ui`)    |
+| `@sendcms/shared`      | Framework-free helpers, e.g. `cn()` (`packages/shared`) |
+| `@sendcms/config`      | Shared tsconfig + ESLint base (`packages/config`)       |

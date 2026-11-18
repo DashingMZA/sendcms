@@ -22,7 +22,8 @@ import {
   Textarea,
 } from "@sendcms/ui"
 
-import type { FormField, FormFieldType } from "@/generated/prisma/client"
+import type { FormField, FormFieldType } from "@sendcms/database"
+
 import type { CreateFieldInput } from "@/lib/validators/form"
 
 const FIELD_TYPES: FormFieldType[] = [

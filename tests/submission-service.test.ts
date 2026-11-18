@@ -2,7 +2,7 @@
 // These are the paths the live journeys exercise against the dev DB; the
 // unit tests pin the same decisions without a database.
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { Prisma } from "@/generated/prisma/client"
+import { Prisma } from "@sendcms/database"
 
 const mockDb = vi.hoisted(() => ({
   form: { findFirst: vi.fn() },
@@ -13,7 +13,10 @@ const mockDb = vi.hoisted(() => ({
   },
   $transaction: vi.fn(),
 }))
-vi.mock("@/lib/db", () => ({ db: mockDb }))
+vi.mock("@sendcms/database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/database")>()
+  return { ...actual, db: mockDb }
+})
 vi.mock("@/lib/services/email-outbox", () => ({
   enqueueSubmissionNotifications: vi.fn(async () => 1),
 }))

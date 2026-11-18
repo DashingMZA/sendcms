@@ -1,5 +1,13 @@
 import { render } from "@react-email/render"
-import { db } from "@/lib/db"
+import {
+  EmailJobStatus,
+  EmailJobType,
+  SubmissionStatus,
+  db,
+  type EmailJob,
+  type Submission,
+} from "@sendcms/database"
+
 import { ApiError } from "@/lib/api/error"
 import { sendPlatformEmail } from "@/lib/email/provider"
 import {
@@ -8,13 +16,6 @@ import {
   type SubmissionNotificationField,
 } from "@/lib/email/templates/submission-notification"
 import { getSubmissionSender } from "@/lib/submission-display"
-import {
-  EmailJobStatus,
-  EmailJobType,
-  SubmissionStatus,
-  type EmailJob,
-  type Submission,
-} from "@/generated/prisma/client"
 
 // Email outbox (Phase 8). Submissions are saved first and notification
 // jobs are queued after — email can never lose a submission, and a

@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto"
-import { db } from "@/lib/db"
+import {
+  Prisma,
+  SubmissionEventType,
+  SubmissionStatus,
+  db,
+} from "@sendcms/database"
+import type { FormField } from "@sendcms/database"
+
 import { ApiError } from "@/lib/api/error"
 import { normalizeDomain } from "@/lib/services/domain-service"
 import { verifyTurnstileToken } from "@/lib/services/turnstile"
@@ -9,12 +16,6 @@ import {
   HONEYPOT_FIELD,
   type SubmitBodyInput,
 } from "@/lib/validators/submission"
-import {
-  Prisma,
-  SubmissionStatus,
-  SubmissionEventType,
-} from "@/generated/prisma/client"
-import type { FormField } from "@/generated/prisma/client"
 
 // Public submission API (Phase 5). No session, no cookies — the only
 // authorization is the Origin allowlist: the submitting site must be a

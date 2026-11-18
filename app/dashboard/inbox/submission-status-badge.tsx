@@ -1,6 +1,6 @@
 import { Badge } from "@sendcms/ui"
 
-import type { SubmissionStatus } from "@/generated/prisma/client"
+import type { SubmissionStatus } from "@sendcms/database"
 
 const STATUS_BADGE: Record<
   SubmissionStatus,

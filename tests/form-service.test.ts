@@ -14,7 +14,10 @@ const mockDb = vi.hoisted(() => ({
   notificationSettings: { findUnique: vi.fn(), create: vi.fn() },
   auditLog: { create: vi.fn() },
 }))
-vi.mock("@/lib/db", () => ({ db: mockDb }))
+vi.mock("@sendcms/database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/database")>()
+  return { ...actual, db: mockDb }
+})
 
 import {
   addFieldToForm,

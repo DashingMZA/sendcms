@@ -9,10 +9,7 @@ import {
   InboxListQuerySchema,
   UpdateSubmissionStatusSchema,
 } from "@/lib/validators/inbox"
-import {
-  SubmissionEventType,
-  SubmissionStatus,
-} from "@/generated/prisma/client"
+import { SubmissionEventType, SubmissionStatus } from "@sendcms/database"
 
 describe("resolveStatusAction", () => {
   it("read: NEW -> READ with a READ event", () => {

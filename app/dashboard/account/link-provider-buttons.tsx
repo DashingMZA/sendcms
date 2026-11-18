@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@/lib/auth-client"
-import { Button } from "@sendcms/ui"
+import type { OAuthProviderId } from "@sendcms/auth"
+import { authClient } from "@sendcms/auth/client"
 
-import type { OAuthProviderId } from "@/lib/auth-providers"
+import { Button } from "@sendcms/ui"
 
 const PROVIDER_LABEL: Record<OAuthProviderId, string> = {
   google: "Google",

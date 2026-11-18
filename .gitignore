@@ -46,7 +46,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/generated/prisma
+/packages/database/generated
 
 # database
 prisma/dev.db

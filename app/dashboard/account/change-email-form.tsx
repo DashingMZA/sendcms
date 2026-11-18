@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { authClient } from "@/lib/auth-client"
+import { authClient } from "@sendcms/auth/client"
+
 import { ChangeEmailSchema } from "@/lib/validators/auth"
 import { Button, Input, Label } from "@sendcms/ui"
 

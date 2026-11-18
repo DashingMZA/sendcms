@@ -13,7 +13,10 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
   },
 }))
-vi.mock("@/lib/db", () => ({ db: mockDb }))
+vi.mock("@sendcms/database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/database")>()
+  return { ...actual, db: mockDb }
+})
 vi.mock("@/lib/email/provider", () => ({
   sendPlatformEmail: vi.fn(),
 }))

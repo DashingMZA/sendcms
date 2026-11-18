@@ -1,9 +1,9 @@
-import { db } from "@/lib/db"
+import { SubmissionStatus, db } from "@sendcms/database"
+
 import {
   getSubmissionSender,
   previewSubmissionText,
 } from "@/lib/submission-display"
-import { SubmissionStatus } from "@/generated/prisma/client"
 
 export type DayCount = { date: string; count: number }
 

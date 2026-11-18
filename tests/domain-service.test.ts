@@ -14,7 +14,10 @@ const mockDb = vi.hoisted(() => ({
   auditLog: { create: vi.fn() },
   $transaction: vi.fn(async (ops: unknown[]) => ops),
 }))
-vi.mock("@/lib/db", () => ({ db: mockDb }))
+vi.mock("@sendcms/database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/database")>()
+  return { ...actual, db: mockDb }
+})
 vi.mock("@/lib/services/dns-verification", () => ({
   checkVerification: vi.fn(),
 }))

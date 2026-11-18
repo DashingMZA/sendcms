@@ -38,8 +38,8 @@ pnpm format:check     # prettier --check
 
 # Database (PostgreSQL, Prisma)
 pnpm db:migrate       # prisma migrate dev — create + apply
-pnpm db:generate      # regenerate Prisma client (output: generated/prisma)
-pnpm db:seed          # tsx prisma/seed.ts — SendCMS demo data (demo user, verified domain, form, sample submissions); idempotent, safe to re-run
+pnpm db:generate      # regenerate Prisma client (output: packages/database/generated/prisma)
+pnpm db:seed          # tsx packages/database/prisma/seed.ts — SendCMS demo data (demo user, verified domain, form, sample submissions); idempotent, safe to re-run
 pnpm db:studio        # Prisma Studio GUI
 pnpm db:status        # scripts/db-manager.ts status
 pnpm db:reset         # DESTRUCTIVE — requires typed confirmation
@@ -62,7 +62,7 @@ Facebook OAuth + email/password (verification required) → session cookie
 The legacy widget visitor auth (Google OAuth PKCE → signed Widget JWT,
 `/api/widget/*`) was removed with the comment system.
 
-- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `lib/auth.ts` (full, with Prisma adapter). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`lib/email/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
+- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma adapter), wired by the thin `lib/auth.ts` wrapper (injects the app mailer). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`lib/email/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
 
 ### Layered request flow — HARD RULE (`coding-conventions.md`)
 
@@ -71,12 +71,12 @@ app/api/**          route handler  — thin: parse, auth, call service, respond 
   ↓
 lib/services/**     business logic — NO Next.js imports (must be framework-agnostic)
   ↓
-lib/db.ts           Prisma singleton — ONLY services may import this
+@sendcms/database   Prisma singleton (`db`) — ONLY services may import this
   ↓
 PostgreSQL (Prisma adapter-pg)
 ```
 
-- Route handlers never import `lib/db.ts` — they call services.
+- Route handlers never import `@sendcms/database` — they call services.
 - Zod schemas: `lib/validators/`, shared by routes + services.
 - Response/error helpers: `lib/api/`.
 
@@ -103,8 +103,8 @@ User ──< Domain ──< DomainVerification
 ### Non-obvious gotchas (`folder-structure.md`)
 
 - `proxy.ts` (root) — the Next middleware, renamed from `middleware.ts`.
-- `generated/prisma/` — Prisma client output. Import from `@/generated/prisma/client`. Do not edit.
-- `prisma.config.ts` — Prisma schema/migrations config.
+- `packages/database/generated/prisma/` — Prisma client output. Import from `@sendcms/database`. Do not edit.
+- `packages/database/prisma.config.ts` — Prisma schema/migrations config.
 - `config/config.json` — feature flags + app config. All new config goes here, not `.env` or hardcoded.
 
 ### Form SDK specifics (`sdk/`)

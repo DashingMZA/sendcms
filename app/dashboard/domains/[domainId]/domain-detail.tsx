@@ -28,7 +28,7 @@ import {
 } from "@sendcms/ui"
 
 import { Download } from "lucide-react"
-import type { DomainVerificationMethod } from "@/generated/prisma/client"
+import type { DomainVerificationMethod } from "@sendcms/database"
 
 const METHOD_LABEL: Record<DomainVerificationMethod, string> = {
   DNS_TXT: "DNS TXT record",

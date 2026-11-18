@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@/lib/auth-client"
-import { Button } from "@sendcms/ui"
+import type { OAuthProviderId } from "@sendcms/auth"
+import { authClient } from "@sendcms/auth/client"
 
-import type { OAuthProviderId } from "@/lib/auth-providers"
+import { Button } from "@sendcms/ui"
 
 const PROVIDER_LABEL: Record<OAuthProviderId, string> = {
   google: "Continue with Google",
@@ -66,7 +66,7 @@ function FacebookIcon() {
 
 /**
  * OAuth buttons for the configured providers only (see
- * lib/auth-providers.ts). GitHub/Facebook appear only when their
+ * packages/auth/src/providers.ts). GitHub/Facebook appear only when their
  * credentials are set, so the UI never offers a provider that would fail.
  */
 export function SocialSignInButtons({

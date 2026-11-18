@@ -1,4 +1,4 @@
-import { db } from "@/lib/db"
+import { db } from "@sendcms/database"
 
 export interface SystemHealth {
   status: "ok" | "error"

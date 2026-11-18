@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { authClient } from "@/lib/auth-client"
+import { authClient } from "@sendcms/auth/client"
+
 import { UpdateProfileSchema } from "@/lib/validators/auth"
 import { Button, Input, Label } from "@sendcms/ui"
 

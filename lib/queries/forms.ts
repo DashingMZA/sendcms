@@ -5,7 +5,8 @@ import type {
   FormDomain,
   FormField,
   NotificationSettings,
-} from "@/generated/prisma/client"
+} from "@sendcms/database"
+
 import type {
   AddNotificationEmailInput,
   CreateFieldInput,

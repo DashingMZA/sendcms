@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { getConfiguredOAuthProviders } from "@/lib/auth-providers"
+import { getConfiguredOAuthProviders } from "@sendcms/auth"
+
 import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
 import { SignUpForm } from "./sign-up-form"

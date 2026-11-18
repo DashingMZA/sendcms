@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { authClient } from "@/lib/auth-client"
+import { authClient } from "@sendcms/auth/client"
+
 import { Button, Input, Label } from "@sendcms/ui"
 
 /**

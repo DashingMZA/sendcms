@@ -1,12 +1,14 @@
-import { db } from "@/lib/db"
-import { ApiError } from "@/lib/api/error"
 import {
   AuditAction,
   AuditResource,
   DomainStatus,
   FormFieldType,
   Prisma,
-} from "@/generated/prisma/client"
+  db,
+} from "@sendcms/database"
+
+import { ApiError } from "@/lib/api/error"
+
 import type {
   AddNotificationEmailInput,
   CreateFieldInput,

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@sendcms/ui"
 
-import type { DomainVerificationMethod } from "@/generated/prisma/client"
+import type { DomainVerificationMethod } from "@sendcms/database"
 
 export function AddDomainForm() {
   const router = useRouter()

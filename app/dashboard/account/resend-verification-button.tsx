@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { authClient } from "@/lib/auth-client"
+import { authClient } from "@sendcms/auth/client"
+
 import { Button } from "@sendcms/ui"
 
 export function ResendVerificationButton({ email }: { email: string }) {

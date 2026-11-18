@@ -7,7 +7,7 @@ import type {
 import type {
   DomainVerification,
   DomainVerificationMethod,
-} from "@/generated/prisma/client"
+} from "@sendcms/database"
 
 export type { DomainDetail, DomainWithVerification }
 

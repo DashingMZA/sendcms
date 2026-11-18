@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto"
-import { db } from "@/lib/db"
-import { ApiError } from "@/lib/api/error"
 import {
   AuditAction,
   AuditResource,
   DomainStatus,
   DomainVerificationMethod,
   DomainVerificationStatus,
-} from "@/generated/prisma/client"
+  db,
+} from "@sendcms/database"
+
+import { ApiError } from "@/lib/api/error"
+
 import { checkVerification } from "@/lib/services/dns-verification"
 import type {
   CreateDomainInput,

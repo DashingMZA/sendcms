@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { getConfiguredOAuthProviders } from "@/lib/auth-providers"
+import { getConfiguredOAuthProviders } from "@sendcms/auth"
 
 const ENV_KEYS = [
   "GITHUB_CLIENT_ID",

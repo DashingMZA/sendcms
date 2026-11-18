@@ -1,5 +1,5 @@
 import { betterAuth } from "@/lib/auth"
-import { toNextJsHandler } from "better-auth/next-js"
+import { toNextJsHandler } from "@sendcms/auth"
 
 /**
  * Better Auth handler — serves /api/auth/* (incl. /callback/google).

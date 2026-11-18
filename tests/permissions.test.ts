@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
-  platformCan,
   PLATFORM_ROUTE_CAPABILITY,
+  platformCan,
   type PlatformCapability,
-} from "@/lib/permissions"
+} from "@sendcms/permissions"
 
 describe("platformCan", () => {
   it("gates no dashboard route anymore (comment system removed)", () => {

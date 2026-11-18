@@ -4,18 +4,18 @@ Two separate auth systems. Never conflate them.
 
 ## Admin Auth
 
-| Aspect | Detail |
-|---|---|
-| Mechanism | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required) |
-| Storage | Server session cookie (database session) |
-| Routes | `/dashboard`, `/api/v1/*` |
-| Gate | `proxy.ts` (root, not `middleware.ts`) |
-| Matcher | `/dashboard/:path*` |
-| Config | `lib/auth.ts` (full, with Prisma) |
-| Providers | `lib/auth-providers.ts` — `getConfiguredOAuthProviders()` (Google always; GitHub/Facebook only when their env creds are set) |
-| Client | `lib/auth-client.ts` (`authClient.signIn` / `signUp` / `signOut` / `verifyEmail` / `requestPasswordReset` / `resetPassword` / `changePassword` / `changeEmail` / `updateUser` / `linkSocial`) |
-| Session helper | `auth()` in `lib/auth.ts` — same `await auth()` pattern; `AdminSession.user.emailVerified` |
-| Auth mail | `lib/email/auth-mailer.ts` — verification + reset via platform SMTP (`SMTP_*`); no SMTP → dev logs the link to the server console, production throws |
+| Aspect         | Detail                                                                                                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism      | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required)                                                                                                       |
+| Storage        | Server session cookie (database session)                                                                                                                                                        |
+| Routes         | `/dashboard`, `/api/v1/*`                                                                                                                                                                       |
+| Gate           | `proxy.ts` (root, not `middleware.ts`)                                                                                                                                                          |
+| Matcher        | `/dashboard/:path*`                                                                                                                                                                             |
+| Config         | `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma) — wired by the thin `lib/auth.ts` wrapper, which injects the app's mailer                                                        |
+| Providers      | `packages/auth/src/providers.ts` — `getConfiguredOAuthProviders()` (Google always; GitHub/Facebook only when their env creds are set)                                                           |
+| Client         | `@sendcms/auth/client` (`authClient.signIn` / `signUp` / `signOut` / `verifyEmail` / `requestPasswordReset` / `resetPassword` / `changePassword` / `changeEmail` / `updateUser` / `linkSocial`) |
+| Session helper | `auth()` from `@sendcms/auth` (re-exported by `lib/auth.ts`) — same `await auth()` pattern; `AdminSession.user.emailVerified`                                                                   |
+| Auth mail      | `lib/email/auth-mailer.ts` — verification + reset via platform SMTP (`SMTP_*`); no SMTP → dev logs the link to the server console, production throws                                            |
 
 ## Email / Password Flows
 
@@ -28,6 +28,7 @@ Two separate auth systems. Never conflate them.
 - **First user**: becomes `PLATFORM_OWNER` via a single-statement conditional `UPDATE … WHERE NOT EXISTS` in the user-create hook, backed by the partial unique index `User_single_platform_owner_idx`. Promotion is best-effort — it never fails registration.
 
 **Route pattern:**
+
 ```ts
 import { auth } from "@/lib/auth"
 const session = await auth()
@@ -42,10 +43,10 @@ takes no credentials — the `Origin` allowlist is its authorization.
 
 ## Permission Guards
 
-| Guard | Location | Used By |
-|---|---|---|
-| `platformCan(role, capability)` | `lib/permissions/platform.ts` | Dashboard nav visibility |
-| `getEffectiveOrigin(req)` | `lib/cors.ts` | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
+| Guard                           | Location                      | Used By                                                                             |
+| ------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------- |
+| `platformCan(role, capability)` | `lib/permissions/platform.ts` | Dashboard nav visibility                                                            |
+| `getEffectiveOrigin(req)`       | `lib/cors.ts`                 | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
 
 ## Critical Rules
 

@@ -4,7 +4,7 @@ import {
   PLATFORM_ROUTE_CAPABILITY,
   platformCan,
   type PlatformRole,
-} from "@/lib/permissions"
+} from "@sendcms/permissions"
 
 /**
  * Route protection (Better Auth, database sessions).

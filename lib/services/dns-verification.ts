@@ -1,5 +1,5 @@
 import { ApiError } from "@/lib/api/error"
-import type { DomainVerificationMethod } from "@/generated/prisma/client"
+import type { DomainVerificationMethod } from "@sendcms/database"
 
 // Ownership-proof checks for the three verification methods (Phase 3).
 // DNS lookups go through DNS-over-HTTPS (portable on Workers, no raw DNS

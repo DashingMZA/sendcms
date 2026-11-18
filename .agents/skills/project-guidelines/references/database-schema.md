@@ -1,6 +1,6 @@
 # Database Schema Conventions
 
-**ORM:** Prisma · **DB:** PostgreSQL · **Schema:** `prisma/schema.prisma` · **Client:** `generated/prisma`
+**ORM:** Prisma · **DB:** PostgreSQL · **Schema:** `packages/database/prisma/schema.prisma` · **Client:** `packages/database/generated/prisma` (import from `@sendcms/database`)
 
 ## Rules
 
@@ -13,19 +13,19 @@
 | Enums                 | Use for status/role/action fields. Never `String`.                                           |
 | Indexes               | Every FK, every status+timestamp filter, every WHERE field                                   |
 | Composite index order | Column order must match query WHERE/ORDER BY                                                 |
-| Unique                | `@unique` on natural identifiers (`email`, `domain`)                                          |
+| Unique                | `@unique` on natural identifiers (`email`, `domain`)                                         |
 | Cascade               | `onDelete: Cascade` for clearly child rows only                                              |
 
 ## Naming
 
-| Element            | Convention                | Example                    |
-| ------------------ | ------------------------- | -------------------------- |
+| Element            | Convention                | Example                         |
+| ------------------ | ------------------------- | ------------------------------- |
 | Models             | PascalCase                | `Submission`, `SubmissionEvent` |
-| Fields             | camelCase                 | `authorName`, `createdAt`  |
-| Relations (1:N)    | plural                    | `submissions`, `events`    |
-| Relations (N:1)    | singular                  | `form`, `domain`           |
-| Enum values        | UPPER_SNAKE_CASE          | `PENDING`, `APPROVED`      |
-| Self-ref relations | explicit `@relation` name | none in the current schema |
+| Fields             | camelCase                 | `authorName`, `createdAt`       |
+| Relations (1:N)    | plural                    | `submissions`, `events`         |
+| Relations (N:1)    | singular                  | `form`, `domain`                |
+| Enum values        | UPPER_SNAKE_CASE          | `PENDING`, `APPROVED`           |
+| Self-ref relations | explicit `@relation` name | none in the current schema      |
 
 ## Normalization
 
@@ -75,35 +75,35 @@ Never edit applied migrations. Create a new one.
 
 ## Existing Enums
 
-| Enum            | Values                                 | Used By                              |
-| --------------- | -------------------------------------- | ------------------------------------ |
-| `PlatformRole`  | PLATFORM_OWNER, PLATFORM_USER          | `User.platformRole`                  |
-| `DomainStatus`  | PENDING, VERIFIED, SUSPENDED           | `Domain.status`                      |
-| `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE       | `DomainVerification.method`          |
-| `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED | `DomainVerification.status`     |
-| `FormFieldType` | TEXT, EMAIL, TEXTAREA, NUMBER, SELECT, CHECKBOX, RADIO, URL, TEL, DATE | `FormField.type` |
-| `SubmissionStatus` | NEW, READ, STARRED, ARCHIVED, SPAM | `Submission.status`                  |
-| `SubmissionEventType` | CREATED, READ, UNREAD, STARRED, UNSTARRED, ARCHIVED, RESTORED, MARKED_SPAM, EMAIL_SENT, EMAIL_FAILED | `SubmissionEvent.type` |
-| `EmailJobType`  | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET | `EmailJob.type` |
-| `EmailJobStatus` | PENDING, SENDING, SENT, FAILED        | `EmailJob.status`                    |
-| `AuditAction`   | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE | `AuditLog.action`          |
-| `AuditResource` | DOMAIN, FORM, SUBMISSION, USER, SETTINGS | `AuditLog.resourceType`           |
+| Enum                       | Values                                                                                               | Used By                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------- |
+| `PlatformRole`             | PLATFORM_OWNER, PLATFORM_USER                                                                        | `User.platformRole`         |
+| `DomainStatus`             | PENDING, VERIFIED, SUSPENDED                                                                         | `Domain.status`             |
+| `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE                                                                              | `DomainVerification.method` |
+| `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED                                                                   | `DomainVerification.status` |
+| `FormFieldType`            | TEXT, EMAIL, TEXTAREA, NUMBER, SELECT, CHECKBOX, RADIO, URL, TEL, DATE                               | `FormField.type`            |
+| `SubmissionStatus`         | NEW, READ, STARRED, ARCHIVED, SPAM                                                                   | `Submission.status`         |
+| `SubmissionEventType`      | CREATED, READ, UNREAD, STARRED, UNSTARRED, ARCHIVED, RESTORED, MARKED_SPAM, EMAIL_SENT, EMAIL_FAILED | `SubmissionEvent.type`      |
+| `EmailJobType`             | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET                                          | `EmailJob.type`             |
+| `EmailJobStatus`           | PENDING, SENDING, SENT, FAILED                                                                       | `EmailJob.status`           |
+| `AuditAction`              | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE                                                  | `AuditLog.action`           |
+| `AuditResource`            | DOMAIN, FORM, SUBMISSION, USER, SETTINGS                                                             | `AuditLog.resourceType`     |
 
 ## Existing Models
 
-| Model             | Relations                                                                                  | Indexes                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `User`            | has many Account, Session, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                      |
-| `Domain`          | → User; has many DomainVerification, FormDomain                                            | `domain @unique`, `@@index([ownerId])`, `@@index([status, createdAt])`                                                  |
-| `DomainVerification` | → Domain                                                                              | `@@index([domainId])`, `@@index([domainId, status, createdAt])`                                                         |
-| `Form`            | → User; has many FormField, FormDomain, Submission, NotificationSettings, EmailJob          | `@@index([ownerId])`, `@@index([ownerId, active])`                                                                      |
-| `FormDomain`      | → Form + Domain (many-to-many join)                                                        | `@@unique([formId, domainId])`, `@@index([formId])`, `@@index([domainId])`                                              |
-| `FormField`       | → Form                                                                                     | `@@unique([formId, name])`, `@@index([formId, order])`                                                                  |
-| `Submission`      | → Form; has many SubmissionEvent, EmailJob                                                 | `@@unique([formId, idempotencyKey])`, `@@index([formId, status, createdAt])`, `@@index([formId, contentHash, createdAt])` |
-| `SubmissionEvent` | → Submission; → User? (actor, SetNull)                                                     | `@@index([submissionId, createdAt])`, `@@index([submissionId, type, createdAt])`                                        |
-| `NotificationSettings` | → Form                                                                          | `@@unique([formId, email])`, `@@index([formId])`                                                                        |
-| `EmailJob`        | → Form? + Submission? (SetNull)                                                            | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                             |
-| `AuditLog`        | → User? (actor, SetNull)                                                                   | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                        |
+| Model                  | Relations                                                                                | Indexes                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `User`                 | has many Account, Session, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                                                                                                           |
+| `Domain`               | → User; has many DomainVerification, FormDomain                                          | `domain @unique`, `@@index([ownerId])`, `@@index([status, createdAt])`                                                    |
+| `DomainVerification`   | → Domain                                                                                 | `@@index([domainId])`, `@@index([domainId, status, createdAt])`                                                           |
+| `Form`                 | → User; has many FormField, FormDomain, Submission, NotificationSettings, EmailJob       | `@@index([ownerId])`, `@@index([ownerId, active])`                                                                        |
+| `FormDomain`           | → Form + Domain (many-to-many join)                                                      | `@@unique([formId, domainId])`, `@@index([formId])`, `@@index([domainId])`                                                |
+| `FormField`            | → Form                                                                                   | `@@unique([formId, name])`, `@@index([formId, order])`                                                                    |
+| `Submission`           | → Form; has many SubmissionEvent, EmailJob                                               | `@@unique([formId, idempotencyKey])`, `@@index([formId, status, createdAt])`, `@@index([formId, contentHash, createdAt])` |
+| `SubmissionEvent`      | → Submission; → User? (actor, SetNull)                                                   | `@@index([submissionId, createdAt])`, `@@index([submissionId, type, createdAt])`                                          |
+| `NotificationSettings` | → Form                                                                                   | `@@unique([formId, email])`, `@@index([formId])`                                                                          |
+| `EmailJob`             | → Form? + Submission? (SetNull)                                                          | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                               |
+| `AuditLog`             | → User? (actor, SetNull)                                                                 | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                          |
 
 ## Anti-Patterns
 

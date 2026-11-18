@@ -8,7 +8,7 @@ import {
   validateSubmissionFields,
 } from "@/lib/services/submission-service"
 import { CreateFieldSchema } from "@/lib/validators/form"
-import type { FormField } from "@/generated/prisma/client"
+import type { FormField } from "@sendcms/database"
 
 function field(overrides: Partial<FormField>): FormField {
   return {
