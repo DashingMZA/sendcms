@@ -7,6 +7,27 @@ when the branch was created, no user changes existed or were lost.
 **Scope:** audit only. No restructuring has been done yet. This document is the
 source of truth for the migration; do not assume the repo matches older docs.
 
+## Owner decisions — 2026-11-18
+
+Recorded by the owner after reviewing this audit. They govern the rest of
+the migration.
+
+1. **Proceed** with the 13-phase sequence in §10.
+2. **Apps naming: plain** — `apps/marketing`, `apps/docs`, `apps/api`,
+   `apps/dashboard`, … (no domain suffixes; domains live in deployment
+   config only).
+3. **CI on this branch:** the owner adds `feature/**` to `ci.yml` via the
+   GitHub web UI (the PAT cannot push workflow files). Until then, verification
+   on this branch is local gates + PR-triggered CI.
+4. **Production domain: undecided for now** (jadoo.bond vs openremark.bond).
+   The migration proceeds without it; split apps' deployment configs will
+   need it later. `FALLBACK_APP_URL` stays `https://jadoo.bond` until then.
+5. **MCP/AI scope: deferred entirely.** No `packages/mcp` or `packages/ai`
+   code in this migration. Their designs stay as documentation only
+   (`docs/mcp/*`, `docs/ai/*` in Phase 13 if the owner wants them); Phases
+   11–12 below are therefore documentation placeholders, not implementation
+   phases.
+
 ---
 
 ## 1. Current architecture
@@ -380,14 +401,10 @@ workflows, security, encryption, secrets, observability, feature-flags,
 localization, rate-limiter, event-bus}`, `apps/{admin, mcp, support, status}`,
 `services/{webhook-worker, automation-worker, ai-worker, scheduled-jobs}`.
 These have no implementation behind them today. Each gets a design note +
-interface sketch in the relevant `docs/architecture/decisions/` record and in
-`docs/mcp/*` / `docs/ai/*` — not empty directories with placeholder code.
-The exceptions, built as real boundaries in this migration: `packages/mcp`
-(tool registry + permission types + audit hook, no transport/auth until the
-OAuth design is approved) and `packages/ai` (provider interface + guardrail
-types + usage tracking types, no provider calls until a provider + key are
-configured). If even those boundaries cannot be made honest, they stay as
-design docs only.
+interface sketch in the relevant `docs/architecture/decisions/` record — not
+empty directories with placeholder code. **MCP and AI are deferred entirely
+per the owner's 2026-11-18 decision** — no `packages/mcp` or `packages/ai`
+code in this migration; their designs stay as documentation only.
 
 ---
 
@@ -409,8 +426,8 @@ where a real workload exists).
 | 8 — Marketing / Docs / Updates | `apps/marketing`, `apps/docs`, `apps/updates` | Landing, changelog, terms, docs render; SEO routes (sitemap/robots) keep working |
 | 9 — Email, queue, worker | `packages/email`, `packages/queue` (abstraction over the DB outbox), `services/email-worker` | Outbox retries + cron behavior unchanged; worker has a real entry point, health + graceful shutdown |
 | 10 — Security / observability / infra | `packages/security`, `packages/observability`, `infrastructure/cloudflare` | Headers, audit logging, structured logging wired; Cloudflare build still green |
-| 11 — MCP foundation | `packages/mcp` (registry, scopes, audit hook), `docs/mcp/*`, `apps/mcp` skeleton | No insecure placeholder auth; tools use module services only; remaining OAuth work documented |
-| 12 — AI foundation | `packages/ai` (provider interface, guardrails, usage tracking), `docs/ai/*` | No provider in the submit path; AI optional; no fabricated metrics |
+| 11 — MCP foundation | **Deferred entirely (owner decision 2026-11-18).** Design docs only, if the owner wants them; no `packages/mcp` code, no `apps/mcp`. | — |
+| 12 — AI foundation | **Deferred entirely (owner decision 2026-11-18).** Design docs only, if the owner wants them; no `packages/ai` code. | — |
 | 13 — Verification + docs | Tests moved with code, `docs/architecture/*`, `docs/development/*`, `docs/operations/*`, AGENTS.md/CLAUDE.md/skill refs updated, `docs/architecture/migration-final-report.md` | Full gates green on the feature branch; final report complete; `main` still untouched; no PR opened unless the owner asks |
 
 **Commit discipline:** one logically complete unit per commit, on the feature
