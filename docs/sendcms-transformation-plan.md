@@ -351,6 +351,39 @@ empty/loading/error states, validation. Remove all comment UI. Rebrand
 config values (no GTM ID, Product Hunt badge, csofts links, openremark.bond).
 Gate: click-through of every nav section.
 
+**Phase 9 status (2026-11-17): DONE + LIVE-VERIFIED, commit pending push.**
+New: `lib/services/dashboard-service.ts` (`getDashboardOverview`,
+`getSubmissionAnalytics`, pure `bucketByDay`); `lib/sdk-snippet.ts`
+(script-tag / form / REST curl builders); Overview rebuilt as SendCMS
+stats (domains, forms, submissions, unread) + 14-day activity chart +
+recent submissions; `/dashboard/analytics` (30-day totals, per-day chart,
+by form/domain/status); `/dashboard/api` (public userId, SDK snippet,
+REST reference, no API keys — Origin allowlist). Removed: `app/dashboard/sites/`,
+`app/dashboard/administration/`, `app/dashboard/notice-board/`,
+`app/dashboard/settings/` (stub), comment chart components,
+`components/product-hunt-badge.tsx`; sidebar Sites/Settings/Notice/
+Administration items + site switcher (logo → /dashboard, "New site" →
+"New form"); `PLATFORM_ROUTE_CAPABILITY` emptied (its 3 entries gated only
+the deleted pages). Rebrand: `config/config.json` → SendCMS (GTM +
+Product Hunt + need-help blocks removed, branding disabled, email
+`[New Submission]` / `#0891b2`); GTM removed from `app/layout.tsx`,
+metadata retitled; landing-page GitHub/footer links fixed to
+DashingMZA/sendcms; changelog/terms titles → SendCMS. Live journey
+38/38 pass (dev DB, journey user N): all 8 nav pages 200 with real data
+(overview shows seeded sender/form, analytics shows By form, API page
+shows userId + forms/v1.js), sidebar has Analytics + API & SDK and no
+comment links, all 4 removed routes 404. Two bugs found live: (1) the
+sidebar site-switcher block still linked /dashboard/sites + /dashboard/sites/new
+after the nav edit — fixed to Overview + New form; (2) fetch follows
+redirects, so the proxy's capability-gate 307 to /dashboard masqueraded as
+a 200 from the deleted pages — journey now uses `redirect: "manual"`.
+Gate: format, typecheck clean, lint 0 errors / 1 pre-existing warning,
+tests 139/139, build SUCCESS. Remaining rebrand (NOT in this phase):
+the landing page body copy + hero embed snippet still describe the
+comment system (`app/page.tsx`, `content/homepage.md`, hero video) —
+flagged for the Phase 10 pass; `lib/utils.ts` FALLBACK_APP_URL is still
+https://openremark.bond because the production domain (§6) is undecided.
+
 **Phase 10 — Documentation rewrite.** Quick start, registration, email
 verification, domain registration + DNS TXT/meta/file verification, creating
 forms, Astro/Next.js/Hugo/plain-HTML integrations, REST API, SDK, HTML
