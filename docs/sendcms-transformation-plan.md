@@ -322,14 +322,28 @@ Journey users cleaned up; 4 owner accounts intact. Note: node
 calls with `MISSING_OR_NULL_ORIGIN`; the journey script sends
 `Origin: http://localhost:3000` explicitly.
 
-**Phase 8 — Email notifications.** Platform transactional email (Resend
-recommended — no user SMTP for basic notifications), form-specific +
-multiple recipients, customizable templates (submission, verification,
-password reset), sender/page/domain context, preferences + enable/disable,
-`EmailJob` outbox with retries + delivery tracking, cron worker route.
-Submissions never lost when email is down (saved first, job queued).
-Gate: submission → job → delivered email observed; provider outage simulated
-(submission still stored).
+**Phase 8 status (DONE + PUSHED + CI GREEN 2026-11-17):** commit
+`feat(notifications): add email outbox with Resend/SMTP provider and
+delivery log` (API **8852d32**); **CI run 44212826172 = SUCCESS.**
+Provider abstraction `lib/email/provider.ts`: Resend (REST via fetch,
+no new dependency) → platform SMTP → none; auth mail now uses the
+same provider. Outbox service `lib/services/email-outbox.ts`: enqueue
+after the durable save (AWAITED — a fire-and-forget enqueue raced
+the `after()` hook and the job was missed; caught live), process
+with PENDING→SENDING claim, retries 1m/5m/15m/1h/4h, 5 attempts,
+FAILED only when terminal; cron route `GET /api/cron/email-outbox`
+(Bearer CRON_SECRET); immediate attempt via the submit route's
+`after()` hook; submission-notification React Email template with
+sender/page/domain context; delivery log `/dashboard/notifications`
++ test-email button on the form detail (direct send, 502 + provider
+message on failure). Tests 132/132 (12 new). Live journey 21/21 on
+the dev DB with NO provider (outage path): submission saved, job
+queued, first attempt failed honestly ("No email provider
+configured", retry scheduled), cron auth 401s, retry attempts=2,
+submission never lost, test email 502, pages 200. **Real delivery
+through Resend is NOT yet verified — needs the owner's RESEND_API_KEY
+(+ RESEND_FROM on a verified domain).** Spam submissions get no
+notification. Docs: `docs/email-notifications.md`.
 
 **Phase 9 — Dashboard completion.** Overview, Domains, Forms, Inbox,
 Notifications, Analytics, API & SDK, Account Settings — all real, no stubs,
