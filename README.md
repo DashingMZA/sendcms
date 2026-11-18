@@ -1,16 +1,19 @@
-# OpenRemark - An open-source comment system for static websites
+# SendCMS — a contact-form backend for any website
 
-<img width="1200" height="630" alt="image" src="https://github.com/user-attachments/assets/8c8728da-cf93-499c-81d1-a6db68f9f87c" />
-<img width="1850" height="956" alt="image" src="https://github.com/user-attachments/assets/790db0b4-3fba-44d7-aec7-c0e6762290ae" />
+A centralized contact-form backend for static and modern websites —
+Astro, Hugo, Next.js, WordPress, or plain HTML. Register your domain,
+create a form, paste one script tag, and every submission lands in a
+dashboard inbox with spam filtering and email notifications. No server
+code on your site, no API keys.
 
+![Version](https://img.shields.io/badge/version-0.0.1-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-![Beta](https://img.shields.io/badge/status-beta-orange) ![Version](https://img.shields.io/badge/version-0.6.1-blue) ![License](https://img.shields.io/badge/license-MIT-green)
-
-A self-hostable comment system for static websites — Astro, Hugo, Next.js, and any site that accepts HTML.
-
-[**Live Demo**](https://openremark.bond/demo.html)
-
-**Features:** Google sign-in · threaded replies · spam/moderation dashboard · site teams &amp; roles · shadow DOM widget · origin allowlisting
+**Features:** domain ownership verification (DNS TXT / meta tag / file)
+· forms with configurable fields · public submission API with Origin
+allowlist, honeypot, Turnstile, rate limits, idempotency · vanilla-TS
+SDK (7 KB) + no-JS fallback · inbox with search, filters, bulk actions
+· email notifications with outbox retries (Resend / SMTP) · OAuth +
+email/password auth with mandatory verification
 
 ## Quick start
 
@@ -20,65 +23,87 @@ pnpm install
 
 # 2. Configure
 cp .env.example .env
-# Fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET, WIDGET_JWT_SECRET
+# Fill in DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL,
+# NEXT_PUBLIC_APP_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 
 # 3. Database
+pnpm db:generate
 pnpm db:migrate
-pnpm db:seed        # optional demo data
 
-# 4. Run (also builds widget + generates Prisma client)
+# 4. Run (also builds the SDK bundle + generates the Prisma client)
 pnpm dev
 ```
 
-Open `http://localhost:3000` — sign in with Google to access the dashboard.
+Open `http://localhost:3000` — sign up, verify your email, register a
+domain, create a form. Full walkthrough:
+[Getting started](docs/getting-started.md).
 
 ## Embed on your site
 
 ```html
-<!-- Paste anywhere in your post template -->
-<div
-  data-open-remark
-  data-site-key="YOUR_SITE_KEY"
-  data-slug="/posts/your-post-slug"
-></div>
-<script async src="https://your-domain.com/embed.js"></script>
+<script src="https://your-domain.com/forms/v1.js"
+  data-user-id="YOUR_USER_ID" data-form-id="YOUR_FORM_ID"></script>
+
+<form data-cms-form>
+  <input name="name" placeholder="Your name" required />
+  <input name="email" type="email" placeholder="you@example.com" required />
+  <textarea name="message" placeholder="Your message" required></textarea>
+  <button type="submit">Send</button>
+</form>
 ```
 
-Get your site key from **Dashboard → Sites → Install**.
+Get your user id and form id from **Dashboard → API & SDK**, or a
+ready-made snippet from any form's detail page.
 
 ## Framework guides
 
 - [Astro](docs/embed-astro.md)
-- [Hugo](docs/embed-hugo.md)
 - [Next.js](docs/embed-nextjs.md)
+- [Hugo](docs/embed-hugo.md)
+- [Plain HTML](docs/embed-html.md)
 
-## Architecture
+## Documentation
 
-See [docs/architecture.md](docs/architecture.md) for system design, request flows, and scaling path.
+- [Getting started](docs/getting-started.md) — account, domains, forms, inbox
+- [SDK](docs/sdk.md) — JavaScript SDK reference
+- [REST API](docs/rest-api.md) — direct submit endpoint + no-JS fallback
+- [Email notifications](docs/email-notifications.md) — providers, outbox, cron
+- [Security](docs/security.md) — threat model and mitigations
+- [Deployment](docs/deployment.md) — env vars, database, cron, Vercel/Cloudflare
+- [Troubleshooting](docs/troubleshooting.md) — common errors and fixes
+- [Architecture](docs/architecture.md) — system design, request flows, scaling path
 
 ## Tech stack
 
-| Layer       | Tech                      |
-| ----------- | ------------------------- |
-| Framework   | Next.js 16 App Router     |
-| Database    | PostgreSQL (Prisma)       |
-| ORM         | Prisma                    |
-| Admin auth  | Auth.js v5 (Google OAuth) |
-| Widget auth | Widget JWT (jose)         |
-| UI          | shadcn/ui + Tailwind v4   |
-| Validation  | Zod                       |
-| Widget      | Vanilla TS → esbuild      |
+| Layer       | Tech                              |
+| ----------- | --------------------------------- |
+| Framework   | Next.js 16 App Router             |
+| Database    | PostgreSQL (Prisma)               |
+| ORM         | Prisma 7                          |
+| Admin auth  | Better Auth 1.7 (Google/GitHub/Facebook OAuth + email/password) |
+| Email       | Resend (or SMTP fallback)         |
+| UI          | shadcn/ui + Tailwind v4           |
+| Validation  | Zod                               |
+| SDK         | Vanilla TS → esbuild (7 KB)       |
+| Tests       | Vitest                            |
 
 ## Environment variables
 
+See [Deployment](docs/deployment.md) for the full table. The required
+ones:
+
 | Variable               | Description                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`         | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/zeon`) |
-| `AUTH_SECRET`          | Auth.js secret (run `openssl rand -base64 32`)                                   |
+| `DATABASE_URL`         | PostgreSQL connection string (use `?sslmode=verify-full` with Prisma Postgres)  |
+| `BETTER_AUTH_SECRET`   | Better Auth secret (run `openssl rand -base64 32`); no fallback                 |
+| `BETTER_AUTH_URL`      | Public app URL                                                                   |
+| `NEXT_PUBLIC_APP_URL`  | Same public URL (baked into SDK snippets and email links)                        |
 | `GOOGLE_CLIENT_ID`     | Google OAuth client ID                                                           |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                                                       |
-| `WIDGET_JWT_SECRET`    | JWT secret for widget visitor tokens                                             |
-| `NEXT_PUBLIC_APP_URL`  | Public app URL (used in embed snippets)                                          |
+| `RESEND_API_KEY`       | Resend API key (email notifications)                                             |
+| `RESEND_FROM`          | Sending address on a verified Resend domain                                      |
+| `CRON_SECRET`          | Bearer token for the email-outbox cron                                           |
+| `WIDGET_JWT_SECRET`    | JWT secret for the legacy comment widget's tokens (still required at runtime)    |
 
 ## License
 

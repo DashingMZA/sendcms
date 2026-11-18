@@ -28,7 +28,6 @@ import {
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Logo } from "@/components/logo"
-import { HeroVideo } from "@/components/hero-video"
 import { ProductSchema } from "@/components/product-schema"
 
 export const metadata: Metadata = {
@@ -54,12 +53,15 @@ const iconMap: Record<string, LucideIcon> = {
   Gift,
 }
 
-const embedSnippet = `<div
-  data-open-remark
-  data-site-key="YOUR_SITE_KEY"
-  data-slug="/posts/hello-world"
-></div>
-<script async src="${process.env.NEXT_PUBLIC_APP_URL}/embed.js"></script>`
+const embedSnippet = `<script src="${process.env.NEXT_PUBLIC_APP_URL}/forms/v1.js"
+  data-user-id="YOUR_USER_ID" data-form-id="YOUR_FORM_ID"></script>
+
+<form data-cms-form>
+  <input name="name" placeholder="Your name" required />
+  <input name="email" type="email" placeholder="you@example.com" required />
+  <textarea name="message" placeholder="Your message" required></textarea>
+  <button type="submit">Send</button>
+</form>`
 
 export default function HomePage() {
   const { frontmatter } = getListPage("homepage.md")
@@ -140,26 +142,20 @@ export default function HomePage() {
               size="lg"
               className="h-13 px-8 text-base"
             >
-              <Link
-                href={hero.secondaryButton.link}
-                target="_blank"
-                rel="noopener"
-              >
-                {hero.secondaryButton.label}
-              </Link>
+              {hero.secondaryButton.link.startsWith("http") ? (
+                <Link
+                  href={hero.secondaryButton.link}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  {hero.secondaryButton.label}
+                </Link>
+              ) : (
+                <Link href={hero.secondaryButton.link}>
+                  {hero.secondaryButton.label}
+                </Link>
+              )}
             </Button>
-          </div>
-
-          {/* Video */}
-          <div className="relative">
-            {/* Ambient glow behind card */}
-            <div
-              className="pointer-events-none absolute inset-x-0 -bottom-6 mx-auto h-24 w-2/3 rounded-full bg-primary/20 blur-3xl"
-              aria-hidden="true"
-            />
-            <div className="relative overflow-hidden rounded-xl shadow-2xl ring-1 ring-primary/10">
-              <HeroVideo />
-            </div>
           </div>
         </section>
 
@@ -167,7 +163,7 @@ export default function HomePage() {
         <section className="border-y bg-muted/40 py-16">
           <div className="mx-auto max-w-3xl px-4">
             <p className="mb-6 text-center text-step--1 font-medium tracking-wider text-muted-foreground uppercase">
-              Embed in 2 lines
+              Add it to any site
             </p>
             <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
               <div className="flex items-center gap-1.5 border-b bg-muted/50 px-4 py-3">
@@ -184,7 +180,7 @@ export default function HomePage() {
                   aria-hidden="true"
                 />
                 <span className="ml-2 font-mono text-xs text-muted-foreground">
-                  your-post.html
+                  contact.html
                 </span>
               </div>
               <pre className="overflow-x-auto p-6 font-mono text-sm leading-relaxed">
@@ -341,7 +337,7 @@ export default function HomePage() {
         </section>
 
         {/* How it works */}
-        <section className="border-y bg-muted/40 py-28">
+        <section className="border-y bg-muted/40 py-28" id="how-it-works">
           <div className="mx-auto max-w-3xl px-4">
             <h2 className="mb-14 text-center text-step-3 font-bold text-balance">
               {howItWorks.heading}

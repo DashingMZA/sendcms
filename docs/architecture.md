@@ -1,28 +1,34 @@
 # Architecture Overview
 
+SendCMS is a contact-form backend. Any website embeds a form with one
+script tag; submissions go to a public REST endpoint, are validated and
+spam-checked, saved durably in Postgres, queued for email notification,
+and read back in a dashboard inbox. The legacy comment system (sites,
+pages, comments, widget auth) still exists in the schema and in
+`/api/widget/*` + `/api/v1/sites/*`, but the dashboard no longer exposes
+it — its removal is a separately approved step.
+
 ## System diagram
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Static Site (Astro / Hugo / Next.js)                   │
+│  Any Site (Astro / Next.js / Hugo / plain HTML)         │
 │                                                         │
-│  <div data-open-remark                                │
-│       data-site-key="zk_abc"                            │
-│       data-slug="/posts/hello">                         │
-│  <script src="https://app.com/embed.js">                │
+│  <script src="https://app.com/forms/v1.js">             │
+│  <form data-cms-form data-form-id="...">                │
 │                            │                            │
 └────────────────────────────┼────────────────────────────┘
-                             │ HTTP (CORS)
+                             │ POST /api/public/v1/submit
                              ▼
 ┌─────────────────────────────────────────────────────────┐
-│  OpenRemark Server (Next.js)                         │
+│  SendCMS Server (Next.js 16 App Router)                 │
 │                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │ /api/widget/ │  │  /api/v1/    │  │  /dashboard  │  │
-│  │  (public)    │  │  (admin)     │  │  (admin UI)  │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  │
-│         │                 │                  │          │
-│         └─────────────────┴──────────────────┘          │
+│  ┌──────────────────┐  ┌──────────────┐  ┌───────────┐  │
+│  │ /api/public/v1/  │  │  /api/v1/    │  │ /dashboard│  │
+│  │  (public submit) │  │  (admin API) │  │ (admin UI)│  │
+│  └───────┬──────────┘  └──────┬───────┘  └─────┬─────┘  │
+│          │                    │                │        │
+│          └────────────────────┴────────────────┘        │
 │                           │                             │
 │                    ┌──────▼──────┐                      │
 │                    │  Services   │                      │
@@ -34,107 +40,128 @@
 │                    └──────┬──────┘                      │
 │                           │                             │
 │                    ┌──────▼──────┐                      │
-│                    │   SQLite    │                      │
-│                    │ (Postgres   │                      │
-│                    │  in prod)   │                      │
+│                    │  PostgreSQL │                      │
 │                    └─────────────┘                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Request flow — visitor posts a comment
+## Request flow — visitor submits a form
 
 ```
-1. embed.js mounts on [data-open-remark]
-2. GET /api/widget/comments?siteKey=…&slug=…
-   → Returns approved comments (no auth required)
-3. Visitor clicks "Continue with Google"
-   → Popup opens accounts.google.com OAuth
-   → Popup redirects to /api/widget/oauth-callback
-   → Callback page reads id_token from URL fragment
-   → postMessage({type: "ZEON_GOOGLE_TOKEN", idToken}) to opener
-   → embed.js calls POST /api/widget/auth with {idToken}
-   → Server verifies token with Google tokeninfo API
-   → Server issues a signed Widget JWT (7-day expiry)
-   → JWT stored in sessionStorage
-4. Visitor submits comment
-   → POST /api/widget/comments
-     Authorization: Bearer <widget-jwt>
-   → Server verifies JWT, checks origin allowlist
-   → Rate limit check (10 req/min per IP)
-   → Comment sanitized + saved (status: PENDING or APPROVED)
-   → 201 response
-5. Dashboard: admin approves → PATCH /api/v1/comments/:id
-   → ModerationLog entry created
-   → Comment status → APPROVED → visible to all
+1. forms/v1.js enhances <form data-cms-form> on the visitor's site
+   (loading / success / error states, duplicate-submit guard, honeypot)
+2. POST /api/public/v1/submit { userId, formId, fields, idempotencyKey? }
+   → Origin must be a verified domain linked to the form (else 403)
+   → Form must be active (else 403)
+   → Honeypot filled → fake 201, nothing saved
+   → Turnstile (if enabled): token verified, fail-closed
+   → Fields validated against the form's FormField config (else 422)
+   → Payload > 64 KB → 413
+   → Idempotency key or identical content within 10 min → 200, same id
+   → Rate limits: 10/min + 100/hour per IP, form daily limit (else 429)
+   → Spam heuristics → status SPAM, else NEW
+3. Durable save in one transaction: Submission + SubmissionEvent(CREATED)
+   → 201 { ok, id, message, redirectUrl }
+4. after(): enqueue EmailJobs (one per enabled NotificationSettings row)
+   + processEmailOutbox() attempts immediate delivery
+5. GET /api/cron/email-outbox (Bearer CRON_SECRET) retries failed jobs
+   (backoff 1m / 5m / 15m / 1h / 4h, 5 attempts)
+6. Dashboard: owner reads the submission in /dashboard/inbox
 ```
 
-## Authentication — two separate systems
+## Authentication — admin only
 
-| System      | Who                   | Mechanism                                  | Storage          |
-| ----------- | --------------------- | ------------------------------------------ | ---------------- |
-| Admin auth  | Site owners           | Auth.js v5 + Google OAuth → session cookie | Server session   |
-| Widget auth | Visitors (commenters) | Google id_token → Widget JWT               | `sessionStorage` |
+| System | Who | Mechanism | Storage |
+| ------ | --- | --------- | ------- |
+| Admin auth | Form owners | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required) → session cookie | Server session (database) |
 
-Admin routes gated by `middleware.ts` checking Auth.js session.
-Widget routes use `Authorization: Bearer <jwt>` header — no cookies (cross-origin).
+There is no visitor auth: visitors never sign in, and the public API
+takes no credentials — the `Origin` allowlist is its authorization.
+(The legacy comment widget still uses Google OAuth + Widget JWTs under
+`/api/widget/*`; that system is not part of SendCMS.)
+
+Admin routes are gated by `proxy.ts` (Next middleware — named
+`proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session
+lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT
+edge-safe. Verification gates domain registration and submissions, not
+dashboard access. Email/password sign-in is refused while the email is
+unverified; OAuth trust varies by provider (Google: profile
+`email_verified`; GitHub: `/user/emails` verified flag; Facebook: none —
+those users get a verification email on sign-up). First user becomes
+PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index
+(`User_single_platform_owner_idx`).
 
 ## Layered architecture
 
 ```
-Route Handler       app/api/**         thin: parse, auth, call service
+Route Handler       app/api/**         thin: parse, auth, call service (≤25 lines)
      ↓
 Service Layer       lib/services/      business logic, no Next.js imports
      ↓
-Prisma Client       lib/db.ts          singleton, only services use it
+Prisma Client       lib/db.ts          singleton, only services import it
      ↓
-SQLite / Postgres
+PostgreSQL
 ```
 
-**Rule:** Route handlers ≤ 25 lines. All logic in services. Validators (Zod) shared by both.
+**Rule:** Route handlers never import `lib/db.ts` — they call services.
+Zod schemas live in `lib/validators/` and are shared by routes and
+services. Response/error helpers live in `lib/api/`.
 
-## Widget architecture
+## SDK architecture
 
-The embed widget is a self-contained vanilla TypeScript bundle:
+The form SDK is a dependency-free vanilla-TS bundle (`sdk/`, built by
+esbuild to `public/forms/v1.js`, ~7 KB minified):
 
-- **Shadow DOM** — styles isolated, no leakage in or out
-- **No framework** — plain DOM APIs, ~22 KB unminified
-- **State machine** — simple class managing auth state, comments, reply target
-- **CSS custom properties** — themeable via `--zeon-*` variables on `:host`
-- **Dark mode** — `prefers-color-scheme` media query in shadow CSS
-- **Reduced motion** — transitions disabled when `prefers-reduced-motion: reduce`
-
-## Security model
-
-| Threat                  | Mitigation                                                                                            |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- |
-| Cross-site comment spam | CORS allowlist per site (`Site.allowedOrigins`)                                                       |
-| Anonymous spam          | Google OAuth required to post                                                                         |
-| Widget JWT theft        | Short-lived (7d), stored in sessionStorage (not localStorage), not httpOnly (cross-origin limitation) |
-| SQL injection           | Prisma parameterized queries                                                                          |
-| XSS in comments         | Body sanitized server-side (HTML stripped), rendered as `textContent` in widget                       |
-| CSRF                    | Widget uses Bearer token (not cookies) — CSRF not applicable                                          |
-| Rate abuse              | 10 posts/min per IP via in-memory LRU rate limiter                                                    |
-| Admin route access      | `middleware.ts` checks Auth.js session for all `/dashboard` paths                                     |
+- **Auto-enhance** — every `<form data-cms-form>` on the page; config
+  resolves form data attrs > `init()` options > script tag data attrs;
+  API origin resolves script `src` origin > build-time `__APP_URL__`.
+- **SPA-safe** — `MutationObserver` picks up dynamically added forms;
+  `astro:page-load` listener covers Astro transitions.
+- **No style leakage** — the SDK only styles its own status element
+  and the invisible honeypot field; host inputs are untouched.
+- **Turnstile** — loaded lazily, only when a site key is configured;
+  fail-closed (load failure blocks the submit).
+- **No-JS fallback** — the same endpoint accepts a plain form POST and
+  answers with a 303 redirect.
 
 ## Data model summary
 
 ```
-User ──< Site ──< Page ──< Comment ──< Comment (replies)
-                               │
-                               └──< ModerationLog
+User ──< Domain ──< DomainVerification
+  │         │
+  │         └──< FormDomain >── Form ──< FormField
+  │                                  ├──< Submission ──< SubmissionEvent
+  │                                  ├──< NotificationSettings
+  │                                  └──< EmailJob (also ──< Submission)
+  └──< AuditLog
 ```
 
-- `Site.siteKey` — public identifier embedded in static sites
-- `Site.allowedOrigins` — JSON array, enforced on widget POST
-- `Comment.status` — PENDING | APPROVED | SPAM | DELETED (soft delete)
-- `ModerationLog` — audit trail of every admin action
+- `Domain.domain` is `@unique` (normalized hostname); `Form.id` is the
+  public `formId`.
+- `Submission.data` is `Json` (fields vary per form); `originDomain` is
+  the observed origin host, denormalized on purpose.
+- `Submission.status`: NEW | READ | STARRED | ARCHIVED | SPAM.
+- `EmailJob` is the notification outbox (`PENDING` → `SENT`/`FAILED`,
+  with retries). Verification and password-reset emails are sent
+  directly, not through the outbox.
+- `DomainVerification.challenge` is a 48-char random token, shared
+  across the DNS TXT / meta-tag / file methods; 7-day TTL, 10 attempts.
+- `AuditLog` records domain/form/submission/user actions (best-effort,
+  never blocks the action).
+
+## Security model
+
+See [Security](security.md). In short: Origin allowlist per form,
+honeypot + Turnstile + spam heuristics, DB-backed rate limits,
+idempotency + content-hash dedupe, durable save before success, email
+verification gating, audit logs.
 
 ## Scaling path
 
 | Component     | Current              | Scale-up path                                         |
 | ------------- | -------------------- | ----------------------------------------------------- |
-| Database      | SQLite (libsql)      | Change 1 line in prisma.config.ts + schema → Postgres |
-| Rate limiting | In-memory LRU        | Replace `lib/rate-limit.ts` with Redis/Upstash        |
-| Widget auth   | Google tokeninfo API | Cache responses, add other OAuth providers            |
-| Comments      | Full fetch per load  | Add cursor pagination + real-time via SSE             |
-| Widget bundle | Single file          | CDN-hosted with long-lived cache headers              |
+| Database      | Postgres (Prisma)    | Read replica for the inbox; partition submissions by month at very large volumes |
+| Rate limiting | DB counts per IP     | Move to Redis/Upstash when the submission table grows hot |
+| Email         | Resend (or SMTP)     | Provider already abstracted (`lib/email/provider.ts`); add a second provider behind the same interface |
+| SDK bundle    | Single file, 7 KB    | CDN-hosted with long-lived cache headers |
+| Cron          | Single route, 100/calls | Split per-form or raise the limit with the cron schedule |

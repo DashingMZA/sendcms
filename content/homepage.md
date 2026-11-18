@@ -1,16 +1,16 @@
 ---
 hero:
-  title: Commenting System for **Every Websites**
-  subtitle: Add a simple, full-featured comment system to any Astro, Hugo,
-    Next.js, or your favorite framework with just two lines of HTML. Includes
-    Google sign-in, threaded replies, spam protection, and a moderation
-    dashboard.
+  title: Contact Forms for **Every Website**
+  subtitle: Add a full-featured contact form to any Astro, Hugo, Next.js,
+    WordPress, or plain HTML site with one script tag. Submissions land in
+    a dashboard inbox with spam filtering and email notifications — no
+    server code on your end.
   primaryButton:
     label: Start for free
     link: /sign-in
   secondaryButton:
-    label: Live demo
-    link: /demo.html
+    label: How it works
+    link: "#how-it-works"
 
 features:
   heading: Everything you need, nothing you don't
@@ -19,36 +19,38 @@ features:
     - icon: Globe
       title: Works everywhere
       description:
-        Drop two lines of HTML into any Astro, Hugo, or Next.js site. No
-        build step required on your end.
+        Drop one script tag into any Astro, Hugo, Next.js, WordPress, or
+        plain HTML site. No build step required on your end.
     - icon: ShieldCheck
-      title: Built-in moderation
+      title: Spam protection built in
       description:
-        Approve, reject, or mark spam from your dashboard. Pre-moderation
-        on by default — nothing goes live without your sign-off.
+        Honeypot trap, spam heuristics, and optional Cloudflare Turnstile
+        keep bots out of your inbox. Suspicious submissions are flagged,
+        never silently dropped.
     - icon: MessageSquare
-      title: Threaded replies
+      title: Inbox for every submission
       description:
-        Visitors can reply to individual comments, keeping discussions
-        focused and readable.
+        Read, star, archive, and search submissions from one place. Tabs
+        for unread, read, starred, archived, and spam — with bulk actions.
     - icon: Zap
-      title: Google sign-in
+      title: Email notifications
       description:
-        One-click authentication for visitors. No passwords, no friction,
-        real identities.
+        Get an email for every submission, with retries when the provider
+        is down. A submission is never lost because an email failed.
     - icon: Code2
-      title: Shadow DOM isolated
+      title: One script tag
       description:
-        The widget lives in a shadow DOM — your site styles never bleed in,
-        and widget styles never leak out.
+        The 7 KB SDK enhances any form in place — loading, success, and
+        error states included. Or post straight to the REST API, no
+        JavaScript needed.
     - icon: ShieldCheck
       title: Origin allowlisting
-      description: Only your registered domains can post comments. No cross-site abuse.
+      description: Only your verified domains can submit to your forms. No cross-site abuse.
 
 pricing:
   heading: Simple, transparent pricing
-  subheading: Pay once or start free — no subscriptions, no hidden fees.
-  footnote: Self-hosting OpenRemark is free and unlimited.
+  subheading: Free while SendCMS is in development — no subscriptions, no hidden fees.
+  footnote: Self-hosting SendCMS is free and unlimited.
   plans:
     - name: Free
       icon: Gift
@@ -56,55 +58,37 @@ pricing:
       period: forever
       description: Everything you need to get started.
       features:
-        - 1 site
-        - Unlimited comments & pages
-        - Google sign-in for visitors
-        - Moderation dashboard
-        - Threaded replies
-        - Origin allowlisting
+        - Unlimited domains and forms
+        - Unlimited submissions
+        - Domain verification (DNS TXT, meta tag, file)
+        - Spam filtering and Turnstile
+        - Email notifications with retries
+        - Dashboard inbox and analytics
       cta:
         label: Get started free
         link: /sign-in
-    - name: Early Bird
-      icon: Zap
-      price: $47
-      period: one-time
-      description: Pay once, own it forever.
-      includesNote: "Everything in Free, plus:"
-      features:
-        - Unlimited sites
-        - All future updates included
-        - Priority email support
-        - No recurring fees, ever
-      cta:
-        label: Get lifetime access
-        link: https://buy.paddle.com/product/905524
-        external: true
-      highlighted: true
-      urgencyBadge: 8/10 slots available
 
 howItWorks:
   heading: Up and running in minutes
   steps:
     - step: "1"
       title: Create your account
-      body: Sign in with Google. No credit card required.
+      body: Sign up with Google, GitHub, Facebook, or email. Verify your email — it takes a minute.
     - step: "2"
-      title: Register your site
-      body: Add your domain and get a unique site key from the dashboard.
+      title: Register your domain
+      body: Add your domain and verify you own it with a DNS TXT record, a meta tag, or a file.
     - step: "3"
-      title: Paste the snippet
-      body: Drop the two-line embed into your blog post template. Works in any SSG.
+      title: Create a form
+      body: Pick your fields, link a verified domain, and copy the snippet from the form page.
     - step: "4"
-      title: Moderate from the dashboard
-      body: Approve, reject, or mark comments as spam — all from one place.
+      title: Paste the snippet
+      body: Drop the script tag and form into any page. Submissions arrive in your inbox.
 
 cta:
-  heading: Ready to add comments?
+  heading: Ready to collect submissions?
   subtitle: Free to get started. Self-host on your own infrastructure if you prefer.
   button:
     label: Get started free
     link: /sign-in
 ---
 
-​

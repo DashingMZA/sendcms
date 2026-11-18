@@ -1,83 +1,79 @@
-# Embedding OpenRemark in Next.js
+# Embedding SendCMS in Next.js
 
 ## Prerequisites
 
-- A Next.js site (v13+ App Router)
-- An OpenRemark account with a registered site
-- Your **site key** from the dashboard
+- A Next.js site (App Router or Pages Router)
+- A SendCMS account with a verified domain and a form (see
+  [Getting started](getting-started.md))
+- Your **userId** and the form's **formId** from the dashboard
+  (form detail page → "Embed on your site")
 
-## 1. Create a Comments component
+## 1. Add the form to a page
 
-Create `components/OpenRemark.tsx`:
+Put `data-user-id` and `data-form-id` on the **form** itself — that is
+the most reliable place for them, because `next/script` loads scripts
+dynamically and the script tag's own data attributes are not readable
+then. Add the script with `next/script` (or a plain `<script>` tag).
 
 ```tsx
-"use client";
+// app/contact/page.tsx
+import Script from "next/script"
 
-import Script from "next/script";
-
-export function OpenRemark() {
+export default function ContactPage() {
   return (
     <>
-      <div
-        data-open-remark
-        data-site-key={process.env.NEXT_PUBLIC_OPEN_REMARK_SITE_KEY}
-      />
-      <Script
-        src={`${process.env.NEXT_PUBLIC_OPEN_REMARK_URL}/embed.js`}
-        strategy="lazyOnload"
-      />
+      <Script src="https://YOUR_APP/forms/v1.js" strategy="afterInteractive" />
+      <form
+        data-cms-form
+        data-user-id="YOUR_USER_ID"
+        data-form-id="YOUR_FORM_ID"
+      >
+        <label>
+          Name
+          <input name="name" required />
+        </label>
+        <label>
+          Email
+          <input name="email" type="email" required />
+        </label>
+        <label>
+          Message
+          <textarea name="message" required />
+        </label>
+        <button type="submit">Send</button>
+      </form>
     </>
-  );
+  )
 }
 ```
 
-## 2. Add environment variables
+Replace `YOUR_APP`, `YOUR_USER_ID`, and `YOUR_FORM_ID` with your values.
+The form's fields must match the fields configured on the form in the
+dashboard — extra field names are rejected by the API.
 
-In `.env.local`:
+For the Pages Router the same markup works inside any page component
+(`next/script` with `strategy="afterInteractive"`).
 
-```env
-NEXT_PUBLIC_OPEN_REMARK_SITE_KEY=YOUR_SITE_KEY
-NEXT_PUBLIC_OPEN_REMARK_URL=https://your-domain.com
-```
+## 2. Client-side navigation
 
-## 3. Add to your blog post page
+The SDK watches the DOM with a `MutationObserver` and enhances forms
+whenever they appear, so client-side navigation needs no extra code.
+If you add a form dynamically after the SDK has loaded, call
+`window.SendCMS.scan()` after inserting it — or `window.SendCMS.init()`
+to (re-)register callbacks.
 
-In `app/blog/[slug]/page.tsx`:
+## 3. Check it works
 
-```tsx
-import { OpenRemark } from "@/components/OpenRemark";
+1. Submit the form on your site. You should see the success message
+   (or your configured redirect).
+2. Open **Inbox** in the SendCMS dashboard — the submission appears
+   there with the page URL and origin domain.
+3. If it returns 403, the page's origin is not a verified domain linked
+   to the form — see [Troubleshooting](troubleshooting.md).
 
-export default async function BlogPost({ params }: { params: { slug: string } }) {
-  const post = await getPost(params.slug);
+## Alternative: server action / route handler
 
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <div dangerouslySetInnerHTML={{ __html: post.content }} />
-
-      <section aria-label="Comments" className="mt-16">
-        <OpenRemark />
-      </section>
-    </article>
-  );
-}
-```
-
-## Allowed origins
-
-Add `https://yourblog.com` to the **Allowed origins** list in your site's
-Settings page on the OpenRemark dashboard. For local dev, add
-`http://localhost:3000` too (remove it before going to production).
-
-## Content Security Policy
-
-If your Next.js site sets a CSP header, add `https://your-domain.com` to
-`script-src` and `connect-src`:
-
-```js
-// next.config.mjs
-const cspHeader = `
-  script-src 'self' https://your-domain.com https://accounts.google.com;
-  connect-src 'self' https://your-domain.com https://oauth2.googleapis.com;
-`;
-```
+If you prefer to submit from your own backend instead of the browser,
+POST from your server to the REST API ([REST API](rest-api.md)) with
+your `userId`/`formId` and an `Origin` header of one of your verified
+domains. The SDK is the simpler path for most sites.
