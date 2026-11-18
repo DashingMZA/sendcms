@@ -14,6 +14,7 @@ import {
   useDeleteNotificationEmail,
 } from "@/lib/queries/forms"
 import { useDomains } from "@/lib/queries/domains"
+import { useSendTestEmail } from "@/lib/queries/email-jobs"
 import type { FormDetail } from "@/lib/queries/forms"
 import { ApiClientError } from "@/lib/api-client"
 import { Badge } from "@/components/ui/badge"
@@ -615,12 +616,71 @@ function NotificationsSection({ form }: { form: FormDetail }) {
           {addEmail.isPending ? "Adding…" : "Add recipient"}
         </Button>
       </form>
+      <TestEmailForm formId={form.id} />
       {error && (
         <p role="alert" className="mt-4 text-sm text-destructive">
           {error}
         </p>
       )}
     </Section>
+  )
+}
+
+function TestEmailForm({ formId }: { formId: string }) {
+  const sendTest = useSendTestEmail(formId)
+  const [to, setTo] = useState("")
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSend(e: React.FormEvent) {
+    e.preventDefault()
+    setMessage(null)
+    setError(null)
+    try {
+      const result = await sendTest.mutateAsync(to)
+      setMessage(
+        `Test email sent via ${result.provider} (message ${result.messageId}).`
+      )
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not send the test email."
+      )
+    }
+  }
+
+  return (
+    <form
+      onSubmit={onSend}
+      className="mt-6 flex flex-wrap items-end gap-2 border-t pt-4"
+    >
+      <div className="space-y-2">
+        <Label htmlFor="test-email">Send a test notification</Label>
+        <Input
+          id="test-email"
+          type="email"
+          autoComplete="off"
+          placeholder="you@example.com"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          required
+        />
+      </div>
+      <Button type="submit" variant="outline" disabled={sendTest.isPending}>
+        {sendTest.isPending ? "Sending…" : "Send test email"}
+      </Button>
+      {message && (
+        <p role="status" className="w-full text-sm text-green-700">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </form>
   )
 }
 

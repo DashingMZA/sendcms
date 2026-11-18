@@ -1,9 +1,5 @@
 import { render } from "@react-email/render"
-import { formatFromAddress } from "./transport"
-import {
-  buildPlatformTransporter,
-  getPlatformFromAddress,
-} from "./platform-transport"
+import { sendPlatformEmail } from "./provider"
 import { VerifyEmail } from "./templates/verify-email"
 import { ResetPasswordEmail } from "./templates/reset-password"
 
@@ -11,7 +7,6 @@ import { ResetPasswordEmail } from "./templates/reset-password"
 // in config/config.json — those are rebranded in Phase 9).
 const ACCENT_COLOR = "#0891b2"
 const FOOTER_TEXT = "You're receiving this because you have a SendCMS account."
-const FROM_NAME = "SendCMS"
 
 type AuthEmailUser = {
   name: string
@@ -31,29 +26,28 @@ async function deliverOrLog({
   html: string
   url: string
 }): Promise<void> {
-  const transport = buildPlatformTransporter()
-  if (transport) {
-    await transport.sendMail({
-      from: formatFromAddress(FROM_NAME, getPlatformFromAddress()),
-      to,
-      subject,
-      html,
-    })
+  // Phase 8: one shared provider (Resend → platform SMTP). Without
+  // any provider the contract is unchanged: dev logs the link,
+  // production fails loudly.
+  try {
+    await sendPlatformEmail({ to, subject, html })
     return
-  }
-  if (process.env.NODE_ENV === "production") {
-    // Loud failure: without a mailer, verification/reset can never complete.
-    throw new Error(
-      `Cannot send ${kind} email: SMTP is not configured ` +
-        `(set SMTP_HOST/SMTP_USER/SMTP_PASS).`
+  } catch (err) {
+    if (process.env.NODE_ENV === "production") {
+      // Loud failure: without a mailer, verification/reset can never complete.
+      throw new Error(
+        `Cannot send ${kind} email: no email provider is configured ` +
+          `(set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS). ` +
+          `Cause: ${err instanceof Error ? err.message : "unknown"}`
+      )
+    }
+    // Dev fallback: the link is only visible in the server log, never to the
+    // browser, so the register → verify → login journey stays testable
+    // without an SMTP server.
+    console.log(
+      `[auth-email] No email provider — ${kind} link for ${to}: ${url}`
     )
   }
-  // Dev fallback: the link is only visible in the server log, never to the
-  // browser, so the register → verify → login journey stays testable
-  // without an SMTP server. Phase 8 replaces this with Resend.
-  console.log(
-    `[auth-email] No SMTP configured — ${kind} link for ${to}: ${url}`
-  )
 }
 
 /** Better Auth `emailVerification.sendVerificationEmail` callback. */

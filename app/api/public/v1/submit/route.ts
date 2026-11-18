@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { getEffectiveOrigin } from "@/lib/cors"
 import { ApiError, handleApiError } from "@/lib/api/error"
 import {
@@ -6,6 +6,7 @@ import {
   SubmitBodySchema,
 } from "@/lib/validators/submission"
 import { submitForm } from "@/lib/services/submission-service"
+import { processEmailOutbox } from "@/lib/services/email-outbox"
 
 // Public submission API — no session, no cookies. Authorization is the
 // Origin allowlist (enforced in the service): the submitting site must be
@@ -97,6 +98,19 @@ export async function POST(req: NextRequest) {
       ip: getClientIp(req),
       userAgent: req.headers.get("user-agent"),
     })
+
+    if (result.kind === "created") {
+      // Notifications are already queued (the service enqueues after
+      // the durable save). Attempt delivery now, after the response is
+      // sent — failures stay queued for the cron worker to retry.
+      after(async () => {
+        try {
+          await processEmailOutbox({ limit: 25 })
+        } catch (err) {
+          console.error("[notifications] outbox run failed:", err)
+        }
+      })
+    }
 
     if (isFormPost) {
       const target =

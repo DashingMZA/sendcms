@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { ApiError } from "@/lib/api/error"
 import { normalizeDomain } from "@/lib/services/domain-service"
 import { verifyTurnstileToken } from "@/lib/services/turnstile"
+import { enqueueSubmissionNotifications } from "@/lib/services/email-outbox"
 import { getSubmissionSender } from "@/lib/submission-display"
 import {
   HONEYPOT_FIELD,
@@ -439,6 +440,24 @@ export async function submitForm(
       })
       return submission
     })
+    // Notifications are queued AFTER the durable save — a dead mail
+    // Notifications are queued AFTER the durable save — a dead mail
+    // provider must never lose or block a submission. This is AWAITED
+    // (not fire-and-forget): the submit route's `after()` hook runs
+    // `processEmailOutbox` right after the response, and it can only
+    // send jobs that already exist. An enqueue failure is logged
+    // loudly (there is no job for the cron to retry in that case);
+    // the submission itself is already safe.
+    if (status === SubmissionStatus.NEW) {
+      try {
+        await enqueueSubmissionNotifications(form.id, created.id)
+      } catch (err) {
+        console.error(
+          `[notifications] failed to queue jobs for submission ${created.id}:`,
+          err
+        )
+      }
+    }
     return {
       kind: "created",
       submission: { id: created.id },

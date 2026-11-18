@@ -136,7 +136,7 @@ describe("auth mailer without SMTP", () => {
           user: { name: "Zaheer", email: "zaheer@example.com" },
           url: "http://localhost:3000/verify-email?token=abc",
         })
-      ).rejects.toThrow(/SMTP is not configured/)
+      ).rejects.toThrow(/no email provider is configured/)
     } finally {
       vi.unstubAllEnvs()
     }
