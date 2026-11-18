@@ -391,6 +391,38 @@ fallback, security + troubleshooting, deployment, env config. Update
 `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/architecture.md`.
 Gate: docs followed verbatim on a fresh static test page.
 
+**Phase 10 status (2026-11-18): DONE + LIVE-VERIFIED, commit pending push.**
+New docs: `getting-started.md` (account → domain → form → embed →
+inbox → notifications), `rest-api.md` (submit endpoint, status table,
+idempotency/dedupe, no-JS 303 fallback), `security.md` (threat model),
+`deployment.md` (env table, DB, build, outbox cron, Vercel/Cloudflare
+notes), `troubleshooting.md` (auth, domain verification, submissions,
+email, SDK), `embed-html.md` (plain HTML). Rewritten: `README.md`,
+`docs/architecture.md`, `embed-astro.md`, `embed-nextjs.md`,
+`embed-hugo.md` (all now SDK-based, form-level `data-user-id` /
+`data-form-id` — the reliable place, since `next/script` loads
+dynamically and the script tag's own data attrs are unreadable then),
+`AGENTS.md` (SendCMS project, pnpm 12, SDK commands + jsdom note,
+legacy seed warning, full env list). `CLAUDE.md` needed no change — it
+is just `@AGENTS.md`. Landing page rewritten too (flagged in Phase 9):
+`content/homepage.md` (Contact Forms hero, 6 SendCMS features, single
+Free $0 plan, 4-step how-it-works) + `app/page.tsx` (SendCMS embed
+snippet, HeroVideo removed + `components/hero-video.tsx` deleted —
+it was the old comment demo; secondary button opens a new tab only for
+external links, `#how-it-works` anchor added; snippet label/filename
+updated). Gate: static gate green (typecheck clean, lint 0 errors /
+1 pre-existing warning, tests 139/139, build SUCCESS); live journey
+28/28 pass (dev DB, journey user O): fresh static page built verbatim
+from `docs/embed-html.md` (SDK form + no-JS form) serves 200, SDK-shape
+JSON submit → 201, no-JS form POST → 303 with `?cms_submitted=1`,
+2 submissions in DB + inbox, landing page 200 with no comment copy /
+no Paddle / no demo.html, API & SDK page shows the userId; 4 owner
+accounts intact. Still NOT fixed in Phase 10 (deploy config, not docs):
+`vercel.json` still redirects openremark.vercel.app → openremark.bond,
+`wrangler.jsonc` worker name still `open-remark`, `prisma/seed.ts`
+still seeds legacy comment demo data — all flagged for the production
+domain decision (§6).
+
 **Phase 11 — Testing + deployment verification.** Automated tests for new
 functionality (validators, services, SDK, API happy/edge paths); full
 16-step user journey from the brief (§16) executed and recorded; fix
