@@ -5,19 +5,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: [
-    "@sendcms/shared",
-    "@sendcms/ui",
-    "@sendcms/domains",
-    "@sendcms/forms",
-    "@sendcms/submissions",
-    "@sendcms/inbox",
-    "@sendcms/notifications",
-    "@sendcms/users",
-    "@sendcms/analytics",
-    "@sendcms/api-client",
-    "@sendcms/sdk",
-  ],
+  transpilePackages: ["@sendcms/shared", "@sendcms/ui"],
   turbopack: {
     root: __dirname,
   },

@@ -3,7 +3,7 @@
     "paths": { "@/*": ["./*"] },
     "plugins": [{ "name": "next" }]
   },
-  "exclude": ["node_modules"],
+  "exclude": ["apps", "node_modules", "packages"],
   "extends": "@sendcms/config/tsconfig/base.json",
   "include": [
     "next-env.d.ts",

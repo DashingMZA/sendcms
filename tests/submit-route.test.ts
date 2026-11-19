@@ -18,9 +18,12 @@ vi.mock("next/server", async (importOriginal) => {
 })
 
 import { NextRequest } from "next/server"
-import { OPTIONS, POST } from "@/app/api/public/v1/submit/route"
+// The submit route lives in apps/api (Phase 7); the test suite still
+// lives at the repo root until Phase 13 co-locates tests with the code
+// they cover, so it reaches the route by relative path.
+import { OPTIONS, POST } from "../apps/api/app/api/public/v1/submit/route"
 import { ApiError } from "@sendcms/api-client"
-import { notificationDeps } from "@/lib/email/notification-deps"
+import { notificationDeps } from "@sendcms/email"
 
 const URL = "http://localhost:3000/api/public/v1/submit"
 const ORIGIN = "https://example.com"

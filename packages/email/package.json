@@ -1,0 +1,30 @@
+{
+  "dependencies": {
+    "@react-email/render": "^2.3.1",
+    "@sendcms/notifications": "workspace:*",
+    "nodemailer": "^10.6.0",
+    "react-email": "^6.11.15"
+  },
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1",
+    "typescript": "6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "name": "@sendcms/email",
+  "peerDependencies": {
+    "react": "^19.3.1"
+  },
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "version": "0.1.0"
+}

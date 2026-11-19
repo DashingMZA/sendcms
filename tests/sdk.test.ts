@@ -4,6 +4,10 @@
 import { readFileSync } from "fs"
 import { resolve } from "path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+// Type-only: loads the SDK's global `Window` augmentation (`window.SendCMS`)
+// from the package. The root tsconfig no longer includes packages/, so the
+// test imports the types explicitly instead of relying on the include.
+import type {} from "@sendcms/sdk"
 
 // These tests load the REAL built bundle (public/forms/v1.js) and drive
 // it with mocked fetch.

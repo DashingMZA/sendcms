@@ -5,7 +5,13 @@
 ```ts
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { ApiError, created, handleApiError, noContent, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  created,
+  handleApiError,
+  noContent,
+  ok,
+} from "@sendcms/api-client"
 import { someService } from "@sendcms/<module>"
 import { SomeSchema } from "@sendcms/<module>/validators"
 
@@ -27,15 +33,15 @@ export async function GET(
 
 ## Patterns
 
-| Type           | Path                                        | Auth                    | Notes                                                 |
-| -------------- | ------------------------------------------- | ----------------------- | ----------------------------------------------------- |
-| Admin API      | `app/api/v1/<resource>/route.ts`            | Session cookie          | No CORS needed                                        |
-| Public API     | `app/api/public/v1/submit/route.ts`         | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
-| Dashboard page | `app/dashboard/<section>/page.tsx`          | Server component        | Fetch data, pass to client                            |
-| Detail page    | `app/dashboard/forms/[formId]/page.tsx`     | Server component        | Owner-scoped fetch, 404 → `notFound()`                |
-| Service        | `packages/modules/<name>/src/service.ts`    | N/A                     | No Next.js imports                                    |
-| Validator      | `packages/modules/<name>/src/validators.ts` | N/A                     | Zod schema, shared                                    |
-| Hook           | `hooks/use-<name>.ts`                       | N/A                     | Client-side only                                      |
+| Type           | Path                                                   | Auth                    | Notes                                                 |
+| -------------- | ------------------------------------------------------ | ----------------------- | ----------------------------------------------------- |
+| Admin API      | `apps/api/app/api/v1/<resource>/route.ts`              | Session cookie          | No CORS needed                                        |
+| Public API     | `apps/api/app/api/public/v1/submit/route.ts`           | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
+| Dashboard page | `apps/dashboard/app/dashboard/<section>/page.tsx`      | Server component        | Fetch data, pass to client                            |
+| Detail page    | `apps/dashboard/app/dashboard/forms/[formId]/page.tsx` | Server component        | Owner-scoped fetch, 404 → `notFound()`                |
+| Service        | `packages/modules/<name>/src/service.ts`               | N/A                     | No Next.js imports                                    |
+| Validator      | `packages/modules/<name>/src/validators.ts`            | N/A                     | Zod schema, shared                                    |
+| Hook           | `hooks/use-<name>.ts`                                  | N/A                     | Client-side only                                      |
 
 ## Public API Route Pattern
 

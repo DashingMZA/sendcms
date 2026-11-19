@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import nodemailer from "nodemailer"
-import { formatFromAddress } from "@/lib/email/transport"
 import {
   buildPlatformTransporter,
+  formatFromAddress,
   getPlatformFromAddress,
-} from "@/lib/email/platform-transport"
-import {
   sendPasswordResetEmail,
   sendVerificationEmail,
-} from "@/lib/email/auth-mailer"
+} from "@sendcms/email"
 
 const ENV_KEYS = [
   "SMTP_HOST",

@@ -67,6 +67,18 @@ export function createSendcmsAuth(mailer: AuthMailer) {
       process.env.BETTER_AUTH_URL ??
       process.env.NEXT_PUBLIC_APP_URL ??
       "http://localhost:3000",
+    // Cross-app auth (Phase 7): the dashboard app's pages run on a
+    // different origin than the api app that serves /api/auth/*. The
+    // browser auth client posts cross-origin, so the dashboard (and any
+    // other app origin) must be trusted here, or Better Auth rejects the
+    // request with INVALID_ORIGIN. Comma-separated list, e.g.
+    // TRUSTED_ORIGINS=http://localhost:3002 (dev) or the dashboard
+    // app's public URL (production). The baseURL above is trusted
+    // implicitly; this list holds the OTHER apps' origins.
+    trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     // No fallback value here on purpose: Better Auth fails fast without a
     // secret instead of silently signing with an insecure default.
     secret: process.env.BETTER_AUTH_SECRET,

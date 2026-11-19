@@ -11,9 +11,17 @@ const workspaceRoot = path.resolve(__dirname, "../..")
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: [
+    "@sendcms/shared",
     "@sendcms/api-client",
     "@sendcms/database",
-    "@sendcms/shared",
+    "@sendcms/auth",
+    "@sendcms/permissions",
+    "@sendcms/email",
+    "@sendcms/domains",
+    "@sendcms/forms",
+    "@sendcms/submissions",
+    "@sendcms/inbox",
+    "@sendcms/notifications",
   ],
   turbopack: {
     root: workspaceRoot,

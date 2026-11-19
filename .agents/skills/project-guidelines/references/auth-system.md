@@ -4,18 +4,18 @@ Two separate auth systems. Never conflate them.
 
 ## Admin Auth
 
-| Aspect         | Detail                                                                                                                                                                                          |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mechanism      | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required)                                                                                                       |
-| Storage        | Server session cookie (database session)                                                                                                                                                        |
-| Routes         | `/dashboard`, `/api/v1/*`                                                                                                                                                                       |
-| Gate           | `proxy.ts` (root, not `middleware.ts`)                                                                                                                                                          |
-| Matcher        | `/dashboard/:path*`                                                                                                                                                                             |
-| Config         | `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma) — wired by the thin `lib/auth.ts` wrapper, which injects the app's mailer                                                        |
-| Providers      | `packages/auth/src/providers.ts` — `getConfiguredOAuthProviders()` (Google always; GitHub/Facebook only when their env creds are set)                                                           |
-| Client         | `@sendcms/auth/client` (`authClient.signIn` / `signUp` / `signOut` / `verifyEmail` / `requestPasswordReset` / `resetPassword` / `changePassword` / `changeEmail` / `updateUser` / `linkSocial`) |
-| Session helper | `auth()` from `@sendcms/auth` (re-exported by `lib/auth.ts`) — same `await auth()` pattern; `AdminSession.user.emailVerified`                                                                   |
-| Auth mail      | `lib/email/auth-mailer.ts` — verification + reset via platform SMTP (`SMTP_*`); no SMTP → dev logs the link to the server console, production throws                                            |
+| Aspect         | Detail                                                                                                                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism      | Better Auth 1.7.x — Google/GitHub/Facebook OAuth + email/password (verification required)                                                                                                                                                                                                   |
+| Storage        | Server session cookie (database session)                                                                                                                                                                                                                                                    |
+| Routes         | `/dashboard`, `/api/v1/*`                                                                                                                                                                                                                                                                   |
+| Gate           | `apps/dashboard/proxy.ts` (not `middleware.ts`)                                                                                                                                                                                                                                             |
+| Matcher        | `/dashboard/:path*`                                                                                                                                                                                                                                                                         |
+| Config         | `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma) — wired by each app's thin `lib/auth.ts` wrapper (apps/api + apps/dashboard each own one; the apps run as separate servers and cannot share a Better Auth instance), which injects the platform mailer from `@sendcms/email` |
+| Providers      | `packages/auth/src/providers.ts` — `getConfiguredOAuthProviders()` (Google always; GitHub/Facebook only when their env creds are set)                                                                                                                                                       |
+| Client         | `@sendcms/auth/client` (`authClient.signIn` / `signUp` / `signOut` / `verifyEmail` / `requestPasswordReset` / `resetPassword` / `changePassword` / `changeEmail` / `updateUser` / `linkSocial`)                                                                                             |
+| Session helper | `auth()` from `@sendcms/auth` (re-exported by each app's `lib/auth.ts`) — same `await auth()` pattern; `AdminSession.user.emailVerified`                                                                                                                                                    |
+| Auth mail      | `packages/email/src/auth-mailer.ts` — verification + reset via platform SMTP (`SMTP_*`); no SMTP → dev logs the link to the server console, production throws                                                                                                                               |
 
 ## Email / Password Flows
 
@@ -43,10 +43,10 @@ takes no credentials — the `Origin` allowlist is its authorization.
 
 ## Permission Guards
 
-| Guard                           | Location                      | Used By                                                                             |
-| ------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------- |
+| Guard                           | Location                               | Used By                                                                             |
+| ------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
 | `platformCan(role, capability)` | `packages/permissions/src/platform.ts` | Dashboard nav visibility                                                            |
-| `getEffectiveOrigin(req)`       | `@sendcms/api-client`         | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
+| `getEffectiveOrigin(req)`       | `@sendcms/api-client`                  | Resolves origin from `origin` header, falls back to `referer` (public submit route) |
 
 ## Critical Rules
 

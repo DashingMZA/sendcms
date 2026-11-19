@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Logo } from "@/components/logo"
+import config from "@/config/config.json"
+import { Logo } from "@sendcms/ui"
 import { getListPage } from "@/lib/content"
 
 export const metadata: Metadata = {
@@ -26,7 +27,7 @@ export default function TermsPage() {
       <header className="border-b">
         <div className="mx-auto flex h-16 max-w-3xl items-center px-4">
           <Link href="/" className="flex items-center font-semibold">
-            <Logo />
+            <Logo brand={config.site} />
           </Link>
         </div>
       </header>
@@ -63,7 +64,7 @@ export default function TermsPage() {
 
       <footer className="mt-auto border-t">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-8 text-sm text-muted-foreground">
-          <Logo />
+          <Logo brand={config.site} />
           <Link
             href="/"
             className="underline underline-offset-4 hover:text-foreground"

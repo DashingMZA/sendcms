@@ -15,7 +15,7 @@
 ## Architecture: Layered Request Flow
 
 ```
-app/api/**          →  route handler (thin: parse, auth, call service, respond)
+apps/api/app/api/**  →  route handler (thin: parse, auth, call service, respond)
 packages/modules/<name>/src/service.ts →  business logic (NO Next.js imports)
 @sendcms/database   →  Prisma singleton `db` (only services import this)
 packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + services)
@@ -65,7 +65,7 @@ All client-side reads and writes go through `@tanstack/react-query`, never raw `
 ```
 
 - Components call hooks from `@sendcms/<module>/queries`. They never call `apiFetch` or `fetch` directly.
-- `QueryClientProvider` is mounted once in `app/dashboard/layout.tsx` (dashboard-only — public pages don't need it).
+- `QueryClientProvider` is mounted once in `apps/dashboard/app/dashboard/layout.tsx` (dashboard-only — public pages don't need it).
 - Errors surface via a **global default**: the `QueryClient`'s `queryCache`/`mutationCache` `onError` shows a sonner toast automatically. Pass `meta: { silent: true }` on a query/mutation only when the call site needs custom error UX instead.
 - Initial render uses `initialData` from the server-fetched props (no `dehydrate`/`HydrationBoundary` — one query per page, not nested trees).
 
@@ -166,8 +166,8 @@ Routes that mutate data call `revalidatePath("/dashboard", "layout")` after writ
 
 Single source of truth in `packages/permissions/`:
 
-| File                          | Purpose                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
+| File                                   | Purpose                                                                            |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
 | `packages/permissions/src/platform.ts` | `PlatformRole`, `PlatformCapability`, `platformCan()`, `PLATFORM_ROUTE_CAPABILITY` |
 | `packages/permissions/src/index.ts`    | Barrel re-export                                                                   |
 

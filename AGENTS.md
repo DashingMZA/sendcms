@@ -62,12 +62,12 @@ Facebook OAuth + email/password (verification required) → session cookie
 The legacy widget visitor auth (Google OAuth PKCE → signed Widget JWT,
 `/api/widget/*`) was removed with the comment system.
 
-- Admin routes gated by `proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma adapter), wired by the thin `lib/auth.ts` wrapper (injects the app mailer). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`lib/email/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
+- Admin routes gated by `apps/dashboard/proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma adapter), wired by each app's thin `lib/auth.ts` wrapper (apps/api + apps/dashboard each own one — the apps run as separate servers and cannot share a Better Auth instance; each wrapper injects the platform mailer from `@sendcms/email`). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`packages/email/src/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
 
 ### Layered request flow — HARD RULE (`coding-conventions.md`)
 
 ```
-app/api/**          route handler  — thin: parse, auth, call service, respond (≤25 lines)
+apps/api/app/api/**  route handler  — thin: parse, auth, call service, respond (≤25 lines)
   ↓
 packages/modules/** business logic — NO Next.js imports (must be framework-agnostic)
   ↓
@@ -104,7 +104,7 @@ User ──< Domain ──< DomainVerification
 
 ### Non-obvious gotchas (`folder-structure.md`)
 
-- `proxy.ts` (root) — the Next middleware, renamed from `middleware.ts`.
+- `apps/dashboard/proxy.ts` — the Next middleware (gates `/dashboard/:path*`), renamed from `middleware.ts`; the api app has its own no-op `apps/api/proxy.ts` (empty matcher) so it doesn't inherit the dashboard's.
 - `packages/database/generated/prisma/` — Prisma client output. Import from `@sendcms/database`. Do not edit.
 - `packages/database/prisma.config.ts` — Prisma schema/migrations config.
 - `config/config.json` — feature flags + app config. All new config goes here, not `.env` or hardcoded.

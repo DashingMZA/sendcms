@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { render } from "@react-email/render"
-import { resolveEmailProvider, sendPlatformEmail } from "@/lib/email/provider"
+import {
+  SubmissionNotification,
+  resolveEmailProvider,
+  sendPlatformEmail,
+  submissionNotificationText,
+} from "@sendcms/email"
 import {
   buildSubmissionNotificationSubject,
   nextAttemptDelayMs,
@@ -9,11 +14,6 @@ import {
   EmailJobListQuerySchema,
   TestEmailSchema,
 } from "@sendcms/notifications/validators"
-
-import {
-  SubmissionNotification,
-  submissionNotificationText,
-} from "@/lib/email/templates/submission-notification"
 
 const ENV_KEYS = [
   "RESEND_API_KEY",
