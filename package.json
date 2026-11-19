@@ -18,6 +18,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "db:migrate": "pnpm --filter @sendcms/database db:migrate",
+    "db:migrate:deploy": "pnpm --filter @sendcms/database exec prisma migrate deploy",
     "db:generate": "pnpm --filter @sendcms/database db:generate",
     "db:seed": "pnpm --filter @sendcms/database db:seed",
     "db:studio": "pnpm --filter @sendcms/database db:studio",

@@ -12,7 +12,7 @@ import { processEmailOutbox } from "@sendcms/notifications"
 const logger = createLogger("email-worker")
 
 export type EmailWorkerOptions = {
-  /** Health endpoint port. Env `WORKER_PORT`, default 3005. */
+  /** Health endpoint port. Env `PORT` (injected by Render/Railway) else `WORKER_PORT`, default 3005. */
   port?: number
   /** Milliseconds between outbox polls. Env `WORKER_POLL_INTERVAL_MS`, default 30_000. */
   pollIntervalMs?: number
@@ -41,7 +41,7 @@ function envInt(name: string, fallback: number): number {
 }
 
 export function createEmailWorker(options: EmailWorkerOptions = {}) {
-  const port = options.port ?? envInt("WORKER_PORT", 3005)
+  const port = options.port ?? envInt("PORT", envInt("WORKER_PORT", 3005))
   const pollIntervalMs =
     options.pollIntervalMs ?? envInt("WORKER_POLL_INTERVAL_MS", 30_000)
   const batchLimit = options.batchLimit ?? 100

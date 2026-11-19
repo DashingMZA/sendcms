@@ -2,11 +2,11 @@
   "dependencies": {
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
-    "dotenv": "^18.0.10"
+    "dotenv": "^18.0.10",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@sendcms/config": "workspace:*",
-    "tsx": "^4.23.15",
     "typescript": "6.0.3"
   },
   "exports": {
