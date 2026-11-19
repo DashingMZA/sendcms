@@ -8,6 +8,7 @@
     "@sendcms/email": "workspace:*",
     "@sendcms/forms": "workspace:*",
     "@sendcms/inbox": "workspace:*",
+    "@sendcms/mcp": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/submissions": "workspace:*",

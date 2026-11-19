@@ -25,11 +25,12 @@ sendcms/
 │   │   ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
 │   │   ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │   │   └── package.json           # @sendcms/marketing (dev port 3000)
-│   ├── api/                       # API app: all 24 routes + its own auth wiring (@sendcms/api, dev port 3001)
+│   ├── api/                       # API app: all 25 routes + its own auth wiring (@sendcms/api, dev port 3001)
 │   │   ├── app/api/
 │   │   │   ├── auth/[...all]/     # Better Auth handler
 │   │   │   ├── cron/email-outbox/ # Email retry worker (Bearer CRON_SECRET)
 │   │   │   ├── health/            # DB health ping (moved from app/api/health in Phase 6)
+│   │   │   ├── mcp/               # MCP endpoint: POST /api/mcp, Streamable HTTP, API-key auth (Phase 11)
 │   │   │   ├── public/v1/submit/  # Public submission API (Origin allowlist, no auth)
 │   │   │   └── v1/                # Admin REST API (session-gated): domains, forms, inbox, email-jobs, api-keys
 │   │   ├── lib/auth.ts            # One-liner wrapper: re-exports the factory's betterAuth/auth (the factory imports the mailer from @sendcms/email directly, Phase 9)
@@ -108,6 +109,7 @@ sendcms/
 │   ├── queue/                     # Email outbox queue: EmailJob claim + retry state machine (backoff 1m/5m/15m/1h/4h) (@sendcms/queue)
 │   ├── security/                  # Shared security headers (Next `headers()` + `_headers` file) + the one `logAudit()` writer (@sendcms/security)
 │   ├── observability/             # Structured logging: `createLogger(scope)` writes JSON lines (@sendcms/observability)
+│   ├── mcp/                       # MCP server: 19 tools over the module services + API-key auth + rate limits (@sendcms/mcp, Phase 11)
 │   └── modules/                   # Business modules (server service + validators + client queries)
 │       ├── domains/               # domain service + dns-verification (@sendcms/domains)
 │       ├── forms/                 # form CRUD, fields, domain links (@sendcms/forms)
@@ -168,4 +170,5 @@ sendcms/
 | `@sendcms/users`            | User service + auth validators (`packages/modules/users`)                                                                                    |
 | `@sendcms/analytics`        | Overview + analytics (`packages/modules/analytics`)                                                                                          |
 | `@sendcms/api-keys`         | API key service: create/list/revoke/rotate + resolve for MCP auth (`packages/modules/api-keys`, Phase 11)                                    |
+| `@sendcms/mcp`              | MCP server: 19 tools + API-key auth + rate limits (`packages/mcp`, Phase 11)                                                                 |
 | `@sendcms/config`           | Shared tsconfig + ESLint base (`packages/config`)                                                                                            |

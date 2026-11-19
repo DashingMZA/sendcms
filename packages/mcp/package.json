@@ -1,0 +1,32 @@
+{
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@sendcms/analytics": "workspace:*",
+    "@sendcms/api-keys": "workspace:*",
+    "@sendcms/database": "workspace:*",
+    "@sendcms/domains": "workspace:*",
+    "@sendcms/forms": "workspace:*",
+    "@sendcms/inbox": "workspace:*",
+    "@sendcms/notifications": "workspace:*",
+    "@sendcms/observability": "workspace:*",
+    "@sendcms/shared": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "@types/node": "^26.6.6",
+    "typescript": "6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "name": "@sendcms/mcp",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "version": "0.1.0"
+}
