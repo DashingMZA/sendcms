@@ -14,10 +14,19 @@ filtering and email notifications.
 
 The repo started as OpenRemark (a comment system) and was rebuilt into
 SendCMS on branch `feat/contact-form-saas` (see
-`docs/sendcms-transformation-plan.md`, 11 phases). The legacy comment
+`docs/sendcms-transformation-plan.md`, 11 phases), then migrated into
+this monorepo on branch `feature/monorepo-architecture-migration` (see
+`docs/architecture/migration-audit.md`, 13 phases, and
+`docs/architecture/migration-final-report.md`). The legacy comment
 system (`Site`/`Page`/`Comment` models, `/api/widget/*`,
 `/api/v1/sites/*`, `widget/`) was removed entirely on 2026-11-18
 (owner-approved) — nothing of it remains.
+
+Day-to-day guides: `docs/development/monorepo.md` (working in the
+monorepo) and `docs/operations/runbook.md` (running it in production).
+Tests live at the root in `tests/` and stay there by the owner's
+explicit Phase 13 decision (2026-11-19) — they do not co-locate with
+the packages they cover.
 
 Beta: APIs and schema may change without migration paths.
 

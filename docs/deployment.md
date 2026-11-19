@@ -1,10 +1,12 @@
 # Deployment
 
-SendCMS is a Next.js 16 App Router app with PostgreSQL (Prisma) and a
-vanilla-TS SDK bundle built by esbuild. It runs anywhere Next.js runs;
-the two paths used so far are Vercel and Cloudflare Workers (OpenNext).
-The production domain for this instance is not decided yet — nothing in
-this document assumes a particular host.
+SendCMS is a pnpm + Turborepo monorepo (five Next.js apps, twenty
+workspace packages, one standalone service) with PostgreSQL (Prisma)
+and a vanilla-TS SDK bundle built by esbuild. It runs anywhere
+Next.js runs; the two paths used so far are Vercel and Cloudflare
+Workers (OpenNext) — the Cloudflare path is five Workers, one per
+app (see below). The production domain for this instance is not
+decided yet — nothing in this document assumes a particular host.
 
 ## Requirements
 
@@ -19,8 +21,17 @@ this document assumes a particular host.
 | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                     |
 | `BETTER_AUTH_SECRET`                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                       |
-| `BETTER_AUTH_URL`                                                   | yes                    | Public app URL, e.g. `https://forms.example.com`.                                                                                                 |
-| `NEXT_PUBLIC_APP_URL`                                               | yes                    | Same public URL; baked into SDK snippets and email links.                                                                                         |
+| `BETTER_AUTH_URL`                                                   | yes                    | The **api app's** public URL, e.g. `https://api.example.com` (the auth handler lives there).                                                      |
+| `TRUSTED_ORIGINS`                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                           |
+| `NEXT_PUBLIC_APP_URL`                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                      |
+| `NEXT_PUBLIC_API_URL`                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                        |
+| `NEXT_PUBLIC_DASHBOARD_URL`                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                     |
+| `NEXT_PUBLIC_DOCS_URL`                                              | yes                    | The docs app's public URL.                                                                                                                        |
+| `NEXT_PUBLIC_UPDATES_URL`                                           | yes                    | The updates app's public URL.                                                                                                                     |
+| `NEXT_PUBLIC_AUTH_URL`                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                               |
+| `COOKIE_DOMAIN`                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                  |
+| `LOG_LEVEL`                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                 |
+| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000).                                                      |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                              |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                 |
 | `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                       |
@@ -52,15 +63,18 @@ confirmation for that reason).
 ## Build and run
 
 ```bash
-pnpm build            # prisma generate + SDK build + next build
-pnpm start            # production server
+pnpm build            # prisma generate + SDK build + turbo build (sequential, --concurrency 1)
+pnpm dev              # same generation steps, then turbo dev (all 5 apps + the email worker)
 ```
 
-`pnpm dev` does the same generation steps, then starts the dev server
-with Turbopack. The SDK bundle (`public/forms/v1.js`) is built from
-source and gitignored — never commit it, and make sure CI builds it
-before testing (the CI workflow runs `pnpm db:generate` and
-`pnpm sdk:build`).
+`pnpm dev` does the same generation steps, then starts the dev
+servers with Turbopack (marketing :3000, api :3001, dashboard :3002,
+docs :3003, updates :3004, worker :3005). The SDK bundle
+(`apps/api/public/forms/v1.js`) is built from source and gitignored —
+never commit it, and make sure CI builds it before testing (the CI
+workflow runs `pnpm db:generate` and `pnpm sdk:build`). There is no
+root `pnpm start` — each app is started from its own directory
+(`pnpm --filter @sendcms/<app> start`) or deployed to its own host.
 
 ## Email outbox cron
 

@@ -45,12 +45,12 @@ sendcms/
 │   │   │   │   └── layout.tsx
 │   │   │   ├── dashboard/         # Overview, account, analytics, api, domains, forms, inbox, notifications
 │   │   │   ├── layout.tsx         # Root layout (fonts, favicon, ThemeProvider, Toaster)
-│   │   │   └── globals.css        # Tailwind + design tokens (copy of the root app's)
+│   │   │   └── globals.css        # Tailwind + design tokens (copy of the root's styles/)
 │   │   ├── components/dashboard/  # app-sidebar, page-header, stat-card, charts, install-snippet, query-provider
 │   │   ├── lib/auth.ts            # One-liner wrapper: re-exports the factory's betterAuth/auth (the factory imports the mailer from @sendcms/email directly, Phase 9)
 │   │   ├── lib/callback-url.ts    # Absolute /dashboard callback URL (window origin; env fallback for SSR — see ADR 0006)
 │   │   ├── proxy.ts               # Next middleware — gates /dashboard/:path* (moved from the root)
-│   │   ├── config/config.json     # Brand config copy (favicon, logo) — same values as the root app's
+│   │   ├── config/config.json     # Brand config copy (favicon, logo) — same values as the other apps'
 │   │   ├── styles/                # Design tokens + component CSS (copy of the root's styles/)
 │   │   ├── public/images/         # Brand images (favicon, logo, logo-darkmode)
 │   │   ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
@@ -116,6 +116,7 @@ sendcms/
 ├── infrastructure/
 │   └── cloudflare/                # Shared OpenNext config (R2 cache) + the per-app deploy README; each app owns its own wrangler.jsonc + open-next.config.ts (Phase 10)
 ├── config/config.json             # App configuration (site, metadata, branding, email) — the root copy; each app owns its own copy
+├── tests/                         # The whole test suite (23 files, 227 tests) — stays at the root by the owner's Phase 13 decision (2026-11-19); never co-locate with the packages
 ├── docs/                          # Getting started, REST API, SDK, security, deployment, troubleshooting (the docs app serves the user docs from here)
 ├── postcss.config.mjs             # Shared PostCSS config (Tailwind) — all apps resolve it by walking up from their CSS
 └── (no app/, lib/, components/, content/, styles/, public/ at the root — the root is a pure workspace root since Phase 8)
