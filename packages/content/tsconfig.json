@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "extends": "@sendcms/config/tsconfig/base.json",
+  "include": ["src"]
+}

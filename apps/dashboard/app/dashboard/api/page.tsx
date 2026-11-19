@@ -16,7 +16,10 @@ import {
 export default async function ApiPage() {
   const session = await auth()
   const userId = session!.user!.id as string
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+  // The snippet's script src + the REST examples point at the API app
+  // (the app that serves /forms/v1.js and /api/*) — not at this
+  // dashboard app. See ADR 0006.
+  const appUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
   const forms = await listFormsForUser(userId)
 
   return (

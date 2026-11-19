@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 // test imports the types explicitly instead of relying on the include.
 import type {} from "@sendcms/sdk"
 
-// These tests load the REAL built bundle (public/forms/v1.js) and drive
+// These tests load the REAL built bundle (apps/api/public/forms/v1.js —
+// the api app serves it since Phase 8) and drive
 // it with mocked fetch.
 //
 // jsdom quirk (verified): a <script> element appended to the document
@@ -20,7 +21,7 @@ import type {} from "@sendcms/sdk"
 // except for the one script-tag test, which asserts DOM effects only.
 
 const bundle = readFileSync(
-  resolve(import.meta.dirname, "../public/forms/v1.js"),
+  resolve(import.meta.dirname, "../apps/api/public/forms/v1.js"),
   "utf8"
 )
 

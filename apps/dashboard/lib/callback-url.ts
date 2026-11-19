@@ -10,5 +10,17 @@
  * URL) — no env var to keep in sync.
  */
 export function dashboardCallbackURL(): string {
+  // Client components render on the server too (SSR), where `window`
+  // does not exist — fall back to the dashboard's public URL from the
+  // env (dev: the dashboard's localhost port). On the client, the
+  // page's own origin wins, so no env var needs to stay in sync — and
+  // the fallback matches the page's origin, so SSR and the client
+  // render the same URL (no hydration mismatch).
+  if (typeof window === "undefined") {
+    const base = (
+      process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
+    ).replace(/\/$/, "")
+    return `${base}/dashboard`
+  }
   return `${window.location.origin}/dashboard`
 }

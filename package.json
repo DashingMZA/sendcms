@@ -8,10 +8,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && next dev --turbopack",
-    "build": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && next build",
+    "dev": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run dev",
+    "build": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run build --concurrency 1",
     "prepare": "husky",
-    "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -24,9 +23,6 @@
     "db:studio": "pnpm --filter @sendcms/database db:studio",
     "db:status": "npx tsx scripts/db-manager.ts status",
     "db:reset": "npx tsx scripts/db-manager.ts reset",
-    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && opennextjs-cloudflare build",
-    "preview:cf": "pnpm build:cf && opennextjs-cloudflare preview",
-    "deploy:cf": "pnpm build:cf && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "sdk:build": "pnpm --filter @sendcms/sdk build"
   },
@@ -38,12 +34,7 @@
     "@sendcms/shared": "workspace:*",
     "@sendcms/ui": "workspace:*",
     "dotenv": "^18.0.10",
-    "github-slugger": "^2.0.0",
-    "gray-matter": "^4.0.3",
-    "lucide-react": "^1.74.0",
-    "marked": "^18.2.1",
     "next": "16.4.6",
-    "next-themes": "^0.4.6",
     "nodemailer": "^10.6.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

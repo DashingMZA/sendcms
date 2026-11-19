@@ -33,15 +33,18 @@ export async function GET(
 
 ## Patterns
 
-| Type           | Path                                                   | Auth                    | Notes                                                 |
-| -------------- | ------------------------------------------------------ | ----------------------- | ----------------------------------------------------- |
-| Admin API      | `apps/api/app/api/v1/<resource>/route.ts`              | Session cookie          | No CORS needed                                        |
-| Public API     | `apps/api/app/api/public/v1/submit/route.ts`           | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only |
-| Dashboard page | `apps/dashboard/app/dashboard/<section>/page.tsx`      | Server component        | Fetch data, pass to client                            |
-| Detail page    | `apps/dashboard/app/dashboard/forms/[formId]/page.tsx` | Server component        | Owner-scoped fetch, 404 → `notFound()`                |
-| Service        | `packages/modules/<name>/src/service.ts`               | N/A                     | No Next.js imports                                    |
-| Validator      | `packages/modules/<name>/src/validators.ts`            | N/A                     | Zod schema, shared                                    |
-| Hook           | `hooks/use-<name>.ts`                                  | N/A                     | Client-side only                                      |
+| Type           | Path                                                   | Auth                    | Notes                                                                                            |
+| -------------- | ------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Admin API      | `apps/api/app/api/v1/<resource>/route.ts`              | Session cookie          | No CORS needed                                                                                   |
+| Public API     | `apps/api/app/api/public/v1/submit/route.ts`           | None — Origin allowlist | Export `OPTIONS` + CORS echo for allowed origins only                                            |
+| Dashboard page | `apps/dashboard/app/dashboard/<section>/page.tsx`      | Server component        | Fetch data, pass to client                                                                       |
+| Detail page    | `apps/dashboard/app/dashboard/forms/[formId]/page.tsx` | Server component        | Owner-scoped fetch, 404 → `notFound()`                                                           |
+| Marketing page | `apps/marketing/app/<page>/page.tsx`                   | Server component        | Public, no auth — links to sibling apps must be absolute (see `apps/marketing/lib/app-links.ts`) |
+| Docs page      | `apps/docs/app/docs/[slug]/page.tsx`                   | Server component        | Renders a user doc from the repo's `docs/` dir; unknown slugs 404                                |
+| Updates page   | `apps/updates/app/changelog/page.tsx`                  | Server component        | Public, no auth — home links point at the marketing app                                          |
+| Service        | `packages/modules/<name>/src/service.ts`               | N/A                     | No Next.js imports                                                                               |
+| Validator      | `packages/modules/<name>/src/validators.ts`            | N/A                     | Zod schema, shared                                                                               |
+| Hook           | `hooks/use-<name>.ts`                                  | N/A                     | Client-side only                                                                                 |
 
 ## Public API Route Pattern
 
