@@ -3,10 +3,11 @@
 SendCMS is a pnpm + Turborepo monorepo (five Next.js apps, twenty
 workspace packages, one standalone service) with PostgreSQL (Prisma)
 and a vanilla-TS SDK bundle built by esbuild. It runs anywhere
-Next.js runs; the two paths used so far are Vercel and Cloudflare
-Workers (OpenNext) — the Cloudflare path is five Workers, one per
-app (see below). The production domain for this instance is not
-decided yet — nothing in this document assumes a particular host.
+Next.js runs — Vercel, Cloudflare Workers (OpenNext), plain Node /
+Docker, Render, Netlify, and Railway are all supported; the
+per-platform setup lives in `docs/deployment/platforms.md`. The
+production domain for this instance is not decided yet — nothing in
+this document assumes a particular host.
 
 ## Requirements
 
@@ -17,30 +18,30 @@ decided yet — nothing in this document assumes a particular host.
 
 ## Environment variables
 
-| Variable                                                            | Required               | Notes                                                                                                                                             |
-| ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                     |
-| `BETTER_AUTH_SECRET`                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                       |
-| `BETTER_AUTH_URL`                                                   | yes                    | The **api app's** public URL, e.g. `https://api.example.com` (the auth handler lives there).                                                      |
-| `TRUSTED_ORIGINS`                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                           |
-| `NEXT_PUBLIC_APP_URL`                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                      |
-| `NEXT_PUBLIC_API_URL`                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                        |
-| `NEXT_PUBLIC_DASHBOARD_URL`                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                     |
-| `NEXT_PUBLIC_DOCS_URL`                                              | yes                    | The docs app's public URL.                                                                                                                        |
-| `NEXT_PUBLIC_UPDATES_URL`                                           | yes                    | The updates app's public URL.                                                                                                                     |
-| `NEXT_PUBLIC_AUTH_URL`                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                               |
-| `COOKIE_DOMAIN`                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                  |
-| `LOG_LEVEL`                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                 |
-| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000).                                                      |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                              |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                 |
-| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                       |
-| `RESEND_API_KEY`                                                    | for email              | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here.                                                |
-| `RESEND_FROM`                                                       | with Resend            | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@example.com>`.                                                    |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP fallback          | Used only when no Resend key is set.                                                                                                              |
-| `CRON_SECRET`                                                       | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run. |
-| `TURNSTILE_SECRET_KEY`                                              | for Turnstile          | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503.                                                                      |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`                                    | for Turnstile          | Turnstile site key (public, baked into the SDK).                                                                                                  |
+| Variable                                                            | Required               | Notes                                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                                                               |
+| `BETTER_AUTH_SECRET`                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                                                                 |
+| `BETTER_AUTH_URL`                                                   | yes                    | The **api app's** public URL, e.g. `https://api.example.com` (the auth handler lives there).                                                                                                |
+| `TRUSTED_ORIGINS`                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                                                                     |
+| `NEXT_PUBLIC_APP_URL`                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                                                                |
+| `NEXT_PUBLIC_API_URL`                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                                                                  |
+| `NEXT_PUBLIC_DASHBOARD_URL`                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                                                               |
+| `NEXT_PUBLIC_DOCS_URL`                                              | yes                    | The docs app's public URL.                                                                                                                                                                  |
+| `NEXT_PUBLIC_UPDATES_URL`                                           | yes                    | The updates app's public URL.                                                                                                                                                               |
+| `NEXT_PUBLIC_AUTH_URL`                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                                                                         |
+| `COOKIE_DOMAIN`                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                                                            |
+| `LOG_LEVEL`                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                                                           |
+| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000). The worker binds `PORT` first when a platform injects it (Render/Railway), else `WORKER_PORT`. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                                                                        |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                                                           |
+| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                                                                 |
+| `RESEND_API_KEY`                                                    | for email              | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here.                                                                                          |
+| `RESEND_FROM`                                                       | with Resend            | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@example.com>`.                                                                                              |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP fallback          | Used only when no Resend key is set.                                                                                                                                                        |
+| `CRON_SECRET`                                                       | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run.                                           |
+| `TURNSTILE_SECRET_KEY`                                              | for Turnstile          | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503.                                                                                                                |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`                                    | for Turnstile          | Turnstile site key (public, baked into the SDK).                                                                                                                                            |
 
 Copy `.env.example` to `.env` for local development. Never commit
 `.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
@@ -53,7 +54,8 @@ run it against a production database.
 ```bash
 pnpm install
 pnpm db:generate      # regenerate the Prisma client
-pnpm db:migrate       # prisma migrate deploy on a server; migrate dev locally
+pnpm db:migrate       # prisma migrate dev — create + apply (local only)
+pnpm db:migrate:deploy # prisma migrate deploy — apply on a server (production)
 ```
 
 Migrations are additive. Apply with `prisma migrate deploy` — never
@@ -65,6 +67,14 @@ confirmation for that reason).
 ```bash
 pnpm build            # prisma generate + SDK build + turbo build (sequential, --concurrency 1)
 pnpm dev              # same generation steps, then turbo dev (all 5 apps + the email worker)
+```
+
+Each app also has a `build:server` script — the single command every
+non-Cloudflare platform builds with (Prisma generate, then the SDK
+bundle for the api app, then `next build`):
+
+```bash
+pnpm --filter @sendcms/<app> build:server   # marketing | api | dashboard | docs | updates
 ```
 
 `pnpm dev` does the same generation steps, then starts the dev
@@ -102,15 +112,17 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
 
 ## Vercel notes
 
-- Deployments here are **manual**: the Ignored Build Step is set to
-  "Don't build anything", so git pushes trigger nothing. Deploy from the
-  dashboard (or the agent) after a push is tested and ready.
-- Set every variable above in the project settings before the first
-  deploy. `NEXT_PUBLIC_APP_URL` must be the production URL or SDK
-  snippets and email links will point at the wrong host.
+- One project per app (see `docs/deployment/platforms.md` for the
+  table). Git pushes auto-deploy: the production branch (`main`)
+  deploys to production, every other branch deploys as a preview.
+- Set every variable above in each project's settings before the
+  first deploy. `NEXT_PUBLIC_APP_URL` must be the production URL or
+  SDK snippets and email links will point at the wrong host.
+  `BETTER_AUTH_SECRET` must be the same value on the api and
+  dashboard projects.
 - The `vercel.json` redirect to the old `openremark.bond` host was
-  removed — there is no production domain to redirect to yet. When the
-  production domain is decided, add the redirect (or a `vercel.json`
+  removed — there is no production domain to redirect to yet. When
+  the production domain is decided, add the redirect (or a `vercel.json`
   cron entry — see above) then.
 
 ## Cloudflare notes (Phase 10 — five Workers, one per app)

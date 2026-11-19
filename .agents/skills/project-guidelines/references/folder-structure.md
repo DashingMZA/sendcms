@@ -23,6 +23,7 @@ sendcms/
 │   │   ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
 │   │   ├── wrangler.jsonc        # Per-app Cloudflare config (Phase 10 — see infrastructure/cloudflare/README.md)
 │   │   ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
+│   │   ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │   │   └── package.json           # @sendcms/marketing (dev port 3000)
 │   ├── api/                       # API app: all 21 routes + its own auth wiring (@sendcms/api, dev port 3001)
 │   │   ├── app/api/
@@ -37,6 +38,7 @@ sendcms/
 │   │   ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
 │   │   ├── wrangler.jsonc        # Per-app Cloudflare config (Phase 10 — see infrastructure/cloudflare/README.md)
 │   │   ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
+│   │   ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │   │   └── package.json           # @sendcms/api (dev port 3001)
 │   ├── dashboard/                 # Dashboard app: auth pages + dashboard + its own auth wiring (@sendcms/dashboard, dev port 3002)
 │   │   ├── app/
@@ -56,6 +58,7 @@ sendcms/
 │   │   ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
 │   │   ├── wrangler.jsonc        # Per-app Cloudflare config (Phase 10 — see infrastructure/cloudflare/README.md)
 │   │   ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
+│   │   ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │   │   └── package.json           # @sendcms/dashboard (dev port 3002)
 │   ├── docs/                      # Docs app: the user docs from the repo's docs/ dir (@sendcms/docs, dev port 3003)
 │   │   ├── app/docs/
@@ -71,6 +74,7 @@ sendcms/
 │   │   ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
 │   │   ├── wrangler.jsonc        # Per-app Cloudflare config (Phase 10 — see infrastructure/cloudflare/README.md)
 │   │   ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
+│   │   ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │   │   └── package.json           # @sendcms/docs (dev port 3003)
 │   └── updates/                   # Updates app: the changelog page (@sendcms/updates, dev port 3004)
 │       ├── app/
@@ -88,6 +92,7 @@ sendcms/
 │       ├── next.config.mjs        # turbopack.root = workspace root (see ADR 0004)
 │       ├── wrangler.jsonc        # Per-app Cloudflare config (Phase 10 — see infrastructure/cloudflare/README.md)
 │       ├── open-next.config.ts    # Re-exports the shared R2-cache config (Phase 10)
+│       ├── netlify.toml           # Per-app Netlify site config (base + build command + publish .next)
 │       └── package.json           # @sendcms/updates (dev port 3004)
 ├── packages/
 │   ├── config/                    # Shared tsconfig base + ESLint base (@sendcms/config)
@@ -115,9 +120,13 @@ sendcms/
 │   └── email-worker/              # Standalone email worker: polls the outbox, GET /health on WORKER_PORT (default 3005), graceful shutdown (@sendcms/email-worker)
 ├── infrastructure/
 │   └── cloudflare/                # Shared OpenNext config (R2 cache) + the per-app deploy README; each app owns its own wrangler.jsonc + open-next.config.ts (Phase 10)
+├── Dockerfile                     # One Dockerfile for every app + the email worker (build arg APP = @sendcms/<app> | @sendcms/email-worker)
+├── docker-compose.yml             # Full stack on one host: 5 apps + worker + Postgres + migrate/seed one-offs
+├── .dockerignore                  # Build context exclusions for the Dockerfile
+├── render.yaml                    # Render Blueprint: 5 web services + worker + Postgres
 ├── config/config.json             # App configuration (site, metadata, branding, email) — the root copy; each app owns its own copy
 ├── tests/                         # The whole test suite (23 files, 227 tests) — stays at the root by the owner's Phase 13 decision (2026-11-19); never co-locate with the packages
-├── docs/                          # Getting started, REST API, SDK, security, deployment, troubleshooting (the docs app serves the user docs from here)
+├── docs/                          # Getting started, REST API, SDK, security, deployment, troubleshooting (the docs app serves the user docs from here); deployment/platforms.md is the multi-platform guide
 ├── postcss.config.mjs             # Shared PostCSS config (Tailwind) — all apps resolve it by walking up from their CSS
 └── (no app/, lib/, components/, content/, styles/, public/ at the root — the root is a pure workspace root since Phase 8)
 ```
