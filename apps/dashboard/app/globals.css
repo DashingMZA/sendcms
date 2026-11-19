@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind's automatic content detection only scans this app's own
+   directory — the shared shadcn components live in packages/ui, so
+   register that package as a source or their classes (Button, Badge,
+   Card, …) are never generated and the UI renders unstyled. */
+@source "../../../packages/ui/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
