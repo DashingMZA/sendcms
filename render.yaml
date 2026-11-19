@@ -1,0 +1,239 @@
+# SendCMS on Render — one Blueprint for the whole stack.
+#
+# Create it from the Render dashboard: New → Blueprint → this repo.
+# Render provisions all 5 web services + the email worker + Postgres.
+#
+# Branch: the monorepo code lives on the feature branch until it is
+# merged — change `branch` to `main` after the merge.
+# Region: singapore is the closest Render region to Pakistan; change it
+# if you prefer another one (the database must stay in the same region).
+# Plan: `free` everywhere so the Blueprint deploys with no card. Free
+# web services spin down after 15 minutes idle (first request after
+# that is slow) and free Postgres expires after 90 days — for always-on
+# production, switch the web services to `starter` and the database to
+# `basic-256mb`.
+#
+# Public URLs below are Render's default hostnames for these service
+# names (https://<service>.onrender.com). If Render assigns a different
+# subdomain on first deploy, update the NEXT_PUBLIC_* / BETTER_AUTH_URL
+# values in the dashboard to match — the browser bundle inlines the
+# build-time values, so change them before (re)deploying.
+#
+# Secrets marked `sync: false` are set in the dashboard, never here.
+# `generateValue` secrets are created once by Render — copy them out
+# if another service needs the same value (CRON_SECRET is only read by
+# the api app's cron route).
+
+services:
+  - type: web
+    name: sendcms-marketing
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/marketing build:server
+    startCommand: pnpm --filter @sendcms/marketing start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+
+  - type: web
+    name: sendcms-api
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/api build:server
+    startCommand: pnpm --filter @sendcms/api start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /api/health
+    # Runs before traffic switches to the new deploy. Paid instance
+    # types only — on a free plan, run migrations manually instead:
+    #   pnpm db:migrate:deploy   (with the production DATABASE_URL set)
+    preDeployCommand: pnpm db:migrate:deploy
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sendcms-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: BETTER_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: TRUSTED_ORIGINS
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+      - key: CRON_SECRET
+        generateValue: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: FACEBOOK_CLIENT_ID
+        sync: false
+      - key: FACEBOOK_CLIENT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+  - type: web
+    name: sendcms-dashboard
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/dashboard build:server
+    startCommand: pnpm --filter @sendcms/dashboard start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /sign-in
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sendcms-db
+          property: connectionString
+      # Same value as the api service's BETTER_AUTH_SECRET (sessions are
+      # shared). Render generates each service's value independently, so
+      # copy the api service's generated value here after first deploy.
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: BETTER_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: TRUSTED_ORIGINS
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+
+  - type: web
+    name: sendcms-docs
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/docs build:server
+    startCommand: pnpm --filter @sendcms/docs start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /docs
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+
+  - type: web
+    name: sendcms-updates
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/updates build:server
+    startCommand: pnpm --filter @sendcms/updates start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /changelog
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+
+  - type: worker
+    name: sendcms-worker
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @sendcms/email-worker start
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sendcms-db
+          property: connectionString
+      - key: WORKER_PORT
+        value: "3005"
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "30000"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+databases:
+  - name: sendcms-db
+    region: singapore
+    plan: free
