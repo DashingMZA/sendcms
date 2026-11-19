@@ -41,6 +41,24 @@ const nextConfig = {
   async headers() {
     return securityHeaders()
   },
+  // Admin API proxy (monorepo split): the dashboard's client-side
+  // fetches (apiFetch, relative /api/v1/* paths) assume the API lives
+  // on the same origin, but the /api/v1/* routes live on the api app
+  // (port 3001). Proxying keeps the browser same-origin, so the admin
+  // routes need no CORS (see route-creation.md: "No CORS needed") and
+  // the session cookie is forwarded to the api app. The destination
+  // is the api app's URL (NEXT_PUBLIC_API_URL, dev localhost:3001).
+  async rewrites() {
+    const apiUrl = (
+      process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
+    ).replace(/\/+$/, "")
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: `${apiUrl}/api/v1/:path*`,
+      },
+    ]
+  },
 }
 
 export default nextConfig
