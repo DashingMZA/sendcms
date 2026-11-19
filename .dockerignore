@@ -1,0 +1,16 @@
+# Docker build context — keep the image free of build output, local
+# state, and anything the app must not ship.
+.git
+node_modules
+.next
+.open-next
+.turbo
+.dev-server*.log
+*.log
+.env
+.env.local
+.env.*.local
+apps/api/public/forms
+packages/database/generated
+.vercel
+coverage

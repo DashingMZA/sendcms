@@ -1,0 +1,252 @@
+# SendCMS — full stack on one host (Node server / VPS / any Docker host).
+#
+# First run (applies the Prisma migrations to the bundled Postgres):
+#   docker compose --profile setup run --rm migrate
+# Optional demo data (one verified domain + form + sample submissions):
+#   docker compose --profile setup run --rm seed
+# Then start everything:
+#   docker compose up -d
+#
+# The NEXT_PUBLIC_* defaults below are the localhost URLs for local use.
+# For a public host, set them (build args AND runtime env) to the public
+# origins before building, e.g. in a .env file next to this one — the
+# browser bundle inlines the build-time values, and the server reads the
+# runtime ones. BETTER_AUTH_SECRET and the Postgres password are dev-only
+# defaults here; override them in production.
+#
+# Ports: marketing 3000, api 3001, dashboard 3002, docs 3003,
+# updates 3004, email worker 3005, Postgres 5432.
+
+x-next-public: &next-public
+  NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+  NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+  NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-http://localhost:3002}
+  NEXT_PUBLIC_DOCS_URL: ${NEXT_PUBLIC_DOCS_URL:-http://localhost:3003}
+  NEXT_PUBLIC_UPDATES_URL: ${NEXT_PUBLIC_UPDATES_URL:-http://localhost:3004}
+  NEXT_PUBLIC_AUTH_URL: ${NEXT_PUBLIC_AUTH_URL:-http://localhost:3001}
+
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  marketing:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/marketing"
+        <<: *next-public
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      <<: *next-public
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/api"
+        <<: *next-public
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      CRON_SECRET: ${CRON_SECRET:-dev-only-cron-secret-change-me}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      <<: *next-public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:3001/api/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/dashboard"
+        <<: *next-public
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: "3002"
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      <<: *next-public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:3002/sign-in",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  docs:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/docs"
+        <<: *next-public
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: "3003"
+      <<: *next-public
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3003/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  updates:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/updates"
+        <<: *next-public
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: "3004"
+      <<: *next-public
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:3004/changelog",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/email-worker"
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: "3005"
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-30000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sendcms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sendcms}
+      POSTGRES_DB: sendcms
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sendcms -d sendcms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-off setup jobs (run explicitly, not part of `up`):
+  #   docker compose --profile setup run --rm migrate
+  #   docker compose --profile setup run --rm seed
+  # They target the `builder` stage (full deps + Prisma, no app build).
+  migrate:
+    profiles: ["setup"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        APP: "@sendcms/api"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+    command: ["pnpm", "db:migrate:deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    profiles: ["setup"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        APP: "@sendcms/api"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+    command: ["pnpm", "db:seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
