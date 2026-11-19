@@ -4,7 +4,10 @@
 // SMTP_*) from the environment; in dev it also loads the workspace root
 // .env when present. Exits 0 on SIGTERM/SIGINT after a graceful stop.
 import { config as loadEnv } from "dotenv"
+import { createLogger } from "@sendcms/observability"
 import { createEmailWorker } from "./worker"
+
+const logger = createLogger("email-worker")
 
 // Dev convenience: the workspace root .env, when it exists. A missing
 // file is not an error — production sets env vars directly, and
@@ -17,14 +20,14 @@ loadEnv({ path: ".env" })
 
 const worker = createEmailWorker()
 await worker.start()
-console.log(
-  `[email-worker] health on :${worker.getPort()}, polling every ${process.env.WORKER_POLL_INTERVAL_MS ?? 30_000}ms`
+logger.info(
+  `health on :${worker.getPort()}, polling every ${process.env.WORKER_POLL_INTERVAL_MS ?? 30_000}ms`
 )
 
 async function shutdown(signal: string): Promise<void> {
-  console.log(`[email-worker] ${signal} — stopping gracefully…`)
+  logger.info(`${signal} — stopping gracefully…`)
   await worker.stop()
-  console.log("[email-worker] stopped")
+  logger.info("stopped")
   process.exit(0)
 }
 

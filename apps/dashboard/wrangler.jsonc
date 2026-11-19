@@ -1,0 +1,56 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "sendcms-dashboard",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  // Per-app Cloudflare config (Phase 10). The customer app — dashboard pages + auth pages.
+  // The Cloudflare dashboard's Root directory for this project
+  // must be apps/dashboard — the build command runs there (see
+  // infrastructure/cloudflare/README.md). The public URLs
+  // below are PLACEHOLDERS on jadoo.bond until the production
+  // domain decision — change the vars, never the code.
+  "build": {
+    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+  },
+  // Dynamic Next.js App Router app (SSR + API routes + Prisma +
+  // Better Auth), so it cannot run as plain static assets — the
+  // Worker entry below serves it, and `.open-next/assets` holds
+  // only the static files.
+  "main": ".open-next/worker.js",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets",
+  },
+  // Bindings already configured in the Cloudflare dashboard — they
+  // must also live here, otherwise the next `wrangler deploy`
+  // drops them. NEXT_INC_CACHE_R2_BUCKET is the OpenNext
+  // incremental cache (infrastructure/cloudflare/open-next.config.ts
+  // enables the R2 cache); WORKER_SELF_REFERENCE is the self
+  // reference the adapter's queue/revalidation uses; IMAGES powers
+  // Next.js image optimization via Cloudflare Images.
+  "images": {
+    "binding": "IMAGES",
+  },
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "open-remark-opennext-cache",
+    },
+  ],
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "sendcms-dashboard",
+    },
+  ],
+  "observability": {
+    "enabled": false,
+  },
+  "vars": {
+    "NEXT_PUBLIC_DASHBOARD_URL": "https://dashboard.jadoo.bond",
+    "NEXT_PUBLIC_AUTH_URL": "https://api.jadoo.bond",
+    "NEXT_PUBLIC_API_URL": "https://api.jadoo.bond",
+  },
+  // Secrets are NOT stored here. Set them in the Cloudflare
+  // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET (its lib/auth creates a Better Auth instance and its layouts call auth()).
+}

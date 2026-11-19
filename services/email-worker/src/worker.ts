@@ -6,7 +6,10 @@
 // kills the worker — the next poll retries, and the health endpoint
 // surfaces the last error.
 import { createServer, type Server } from "node:http"
+import { createLogger } from "@sendcms/observability"
 import { processEmailOutbox } from "@sendcms/notifications"
+
+const logger = createLogger("email-worker")
 
 export type EmailWorkerOptions = {
   /** Health endpoint port. Env `WORKER_PORT`, default 3005. */
@@ -65,7 +68,7 @@ export function createEmailWorker(options: EmailWorkerOptions = {}) {
         // A failed poll must not kill the worker — the next poll
         // retries. The health endpoint surfaces the error.
         lastError = err instanceof Error ? err.message : "Unknown error"
-        console.error("[email-worker] outbox poll failed:", err)
+        logger.error("outbox poll failed", { error: err })
         return { processed: 0, sent: 0, failed: 0 }
       } finally {
         running = null

@@ -22,9 +22,13 @@ packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + s
 @sendcms/api-client →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported) + cors.ts (getEffectiveOrigin, normalizeOrigin, corsHeaders)
 @sendcms/email      →  platform email: provider + auth mailer + notification deps (imported directly by the auth factory and the notifications module — no injection since Phase 9)
 @sendcms/queue      →  email outbox queue: EmailJob claim + retry state machine (imported by the notifications module)
+@sendcms/security   →  shared security headers (`securityHeaders()` / `renderHeadersFile()`) + the one `logAudit()` writer (imported by services; the audit writer is the documented exception to "only services import @sendcms/database" — like @sendcms/auth is for auth)
+@sendcms/observability →  structured logging: `createLogger(scope)` writes JSON lines (imported by server code that used to console.log/console.error)
 ```
 
 Route handlers must NOT import `@sendcms/database` directly. Services must NOT import from `next/*`.
+
+Server code logs through `createLogger(scope)` from `@sendcms/observability`, not `console` — except the auth mailer's dev verification-link line (its exact `[auth-email]` format is greppable and the journey depends on it) and the seed script (a CLI script).
 
 ## Server Components vs Client Components
 

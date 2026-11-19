@@ -8,10 +8,13 @@ import {
 import type { FormField } from "@sendcms/database"
 
 import { ApiError } from "@sendcms/shared"
+import { createLogger } from "@sendcms/observability"
 import { normalizeDomain } from "@sendcms/domains"
 import { verifyTurnstileToken } from "./turnstile"
 import { enqueueSubmissionNotifications } from "@sendcms/notifications"
 import { HONEYPOT_FIELD, type SubmitBodyInput } from "./validators"
+
+const logger = createLogger("submissions")
 
 // Public submission API (Phase 5). No session, no cookies — the only
 // authorization is the Origin allowlist: the submitting site must be a
@@ -449,10 +452,10 @@ export async function submitForm(
       try {
         await enqueueSubmissionNotifications(form.id, created.id)
       } catch (err) {
-        console.error(
-          `[notifications] failed to queue jobs for submission ${created.id}:`,
-          err
-        )
+        logger.error("failed to queue jobs for submission", {
+          submissionId: created.id,
+          error: err,
+        })
       }
     }
     return {

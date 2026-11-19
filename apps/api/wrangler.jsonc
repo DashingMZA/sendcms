@@ -1,0 +1,60 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "sendcms",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  // Per-app Cloudflare config (Phase 10). The API app — auth handler, all /api/* routes, the SDK bundle.
+  // It keeps the existing `sendcms` worker name (and its R2 bucket +
+  // self-reference), so the current deployment's bindings keep working.
+  // The Cloudflare dashboard's Root directory for this project
+  // must be apps/api — the build command runs there (see
+  // infrastructure/cloudflare/README.md). The public URLs
+  // below are PLACEHOLDERS on jadoo.bond until the production
+  // domain decision — change the vars, never the code.
+  "build": {
+    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+  },
+  // Dynamic Next.js App Router app (SSR + API routes + Prisma +
+  // Better Auth), so it cannot run as plain static assets — the
+  // Worker entry below serves it, and `.open-next/assets` holds
+  // only the static files.
+  "main": ".open-next/worker.js",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets",
+  },
+  // Bindings already configured in the Cloudflare dashboard — they
+  // must also live here, otherwise the next `wrangler deploy`
+  // drops them. NEXT_INC_CACHE_R2_BUCKET is the OpenNext
+  // incremental cache (infrastructure/cloudflare/open-next.config.ts
+  // enables the R2 cache); WORKER_SELF_REFERENCE is the self
+  // reference the adapter's queue/revalidation uses; IMAGES powers
+  // Next.js image optimization via Cloudflare Images.
+  "images": {
+    "binding": "IMAGES",
+  },
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "open-remark-opennext-cache",
+    },
+  ],
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "sendcms",
+    },
+  ],
+  "observability": {
+    "enabled": false,
+  },
+  "vars": {
+    "AUTH_TRUST_HOST": "true",
+    "NEXT_PUBLIC_APP_URL": "https://jadoo.bond",
+    "NEXT_PUBLIC_API_URL": "https://api.jadoo.bond",
+    "BETTER_AUTH_URL": "https://api.jadoo.bond",
+    "TRUSTED_ORIGINS": "https://dashboard.jadoo.bond",
+  },
+  // Secrets are NOT stored here. Set them in the Cloudflare
+  // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, RESEND_API_KEY, CRON_SECRET (plus GITHUB_/FACEBOOK_ client secrets and SMTP_* when used).
+}

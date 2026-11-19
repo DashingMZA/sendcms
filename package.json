@@ -23,7 +23,7 @@
     "db:studio": "pnpm --filter @sendcms/database db:studio",
     "db:status": "npx tsx scripts/db-manager.ts status",
     "db:reset": "npx tsx scripts/db-manager.ts reset",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+    "cf-typegen": "wrangler types --config apps/api/wrangler.jsonc --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "sdk:build": "pnpm --filter @sendcms/sdk build"
   },
   "prisma": {
@@ -53,9 +53,11 @@
     "@sendcms/forms": "workspace:*",
     "@sendcms/inbox": "workspace:*",
     "@sendcms/notifications": "workspace:*",
+    "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/queue": "workspace:*",
     "@sendcms/sdk": "workspace:*",
+    "@sendcms/security": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "@sendcms/users": "workspace:*",
     "@tailwindcss/postcss": "^4.3.5",

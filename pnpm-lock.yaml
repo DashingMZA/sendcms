@@ -239,6 +239,9 @@ importers:
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:packages/modules/notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:packages/observability
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:packages/permissions
@@ -248,6 +251,9 @@ importers:
       '@sendcms/sdk':
         specifier: workspace:*
         version: link:packages/sdk
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:packages/security
       '@sendcms/submissions':
         specifier: workspace:*
         version: link:packages/modules/submissions
@@ -338,6 +344,9 @@ importers:
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../../packages/modules/notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@sendcms/submissions':
         specifier: workspace:*
         version: link:../../packages/modules/submissions
@@ -351,6 +360,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -445,6 +457,9 @@ importers:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -488,6 +503,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -534,6 +552,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -577,6 +598,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -598,6 +622,9 @@ importers:
 
   packages/api-client:
     dependencies:
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../shared
@@ -620,9 +647,15 @@ importers:
       '@sendcms/email':
         specifier: workspace:*
         version: link:../email
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../permissions
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../security
       better-auth:
         specifier: 1.7.25
         version: 1.7.25(@prisma/client@7.10.1(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(typescript@6.0.3))(mysql2@3.24.4(@types/node@26.6.6))(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1)))
@@ -754,6 +787,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -782,6 +818,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -813,6 +852,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -884,6 +926,9 @@ importers:
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -913,6 +958,18 @@ importers:
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../config
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/observability:
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -954,6 +1011,22 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/security:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../database
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../observability
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1025,6 +1098,9 @@ importers:
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../../packages/modules/notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       dotenv:
         specifier: ^18.0.10
         version: 18.0.10

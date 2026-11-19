@@ -15,21 +15,21 @@ this document assumes a particular host.
 
 ## Environment variables
 
-| Variable | Required | Notes |
-| -------- | -------- | ----- |
-| `DATABASE_URL` | yes | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`. |
-| `BETTER_AUTH_SECRET` | yes | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it. |
-| `BETTER_AUTH_URL` | yes | Public app URL, e.g. `https://forms.example.com`. |
-| `NEXT_PUBLIC_APP_URL` | yes | Same public URL; baked into SDK snippets and email links. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | for Google sign-in | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`. |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | for GitHub sign-in | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`. |
-| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET` | for Facebook sign-in | Meta app → callback `<APP_URL>/api/auth/callback/facebook`. |
-| `RESEND_API_KEY` | for email | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here. |
-| `RESEND_FROM` | with Resend | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@example.com>`. |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP fallback | Used only when no Resend key is set. |
-| `CRON_SECRET` | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run. |
-| `TURNSTILE_SECRET_KEY` | for Turnstile | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503. |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | for Turnstile | Turnstile site key (public, baked into the SDK). |
+| Variable                                                            | Required               | Notes                                                                                                                                             |
+| ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                     |
+| `BETTER_AUTH_SECRET`                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                       |
+| `BETTER_AUTH_URL`                                                   | yes                    | Public app URL, e.g. `https://forms.example.com`.                                                                                                 |
+| `NEXT_PUBLIC_APP_URL`                                               | yes                    | Same public URL; baked into SDK snippets and email links.                                                                                         |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                              |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                 |
+| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                       |
+| `RESEND_API_KEY`                                                    | for email              | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here.                                                |
+| `RESEND_FROM`                                                       | with Resend            | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@example.com>`.                                                    |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP fallback          | Used only when no Resend key is set.                                                                                                              |
+| `CRON_SECRET`                                                       | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run. |
+| `TURNSTILE_SECRET_KEY`                                              | for Turnstile          | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503.                                                                      |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`                                    | for Turnstile          | Turnstile site key (public, baked into the SDK).                                                                                                  |
 
 Copy `.env.example` to `.env` for local development. Never commit
 `.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
@@ -77,9 +77,7 @@ On Vercel, add a `vercel.json` cron entry:
 
 ```json
 {
-  "crons": [
-    { "path": "/api/cron/email-outbox", "schedule": "*/5 * * * *" }
-  ]
+  "crons": [{ "path": "/api/cron/email-outbox", "schedule": "*/5 * * * *" }]
 }
 ```
 
@@ -101,31 +99,43 @@ the route answers 401; without `CRON_SECRET` set at all it answers 503.
   production domain is decided, add the redirect (or a `vercel.json`
   cron entry — see above) then.
 
-## Cloudflare notes
+## Cloudflare notes (Phase 10 — five Workers, one per app)
 
+- Each app deploys as its own Worker — see
+  `infrastructure/cloudflare/README.md` for the table, the dashboard
+  steps, and the placeholder production URLs. The api app keeps the
+  worker name `sendcms`; the others are `sendcms-marketing`,
+  `sendcms-dashboard`, `sendcms-docs`, `sendcms-updates`.
 - The Worker entry is `.open-next/worker.js` (OpenNext adapter);
-  `wrangler.jsonc` holds the R2 cache bucket, the Images binding, and
-  the self-reference service binding. The build command must be the
-  full chain — `pnpm db:generate && pnpm sdk:build
-  && npx @opennextjs/cloudflare build` (also in `wrangler.jsonc`'s
-  `build.command` and as the `build:cf` script). A bare
-  `npx @opennextjs/cloudflare build` bakes a stale Prisma client and
-  a missing SDK bundle. Set the same command in the dashboard's
-  Build command field; build-time values (`NEXT_PUBLIC_APP_URL`, Google
-  client id) must come from the dashboard build environment, or the
-  built output bakes in localhost and empty ids.
-- Security headers come from `public/_headers` (nosniff, referrer
-  policy, SAMEORIGIN framing, no camera/mic/geolocation). There is no
+  each app's `wrangler.jsonc` holds the R2 cache bucket, the Images
+  binding, and the self-reference service binding. The build command
+  must be the full chain — `pnpm --filter @sendcms/database
+db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare
+build` (also in each `wrangler.jsonc`'s `build.command` and as that
+  app's `build:cf` script). A bare `npx @opennextjs/cloudflare build`
+  bakes a stale Prisma client and a missing SDK bundle. Set the same
+  command in the dashboard's Build command field; build-time values
+  (`NEXT_PUBLIC_*_URL`, Google client id) must come from the dashboard
+  build environment, or the built output bakes in localhost and empty
+  ids.
+- Security headers come from one shared definition in
+  `@sendcms/security` — each app's `next.config.mjs` `headers()` plus
+  that app's `public/_headers` (nosniff, referrer policy, SAMEORIGIN
+  framing, no camera/mic/geolocation). There is no
   Content-Security-Policy yet — Next.js inlines scripts/styles, so a
   CSP would need `unsafe-inline` and add nothing; a real CSP is a
   separate, tested pass.
-- The wrangler worker name is `sendcms` (with the self-reference
-  service binding matching). The R2 cache bucket is still
-  `open-remark-opennext-cache` — it is a real Cloudflare resource, so
-  renaming it needs a new bucket created in the dashboard first; the
-  cache can be recreated empty. The next `wrangler deploy` creates a
-  new `sendcms` worker; delete the old `open-remark` worker in the
-  dashboard once the new one is live.
+- The R2 cache bucket is still `open-remark-opennext-cache` — it is a
+  real Cloudflare resource, so renaming it needs a new bucket created
+  in the dashboard first; the cache can be recreated empty. All five
+  workers share that one bucket (see the caveat in
+  `infrastructure/cloudflare/README.md`). The next `wrangler deploy`
+  of the api app creates a new `sendcms` worker; delete the old
+  `open-remark` worker in the dashboard once the new one is live.
 - The app needs the Node.js runtime for the dashboard proxy (the session
   lookup hits Prisma), so it is not edge-safe; keep the OpenNext
   Node.js compat flag on.
+- The email worker (`services/email-worker`) does not deploy to
+  Cloudflare Workers — it is a long-running Node process. Its
+  production hosting is a separate decision; the cron route
+  (`GET /api/cron/email-outbox`) stays the hosted drain until then.

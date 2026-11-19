@@ -26,6 +26,7 @@
     "sonner": "^2.0.8"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.17",
     "@sendcms/config": "workspace:*",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
@@ -37,6 +38,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
+    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
     "dev": "next dev --turbopack --port 3002",
     "lint": "eslint .",
     "start": "next start",

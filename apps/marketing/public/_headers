@@ -1,7 +1,5 @@
-# Security headers (Cloudflare Workers Assets reads this file from the
-# asset directory). No Content-Security-Policy here on purpose: Next.js
-# inlines scripts/styles, so a CSP needs `unsafe-inline` to work at all
-# and adds nothing then — a real CSP is a separate, tested pass.
+# Security headers — generated from @sendcms/security (src/headers.mjs).
+# No Content-Security-Policy here on purpose: Next.js inlines scripts/styles, so a CSP needs `unsafe-inline` to work at all and adds nothing then — a real CSP is a separate, tested pass.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

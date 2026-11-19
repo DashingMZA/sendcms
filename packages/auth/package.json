@@ -2,7 +2,9 @@
   "dependencies": {
     "@sendcms/database": "workspace:*",
     "@sendcms/email": "workspace:*",
+    "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
+    "@sendcms/security": "workspace:*",
     "better-auth": "1.7.25"
   },
   "devDependencies": {

@@ -10,6 +10,8 @@ import {
 
 import { ApiError } from "@sendcms/shared"
 
+import { logAudit } from "@sendcms/security"
+
 import { checkVerification } from "./dns-verification"
 import type {
   CreateDomainInput,
@@ -65,27 +67,6 @@ export function newChallenge(): string {
 
 function challengeExpiresAt(): Date {
   return new Date(Date.now() + CHALLENGE_TTL_DAYS * 24 * 60 * 60 * 1000)
-}
-
-async function logDomainAudit(
-  userId: string,
-  action: AuditAction,
-  domainId: string,
-  domain: string
-) {
-  try {
-    await db.auditLog.create({
-      data: {
-        action,
-        resourceType: AuditResource.DOMAIN,
-        resourceId: domainId,
-        detail: { domain },
-        userId,
-      },
-    })
-  } catch (err) {
-    console.error("audit log failed (domain)", err)
-  }
 }
 
 async function getOwnedDomainOrThrow(userId: string, domainId: string) {
@@ -158,7 +139,13 @@ export async function createDomainForUser(
       _count: { select: { formLinks: true } },
     },
   })
-  await logDomainAudit(userId, AuditAction.CREATE, created.id, domain)
+  await logAudit({
+    userId,
+    action: AuditAction.CREATE,
+    resourceType: AuditResource.DOMAIN,
+    resourceId: created.id,
+    detail: { domain: domain },
+  })
   return created
 }
 
@@ -257,7 +244,13 @@ export async function verifyDomainForUser(userId: string, domainId: string) {
         data: { status: DomainStatus.VERIFIED, verifiedAt: now },
       }),
     ])
-    await logDomainAudit(userId, AuditAction.VERIFY, domain.id, domain.domain)
+    await logAudit({
+      userId,
+      action: AuditAction.VERIFY,
+      resourceType: AuditResource.DOMAIN,
+      resourceId: domain.id,
+      detail: { domain: domain.domain },
+    })
     return {
       verified: true,
       domain: { ...domain, status: DomainStatus.VERIFIED, verifiedAt: now },
@@ -298,7 +291,13 @@ export async function setDomainStatusForUser(
       where: { id: domain.id },
       data: { status: DomainStatus.SUSPENDED },
     })
-    await logDomainAudit(userId, AuditAction.SUSPEND, domain.id, domain.domain)
+    await logAudit({
+      userId,
+      action: AuditAction.SUSPEND,
+      resourceType: AuditResource.DOMAIN,
+      resourceId: domain.id,
+      detail: { domain: domain.domain },
+    })
     return updated
   }
   if (domain.status !== DomainStatus.SUSPENDED) {
@@ -310,7 +309,13 @@ export async function setDomainStatusForUser(
       status: domain.verifiedAt ? DomainStatus.VERIFIED : DomainStatus.PENDING,
     },
   })
-  await logDomainAudit(userId, AuditAction.REACTIVATE, domain.id, domain.domain)
+  await logAudit({
+    userId,
+    action: AuditAction.REACTIVATE,
+    resourceType: AuditResource.DOMAIN,
+    resourceId: domain.id,
+    detail: { domain: domain.domain },
+  })
   return updated
 }
 
@@ -323,5 +328,11 @@ export async function deleteDomainForUser(userId: string, domainId: string) {
     )
   }
   await db.domain.delete({ where: { id: domain.id } })
-  await logDomainAudit(userId, AuditAction.DELETE, domain.id, domain.domain)
+  await logAudit({
+    userId,
+    action: AuditAction.DELETE,
+    resourceType: AuditResource.DOMAIN,
+    resourceId: domain.id,
+    detail: { domain: domain.domain },
+  })
 }

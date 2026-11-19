@@ -9,6 +9,8 @@ import {
 
 import { ApiError } from "@sendcms/shared"
 
+import { logAudit } from "@sendcms/security"
+
 import type {
   AddNotificationEmailInput,
   CreateFieldInput,
@@ -48,27 +50,6 @@ export function defaultFormFields(): CreateFieldInput[] {
       order: 2,
     },
   ]
-}
-
-async function logFormAudit(
-  userId: string,
-  action: AuditAction,
-  formId: string,
-  detail: Prisma.InputJsonValue
-) {
-  try {
-    await db.auditLog.create({
-      data: {
-        action,
-        resourceType: AuditResource.FORM,
-        resourceId: formId,
-        detail,
-        userId,
-      },
-    })
-  } catch (err) {
-    console.error("audit log failed (form)", err)
-  }
 }
 
 async function getOwnedFormOrThrow(userId: string, formId: string) {
@@ -137,8 +118,14 @@ export async function createFormForUser(
       _count: { select: { submissions: true } },
     },
   })
-  await logFormAudit(userId, AuditAction.CREATE, created.id, {
-    name: created.name,
+  await logAudit({
+    userId,
+    action: AuditAction.CREATE,
+    resourceType: AuditResource.FORM,
+    resourceId: created.id,
+    detail: {
+      name: created.name,
+    },
   })
   return created
 }
@@ -183,8 +170,14 @@ export async function updateFormForUser(
       _count: { select: { submissions: true } },
     },
   })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    name: updated.name,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      name: updated.name,
+    },
   })
   return updated
 }
@@ -192,9 +185,15 @@ export async function updateFormForUser(
 export async function deleteFormForUser(userId: string, formId: string) {
   const form = await getOwnedFormOrThrow(userId, formId)
   await db.form.delete({ where: { id: form.id } })
-  await logFormAudit(userId, AuditAction.DELETE, form.id, {
-    name: form.name,
-    submissions: form._count.submissions,
+  await logAudit({
+    userId,
+    action: AuditAction.DELETE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      name: form.name,
+      submissions: form._count.submissions,
+    },
   })
 }
 
@@ -236,9 +235,15 @@ export async function addFieldToForm(
       order,
     },
   })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "field-added",
-    field: input.name,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "field-added",
+      field: input.name,
+    },
   })
   return field
 }
@@ -278,9 +283,15 @@ export async function updateFieldForUser(
       ...(input.order !== undefined ? { order: input.order } : {}),
     },
   })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "field-updated",
-    field: field.name,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "field-updated",
+      field: field.name,
+    },
   })
   return updated
 }
@@ -294,9 +305,15 @@ export async function deleteFieldForUser(
   const field = form.fields.find((f) => f.id === fieldId)
   if (!field) throw new ApiError("Field not found", 404)
   await db.formField.delete({ where: { id: field.id } })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "field-deleted",
-    field: field.name,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "field-deleted",
+      field: field.name,
+    },
   })
 }
 
@@ -330,9 +347,15 @@ export async function linkDomainToForm(
     data: { formId: form.id, domainId: domain.id },
     include: { domain: true },
   })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "domain-linked",
-    domain: domain.domain,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "domain-linked",
+      domain: domain.domain,
+    },
   })
   return link
 }
@@ -348,9 +371,15 @@ export async function unlinkDomainFromForm(
   })
   if (!link) throw new ApiError("This domain is not linked to the form.", 404)
   await db.formDomain.delete({ where: { id: link.id } })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "domain-unlinked",
-    domainId,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "domain-unlinked",
+      domainId,
+    },
   })
 }
 
@@ -377,9 +406,15 @@ export async function addNotificationEmailToForm(
   const created = await db.notificationSettings.create({
     data: { formId: form.id, email },
   })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "notification-added",
-    email,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "notification-added",
+      email,
+    },
   })
   return created
 }
@@ -408,8 +443,14 @@ export async function deleteNotificationEmailForUser(
   const row = form.notificationSettings.find((n) => n.id === notificationId)
   if (!row) throw new ApiError("Notification recipient not found", 404)
   await db.notificationSettings.delete({ where: { id: row.id } })
-  await logFormAudit(userId, AuditAction.UPDATE, form.id, {
-    event: "notification-removed",
-    email: row.email,
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "notification-removed",
+      email: row.email,
+    },
   })
 }

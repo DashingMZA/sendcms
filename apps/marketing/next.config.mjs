@@ -1,5 +1,6 @@
 import path from "path"
 import { fileURLToPath } from "url"
+import { securityHeaders } from "../../packages/security/src/headers.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Turbopack's filesystem root must be the WORKSPACE root (where the
@@ -13,6 +14,14 @@ const nextConfig = {
   transpilePackages: ["@sendcms/shared", "@sendcms/ui", "@sendcms/content"],
   turbopack: {
     root: workspaceRoot,
+  },
+  // Security headers (Phase 10): the shared definition lives in
+  // packages/security/src/headers.mjs — imported by relative path
+  // because plain Node (which loads this config) cannot import
+  // TypeScript. The matching `public/_headers` file covers static
+  // assets on Cloudflare's asset layer.
+  async headers() {
+    return securityHeaders()
   },
 }
 

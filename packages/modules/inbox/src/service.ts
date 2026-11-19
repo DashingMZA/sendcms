@@ -1,9 +1,12 @@
 import {
+  AuditAction,
+  AuditResource,
   Prisma,
   SubmissionEventType,
   SubmissionStatus,
   db,
 } from "@sendcms/database"
+import { logAudit } from "@sendcms/security"
 import { ApiError, getSubmissionSender } from "@sendcms/shared"
 
 // ---------------------------------------------------------------------------
@@ -330,7 +333,7 @@ export async function updateSubmissionStatusForUser(
   submissionId: string,
   action: InboxAction
 ): Promise<{ id: string; status: SubmissionStatus; changed: boolean }> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const submission = await tx.submission.findFirst({
       where: { id: submissionId, form: { ownerId: userId } },
       select: { id: true, status: true },
@@ -341,6 +344,17 @@ export async function updateSubmissionStatusForUser(
     const result = await applyStatusAction(tx, submission, action, userId)
     return { id: submission.id, ...result }
   })
+  // Audit after the transaction commits (best-effort — logAudit never
+  // throws). The per-action SubmissionEvent already records the change;
+  // the AuditLog row is the cross-resource trail.
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUBMISSION,
+    resourceId: submissionId,
+    detail: { action, status: result.status, changed: result.changed },
+  })
+  return result
 }
 
 export async function bulkUpdateSubmissionsForUser(
@@ -348,7 +362,7 @@ export async function bulkUpdateSubmissionsForUser(
   submissionIds: string[],
   action: InboxAction
 ): Promise<{ updated: number; skipped: number }> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const submissions = await tx.submission.findMany({
       where: {
         id: { in: submissionIds },
@@ -368,6 +382,14 @@ export async function bulkUpdateSubmissionsForUser(
     skipped += submissionIds.length - submissions.length
     return { updated, skipped }
   })
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUBMISSION,
+    resourceId: submissionIds.join(","),
+    detail: { action, submissionIds, ...result },
+  })
+  return result
 }
 
 export async function deleteSubmissionForUser(
@@ -380,6 +402,12 @@ export async function deleteSubmissionForUser(
   if (deleted.count === 0) {
     throw new ApiError("Submission not found.", 404)
   }
+  await logAudit({
+    userId,
+    action: AuditAction.DELETE,
+    resourceType: AuditResource.SUBMISSION,
+    resourceId: submissionId,
+  })
 }
 
 export async function getUnreadSubmissionCountForUser(

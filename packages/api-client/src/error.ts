@@ -1,9 +1,12 @@
 import { ApiError } from "@sendcms/shared"
+import { createLogger } from "@sendcms/observability"
 
 export { ApiError }
 
 import { NextResponse } from "next/server"
 import { corsHeaders } from "./cors"
+
+const logger = createLogger("api")
 
 export function handleApiError(
   err: unknown,
@@ -17,7 +20,7 @@ export function handleApiError(
       { status: err.status, headers: resolvedHeaders }
     )
   }
-  console.error(err)
+  logger.error("unhandled API error", { error: err })
   return NextResponse.json(
     { error: "Internal server error" },
     { status: 500, headers: resolvedHeaders }

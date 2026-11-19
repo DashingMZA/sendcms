@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
+import { createLogger } from "@sendcms/observability"
 import { submitForm } from "@sendcms/submissions"
 import {
   ApiError,
@@ -10,6 +11,8 @@ import {
   SubmitBodySchema,
   formDataToSubmitBody,
 } from "@sendcms/submissions/validators"
+
+const logger = createLogger("api")
 
 // Public submission API — no session, no cookies. Authorization is the
 // Origin allowlist (enforced in the service): the submitting site must be
@@ -110,7 +113,7 @@ export async function POST(req: NextRequest) {
         try {
           await processEmailOutbox({ limit: 25 })
         } catch (err) {
-          console.error("[notifications] outbox run failed:", err)
+          logger.error("outbox run failed", { error: err })
         }
       })
     }

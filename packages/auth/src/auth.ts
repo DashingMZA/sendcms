@@ -3,8 +3,12 @@ import { prismaAdapter } from "better-auth/adapters/prisma"
 import { headers } from "next/headers"
 import { db } from "@sendcms/database"
 import { sendPasswordResetEmail, sendVerificationEmail } from "@sendcms/email"
+import { createLogger } from "@sendcms/observability"
+import { logAudit } from "@sendcms/security"
 import { getConfiguredOAuthProviders } from "./providers"
 import type { PlatformRole } from "@sendcms/permissions"
+
+const logger = createLogger("auth")
 
 /**
  * Admin auth — Better Auth 1.7.x (stable), database sessions.
@@ -69,6 +73,18 @@ export function createSendcmsAuth() {
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
+    // Cookie domain for the subdomain split (Phase 10): when the apps
+    // run on subdomains of one domain (api.<domain>, <domain>), the
+    // session cookie needs Domain=<domain> to be shared across them.
+    // Unset = host-only cookies (current behavior, dev). Set via
+    // COOKIE_DOMAIN in production only — never commit a value here.
+    advanced: {
+      defaultCookieAttributes: {
+        ...(process.env.COOKIE_DOMAIN
+          ? { domain: process.env.COOKIE_DOMAIN }
+          : {}),
+      },
+    },
     // No fallback value here on purpose: Better Auth fails fast without a
     // secret instead of silently signing with an insecure default.
     secret: process.env.BETTER_AUTH_SECRET,
@@ -105,20 +121,16 @@ export function createSendcmsAuth() {
         await sendPasswordResetEmail({ user, url })
       },
       onPasswordReset: async ({ user }) => {
-        // Audit the reset. Best-effort: a logging failure must never break
-        // the reset itself.
-        try {
-          await db.auditLog.create({
-            data: {
-              action: "UPDATE",
-              resourceType: "USER",
-              resourceId: user.id,
-              detail: { event: "password-reset" },
-            },
-          })
-        } catch (err) {
-          console.error("[auth] audit log for password reset failed:", err)
-        }
+        // Audit the reset (best-effort — logAudit never throws). The
+        // actor is the user themself, so userId is set (the old inline
+        // write omitted it, recording the reset as a system action).
+        await logAudit({
+          userId: user.id,
+          action: "UPDATE",
+          resourceType: "USER",
+          resourceId: user.id,
+          detail: { event: "password-reset" },
+        })
       },
     },
     emailVerification: {
@@ -156,14 +168,27 @@ export function createSendcmsAuth() {
             // ..._single_platform_owner) backs the invariant at the DB level.
             // Promotion is best-effort — it must never fail registration.
             try {
-              await db.$executeRaw`
+              const promoted = await db.$executeRaw`
               UPDATE "User" SET "platformRole" = 'PLATFORM_OWNER'
               WHERE "id" = ${user.id}
               AND NOT EXISTS (
                 SELECT 1 FROM "User" WHERE "platformRole" = 'PLATFORM_OWNER'
               )`
+              // Audit only when the promotion actually happened (0 rows
+              // when an owner already exists). A system action, so no
+              // userId — the user didn't promote themself.
+              if (promoted > 0) {
+                await logAudit({
+                  action: "UPDATE",
+                  resourceType: "USER",
+                  resourceId: user.id,
+                  detail: { event: "platform-owner-promotion" },
+                })
+              }
             } catch (err) {
-              console.error("[auth] platform-owner promotion failed:", err)
+              logger.error("[auth] platform-owner promotion failed", {
+                error: err,
+              })
             }
           },
         },
