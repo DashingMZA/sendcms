@@ -47,10 +47,18 @@ export function createLogger(scope: string): Logger {
       ...fields,
     }
     if (entry.error instanceof Error) {
+      // Structured errors (e.g. Prisma's KnownRequestError) carry a
+      // machine-readable `code` (P2009, P2021, …) and `meta` detail on
+      // top of name/message/stack. Keep them: the long `message` gets
+      // truncated when a log line is pasted from a terminal, but the
+      // short `code` survives and says what kind of failure it was.
+      const err = entry.error as Error & { code?: unknown; meta?: unknown }
       entry.error = {
-        name: entry.error.name,
-        message: entry.error.message,
-        stack: entry.error.stack,
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        ...(typeof err.code === "string" ? { code: err.code } : {}),
+        ...(err.meta !== undefined ? { meta: err.meta } : {}),
       }
     }
     const line = JSON.stringify(entry)

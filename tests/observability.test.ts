@@ -63,6 +63,19 @@ describe("createLogger", () => {
     expect(typeof entry.error.stack).toBe("string")
   })
 
+  it("keeps a structured error code and meta when present", () => {
+    const logger = createLogger("email-worker")
+    const err = Object.assign(new Error("table missing"), {
+      code: "P2021",
+      meta: { table: "EmailJob" },
+    })
+    logger.error("outbox poll failed", { error: err })
+    expect(stderrLines).toHaveLength(1)
+    const entry = JSON.parse(stderrLines[0])
+    expect(entry.error.code).toBe("P2021")
+    expect(entry.error.meta).toEqual({ table: "EmailJob" })
+  })
+
   it("gates lower levels when LOG_LEVEL is error", () => {
     process.env.LOG_LEVEL = "error"
     const logger = createLogger("api")
