@@ -20,9 +20,9 @@
   "private": true,
   "scripts": {
     "db:generate": "prisma generate",
-    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
-    "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
-    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "db:migrate": "dotenv run -f ../../.env -- prisma migrate dev",
+    "db:seed": "dotenv run -f ../../.env -- tsx prisma/seed.ts",
+    "db:studio": "dotenv run -f ../../.env -- prisma studio",
     "typecheck": "tsc --noEmit"
   },
   "type": "module",

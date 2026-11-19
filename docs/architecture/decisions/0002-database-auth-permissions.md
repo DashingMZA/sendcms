@@ -44,7 +44,7 @@ the same auth instance, and the same permission rules.
 - `better-auth` stays pinned at exactly `1.7.25` (owner decision); the
   move does not bump it even though 1.7.26 is the latest stable.
 - `db:migrate` / `db:studio` / `db:seed` in the database package load the
-  root `.env` explicitly (`dotenv -e ../../.env -- ...`, via `dotenv-cli`)
+  root `.env` explicitly (`dotenv run -f ../../.env -- ...`, via `dotenv-cli`)
   because the package runs from its own directory. If no root `.env`
   exists, dotenv-cli fails with a clear "missing env file" error instead
   of a cryptic `DATABASE_URL` error.
