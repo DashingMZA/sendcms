@@ -44,7 +44,7 @@ export async function GET(
 | Updates page   | `apps/updates/app/changelog/page.tsx`                  | Server component        | Public, no auth — home links point at the marketing app                                          |
 | Service        | `packages/modules/<name>/src/service.ts`               | N/A                     | No Next.js imports                                                                               |
 | Validator      | `packages/modules/<name>/src/validators.ts`            | N/A                     | Zod schema, shared                                                                               |
-| Hook           | `hooks/use-<name>.ts`                                  | N/A                     | Client-side only                                                                                 |
+| Hook           | `packages/ui/src/hooks/use-<name>.ts`                  | N/A                     | Client-side only (shared hooks live in the ui package)                                           |
 
 ## Public API Route Pattern
 
