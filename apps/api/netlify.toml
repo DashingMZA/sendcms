@@ -1,0 +1,31 @@
+# SendCMS api app — Netlify site config.
+#
+# In the Netlify dashboard: New site → import this repo. The `base`
+# below is the source of truth for the site's base directory (it
+# overrides the dashboard setting). The build command runs from the
+# base directory; pnpm finds the workspace root above it, so the
+# workspace install + the app's `build:server` (Prisma generate + SDK
+# bundle build + `next build`) work from here. The Next.js Runtime is
+# applied automatically by Netlify — no plugin block is needed.
+#
+# Set the site's environment variables in the dashboard (Site settings
+# → Environment variables) BEFORE the first build — Next.js inlines
+# NEXT_PUBLIC_* into the browser bundle at build time:
+#   DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, TRUSTED_ORIGINS,
+#   NEXT_PUBLIC_AUTH_URL, NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_API_URL,
+#   NEXT_PUBLIC_DASHBOARD_URL, NEXT_PUBLIC_DOCS_URL,
+#   NEXT_PUBLIC_UPDATES_URL, CRON_SECRET, RESEND_API_KEY, RESEND_FROM,
+#   SMTP_* (optional), GOOGLE_/GITHUB_/FACEBOOK_CLIENT_ID/_SECRET
+#   (only the OAuth providers you want to offer).
+#
+# No worker runs on Netlify — the cron route
+# (GET /api/cron/email-outbox, Bearer CRON_SECRET) is the outbox drain
+# there; call it from an external scheduler.
+
+[build]
+  base = "apps/api"
+  command = "pnpm install --frozen-lockfile && pnpm --filter @sendcms/api build:server"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "24"
