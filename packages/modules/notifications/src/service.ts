@@ -7,61 +7,45 @@ import {
   type Submission,
 } from "@sendcms/database"
 import { ApiError, getSubmissionSender } from "@sendcms/shared"
+import {
+  notificationDeps,
+  type SubmissionNotificationField,
+  type SubmissionNotificationProps,
+} from "@sendcms/email"
+import {
+  claimDueEmailJobs,
+  claimEmailJob,
+  enqueueEmailJobs,
+  loadEmailJob,
+  markEmailJobFailed,
+  markEmailJobSent,
+  type EmailJobWithRelations,
+} from "@sendcms/queue"
 
-// Email outbox (Phase 8). Submissions are saved first and notification
+// Email outbox (Phase 9). Submissions are saved first and notification
 // jobs are queued after — email can never lose a submission, and a
 // provider outage only delays the notification. Delivery is attempted
 // immediately after submit (the public route's `after()` hook) and
-// retried by the cron worker route.
+// retried by the cron route or the standalone worker.
+//
+// The queue state machine (claim / retry / mark) lives in
+// `@sendcms/queue`; the send path (`notificationDeps`) lives in
+// `@sendcms/email`. This module imports both directly — the Phase 5
+// injection is gone, and the contract types live in `@sendcms/email`
+// (re-exported below so existing `@sendcms/notifications` importers
+// keep working).
 
-/**
- * What the app injects (Phase 9 owns the email transport + templates, so
- * this module must not import app code — same pattern as the auth
- * factory in packages/auth). The cron + test-email routes pass the
- * app's `sendPlatformEmail` and a renderer built on the app's template.
- */
-export type SubmissionNotificationField = {
-  label: string
-  value: string
-}
-
-export type SubmissionNotificationProps = {
-  formName: string
-  senderName: string | null
-  senderEmail: string | null
-  fields: SubmissionNotificationField[]
-  pageUrl: string | null
-  originDomain: string
-  receivedAt: Date
-  inboxUrl: string
-  accentColor: string
-  footerText: string
-}
-
-export type NotificationEmailSender = (input: {
-  to: string
-  subject: string
-  html: string
-  text?: string
-}) => Promise<{ messageId: string; provider: string }>
-
-export type NotificationRenderer = (
-  props: SubmissionNotificationProps
-) => Promise<{ html: string; text: string }>
-
-export type NotificationDeps = {
-  sendEmail: NotificationEmailSender
-  renderNotification: NotificationRenderer
-}
+// Re-exported for compatibility — the contract types now live in
+// `@sendcms/email` (one-way dependency: notifications → email).
+export type {
+  NotificationDeps,
+  NotificationEmailSender,
+  NotificationRenderer,
+  SubmissionNotificationField,
+  SubmissionNotificationProps,
+} from "@sendcms/email"
 
 export const EMAIL_JOB_PAGE_SIZE = 20
-export const MAX_EMAIL_ATTEMPTS = 5
-
-/** Backoff between attempts: 1m, 5m, 15m, 1h, 4h. Pure — tested. */
-export function nextAttemptDelayMs(attempts: number): number {
-  const delays = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 4 * 60 * 60_000]
-  return delays[Math.min(Math.max(attempts, 1), delays.length) - 1]
-}
 
 export function buildSubmissionNotificationSubject(
   formName: string,
@@ -72,8 +56,15 @@ export function buildSubmissionNotificationSubject(
     : `New submission on ${formName}`
 }
 
-function appUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+function dashboardUrl(): string {
+  // The inbox link must land on the dashboard app (Phase 8 split it off
+  // the marketing app). NEXT_PUBLIC_APP_URL is the marketing app's URL —
+  // the fallback covers single-app deployments only.
+  return (
+    process.env.NEXT_PUBLIC_DASHBOARD_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "http://localhost:3002"
+  )
 }
 
 function formatFieldValue(value: unknown): string {
@@ -123,24 +114,18 @@ export async function enqueueSubmissionNotifications(
     submission.form.name,
     sender.name
   )
-  await db.emailJob.createMany({
-    data: recipients.map((recipient) => ({
+  return enqueueEmailJobs(
+    recipients.map((recipient) => ({
       type: EmailJobType.SUBMISSION_NOTIFICATION,
       to: recipient.email,
       subject,
       formId,
       submissionId,
-    })),
-  })
-  return recipients.length
-}
-
-function truncateError(message: string): string {
-  return message.length > 500 ? `${message.slice(0, 500)}…` : message
+    }))
+  )
 }
 
 async function renderNotification(
-  deps: NotificationDeps,
   submission: SubmissionWithForm
 ): Promise<{ subject: string; html: string; text: string }> {
   const sender = getSubmissionSender(submission.data)
@@ -156,104 +141,70 @@ async function renderNotification(
     pageUrl: submission.pageUrl,
     originDomain: submission.originDomain,
     receivedAt: submission.createdAt,
-    inboxUrl: `${appUrl()}/dashboard/inbox/${submission.id}`,
+    inboxUrl: `${dashboardUrl()}/dashboard/inbox/${submission.id}`,
     accentColor: "#0891b2",
     footerText:
       "You're receiving this because you get notifications for this form.",
   }
-  const { html, text } = await deps.renderNotification(props)
+  const { html, text } = await notificationDeps.renderNotification(props)
   return { subject, html, text }
 }
 
 /** Sends one due job. Returns "sent" | "failed" | "skipped" (claimed
     by another processor, or its submission is gone). */
 async function processOneJob(
-  deps: NotificationDeps,
   job: EmailJob
 ): Promise<"sent" | "failed" | "skipped"> {
   // Claim: only the processor that flips PENDING → SENDING owns it.
-  const claimed = await db.emailJob.updateMany({
-    where: { id: job.id, status: EmailJobStatus.PENDING },
-    data: {
-      status: EmailJobStatus.SENDING,
-      attempts: { increment: 1 },
-    },
-  })
-  if (claimed.count !== 1) return "skipped"
+  if (!(await claimEmailJob(job.id))) return "skipped"
 
   const attempts = job.attempts + 1
   try {
-    const full = await db.emailJob.findUnique({
-      where: { id: job.id },
-      include: { form: { select: { id: true, name: true } }, submission: true },
-    })
+    const full: EmailJobWithRelations | null = await loadEmailJob(job.id)
     if (!full?.submission || !full.form) {
       throw new Error("Submission or form no longer exists.")
     }
-    const { subject, html, text } = await renderNotification(deps, {
+    const { subject, html, text } = await renderNotification({
       ...full.submission,
       form: full.form,
     })
-    const { messageId } = await deps.sendEmail({
+    const { messageId } = await notificationDeps.sendEmail({
       to: full.to,
       subject: full.subject || subject,
       html,
       text,
     })
-    await db.emailJob.update({
-      where: { id: job.id },
-      data: {
-        status: EmailJobStatus.SENT,
-        providerMessageId: messageId,
-        lastError: null,
-        nextAttemptAt: null,
-      },
-    })
+    await markEmailJobSent(job.id, messageId)
     return "sent"
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error"
-    // Retriable failures stay PENDING with a backoff — the cron picks
-    // them up again. Only terminal failures (out of attempts, or the
-    // submission is gone) become FAILED.
-    const unrecoverable = message === "Submission or form no longer exists."
-    const retryable = !unrecoverable && attempts < MAX_EMAIL_ATTEMPTS
-    await db.emailJob.update({
-      where: { id: job.id },
-      data: {
-        status: retryable ? EmailJobStatus.PENDING : EmailJobStatus.FAILED,
-        lastError: truncateError(message),
-        nextAttemptAt: retryable
-          ? new Date(Date.now() + nextAttemptDelayMs(attempts))
-          : null,
-      },
+    // Retriable failures stay PENDING with a backoff — the next drain
+    // picks them up again. Only terminal failures (out of attempts, or
+    // the submission is gone) become FAILED.
+    await markEmailJobFailed(job.id, {
+      error: message,
+      attempts,
+      terminal: message === "Submission or form no longer exists.",
     })
     return "failed"
   }
 }
 
 /** Sends due PENDING jobs (never attempted, or past their retry time).
-    Returns the outcome counts. Safe to call from the cron route and
-    from the submit route's `after()` hook. */
-export async function processEmailOutbox(
-  deps: NotificationDeps,
-  { limit = 25 }: { limit?: number } = {}
-): Promise<{
+    Returns the outcome counts. Safe to call from the cron route, the
+    standalone worker, and the submit route's `after()` hook. */
+export async function processEmailOutbox({
+  limit = 25,
+}: { limit?: number } = {}): Promise<{
   processed: number
   sent: number
   failed: number
 }> {
-  const due = await db.emailJob.findMany({
-    where: {
-      status: EmailJobStatus.PENDING,
-      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
-    },
-    orderBy: { createdAt: "asc" },
-    take: Math.max(1, Math.min(limit, 100)),
-  })
+  const due = await claimDueEmailJobs(limit)
   let sent = 0
   let failed = 0
   for (const job of due) {
-    const outcome = await processOneJob(deps, job)
+    const outcome = await processOneJob(job)
     if (outcome === "sent") sent++
     if (outcome === "failed") failed++
   }
@@ -332,7 +283,6 @@ export async function listEmailJobsForUser(
     provider (not via the outbox — there is no submission to render
     from, and the point is to test the provider right now). */
 export async function sendTestSubmissionEmail(
-  deps: NotificationDeps,
   userId: string,
   formId: string,
   to: string
@@ -344,7 +294,7 @@ export async function sendTestSubmissionEmail(
   if (!form) {
     throw new ApiError("Form not found.", 404)
   }
-  const props = {
+  const props: SubmissionNotificationProps = {
     formName: form.name,
     senderName: "Test Visitor",
     senderEmail: "test@example.com",
@@ -360,13 +310,13 @@ export async function sendTestSubmissionEmail(
     pageUrl: null,
     originDomain: "test",
     receivedAt: new Date(),
-    inboxUrl: `${appUrl()}/dashboard/forms/${form.id}`,
+    inboxUrl: `${dashboardUrl()}/dashboard/forms/${form.id}`,
     accentColor: "#0891b2",
     footerText: "This is a test email from SendCMS.",
   }
-  const { html, text } = await deps.renderNotification(props)
+  const { html, text } = await notificationDeps.renderNotification(props)
   try {
-    const { messageId, provider } = await deps.sendEmail({
+    const { messageId, provider } = await notificationDeps.sendEmail({
       to,
       subject: `Test notification from ${form.name}`,
       html,

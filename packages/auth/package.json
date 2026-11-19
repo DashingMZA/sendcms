@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@sendcms/database": "workspace:*",
+    "@sendcms/email": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "better-auth": "1.7.25"
   },

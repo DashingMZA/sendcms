@@ -1,15 +1,16 @@
 import { render } from "@react-email/render"
-import type { NotificationDeps } from "@sendcms/notifications"
 import { sendPlatformEmail } from "./provider"
+import type { NotificationDeps } from "./notification-types"
 import {
   SubmissionNotification,
   submissionNotificationText,
 } from "./templates/submission-notification"
 
 /**
- * The app's notification dependencies, passed to the notifications
- * module. The module must not import app code (Phase 9 owns the email
- * transport + templates), so the cron + test-email routes hand these in.
+ * The platform notification dependencies, used by the notifications
+ * module (Phase 9 — the module imports them directly instead of taking
+ * them as injected params). The module must not import app code, and
+ * this package owns the transport + templates, so the wiring lives here.
  */
 async function renderSubmissionNotification(
   props: Parameters<NotificationDeps["renderNotification"]>[0]

@@ -1,4 +1,4 @@
-# Email notifications (Phase 8)
+# Email notifications (Phase 9)
 
 When a visitor submits a form, SendCMS saves the submission first and
 then queues one notification email per enabled recipient of that form
@@ -64,6 +64,26 @@ Vercel Cron (`vercel.json`, deploy target still open — see the plan):
 Set `CRON_SECRET` in the project env vars; Vercel Cron sends the
 header automatically when the cron is configured with a secret
 (else call the route from any scheduler with the header).
+
+## Standalone worker
+
+For deployments that run a long-lived process, `services/email-worker`
+drains the outbox on a timer instead of (or alongside) the cron route:
+
+```bash
+pnpm --filter @sendcms/email-worker start
+```
+
+It polls every `WORKER_POLL_INTERVAL_MS` (default 30_000), processes
+up to 100 due jobs per poll, and serves a health endpoint at
+`GET http://localhost:<WORKER_PORT>/health` (`WORKER_PORT`, default
+3005). The health response reports `polling`, the last run's counts,
+and the last error. The worker shuts down gracefully on SIGTERM/SIGINT
+(it finishes the in-flight poll before exiting), and a failed poll
+never kills it — the next poll retries. Running the worker and the cron
+together is safe: the PENDING → SENDING claim means a job is owned by
+exactly one processor. In dev, `pnpm dev` starts the worker alongside
+the five apps.
 
 ## Test email
 

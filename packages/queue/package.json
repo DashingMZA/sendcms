@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@sendcms/database": "workspace:*"
+  },
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "typescript": "6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "name": "@sendcms/queue",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "version": "0.1.0"
+}

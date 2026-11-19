@@ -1,5 +1,8 @@
-// Email outbox processor (Phase 8): enqueue rules and the retry state
-// machine, with a mocked Prisma client and provider.
+// Email outbox processor (Phase 9): enqueue rules and the retry state
+// machine, with a mocked Prisma client and email package. The processor
+// imports its send path from `@sendcms/email` directly now (no injected
+// deps), so the test mocks that module; the queue state machine lives
+// in `@sendcms/queue` and is covered by tests/queue.test.ts.
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockDb = vi.hoisted(() => ({
@@ -28,10 +31,12 @@ const mockSendEmail = vi.hoisted(() =>
 const mockRenderNotification = vi.hoisted(() =>
   vi.fn(async () => ({ html: "<p>hi</p>", text: "hi" }))
 )
-const deps = {
-  sendEmail: mockSendEmail,
-  renderNotification: mockRenderNotification,
-}
+vi.mock("@sendcms/email", () => ({
+  notificationDeps: {
+    sendEmail: mockSendEmail,
+    renderNotification: mockRenderNotification,
+  },
+}))
 
 function makeSubmission(overrides: Record<string, unknown> = {}) {
   return {
@@ -123,14 +128,14 @@ describe("enqueueSubmissionNotifications", () => {
 
 describe("processEmailOutbox", () => {
   it("does nothing when no jobs are due", async () => {
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 0, sent: 0, failed: 0 })
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
   it("marks a delivered job SENT with the provider message id", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
     expect(mockDb.emailJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -147,7 +152,7 @@ describe("processEmailOutbox", () => {
   it("keeps a failed job PENDING with a backoff retry time", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     mockSendEmail.mockRejectedValue(new Error("provider down"))
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null; lastError: string }
@@ -160,7 +165,7 @@ describe("processEmailOutbox", () => {
   it("marks a job FAILED when its attempts are exhausted", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob({ attempts: 4 })])
     mockSendEmail.mockRejectedValue(new Error("provider down"))
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result.failed).toBe(1)
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null }
@@ -176,7 +181,7 @@ describe("processEmailOutbox", () => {
       form: { id: "form-1", name: "Contact us" },
       submission: null,
     })
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
@@ -187,7 +192,7 @@ describe("processEmailOutbox", () => {
   it("skips a job claimed by another processor", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     mockDb.emailJob.updateMany.mockResolvedValue({ count: 0 })
-    const result = await processEmailOutbox(deps)
+    const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 0, failed: 0 })
     expect(mockSendEmail).not.toHaveBeenCalled()
   })

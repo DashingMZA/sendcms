@@ -6,10 +6,7 @@ import {
   sendPlatformEmail,
   submissionNotificationText,
 } from "@sendcms/email"
-import {
-  buildSubmissionNotificationSubject,
-  nextAttemptDelayMs,
-} from "@sendcms/notifications"
+import { buildSubmissionNotificationSubject } from "@sendcms/notifications"
 import {
   EmailJobListQuerySchema,
   TestEmailSchema,
@@ -89,17 +86,6 @@ describe("sendPlatformEmail", () => {
     await expect(
       sendPlatformEmail({ to: "a@b.co", subject: "hi", html: "<p>hi</p>" })
     ).rejects.toThrow("Domain not verified")
-  })
-})
-
-describe("nextAttemptDelayMs", () => {
-  it("backs off 1m, 5m, 15m, 1h, then caps at 4h", () => {
-    expect(nextAttemptDelayMs(1)).toBe(60_000)
-    expect(nextAttemptDelayMs(2)).toBe(5 * 60_000)
-    expect(nextAttemptDelayMs(3)).toBe(15 * 60_000)
-    expect(nextAttemptDelayMs(4)).toBe(60 * 60_000)
-    expect(nextAttemptDelayMs(5)).toBe(4 * 60 * 60_000)
-    expect(nextAttemptDelayMs(99)).toBe(4 * 60 * 60_000)
   })
 })
 

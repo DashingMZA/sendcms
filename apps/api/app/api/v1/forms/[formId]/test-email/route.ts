@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth"
 import { sendTestSubmissionEmail } from "@sendcms/notifications"
 import { TestEmailSchema } from "@sendcms/notifications/validators"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
-import { notificationDeps } from "@sendcms/email"
 
 type Params = { params: Promise<{ formId: string }> }
 
@@ -26,7 +25,6 @@ export async function POST(req: NextRequest, { params }: Params) {
       )
     }
     const result = await sendTestSubmissionEmail(
-      notificationDeps,
       session.user.id,
       formId,
       parsed.data.to

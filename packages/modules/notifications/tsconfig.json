@@ -1,4 +1,7 @@
 {
   "extends": "@sendcms/config/tsconfig/base.json",
-  "include": ["src"]
+  "include": ["src"],
+  "compilerOptions": {
+    "types": ["node", "react"]
+  }
 }

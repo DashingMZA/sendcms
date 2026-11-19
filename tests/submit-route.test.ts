@@ -23,7 +23,6 @@ import { NextRequest } from "next/server"
 // they cover, so it reaches the route by relative path.
 import { OPTIONS, POST } from "../apps/api/app/api/public/v1/submit/route"
 import { ApiError } from "@sendcms/api-client"
-import { notificationDeps } from "@sendcms/email"
 
 const URL = "http://localhost:3000/api/public/v1/submit"
 const ORIGIN = "https://example.com"
@@ -237,7 +236,7 @@ describe("POST /api/public/v1/submit", () => {
     expect(mockAfter).toHaveBeenCalledTimes(1)
     const [callback] = mockAfter.mock.calls[0] as [() => Promise<void>]
     await callback()
-    expect(mockProcessOutbox).toHaveBeenCalledWith(notificationDeps, {
+    expect(mockProcessOutbox).toHaveBeenCalledWith({
       limit: 25,
     })
   })

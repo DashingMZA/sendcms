@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
-import { notificationDeps } from "@sendcms/email"
 import { submitForm } from "@sendcms/submissions"
 import {
   ApiError,
@@ -109,7 +108,7 @@ export async function POST(req: NextRequest) {
       // sent — failures stay queued for the cron worker to retry.
       after(async () => {
         try {
-          await processEmailOutbox(notificationDeps, { limit: 25 })
+          await processEmailOutbox({ limit: 25 })
         } catch (err) {
           console.error("[notifications] outbox run failed:", err)
         }

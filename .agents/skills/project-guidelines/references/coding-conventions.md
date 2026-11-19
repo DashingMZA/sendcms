@@ -20,6 +20,8 @@ packages/modules/<name>/src/service.ts →  business logic (NO Next.js imports)
 @sendcms/database   →  Prisma singleton `db` (only services import this)
 packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + services)
 @sendcms/api-client →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported) + cors.ts (getEffectiveOrigin, normalizeOrigin, corsHeaders)
+@sendcms/email      →  platform email: provider + auth mailer + notification deps (imported directly by the auth factory and the notifications module — no injection since Phase 9)
+@sendcms/queue      →  email outbox queue: EmailJob claim + retry state machine (imported by the notifications module)
 ```
 
 Route handlers must NOT import `@sendcms/database` directly. Services must NOT import from `next/*`.

@@ -2,6 +2,7 @@ import { betterAuth as createBetterAuth } from "better-auth"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { headers } from "next/headers"
 import { db } from "@sendcms/database"
+import { sendPasswordResetEmail, sendVerificationEmail } from "@sendcms/email"
 import { getConfiguredOAuthProviders } from "./providers"
 import type { PlatformRole } from "@sendcms/permissions"
 
@@ -21,27 +22,16 @@ import type { PlatformRole } from "@sendcms/permissions"
  * (`emailVerification.sendOnSignUp`) — they can sign in, but domain
  * registration / submissions (Phase 3/5) require a verified email.
  *
- * The email callbacks are injected by the app (`lib/auth.ts` passes the
- * app's mailer) because the mailer lives in the app's email module
- * (Phase 9) — this package must not import app code.
+ * The email callbacks come from `@sendcms/email` directly (Phase 9) —
+ * the auth package owns the Better Auth instance and the mailer lives
+ * in the email package, so there is no injection left to wire in.
  *
  * The instance is created by `createSendcmsAuth` (not at import time) so
- * the app controls when the mailer is wired in. The returned `betterAuth`
- * keeps its name so the `auth()` helper below keeps its name — all
- * existing `await auth()` call sites (route handlers, server components)
- * stay unchanged.
+ * each app controls when its own instance is created. The returned
+ * `betterAuth` keeps its name so the `auth()` helper below keeps its
+ * name — all existing `await auth()` call sites (route handlers, server
+ * components) stay unchanged.
  */
-export type AuthMailer = {
-  sendVerificationEmail: (args: {
-    user: { name: string; email: string }
-    url: string
-  }) => Promise<void>
-  sendPasswordResetEmail: (args: {
-    user: { name: string; email: string }
-    url: string
-  }) => Promise<void>
-}
-
 export type AdminSession = {
   user: {
     id: string
@@ -58,7 +48,7 @@ export type AdminSession = {
   }
 }
 
-export function createSendcmsAuth(mailer: AuthMailer) {
+export function createSendcmsAuth() {
   const configuredProviders = getConfiguredOAuthProviders()
 
   const betterAuth = createBetterAuth({
@@ -112,7 +102,7 @@ export function createSendcmsAuth(mailer: AuthMailer) {
       minPasswordLength: 8,
       resetPasswordTokenExpiresIn: 60 * 60, // 1 hour
       sendResetPassword: async ({ user, url }) => {
-        await mailer.sendPasswordResetEmail({ user, url })
+        await sendPasswordResetEmail({ user, url })
       },
       onPasswordReset: async ({ user }) => {
         // Audit the reset. Best-effort: a logging failure must never break
@@ -138,7 +128,7 @@ export function createSendcmsAuth(mailer: AuthMailer) {
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24, // 24 hours
       sendVerificationEmail: async ({ user, url }) => {
-        await mailer.sendVerificationEmail({ user, url })
+        await sendVerificationEmail({ user, url })
       },
     },
     user: {

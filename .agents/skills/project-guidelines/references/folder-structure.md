@@ -89,15 +89,18 @@ sendcms/
 │   ├── database/                  # Prisma schema + migrations + client + pingDatabase (@sendcms/database)
 │   ├── auth/                      # Better Auth factory + providers + browser client (@sendcms/auth)
 │   ├── permissions/               # Platform roles + capabilities (@sendcms/permissions)
-│   ├── email/                     # Platform email: provider (Resend/SMTP/none) + auth mailer + notification deps (@sendcms/email)
+│   ├── email/                     # Platform email: provider (Resend/SMTP/none) + auth mailer + notification deps + notification contract types (@sendcms/email)
+│   ├── queue/                     # Email outbox queue: EmailJob claim + retry state machine (backoff 1m/5m/15m/1h/4h) (@sendcms/queue)
 │   └── modules/                   # Business modules (server service + validators + client queries)
 │       ├── domains/               # domain service + dns-verification (@sendcms/domains)
 │       ├── forms/                 # form CRUD, fields, domain links (@sendcms/forms)
 │       ├── submissions/           # public submit flow + Turnstile (@sendcms/submissions)
 │       ├── inbox/                 # inbox reads + status/bulk actions (@sendcms/inbox)
-│       ├── notifications/         # EmailJob outbox, retries, test email — sender + renderer injected (@sendcms/notifications)
+│       ├── notifications/         # EmailJob outbox processor — imports the send path from @sendcms/email + the queue from @sendcms/queue (no injection since Phase 9) (@sendcms/notifications)
 │       ├── users/                 # auth methods, user lookup, auth validators (@sendcms/users)
 │       └── analytics/             # overview + analytics aggregates (@sendcms/analytics)
+├── services/
+│   └── email-worker/              # Standalone email worker: polls the outbox, GET /health on WORKER_PORT (default 3005), graceful shutdown (@sendcms/email-worker)
 ├── config/config.json             # App configuration (site, metadata, branding, email) — the root copy; each app owns its own copy
 ├── docs/                          # Getting started, REST API, SDK, security, deployment, troubleshooting (the docs app serves the user docs from here)
 ├── postcss.config.mjs             # Shared PostCSS config (Tailwind) — all apps resolve it by walking up from their CSS
@@ -106,33 +109,35 @@ sendcms/
 
 ## Key Path Aliases
 
-| Alias                       | Points to                                                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `@/`                        | The app's own root (each app — `apps/marketing`, `apps/api`, `apps/dashboard`, `apps/docs`, `apps/updates` — has its own `@/*` alias) |
-| `@/lib/*`                   | That app's shared utilities (`lib/auth.ts` is per-app: each app wires its own Better Auth instance)                                   |
-| `@/components/*`            | That app's UI components                                                                                                              |
-| `@sendcms/database`         | Prisma client + `db` singleton (`packages/database`)                                                                                  |
-| `@sendcms/auth`             | Better Auth factory + providers (`packages/auth`)                                                                                     |
-| `@sendcms/auth/client`      | Browser-side Better Auth client (`packages/auth`)                                                                                     |
-| `@sendcms/permissions`      | Platform roles + capabilities (`packages/permissions`)                                                                                |
-| `@sendcms/email`            | Platform email: `sendPlatformEmail`, auth mailer, `notificationDeps` (`packages/email`)                                               |
-| `@sendcms/ui`               | shadcn/ui primitives + `useIsMobile` + `Logo` + `ThemeProvider` (`packages/ui`)                                                       |
-| `@sendcms/shared`           | `cn()`, `ApiError`, `apiFetch`, `getSubmissionSender` (`packages/shared`)                                                             |
-| `@sendcms/shared/constants` | `HONEYPOT_FIELD` — the shared server/SDK honeypot contract (`packages/shared`)                                                        |
-| `@sendcms/api-client`       | `ok`, `created`, `noContent`, `handleApiError`, `ApiError`, CORS helpers (`packages/api-client`)                                      |
-| `@sendcms/sdk`              | Form SDK bundle source (`packages/sdk`)                                                                                               |
-| `@sendcms/sdk/snippet`      | SDK + REST snippet builders (`packages/sdk`)                                                                                          |
-| `@sendcms/content`          | Markdown content loader (`getListPage`) + converters (`markdownify`, `slugify`, …) (`packages/content`)                               |
-| `@sendcms/api`              | API app (`apps/api`)                                                                                                                  |
-| `@sendcms/dashboard`        | Dashboard app (`apps/dashboard`)                                                                                                      |
-| `@sendcms/marketing`        | Marketing app (`apps/marketing`)                                                                                                      |
-| `@sendcms/docs`             | Docs app (`apps/docs`)                                                                                                                |
-| `@sendcms/updates`          | Updates app (`apps/updates`)                                                                                                          |
-| `@sendcms/domains`          | Domain service + validators + queries (`packages/modules/domains`)                                                                    |
-| `@sendcms/forms`            | Form service + validators + queries (`packages/modules/forms`)                                                                        |
-| `@sendcms/submissions`      | Public submit flow + Turnstile (`packages/modules/submissions`)                                                                       |
-| `@sendcms/inbox`            | Inbox service + validators + queries (`packages/modules/inbox`)                                                                       |
-| `@sendcms/notifications`    | EmailJob outbox (`packages/modules/notifications`)                                                                                    |
-| `@sendcms/users`            | User service + auth validators (`packages/modules/users`)                                                                             |
-| `@sendcms/analytics`        | Overview + analytics (`packages/modules/analytics`)                                                                                   |
-| `@sendcms/config`           | Shared tsconfig + ESLint base (`packages/config`)                                                                                     |
+| Alias                       | Points to                                                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@/`                        | The app's own root (each app — `apps/marketing`, `apps/api`, `apps/dashboard`, `apps/docs`, `apps/updates` — has its own `@/*` alias)        |
+| `@/lib/*`                   | That app's shared utilities (`lib/auth.ts` is per-app: each app wires its own Better Auth instance)                                          |
+| `@/components/*`            | That app's UI components                                                                                                                     |
+| `@sendcms/database`         | Prisma client + `db` singleton (`packages/database`)                                                                                         |
+| `@sendcms/auth`             | Better Auth factory + providers (`packages/auth`)                                                                                            |
+| `@sendcms/auth/client`      | Browser-side Better Auth client (`packages/auth`)                                                                                            |
+| `@sendcms/permissions`      | Platform roles + capabilities (`packages/permissions`)                                                                                       |
+| `@sendcms/email`            | Platform email: `sendPlatformEmail`, auth mailer, `notificationDeps`, notification contract types (`packages/email`)                         |
+| `@sendcms/queue`            | Email outbox queue: claim/retry state machine over EmailJob (`packages/queue`)                                                               |
+| `@sendcms/email-worker`     | Standalone email worker: `createEmailWorker` (`services/email-worker`)                                                                       |
+| `@sendcms/ui`               | shadcn/ui primitives + `useIsMobile` + `Logo` + `ThemeProvider` (`packages/ui`)                                                              |
+| `@sendcms/shared`           | `cn()`, `ApiError`, `apiFetch`, `getSubmissionSender` (`packages/shared`)                                                                    |
+| `@sendcms/shared/constants` | `HONEYPOT_FIELD` — the shared server/SDK honeypot contract (`packages/shared`)                                                               |
+| `@sendcms/api-client`       | `ok`, `created`, `noContent`, `handleApiError`, `ApiError`, CORS helpers (`packages/api-client`)                                             |
+| `@sendcms/sdk`              | Form SDK bundle source (`packages/sdk`)                                                                                                      |
+| `@sendcms/sdk/snippet`      | SDK + REST snippet builders (`packages/sdk`)                                                                                                 |
+| `@sendcms/content`          | Markdown content loader (`getListPage`) + converters (`markdownify`, `slugify`, …) (`packages/content`)                                      |
+| `@sendcms/api`              | API app (`apps/api`)                                                                                                                         |
+| `@sendcms/dashboard`        | Dashboard app (`apps/dashboard`)                                                                                                             |
+| `@sendcms/marketing`        | Marketing app (`apps/marketing`)                                                                                                             |
+| `@sendcms/docs`             | Docs app (`apps/docs`)                                                                                                                       |
+| `@sendcms/updates`          | Updates app (`apps/updates`)                                                                                                                 |
+| `@sendcms/domains`          | Domain service + validators + queries (`packages/modules/domains`)                                                                           |
+| `@sendcms/forms`            | Form service + validators + queries (`packages/modules/forms`)                                                                               |
+| `@sendcms/submissions`      | Public submit flow + Turnstile (`packages/modules/submissions`)                                                                              |
+| `@sendcms/inbox`            | Inbox service + validators + queries (`packages/modules/inbox`)                                                                              |
+| `@sendcms/notifications`    | EmailJob outbox processor — imports the send path from `@sendcms/email` + the queue from `@sendcms/queue` (`packages/modules/notifications`) |
+| `@sendcms/users`            | User service + auth validators (`packages/modules/users`)                                                                                    |
+| `@sendcms/analytics`        | Overview + analytics (`packages/modules/analytics`)                                                                                          |
+| `@sendcms/config`           | Shared tsconfig + ESLint base (`packages/config`)                                                                                            |

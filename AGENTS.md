@@ -26,7 +26,7 @@ Beta: APIs and schema may change without migration paths.
 Package manager: **pnpm** (v12).
 
 ```bash
-pnpm dev              # prisma generate + SDK build + turbo dev (all 5 apps, ports 3000–3004)
+pnpm dev              # prisma generate + SDK build + turbo dev (all 5 apps, ports 3000–3004, + the email worker on 3005)
 pnpm build            # prisma generate + SDK build + turbo build --concurrency 1 (sequential — parallel builds contend on next/font, see ADR 0006)
 pnpm typecheck        # tsc --noEmit (run before declaring work done)
 pnpm lint             # eslint (root config ignores generated output workspace-wide)
@@ -61,7 +61,7 @@ Facebook OAuth + email/password (verification required) → session cookie
 The legacy widget visitor auth (Google OAuth PKCE → signed Widget JWT,
 `/api/widget/*`) was removed with the comment system.
 
-- Admin routes gated by `apps/dashboard/proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma adapter), wired by each app's thin `lib/auth.ts` wrapper (apps/api + apps/dashboard each own one — the apps run as separate servers and cannot share a Better Auth instance; each wrapper injects the platform mailer from `@sendcms/email`). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`packages/email/src/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
+- Admin routes gated by `apps/dashboard/proxy.ts` (Next middleware — named `proxy.ts`, not `middleware.ts`; matcher: `/dashboard/:path*`). Session lookup hits Prisma, so the proxy runs on the Node.js runtime — it is NOT edge-safe. Config: `packages/auth/src/auth.ts` (`createSendcmsAuth`, with Prisma adapter), wired by each app's thin `lib/auth.ts` wrapper (apps/api + apps/dashboard each own one — the apps run as separate servers and cannot share a Better Auth instance; the factory imports the platform mailer from `@sendcms/email` directly, Phase 9, no injection). Verification: email/password sign-in is refused while the email is unverified; OAuth trust varies by provider (Google: profile `email_verified`; GitHub: `/user/emails` verified flag; Facebook: none — those users get a verification email on sign-up). Verification gates domain registration / submissions (Phase 3/5), not dashboard access. Auth mail (verification + reset) goes through the shared email provider (`packages/email/src/provider.ts` — Resend when `RESEND_API_KEY` is set, SMTP fallback); without a provider, dev logs the links to the server console and production fails loudly. First user becomes PLATFORM_OWNER via an atomic conditional UPDATE + partial unique index (`User_single_platform_owner_idx`).
 
 ### Layered request flow — HARD RULE (`coding-conventions.md`)
 
@@ -126,7 +126,7 @@ User ──< Domain ──< DomainVerification
 
 ## Environment
 
-Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET`. Optional: `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET` (OAuth providers are offered only when their credentials are set), `SMTP_*` (fallback when no Resend key), `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY`.
+Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM`, `CRON_SECRET`. Optional: `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET` (OAuth providers are offered only when their credentials are set), `SMTP_*` (fallback when no Resend key), `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `WORKER_PORT`/`WORKER_POLL_INTERVAL_MS` (standalone email worker, Phase 9).
 
 Google Cloud Console — authorized redirect URIs must include:
 

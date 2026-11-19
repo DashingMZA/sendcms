@@ -1,23 +1,8 @@
 import { Button, Heading, Link, Section, Text } from "react-email"
 import { EmailLayout } from "./layout"
+import type { SubmissionNotificationProps } from "../notification-types"
 
-export type SubmissionNotificationField = {
-  label: string
-  value: string
-}
-
-type Props = {
-  formName: string
-  senderName: string | null
-  senderEmail: string | null
-  fields: SubmissionNotificationField[]
-  pageUrl: string | null
-  originDomain: string
-  receivedAt: Date
-  inboxUrl: string
-  accentColor: string
-  footerText: string
-}
+type Props = SubmissionNotificationProps
 
 /** Plain-text fallback for the notification (Resend/SMTP `text` part). */
 export function submissionNotificationText({

@@ -12,12 +12,15 @@
   },
   "dependencies": {
     "@sendcms/database": "workspace:*",
+    "@sendcms/email": "workspace:*",
+    "@sendcms/queue": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "@tanstack/react-query": "^5.108.0",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "react": "^19.3.1",
     "typescript": "6.0.3"
