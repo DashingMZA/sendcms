@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@sendcms/ui"
 
 import { AlertTriangle } from "lucide-react"
@@ -12,6 +13,8 @@ export default function DashboardError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const router = useRouter()
+
   useEffect(() => {
     // Log error to monitoring service
     console.error("Dashboard error:", error)
@@ -32,10 +35,7 @@ export default function DashboardError({
         <Button onClick={reset} variant="default">
           Try again
         </Button>
-        <Button
-          onClick={() => (window.location.href = "/dashboard")}
-          variant="outline"
-        >
+        <Button onClick={() => router.push("/dashboard")} variant="outline">
           Go to dashboard
         </Button>
       </div>
