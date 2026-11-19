@@ -9,6 +9,7 @@ export const DOC_SLUGS = [
   "getting-started",
   "sdk",
   "rest-api",
+  "mcp",
   "embed-html",
   "embed-nextjs",
   "embed-astro",

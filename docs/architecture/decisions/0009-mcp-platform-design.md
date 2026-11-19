@@ -1,6 +1,9 @@
-# ADR 0009 — MCP platform design (design only, not built)
+# ADR 0009 — MCP platform design (built 2026-11-19, Phase 11)
 
-- Status: proposed (2026-11-19, Phase 11) — design only, **not implemented**
+- Status: **accepted and built** (2026-11-19, Phase 11, branch
+  `feature/mcp`) — the design below is implemented as described. The
+  "design only, not built" note from the original 2026-11-19 draft no
+  longer applies.
 - Context: the audit's Phase 11 ("MCP foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
   design document now (2026-11-19) and will decide separately when — or
@@ -138,27 +141,27 @@ it owns no business logic of its own.
   `package.json` in this docs-only phase — pin it at build time, when
   the then-latest stable is checked again.
 
-## What is explicitly not in this phase
+## Build record (2026-11-19, Phase 11, branch `feature/mcp`)
 
-No code, no package, no route, no dependency, no endpoint, no test.
-The design above is the deliverable. Nothing here is callable, and no
-MCP client can connect to SendCMS today.
+The owner said build on 2026-11-19, with two decisions: dashboard UI
+as a separate page (`/dashboard/api-keys`) and key scopes `read/full`.
+Built exactly as designed:
 
-## Build order (when the owner says build)
-
-1. **API keys capability** (prerequisite): models, dashboard UI
-   (create/revoke/rotate), key hashing + scoping, audit-log coverage.
-   This is a separate design + build, not part of MCP.
-2. **`packages/mcp` + the `/api/mcp` route**, read-only tools first,
-   then mutations — each tool gated by the existing journey-style
-   checks (owner scoping, validation, audit logging).
-3. **Rate limiting for the MCP endpoint.** The admin-API rate-limit
-   gap from ADR 0008 applies here too — an MCP endpoint without rate
-   limits is an abuse vector. The public submit's DB-backed limits are
-   the pattern to follow, not a limiter copied from elsewhere.
-4. **User docs**: an MCP guide in `apps/docs` (connecting a client,
-   creating a key, the tool list) — the docs app already renders the
-   repo's user docs.
+1. **API keys capability** (the prerequisite): `ApiKey` + `ApiKeyRateLimit`
+   models + migration `20261119172808_add_api_keys`; `@sendcms/api-keys`
+   module (`create/list/revoke/rotate`, SHA-256 hashing, plaintext shown
+   once, max 10 active keys, audit-logged); session-gated REST routes
+   under `/api/v1/api-keys`; dashboard page `/dashboard/api-keys` with
+   scope select (FULL/READ) and one-time key reveal.
+2. **`packages/mcp` + `POST /api/mcp`**: `@modelcontextprotocol/sdk`
+   1.32.2 (latest stable, re-verified at build time), stateless
+   Streamable HTTP transport, 19 tools mapped 1:1 to the module services
+   as in the table above; READ keys see only the 9 read-only tools,
+   FULL keys see all 19 (mutations register only for FULL).
+3. **Rate limiting**: DB-backed fixed windows on `ApiKeyRateLimit`,
+   120/min + 2,000/hour per key, applied to `tools/call` only.
+4. **User docs**: `docs/mcp.md` (served by the docs app) — client
+   setup, the 19-tool list, rate limits, revoke/rotate, security notes.
 
 ## Verification (2026-11-19)
 
@@ -173,7 +176,24 @@ MCP client can connect to SendCMS today.
   introduced in spec `2025-03-26`, HTTP+SSE deprecated since then, the
   `2026-07-28` revision stateless) were verified via web search
   2026-11-19 against the spec changelog and transport docs.
-- No code changed in this phase, so the gates are a no-op confirmation:
-  typecheck / lint / tests are re-run before the commit to confirm
-  nothing moved (they must match the Phase 10 numbers: typecheck
-  25/25, lint 0 errors / 1 pre-existing warning, tests 227/227).
+- Build verification (2026-11-19, branch `feature/mcp`): unit tests
+  `tests/api-key-service.test.ts` 12/12 + `tests/mcp-server.test.ts`
+  10/10 (in-memory MCP client over the real server: FULL key lists
+  exactly 19 tools, READ key exactly 9, `list_domains`/`get_overview`/
+  `get_analytics` return mocked data, unknown domain errors, READ key
+  calling `create_domain` gets a tool error, rate limit 429 at
+  120/min and 2,000/hour with no upsert); full suite 25 files /
+  249 tests; `turbo run typecheck` 27/27; lint 0 errors / 0 warnings;
+  api + dashboard builds exit 0 with the `/api/mcp`, `/api/v1/api-keys`,
+  and `/dashboard/api-keys` routes compiled. Live journey against the
+  dev servers (real MCP client over HTTP, script
+  `~/workspace/scripts/phase11-mcp-journey.mjs`): **36/36 checks pass**
+  — sign-up/verify/sign-in, domain + form setup, FULL + READ keys via
+  the REST route (SHA-256 hash verified, no keyHash leak), no key/bad
+  key → 401, GET → 405, initialize → serverInfo sendcms, FULL key lists
+  19 tools, READ key lists 9, list_domains/get_domain/get_overview/
+  get_analytics/list_submissions over real data, create_domain mutation
+  via FULL (row in DB), READ key denied with a tool error, unknown id
+  → tool error, revoke → 401 on the next call while the other key keeps
+  working, `/dashboard/api-keys` + `/docs/mcp` render, cleanup cascades
+  (0 keys, 0 domains left, 4 owner accounts intact).

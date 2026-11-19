@@ -128,7 +128,7 @@ sendcms/
 ├── .dockerignore                  # Build context exclusions for the Dockerfile
 ├── render.yaml                    # Render Blueprint: 5 web services + worker + Postgres
 ├── config/config.json             # App configuration (site, metadata, branding, email) — the root copy; each app owns its own copy
-├── tests/                         # The whole test suite (23 files, 227 tests) — stays at the root by the owner's Phase 13 decision (2026-11-19); never co-locate with the packages
+├── tests/                         # The whole test suite (25 files, 249 tests) — stays at the root by the owner's Phase 13 decision (2026-11-19); never co-locate with the packages
 ├── docs/                          # Getting started, REST API, SDK, security, deployment, troubleshooting (the docs app serves the user docs from here); deployment/platforms.md is the multi-platform guide
 ├── postcss.config.mjs             # Shared PostCSS config (Tailwind) — all apps resolve it by walking up from their CSS
 └── (no app/, lib/, components/, content/, styles/, public/ at the root — the root is a pure workspace root since Phase 8)
