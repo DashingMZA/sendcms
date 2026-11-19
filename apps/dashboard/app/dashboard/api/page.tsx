@@ -144,6 +144,29 @@ export default async function ApiPage() {
             </li>
           </ul>
         </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
+            3. MCP + API keys
+          </h2>
+          <Separator />
+          <p className="text-sm text-muted-foreground">
+            AI hosts (Claude Desktop, your IDE, an agent) talk to SendCMS over
+            MCP at{" "}
+            <code className="rounded bg-muted px-1 font-mono text-xs">
+              POST /api/mcp
+            </code>{" "}
+            with a bearer API key — create one on the{" "}
+            <Link
+              href="/dashboard/api-keys"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              API Keys
+            </Link>{" "}
+            page. Keys are scoped read-only or full, revocable, and the
+            plaintext is shown once at creation.
+          </p>
+        </section>
       </div>
     </div>
   )

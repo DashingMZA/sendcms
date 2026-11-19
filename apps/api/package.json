@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@sendcms/api-client": "workspace:*",
+    "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",

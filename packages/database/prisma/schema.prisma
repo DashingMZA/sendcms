@@ -97,6 +97,14 @@ enum AuditResource {
   SUBMISSION
   USER
   SETTINGS
+  API_KEY
+}
+
+// ─── API keys (MCP auth, Phase 11) ──────────────────────────────────────────
+
+enum ApiKeyScope {
+  READ // the 9 read-only MCP tools (list/get/overview) — no mutations
+  FULL // all 19 MCP tools, including mutations
 }
 
 // ─── Auth (Better Auth 1.7.x required tables) ────────────────────────────────
@@ -120,6 +128,7 @@ model User {
   sessions         Session[]
   domains          Domain[]
   forms            Form[]
+  apiKeys          ApiKey[]
   submissionEvents SubmissionEvent[]
   auditLogs        AuditLog[]
 }
@@ -402,4 +411,57 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([resourceType, resourceId, createdAt])
   @@index([createdAt])
+}
+
+// ─── API keys (MCP auth, Phase 11) ──────────────────────────────────────────
+// An API key is a per-user bearer credential for the MCP endpoint
+// (POST /api/mcp). The plaintext key is shown ONCE at creation and never
+// stored — only its SHA-256 hash lives here, so a leaked database reveals
+// no usable key. `prefix` + `last4` let the owner tell keys apart in the
+// dashboard without the secret. Revocation is a timestamp, not a delete:
+// a revoked key stays visible (greyed out) so past usage stays
+// attributable, and the row is never physically deleted.
+
+model ApiKey {
+  id    String      @id @default(cuid())
+  // Human label, shown in the dashboard. Not unique — the key itself is
+  // the identifier.
+  name  String
+  scope ApiKeyScope @default(FULL)
+  // SHA-256 hex of the full key (never the key itself).
+  keyHash String @unique
+  // First 12 chars of the key (e.g. sk_live_aB3x) + last 4, for display.
+  prefix  String
+  last4   String
+  // Updated on every successful MCP authentication (the resolve path).
+  lastUsedAt DateTime?
+  // Set on revoke (and on rotate, for the old key). Null = active.
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  rateLimit ApiKeyRateLimit?
+
+  @@index([userId])
+  @@index([userId, revokedAt, createdAt])
+}
+
+model ApiKeyRateLimit {
+  // One row per key: fixed-window counters for the MCP endpoint
+  // (DB-backed, isolate-safe — the public submit's counting pattern, not
+  // in-memory state). Created lazily on the key's first MCP call; keys
+  // that never call MCP have no row.
+  apiKeyId String @id
+  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  minuteWindowStart DateTime
+  minuteCount       Int      @default(0)
+  hourWindowStart   DateTime
+  hourCount         Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

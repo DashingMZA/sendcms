@@ -3,6 +3,7 @@
     "@remixicon/react": "^4.9.0",
     "@sendcms/analytics": "workspace:*",
     "@sendcms/api-client": "workspace:*",
+    "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",

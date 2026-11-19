@@ -45,6 +45,7 @@
     "@opennextjs/cloudflare": "^1.20.17",
     "@sendcms/analytics": "workspace:*",
     "@sendcms/api-client": "workspace:*",
+    "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/config": "workspace:*",
     "@sendcms/database": "workspace:*",

@@ -87,7 +87,8 @@ Never edit applied migrations. Create a new one.
 | `EmailJobType`             | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET                                          | `EmailJob.type`             |
 | `EmailJobStatus`           | PENDING, SENDING, SENT, FAILED                                                                       | `EmailJob.status`           |
 | `AuditAction`              | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE                                                  | `AuditLog.action`           |
-| `AuditResource`            | DOMAIN, FORM, SUBMISSION, USER, SETTINGS                                                             | `AuditLog.resourceType`     |
+| `AuditResource`            | DOMAIN, FORM, SUBMISSION, USER, SETTINGS, API_KEY                                                    | `AuditLog.resourceType`     |
+| `ApiKeyScope`              | READ, FULL                                                                                           | `ApiKey.scope`              |
 
 ## Existing Models
 
@@ -104,6 +105,8 @@ Never edit applied migrations. Create a new one.
 | `NotificationSettings` | → Form                                                                                   | `@@unique([formId, email])`, `@@index([formId])`                                                                          |
 | `EmailJob`             | → Form? + Submission? (SetNull)                                                          | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                               |
 | `AuditLog`             | → User? (actor, SetNull)                                                                 | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                          |
+| `ApiKey`               | → User; has one ApiKeyRateLimit?                                                         | `keyHash @unique`, `@@index([userId])`, `@@index([userId, revokedAt, createdAt])`                                         |
+| `ApiKeyRateLimit`      | → ApiKey (1:1, same id)                                                                  | `apiKeyId` is the PK                                                                                                      |
 
 ## Anti-Patterns
 

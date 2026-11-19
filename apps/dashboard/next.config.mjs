@@ -26,6 +26,7 @@ const nextConfig = {
     "@sendcms/notifications",
     "@sendcms/users",
     "@sendcms/analytics",
+    "@sendcms/api-keys",
     "@sendcms/observability",
     "@sendcms/security",
   ],
