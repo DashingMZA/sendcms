@@ -76,6 +76,32 @@ export function useDeleteSubmission() {
   })
 }
 
+/** Auto-reply drafts (Phase 12, Step 4). Drafts a reply with the
+    model; the owner reviews and edits it before anything is sent. */
+export type ReplyDraft = { subject: string; body: string }
+
+export function useDraftReply(submissionId: string) {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<ReplyDraft>(`/api/v1/inbox/${submissionId}/ai/draft-reply`, {
+        method: "POST",
+      }),
+  })
+}
+
+/** Sends the owner's (reviewed and edited) reply through the outbox. */
+export function useSendReply(submissionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { subject: string; body: string }) =>
+      apiFetch<{ enqueued: number }>(
+        `/api/v1/inbox/${submissionId}/ai/send-reply`,
+        { method: "POST", body: JSON.stringify(body) }
+      ),
+    onSuccess: () => invalidateInbox(qc),
+  })
+}
+
 export function useBulkUpdateSubmissions() {
   const qc = useQueryClient()
   return useMutation({

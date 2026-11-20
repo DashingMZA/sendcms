@@ -77,6 +77,10 @@ enum EmailJobType {
   // submissions, emailed to the form owner. The content is generated
   // at enqueue time and stored in EmailJob.payload.
   DIGEST
+  // Phase 12 (AI reply drafts): an owner-written (or owner-edited)
+  // reply to one submission, emailed to the submitter. The body is
+  // stored in EmailJob.payload.
+  SUBMISSION_REPLY
 }
 
 enum EmailJobStatus {
@@ -400,7 +404,8 @@ model EmailJob {
   // Phase 12 (AI digest): the pre-rendered digest content for DIGEST
   // jobs (form name, count, model summary, highlights, submission
   // list). NULL for every other job type — those render from their
-  // submission + form at send time instead.
+  // submission + form at send time instead. SUBMISSION_REPLY jobs
+  // store the owner's reply body here instead.
   payload           Json?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

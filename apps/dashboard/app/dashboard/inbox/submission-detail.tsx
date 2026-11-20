@@ -8,6 +8,8 @@ import { formatDistanceToNow, format } from "date-fns"
 import {
   type InboxSubmissionDetail,
   useDeleteSubmission,
+  useDraftReply,
+  useSendReply,
   useSubmission,
   useUpdateSubmissionStatus,
 } from "@sendcms/inbox/queries"
@@ -23,6 +25,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
+  Label,
+  Textarea,
 } from "@sendcms/ui"
 
 import { ArrowLeft, ExternalLink, Star, Trash2 } from "lucide-react"
@@ -290,6 +295,8 @@ export function SubmissionDetail({
               ))}
             </ul>
           </section>
+
+          <ReplySection submission={submission} />
         </div>
       </div>
 
@@ -313,5 +320,94 @@ export function SubmissionDetail({
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/** Auto-reply drafts (Phase 12, Step 4). The owner asks the AI for a
+    draft, reviews and edits it here, and only then sends it. Nothing
+    is sent until the owner clicks "Send reply". */
+function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
+  const sender = getSubmissionSender(submission.data)
+  const draft = useDraftReply(submission.id)
+  const send = useSendReply(submission.id)
+  const [subject, setSubject] = useState("")
+  const [body, setBody] = useState("")
+  const [sent, setSent] = useState(false)
+
+  if (!submission.form.aiEnabled || !sender.email) return null
+
+  const onDraft = async () => {
+    setSent(false)
+    try {
+      const result = await draft.mutateAsync()
+      setSubject(result.subject)
+      setBody(result.body)
+    } catch {
+      toast.error("Could not draft a reply.")
+    }
+  }
+
+  const onSend = async () => {
+    try {
+      await send.mutateAsync({ subject, body })
+      setSent(true)
+      toast.success("Reply queued — it will be sent shortly.")
+    } catch {
+      toast.error("Could not send the reply.")
+    }
+  }
+
+  const hasDraft = subject !== "" || body !== ""
+  return (
+    <section className="rounded-lg border p-4 sm:p-6">
+      <h3 className="mb-2 text-base font-semibold">Reply</h3>
+      <p className="text-sm text-muted-foreground">
+        Draft a reply to {sender.email} with AI, review and edit it, then send
+        it.
+      </p>
+      <div className="mt-3">
+        <Button
+          variant="outline"
+          onClick={onDraft}
+          disabled={draft.isPending || send.isPending}
+        >
+          {draft.isPending ? "Drafting…" : "Draft reply"}
+        </Button>
+      </div>
+      {hasDraft && (
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="reply-subject">Subject</Label>
+            <Input
+              id="reply-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="reply-body">Body</Label>
+            <Textarea
+              id="reply-body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={6}
+            />
+          </div>
+          <div>
+            <Button
+              onClick={onSend}
+              disabled={!subject.trim() || !body.trim() || send.isPending}
+            >
+              {send.isPending ? "Sending…" : "Send reply"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {sent && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Reply queued for delivery.
+        </p>
+      )}
+    </section>
   )
 }

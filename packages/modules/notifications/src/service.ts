@@ -155,9 +155,63 @@ export async function enqueueDigest({
   ])
 }
 
-/** The payload a DIGEST job carries. Written by the digest worker,
-    read by the send path — a malformed one fails the job, it never
-    sends a half-rendered digest. */
+/** Creates one PENDING SUBMISSION_REPLY job for the submitter. The
+    reply body is the owner's own (reviewed and edited) words, stored
+    on the job payload — the send path renders it, it never re-runs
+    the model. */
+export async function enqueueReply({
+  formId,
+  submissionId,
+  to,
+  subject,
+  body,
+  formName,
+}: {
+  formId: string
+  submissionId: string
+  to: string
+  subject: string
+  body: string
+  formName: string
+}): Promise<number> {
+  return enqueueEmailJobs([
+    {
+      type: EmailJobType.SUBMISSION_REPLY,
+      to,
+      subject,
+      formId,
+      submissionId,
+      payload: {
+        formName,
+        body,
+        accentColor: "#0891b2",
+        footerText: `You're receiving this because you messaged us on ${formName}.`,
+      } as unknown as Prisma.InputJsonValue,
+    },
+  ])
+}
+
+/** The payload a SUBMISSION_REPLY job carries. Written by the inbox
+    service, read by the send path — a malformed one fails the job, it
+    never sends a half-rendered reply. */
+export function parseReplyPayload(payload: unknown): {
+  formName: string
+  body: string
+  accentColor: string
+  footerText: string
+} | null {
+  if (typeof payload !== "object" || payload === null) return null
+  const p = payload as Record<string, unknown>
+  if (typeof p.formName !== "string" || typeof p.body !== "string") {
+    return null
+  }
+  return {
+    formName: p.formName,
+    body: p.body,
+    accentColor: typeof p.accentColor === "string" ? p.accentColor : "#0891b2",
+    footerText: typeof p.footerText === "string" ? p.footerText : "",
+  }
+}
 export function parseDigestPayload(payload: unknown): DigestProps | null {
   if (typeof payload !== "object" || payload === null) return null
   const p = payload as Record<string, unknown>
@@ -252,6 +306,23 @@ async function processOneJob(
       await markEmailJobSent(job.id, messageId)
       return "sent"
     }
+    // SUBMISSION_REPLY jobs carry the owner's reply body on the
+    // payload — same rule as DIGEST: render it, never re-run the model.
+    if (job.type === EmailJobType.SUBMISSION_REPLY) {
+      const props = parseReplyPayload(job.payload)
+      if (!props) {
+        throw new Error("Reply payload is missing or malformed.")
+      }
+      const { html, text } = await notificationDeps.renderReply(props)
+      const { messageId } = await notificationDeps.sendEmail({
+        to: job.to,
+        subject: job.subject,
+        html,
+        text,
+      })
+      await markEmailJobSent(job.id, messageId)
+      return "sent"
+    }
     const full: EmailJobWithRelations | null = await loadEmailJob(job.id)
     if (!full?.submission || !full.form) {
       throw new Error("Submission or form no longer exists.")
@@ -278,7 +349,8 @@ async function processOneJob(
       attempts,
       terminal:
         message === "Submission or form no longer exists." ||
-        message === "Digest payload is missing or malformed.",
+        message === "Digest payload is missing or malformed." ||
+        message === "Reply payload is missing or malformed.",
     })
     return "failed"
   }

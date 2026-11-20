@@ -953,6 +953,9 @@ importers:
 
   packages/modules/forms:
     dependencies:
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../ai
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
@@ -987,9 +990,15 @@ importers:
 
   packages/modules/inbox:
     dependencies:
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../ai
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@sendcms/security':
         specifier: workspace:*
         version: link:../../security

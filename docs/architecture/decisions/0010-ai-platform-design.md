@@ -26,8 +26,22 @@
   the pre-rendered content; a digest template in `@sendcms/email`),
   wired into the worker poll loop and the cron route. **No model call
   has happened yet — no provider key exists, so Steps 2–3 are
-  live-verified no-ops until a key is set.** Step 4 (form-builder +
-  drafts) is still pending.
+  live-verified no-ops until a key is set.** **Step 4 (form-builder +
+  reply drafts) is BUILT (same branch):** `packages/ai`
+  `suggestFields` (model suggests fields from a plain-language
+  description, validated against the FormFieldType enum) +
+  `draftReply` (model drafts a subject + body for one submission),
+  served by three session-gated api routes
+  (`POST /api/v1/forms/[formId]/ai/suggest-fields`,
+  `POST /api/v1/inbox/[submissionId]/ai/draft-reply`,
+  `POST /api/v1/inbox/[submissionId]/ai/send-reply`), with dashboard
+  UI in the form Fields tab (AI panel: describe → review → add
+  selected) and the inbox detail (Reply section: draft → review/edit
+  → send). Replies go through the outbox as a new
+  `EmailJobType.SUBMISSION_REPLY` job (owner's words on the payload;
+  the model is never re-run at send time). **Phase 12 is complete —
+  all four capabilities built; no model call has happened yet (no
+  provider key exists).**
 - Context: the audit's Phase 12 ("AI foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
   design document now (2026-11-19) and will decide separately when — or

@@ -4,7 +4,9 @@ import { useState } from "react"
 import {
   useAddField,
   useDeleteField,
+  useSuggestFields,
   useUpdateField,
+  type AiFieldSuggestion,
 } from "@sendcms/forms/queries"
 import type { FormDetail } from "@sendcms/forms/queries"
 import type { CreateFieldInput } from "@sendcms/forms/validators"
@@ -261,6 +263,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {form.aiEnabled && <AiFieldsPanel form={form} />}
       {form.fields.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No fields yet — add one below.
@@ -357,5 +360,151 @@ function DeleteFieldButton({
     >
       Delete
     </Button>
+  )
+}
+
+/** AI-assisted form building (Phase 12, Step 4). The owner describes
+    the form, the model suggests fields, and the owner reviews them
+    here before any field is created — nothing is added until the owner
+    picks fields and clicks "Add selected fields". */
+function AiFieldsPanel({ form }: { form: FormDetail }) {
+  const [prompt, setPrompt] = useState("")
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<string | null>(null)
+  const [added, setAdded] = useState(0)
+  const suggest = useSuggestFields(form.id)
+  const addField = useAddField(form.id)
+
+  const suggestions = suggest.data?.fields ?? []
+  const toggle = (name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const onSuggest = async () => {
+    setError(null)
+    setAdded(0)
+    try {
+      const result = await suggest.mutateAsync(prompt)
+      setSelected(new Set(result.fields.map((f) => f.name)))
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not suggest fields."
+      )
+    }
+  }
+
+  const onAddSelected = async () => {
+    setError(null)
+    const chosen = suggestions.filter((f) => selected.has(f.name))
+    let count = 0
+    for (const [i, field] of chosen.entries()) {
+      try {
+        await addField.mutateAsync({
+          name: field.name,
+          label: field.label,
+          type: field.type,
+          required: field.required,
+          placeholder: field.placeholder,
+          options: field.options,
+          order: form.fields.length + i,
+        })
+        count++
+      } catch (err) {
+        setError(
+          err instanceof ApiClientError
+            ? err.message
+            : `Could not add field "${field.label}".`
+        )
+        break
+      }
+    }
+    setAdded(count)
+    if (count === chosen.length) {
+      suggest.reset()
+      setPrompt("")
+      setSelected(new Set())
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-4">
+      <p className="font-medium">Build with AI</p>
+      <p className="text-sm text-muted-foreground">
+        Describe the form in plain language and the AI will suggest fields.
+        Nothing is added until you review and pick them.
+      </p>
+      <div className="mt-3 flex flex-col gap-2">
+        <Textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="e.g. A contact form with name, email, and a message, plus a dropdown for the reason they are writing"
+          rows={2}
+        />
+        <div>
+          <Button
+            variant="outline"
+            onClick={onSuggest}
+            disabled={!prompt.trim() || suggest.isPending}
+          >
+            {suggest.isPending ? "Suggesting…" : "Suggest fields"}
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {added > 0 && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Added {added} field{added === 1 ? "" : "s"}.
+        </p>
+      )}
+      {suggestions.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2">
+          {suggestions.map((field: AiFieldSuggestion) => (
+            <label
+              key={field.name}
+              className="flex items-start gap-2 rounded border px-3 py-2"
+            >
+              <Checkbox
+                checked={selected.has(field.name)}
+                onCheckedChange={() => toggle(field.name)}
+              />
+              <span>
+                <span className="font-medium">{field.label}</span>{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                  {field.name}
+                </code>{" "}
+                <Badge variant="secondary">{TYPE_LABEL[field.type]}</Badge>{" "}
+                {field.required && <Badge>Required</Badge>}
+                {field.options && (
+                  <span className="text-xs text-muted-foreground">
+                    {field.options.join(", ")}
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+          <div>
+            <Button
+              onClick={onAddSelected}
+              disabled={selected.size === 0 || addField.isPending}
+            >
+              {addField.isPending
+                ? "Adding…"
+                : `Add selected field${selected.size === 1 ? "" : "s"} (${selected.size})`}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

@@ -7,7 +7,18 @@ import {
   db,
 } from "@sendcms/database"
 import { logAudit } from "@sendcms/security"
-import { ApiError, getSubmissionSender } from "@sendcms/shared"
+import {
+  ApiError,
+  getSubmissionSender,
+  previewSubmissionText,
+} from "@sendcms/shared"
+import {
+  draftReply,
+  getAiModel,
+  isAiConfigured,
+  type ReplyDraft,
+} from "@sendcms/ai"
+import { enqueueReply } from "@sendcms/notifications"
 
 // ---------------------------------------------------------------------------
 // Inbox dashboard. Admin-side reads and status changes.
@@ -272,7 +283,7 @@ export async function listSubmissionsForUser(
 
 export type InboxSubmissionDetail = Prisma.SubmissionGetPayload<{
   include: {
-    form: { select: { id: true; name: true } }
+    form: { select: { id: true; name: true; aiEnabled: true } }
     events: {
       include: { actor: { select: { name: true; email: true } } }
     }
@@ -286,7 +297,7 @@ export async function getSubmissionForUser(
   const submission = await db.submission.findFirst({
     where: { id: submissionId, form: { ownerId: userId } },
     include: {
-      form: { select: { id: true, name: true } },
+      form: { select: { id: true, name: true, aiEnabled: true } },
       events: {
         orderBy: { createdAt: "desc" },
         include: { actor: { select: { name: true, email: true } } },
@@ -416,4 +427,116 @@ export async function getUnreadSubmissionCountForUser(
   return db.submission.count({
     where: { status: SubmissionStatus.NEW, form: { ownerId: userId } },
   })
+}
+
+// ---------------------------------------------------------------------------
+// Auto-reply drafts (Phase 12, Step 4)
+// ---------------------------------------------------------------------------
+// Dashboard-initiated: the owner asks for a draft, the model writes it,
+// the owner reviews and edits it before anything is sent. The draft
+// function only returns a draft; the send function enqueues the
+// owner's (edited) words through the outbox.
+
+async function getOwnedSubmissionWithFormOrThrow(
+  userId: string,
+  submissionId: string
+) {
+  const submission = await db.submission.findFirst({
+    where: { id: submissionId, form: { ownerId: userId } },
+    include: {
+      form: { select: { id: true, name: true, aiEnabled: true } },
+    },
+  })
+  if (!submission) {
+    throw new ApiError("Submission not found.", 404)
+  }
+  return submission
+}
+
+function requireAiForForm(
+  form: { aiEnabled: boolean },
+  env: NodeJS.ProcessEnv
+): void {
+  if (!form.aiEnabled) {
+    throw new ApiError(
+      "AI is not enabled for this form. Enable it in the form settings first.",
+      403
+    )
+  }
+  if (!isAiConfigured(env)) {
+    throw new ApiError(
+      "No AI provider is configured. Set a provider key first.",
+      503
+    )
+  }
+}
+
+/** Drafts a reply to one submission. Returns the draft — nothing is
+    sent. Throws 403 when AI is off for the form, 503 when no provider
+    is configured. */
+export async function draftReplyForSubmission(
+  userId: string,
+  submissionId: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ReplyDraft> {
+  const submission = await getOwnedSubmissionWithFormOrThrow(
+    userId,
+    submissionId
+  )
+  requireAiForForm(submission.form, env)
+  const sender = getSubmissionSender(submission.data)
+  return draftReply({
+    model: getAiModel(env),
+    formName: submission.form.name,
+    submission: {
+      senderName: sender.name,
+      senderEmail: sender.email,
+      content: previewSubmissionText(submission.data),
+      receivedAt: submission.createdAt,
+    },
+  })
+}
+
+/** Sends the owner's reply to a submission's sender through the
+    outbox. The body is the owner's own (reviewed and edited) words —
+    the model is never involved in the send. Returns how many jobs
+    were enqueued. */
+export async function sendReplyToSubmission(
+  userId: string,
+  submissionId: string,
+  input: { subject: string; body: string }
+): Promise<{ enqueued: number }> {
+  const submission = await getOwnedSubmissionWithFormOrThrow(
+    userId,
+    submissionId
+  )
+  const sender = getSubmissionSender(submission.data)
+  if (!sender.email) {
+    throw new ApiError("This submission has no email address to reply to.", 422)
+  }
+  const subject = input.subject.trim()
+  const body = input.body.trim()
+  if (!subject || !body) {
+    throw new ApiError("Subject and body are both required.", 422)
+  }
+  if (subject.length > 200 || body.length > 2000) {
+    throw new ApiError("Reply is too long.", 422)
+  }
+  const enqueued = await enqueueReply({
+    formId: submission.formId,
+    submissionId: submission.id,
+    to: sender.email,
+    subject,
+    body,
+    formName: submission.form.name,
+  })
+  await db.submissionEvent.create({
+    data: {
+      submissionId: submission.id,
+      type: SubmissionEventType.EMAIL_SENT,
+      detail: { reply: true },
+      actorId: userId,
+    },
+  })
+  return { enqueued }
 }

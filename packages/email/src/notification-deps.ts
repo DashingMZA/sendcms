@@ -6,6 +6,7 @@ import {
   submissionNotificationText,
 } from "./templates/submission-notification"
 import { Digest, digestText } from "./templates/digest"
+import { Reply, replyText } from "./templates/reply"
 
 /**
  * The platform notification dependencies, used by the notifications
@@ -31,8 +32,18 @@ async function renderDigest(
   }
 }
 
+async function renderReply(
+  props: Parameters<NotificationDeps["renderReply"]>[0]
+): Promise<{ html: string; text: string }> {
+  return {
+    html: await render(Reply(props)),
+    text: replyText(props),
+  }
+}
+
 export const notificationDeps: NotificationDeps = {
   sendEmail: sendPlatformEmail,
   renderNotification: renderSubmissionNotification,
   renderDigest,
+  renderReply,
 }

@@ -10,6 +10,12 @@ import {
 import { ApiError } from "@sendcms/shared"
 
 import { logAudit } from "@sendcms/security"
+import {
+  getAiModel,
+  isAiConfigured,
+  suggestFields,
+  type FieldSuggestions,
+} from "@sendcms/ai"
 
 import type {
   AddNotificationEmailInput,
@@ -453,5 +459,46 @@ export async function deleteNotificationEmailForUser(
       event: "notification-removed",
       email: row.email,
     },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// AI-assisted form building (Phase 12, Step 4)
+// ---------------------------------------------------------------------------
+// Dashboard-initiated: the owner describes the form, the model suggests
+// fields, the owner reviews them before any field is created. This
+// function only returns suggestions — it never creates a field.
+
+/** Suggests fields for a form from a plain-language description.
+    The owner reviews the suggestions in the dashboard and picks which
+    to add. Throws 403 when AI is off for the form, 503 when no
+    provider is configured. */
+export async function suggestFieldsForForm(
+  userId: string,
+  formId: string,
+  prompt: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<FieldSuggestions> {
+  const form = await getOwnedFormOrThrow(userId, formId)
+  if (!form.aiEnabled) {
+    throw new ApiError(
+      "AI is not enabled for this form. Enable it in the form settings first.",
+      403
+    )
+  }
+  if (!isAiConfigured(env)) {
+    throw new ApiError(
+      "No AI provider is configured. Set a provider key first.",
+      503
+    )
+  }
+  return suggestFields({
+    model: getAiModel(env),
+    prompt,
+    existingFields: form.fields.map((f) => ({
+      name: f.name,
+      label: f.label,
+      type: f.type,
+    })),
   })
 }

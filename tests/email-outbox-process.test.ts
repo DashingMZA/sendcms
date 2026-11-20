@@ -34,11 +34,15 @@ const mockRenderNotification = vi.hoisted(() =>
 const mockRenderDigest = vi.hoisted(() =>
   vi.fn(async () => ({ html: "<p>digest</p>", text: "digest" }))
 )
+const mockRenderReply = vi.hoisted(() =>
+  vi.fn(async () => ({ html: "<p>reply</p>", text: "reply" }))
+)
 vi.mock("@sendcms/email", () => ({
   notificationDeps: {
     sendEmail: mockSendEmail,
     renderNotification: mockRenderNotification,
     renderDigest: mockRenderDigest,
+    renderReply: mockRenderReply,
   },
 }))
 
@@ -243,6 +247,47 @@ describe("processEmailOutbox", () => {
     const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
     expect(mockRenderDigest).not.toHaveBeenCalled()
+    const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
+      data: { status: string }
+    }
+    expect(updateArg.data.status).toBe("FAILED")
+  })
+
+  it("sends a SUBMISSION_REPLY job from its stored payload", async () => {
+    const replyJob = makeJob({
+      type: "SUBMISSION_REPLY",
+      to: "ali@example.com",
+      subject: "Re: your order",
+      payload: {
+        formName: "Contact us",
+        body: "Hi Ali, your order is on its way.",
+        accentColor: "#0891b2",
+        footerText: "Reply footer.",
+      },
+    })
+    mockDb.emailJob.findMany.mockResolvedValue([replyJob])
+    const result = await processEmailOutbox()
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(mockRenderReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        formName: "Contact us",
+        body: "Hi Ali, your order is on its way.",
+      })
+    )
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "ali@example.com" })
+    )
+  })
+
+  it("fails a SUBMISSION_REPLY job terminally when its payload is malformed", async () => {
+    const replyJob = makeJob({
+      type: "SUBMISSION_REPLY",
+      payload: { formName: "Contact us" },
+    })
+    mockDb.emailJob.findMany.mockResolvedValue([replyJob])
+    const result = await processEmailOutbox()
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(mockRenderReply).not.toHaveBeenCalled()
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
     }

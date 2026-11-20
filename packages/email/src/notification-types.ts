@@ -36,6 +36,7 @@ export type NotificationDeps = {
   sendEmail: NotificationEmailSender
   renderNotification: NotificationRenderer
   renderDigest: DigestRenderer
+  renderReply: ReplyRenderer
 }
 
 // Digest email (Phase 12, Step 3). The props are the pre-rendered
@@ -62,4 +63,19 @@ export type DigestProps = {
 
 export type DigestRenderer = (
   props: DigestProps
+) => Promise<{ html: string; text: string }>
+
+// Reply email (Phase 12, Step 4). The props are the owner's reply —
+// written by the model as a draft, then reviewed and edited by the
+// owner before send. The body is the owner's own words, stored on the
+// EmailJob payload at enqueue time.
+export type ReplyProps = {
+  formName: string
+  body: string
+  accentColor: string
+  footerText: string
+}
+
+export type ReplyRenderer = (
+  props: ReplyProps
 ) => Promise<{ html: string; text: string }>

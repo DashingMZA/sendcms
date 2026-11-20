@@ -23,6 +23,8 @@ export type {
   NotificationDeps,
   NotificationEmailSender,
   NotificationRenderer,
+  ReplyProps,
+  ReplyRenderer,
   SubmissionNotificationField,
   SubmissionNotificationProps,
 } from "./notification-types"
@@ -38,3 +40,4 @@ export {
   submissionNotificationText,
 } from "./templates/submission-notification"
 export { Digest, digestText } from "./templates/digest"
+export { Reply, replyText } from "./templates/reply"

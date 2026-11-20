@@ -4,6 +4,7 @@ import type { FormDetail, FormWithCounts } from "./service"
 import type {
   FormDomain,
   FormField,
+  FormFieldType,
   NotificationSettings,
 } from "@sendcms/database"
 
@@ -88,6 +89,31 @@ export function useAddField(formId: string) {
         body: JSON.stringify(body),
       }),
     onSuccess: () => invalidateForm(qc, formId),
+  })
+}
+
+/** AI-assisted form building (Phase 12, Step 4). Suggests fields from
+    a plain-language description; the owner reviews the suggestions
+    before any field is created — this hook never creates a field. */
+export type AiFieldSuggestion = {
+  name: string
+  label: string
+  type: FormFieldType
+  required: boolean
+  placeholder?: string
+  options?: string[]
+}
+
+export function useSuggestFields(formId: string) {
+  return useMutation({
+    mutationFn: (prompt: string) =>
+      apiFetch<{ fields: AiFieldSuggestion[] }>(
+        `/api/v1/forms/${formId}/ai/suggest-fields`,
+        {
+          method: "POST",
+          body: JSON.stringify({ prompt }),
+        }
+      ),
   })
 }
 

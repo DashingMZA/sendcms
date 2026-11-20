@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sendcms/ai": "workspace:*",
     "@sendcms/database": "workspace:*",
+    "@sendcms/notifications": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"
