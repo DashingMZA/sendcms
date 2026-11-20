@@ -1,0 +1,28 @@
+{
+  "name": "@sendcms/ai",
+  "version": "0.1.0",
+  "description": "AI provider plumbing for SendCMS (Vercel AI SDK, 5 providers).",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.107",
+    "@ai-sdk/deepseek": "3.0.89",
+    "@ai-sdk/google": "4.0.123",
+    "@ai-sdk/openai": "4.0.122",
+    "@openrouter/ai-sdk-provider": "3.1.0",
+    "ai": "7.0.178"
+  },
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "@types/node": "^26.6.6",
+    "typescript": "6.0.3"
+  }
+}

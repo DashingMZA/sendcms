@@ -1,6 +1,16 @@
 # ADR 0010 — AI platform design (design only, not built)
 
 - Status: proposed (2026-11-19, Phase 12) — design only, **not implemented**
+- Build status (2026-11-20): Step 1 (per-form opt-in) and Step 1b
+  (provider plumbing) are BUILT on branch `feature/ai`. Step 1:
+  `Form.aiEnabled` + dashboard toggle. Step 1b: `packages/ai`
+  (`@sendcms/ai`) — Vercel AI SDK `ai` 7.0.178 (exact pin) with five
+  providers the owner named (OpenAI, Anthropic, Google Gemini,
+  DeepSeek, OpenRouter), selected by `AI_PROVIDER` or auto-detected
+  from the key present, model via `AI_MODEL` or a per-provider
+  default. No capability is built yet — no model call happens
+  anywhere. Steps 2–4 (spam re-scoring, digest, form-builder +
+  drafts) are still pending.
 - Context: the audit's Phase 12 ("AI foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
   design document now (2026-11-19) and will decide separately when — or
