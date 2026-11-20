@@ -39,6 +39,11 @@ export async function draftReply({
   const { object } = await generateObject({
     model,
     schema: ReplyDraftSchema,
+    // One retry only (default is 2) — same reason as suggestFields:
+    // an interactive call, and the dashboard proxy gives up after
+    // ~30s while the SDK's 3-attempt backoff burns ~30s on an
+    // overloaded model. A fast failure lets the owner retry at once.
+    maxRetries: 1,
     prompt: [
       "You are drafting a reply email for a website owner to a visitor who filled in their contact form.",
       "Write a polite, helpful reply in plain language. Answer what the visitor asked when the message makes that possible; otherwise acknowledge their message and say the owner will follow up.",

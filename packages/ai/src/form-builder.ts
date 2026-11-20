@@ -65,6 +65,12 @@ export async function suggestFields({
   const { object } = await generateObject({
     model,
     schema: FieldSuggestionsSchema,
+    // One retry only (default is 2). This is an interactive call: the
+    // dashboard's proxy to the api app gives up after ~30s, and the
+    // SDK's 3-attempt backoff alone burns ~30s on an overloaded model.
+    // A fast failure lets the owner retry at once; the worker paths
+    // (spam re-score, digest) keep the default retries.
+    maxRetries: 1,
     prompt: [
       "You are helping a website owner build a contact form.",
       "Suggest the fields for a form described below. Each field needs a lowercase snake_case name, a human-readable label, a type, and whether it is required.",
