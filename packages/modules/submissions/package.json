@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sendcms/ai": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
     "@sendcms/notifications": "workspace:*",

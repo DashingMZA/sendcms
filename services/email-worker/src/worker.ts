@@ -8,6 +8,7 @@
 import { createServer, type Server } from "node:http"
 import { createLogger } from "@sendcms/observability"
 import { processEmailOutbox } from "@sendcms/notifications"
+import { rescoreNewSubmissions } from "@sendcms/submissions"
 
 const logger = createLogger("email-worker")
 
@@ -24,6 +25,10 @@ export type EmailWorkerRun = {
   processed: number
   sent: number
   failed: number
+  /** NEW submissions the AI re-scored this poll (0 when AI is off). */
+  rescored: number
+  /** Of those, how many the model scored at/above the spam threshold. */
+  markedSpam: number
 }
 
 export type EmailWorkerHealth = {
@@ -60,16 +65,30 @@ export function createEmailWorker(options: EmailWorkerOptions = {}) {
     running = (async () => {
       try {
         const result = await processEmailOutbox({ limit: batchLimit })
-        lastRun = result
+        // AI spam re-scoring (Phase 12, Step 2): same poll, after the
+        // outbox drain. A no-op when no provider is configured or no
+        // form has AI on — and a failed re-score never fails the poll.
+        let rescored = 0
+        let markedSpam = 0
+        let rescoreError: string | null = null
+        try {
+          const rescore = await rescoreNewSubmissions({ limit: batchLimit })
+          rescored = rescore.checked
+          markedSpam = rescore.markedSpam
+        } catch (err) {
+          rescoreError = err instanceof Error ? err.message : "Unknown error"
+          logger.error("ai rescore poll failed", { error: err })
+        }
+        lastRun = { ...result, rescored, markedSpam }
         lastRunAt = new Date().toISOString()
-        lastError = null
-        return result
+        lastError = rescoreError
+        return lastRun
       } catch (err) {
         // A failed poll must not kill the worker — the next poll
         // retries. The health endpoint surfaces the error.
         lastError = err instanceof Error ? err.message : "Unknown error"
         logger.error("outbox poll failed", { error: err })
-        return { processed: 0, sent: 0, failed: 0 }
+        return { processed: 0, sent: 0, failed: 0, rescored: 0, markedSpam: 0 }
       } finally {
         running = null
       }

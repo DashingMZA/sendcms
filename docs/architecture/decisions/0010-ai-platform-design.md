@@ -8,9 +8,17 @@
   providers the owner named (OpenAI, Anthropic, Google Gemini,
   DeepSeek, OpenRouter), selected by `AI_PROVIDER` or auto-detected
   from the key present, model via `AI_MODEL` or a per-provider
-  default. No capability is built yet — no model call happens
-  anywhere. Steps 2–4 (spam re-scoring, digest, form-builder +
-  drafts) are still pending.
+  default. **Step 2 (spam re-scoring) is BUILT (same branch):**
+  `packages/ai` `rescoreSpam` (model scores 0–100 + a reason,
+  threshold `AI_SPAM_THRESHOLD` default 70), `packages/modules/submissions`
+  `rescoreNewSubmissions` (NEW + unscored + `aiEnabled` forms only;
+  daily cap `AI_DAILY_CALL_CAP` default 100 per form, DB-backed in
+  `AiDailyUsage`; the model can only ADD a SPAM flag, never unflag),
+  wired into the email worker's poll loop and the cron route (so
+  serverless deployments re-score too). **No model call has happened
+  yet — no provider key exists, so the step is a live-verified no-op
+  until a key is set.** Steps 3–4 (digest, form-builder + drafts)
+  are still pending.
 - Context: the audit's Phase 12 ("AI foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
   design document now (2026-11-19) and will decide separately when — or

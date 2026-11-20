@@ -290,6 +290,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      ai:
+        specifier: 7.0.178
+        version: 7.0.178(zod@4.6.7)
       eslint:
         specifier: ^10.15.0
         version: 10.15.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -661,6 +664,9 @@ importers:
       ai:
         specifier: 7.0.178
         version: 7.0.178(zod@4.6.7)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
     devDependencies:
       '@sendcms/config':
         specifier: workspace:*
@@ -1049,6 +1055,9 @@ importers:
 
   packages/modules/submissions:
     dependencies:
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../ai
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
@@ -1233,6 +1242,9 @@ importers:
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sendcms/submissions':
+        specifier: workspace:*
+        version: link:../../packages/modules/submissions
       dotenv:
         specifier: ^18.0.10
         version: 18.0.10

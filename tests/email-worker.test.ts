@@ -6,8 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 const mockProcessOutbox = vi.hoisted(() =>
   vi.fn(async () => ({ processed: 1, sent: 1, failed: 0 }))
 )
+const mockRescore = vi.hoisted(() =>
+  vi.fn(async () => ({ checked: 2, markedSpam: 1, skipped: 0 }))
+)
 vi.mock("@sendcms/notifications", () => ({
   processEmailOutbox: mockProcessOutbox,
+}))
+vi.mock("@sendcms/submissions", () => ({
+  rescoreNewSubmissions: mockRescore,
 }))
 import { createEmailWorker } from "@sendcms/email-worker/worker"
 
@@ -20,6 +26,7 @@ afterEach(async () => {
   }
   vi.clearAllMocks()
   mockProcessOutbox.mockResolvedValue({ processed: 1, sent: 1, failed: 0 })
+  mockRescore.mockResolvedValue({ checked: 2, markedSpam: 1, skipped: 0 })
 })
 
 describe("createEmailWorker", () => {
@@ -35,12 +42,24 @@ describe("createEmailWorker", () => {
     const health = (await res.json()) as {
       status: string
       polling: boolean
-      lastRun: { processed: number; sent: number; failed: number } | null
+      lastRun: {
+        processed: number
+        sent: number
+        failed: number
+        rescored: number
+        markedSpam: number
+      } | null
       lastError: string | null
     }
     expect(health.status).toBe("ok")
     expect(health.polling).toBe(true)
-    expect(health.lastRun).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(health.lastRun).toEqual({
+      processed: 1,
+      sent: 1,
+      failed: 0,
+      rescored: 2,
+      markedSpam: 1,
+    })
     expect(health.lastError).toBeNull()
   })
 
@@ -74,7 +93,14 @@ describe("createEmailWorker", () => {
   it("runOnce returns the poll result directly", async () => {
     worker = createEmailWorker({ port: 0, pollIntervalMs: 60_000 })
     const result = await worker.runOnce()
-    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(result).toEqual({
+      processed: 1,
+      sent: 1,
+      failed: 0,
+      rescored: 2,
+      markedSpam: 1,
+    })
     expect(mockProcessOutbox).toHaveBeenCalledWith({ limit: 100 })
+    expect(mockRescore).toHaveBeenCalledWith({ limit: 100 })
   })
 })

@@ -256,6 +256,7 @@ model Form {
   submissions          Submission[]
   notificationSettings NotificationSettings[]
   emailJobs            EmailJob[]
+  aiDailyUsage         AiDailyUsage[]
 
   @@index([ownerId])
   @@index([ownerId, active])
@@ -319,6 +320,11 @@ model Submission {
   idempotencyKey String?
   // Hash of the canonical payload, for the Phase 5 content-hash dedupe window.
   contentHash    String?
+  // Phase 12 (AI spam re-scoring): the model's 0–100 spam score and
+  // when it was assigned. NULL = not yet scored. The score is a record
+  // of the verdict, not a filter — the status is what the inbox reads.
+  aiSpamScore    Int?
+  aiScoredAt     DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -470,4 +476,25 @@ model ApiKeyRateLimit {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Phase 12 (AI spam re-scoring): one row per form per day, counting
+// model calls. The daily cap (AI_DAILY_CALL_CAP, default 100) is
+// enforced against this counter so one form's spam wave never becomes
+// a billing event. Created lazily on the form's first AI call of the
+// day; forms with AI off have no rows.
+model AiDailyUsage {
+  id     String   @id @default(cuid())
+  formId String
+  form   Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  // The day this row counts, as a DATE (UTC midnight). One row per
+  // form per day.
+  date   DateTime @db.Date
+  calls  Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([formId, date])
+  @@index([formId])
 }

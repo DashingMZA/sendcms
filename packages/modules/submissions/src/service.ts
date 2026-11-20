@@ -9,6 +9,12 @@ import type { FormField } from "@sendcms/database"
 
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
+import {
+  getAiModel,
+  getSpamThreshold,
+  isAiConfigured,
+  rescoreSpam,
+} from "@sendcms/ai"
 import { normalizeDomain } from "@sendcms/domains"
 import { verifyTurnstileToken } from "./turnstile"
 import { enqueueSubmissionNotifications } from "@sendcms/notifications"
@@ -491,4 +497,133 @@ export async function submitForm(
     }
     throw err
   }
+}
+
+// ---------------------------------------------------------------------------
+// AI spam re-scoring (Phase 12, Step 2)
+// ---------------------------------------------------------------------------
+// Async, after the save: the worker (and the cron route on serverless)
+// re-scores NEW submissions on AI-enabled forms. The model can only
+// ADD spam flags — a submission the heuristics (or a human) already
+// marked SPAM is never touched, and a low score never unflags one.
+// When no provider is configured the whole step is a no-op, so the
+// submit path and the inbox behave exactly as before.
+
+/** Model calls allowed per form per day. Overridable via AI_DAILY_CALL_CAP. */
+export const DEFAULT_AI_DAILY_CALL_CAP = 100
+
+export function getAiDailyCallCap(
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const raw = Number(env.AI_DAILY_CALL_CAP)
+  if (Number.isFinite(raw) && raw > 0) return Math.trunc(raw)
+  return DEFAULT_AI_DAILY_CALL_CAP
+}
+
+/** UTC midnight starting the day `at` falls on — the AiDailyUsage bucket. */
+export function startOfUtcDay(at: Date = new Date()): Date {
+  const day = new Date(at)
+  day.setUTCHours(0, 0, 0, 0)
+  return day
+}
+
+export type RescoreResult = {
+  checked: number
+  markedSpam: number
+  skipped: number
+}
+
+/** Re-scores unscored NEW submissions on AI-enabled forms. Returns the
+    outcome counts. A single failed model call is logged and skipped —
+    it never fails the batch. */
+export async function rescoreNewSubmissions({
+  limit = 25,
+  env = process.env,
+}: {
+  limit?: number
+  env?: NodeJS.ProcessEnv
+} = {}): Promise<RescoreResult> {
+  if (!isAiConfigured(env)) return { checked: 0, markedSpam: 0, skipped: 0 }
+  const threshold = getSpamThreshold(env)
+  const cap = getAiDailyCallCap(env)
+  const model = getAiModel(env)
+  const today = startOfUtcDay()
+
+  const candidates = await db.submission.findMany({
+    where: {
+      status: SubmissionStatus.NEW,
+      aiScoredAt: null,
+      form: { aiEnabled: true },
+    },
+    include: { form: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  })
+
+  let checked = 0
+  let markedSpam = 0
+  let skipped = 0
+  const cappedForms = new Set<string>()
+  for (const submission of candidates) {
+    const formId = submission.formId
+    if (cappedForms.has(formId)) {
+      skipped++
+      continue
+    }
+    const usage = await db.aiDailyUsage.findUnique({
+      where: { formId_date: { formId, date: today } },
+    })
+    if ((usage?.calls ?? 0) >= cap) {
+      cappedForms.add(formId)
+      skipped++
+      continue
+    }
+    let verdict
+    try {
+      verdict = await rescoreSpam({
+        model,
+        formName: submission.form.name,
+        data: submission.data as Record<string, unknown>,
+      })
+    } catch (err) {
+      // A failed model call is retried on a later poll (the row stays
+      // unscored) — it must not fail the batch or lose the submission.
+      logger.error("ai rescore failed", { error: err, formId })
+      skipped++
+      continue
+    }
+    await db.aiDailyUsage.upsert({
+      where: { formId_date: { formId, date: today } },
+      create: { formId, date: today, calls: 1 },
+      update: { calls: { increment: 1 } },
+    })
+    const isSpam = verdict.score >= threshold
+    const now = new Date()
+    await db.$transaction(async (tx) => {
+      await tx.submission.update({
+        where: { id: submission.id },
+        data: {
+          aiSpamScore: verdict.score,
+          aiScoredAt: now,
+          ...(isSpam ? { status: SubmissionStatus.SPAM } : {}),
+        },
+      })
+      if (isSpam) {
+        await tx.submissionEvent.create({
+          data: {
+            submissionId: submission.id,
+            type: SubmissionEventType.MARKED_SPAM,
+            detail: {
+              source: "ai",
+              score: verdict.score,
+              reason: verdict.reason,
+            },
+          },
+        })
+      }
+    })
+    checked++
+    if (isSpam) markedSpam++
+  }
+  return { checked, markedSpam, skipped }
 }

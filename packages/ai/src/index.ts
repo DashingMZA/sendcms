@@ -8,3 +8,10 @@ export {
   resolveAiProvider,
 } from "./provider"
 export type { AiProvider, AiProviderName } from "./provider"
+export {
+  DEFAULT_SPAM_THRESHOLD,
+  SpamVerdictSchema,
+  getSpamThreshold,
+  rescoreSpam,
+} from "./spam"
+export type { SpamVerdict } from "./spam"
