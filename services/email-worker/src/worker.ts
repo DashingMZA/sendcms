@@ -8,7 +8,7 @@
 import { createServer, type Server } from "node:http"
 import { createLogger } from "@sendcms/observability"
 import { processEmailOutbox } from "@sendcms/notifications"
-import { rescoreNewSubmissions } from "@sendcms/submissions"
+import { rescoreNewSubmissions, sendDueDigests } from "@sendcms/submissions"
 
 const logger = createLogger("email-worker")
 
@@ -29,6 +29,8 @@ export type EmailWorkerRun = {
   rescored: number
   /** Of those, how many the model scored at/above the spam threshold. */
   markedSpam: number
+  /** Digest emails enqueued this poll (0 when AI is off or none due). */
+  digests: number
 }
 
 export type EmailWorkerHealth = {
@@ -79,16 +81,35 @@ export function createEmailWorker(options: EmailWorkerOptions = {}) {
           rescoreError = err instanceof Error ? err.message : "Unknown error"
           logger.error("ai rescore poll failed", { error: err })
         }
-        lastRun = { ...result, rescored, markedSpam }
+        // AI inbox digest (Phase 12, Step 3): same poll, after the
+        // re-scoring. A no-op when no provider is configured, no form
+        // has AI on, or no digest is due.
+        let digests = 0
+        let digestError: string | null = null
+        try {
+          const digest = await sendDueDigests({ limit: batchLimit })
+          digests = digest.sent
+        } catch (err) {
+          digestError = err instanceof Error ? err.message : "Unknown error"
+          logger.error("ai digest poll failed", { error: err })
+        }
+        lastRun = { ...result, rescored, markedSpam, digests }
         lastRunAt = new Date().toISOString()
-        lastError = rescoreError
+        lastError = rescoreError ?? digestError
         return lastRun
       } catch (err) {
         // A failed poll must not kill the worker — the next poll
         // retries. The health endpoint surfaces the error.
         lastError = err instanceof Error ? err.message : "Unknown error"
         logger.error("outbox poll failed", { error: err })
-        return { processed: 0, sent: 0, failed: 0, rescored: 0, markedSpam: 0 }
+        return {
+          processed: 0,
+          sent: 0,
+          failed: 0,
+          rescored: 0,
+          markedSpam: 0,
+          digests: 0,
+        }
       } finally {
         running = null
       }

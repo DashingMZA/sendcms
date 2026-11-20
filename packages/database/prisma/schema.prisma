@@ -73,6 +73,10 @@ enum EmailJobType {
   SUBMISSION_NOTIFICATION
   EMAIL_VERIFICATION
   PASSWORD_RESET
+  // Phase 12 (AI digest): a daily/weekly summary of a form's new
+  // submissions, emailed to the form owner. The content is generated
+  // at enqueue time and stored in EmailJob.payload.
+  DIGEST
 }
 
 enum EmailJobStatus {
@@ -237,12 +241,17 @@ model Form {
   redirectUrl      String?
   honeypotEnabled  Boolean  @default(true)
   turnstileEnabled Boolean  @default(false)
-  // Phase 12 (AI foundation): per-form opt-in for AI features
+  // Phase 12 (AI digest): per-form opt-in for AI features
   // (spam re-scoring, digest, form-builder, reply drafts). Default OFF —
   // no submission content reaches a model provider unless the owner
   // enables AI for this form. No AI capability reads this field until
   // its own step ships; it is only the privacy gate.
   aiEnabled        Boolean  @default(false)
+  // Phase 12 (AI digest): when the last digest email was sent for this
+  // form. NULL = never. The digest covers NEW submissions created after
+  // this timestamp; the worker sends a new digest once the interval
+  // (AI_DIGEST_INTERVAL_HOURS, default 24) has passed.
+  lastDigestAt     DateTime?
   // Max submissions accepted per calendar day; null = unlimited.
   dailyLimit       Int?
   createdAt        DateTime @default(now())
@@ -388,6 +397,11 @@ model EmailJob {
   lastError         String?
   // Provider-side id (e.g. Resend message id) for delivery tracking.
   providerMessageId String?
+  // Phase 12 (AI digest): the pre-rendered digest content for DIGEST
+  // jobs (form name, count, model summary, highlights, submission
+  // list). NULL for every other job type — those render from their
+  // submission + form at send time instead.
+  payload           Json?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

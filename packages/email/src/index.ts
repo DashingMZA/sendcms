@@ -17,6 +17,9 @@ export {
 export { sendPasswordResetEmail, sendVerificationEmail } from "./auth-mailer"
 export { notificationDeps } from "./notification-deps"
 export type {
+  DigestItem,
+  DigestProps,
+  DigestRenderer,
   NotificationDeps,
   NotificationEmailSender,
   NotificationRenderer,
@@ -34,3 +37,4 @@ export {
   SubmissionNotification,
   submissionNotificationText,
 } from "./templates/submission-notification"
+export { Digest, digestText } from "./templates/digest"

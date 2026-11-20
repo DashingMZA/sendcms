@@ -15,10 +15,19 @@
   daily cap `AI_DAILY_CALL_CAP` default 100 per form, DB-backed in
   `AiDailyUsage`; the model can only ADD a SPAM flag, never unflag),
   wired into the email worker's poll loop and the cron route (so
-  serverless deployments re-score too). **No model call has happened
-  yet — no provider key exists, so the step is a live-verified no-op
-  until a key is set.** Steps 3–4 (digest, form-builder + drafts)
-  are still pending.
+  serverless deployments re-score too). **Step 3 (inbox digest) is
+  BUILT (same branch):** `packages/ai` `generateDigest` (model writes
+  a 2–3 sentence summary + up to 5 highlights, interval
+  `AI_DIGEST_INTERVAL_HOURS` default 24 = daily), `sendDueDigests`
+  in `@sendcms/submissions` (AI-enabled forms only; covers NEW
+  submissions since `Form.lastDigestAt`; skips empty forms; window
+  advances only when a digest is sent), emailed to the form owner via
+  the outbox (new `EmailJobType.DIGEST` + `EmailJob.payload` holding
+  the pre-rendered content; a digest template in `@sendcms/email`),
+  wired into the worker poll loop and the cron route. **No model call
+  has happened yet — no provider key exists, so Steps 2–3 are
+  live-verified no-ops until a key is set.** Step 4 (form-builder +
+  drafts) is still pending.
 - Context: the audit's Phase 12 ("AI foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
   design document now (2026-11-19) and will decide separately when — or

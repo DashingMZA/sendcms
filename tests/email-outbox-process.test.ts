@@ -31,10 +31,14 @@ const mockSendEmail = vi.hoisted(() =>
 const mockRenderNotification = vi.hoisted(() =>
   vi.fn(async () => ({ html: "<p>hi</p>", text: "hi" }))
 )
+const mockRenderDigest = vi.hoisted(() =>
+  vi.fn(async () => ({ html: "<p>digest</p>", text: "digest" }))
+)
 vi.mock("@sendcms/email", () => ({
   notificationDeps: {
     sendEmail: mockSendEmail,
     renderNotification: mockRenderNotification,
+    renderDigest: mockRenderDigest,
   },
 }))
 
@@ -195,5 +199,53 @@ describe("processEmailOutbox", () => {
     const result = await processEmailOutbox()
     expect(result).toEqual({ processed: 1, sent: 0, failed: 0 })
     expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
+  it("sends a DIGEST job from its stored payload without a submission", async () => {
+    const digestJob = makeJob({
+      type: "DIGEST",
+      submissionId: null,
+      payload: {
+        formName: "Contact us",
+        count: 2,
+        summary: "Two customers asked about orders.",
+        highlights: ["Ali needs help with an order."],
+        items: [
+          {
+            senderName: "Ali",
+            snippet: "I need help with my order.",
+            receivedAt: new Date("2026-11-20T10:00:00Z"),
+          },
+        ],
+        inboxUrl: "http://localhost:3002/dashboard/inbox?formId=form-1",
+        accentColor: "#0891b2",
+        footerText: "Digest footer.",
+      },
+    })
+    mockDb.emailJob.findMany.mockResolvedValue([digestJob])
+    const result = await processEmailOutbox()
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(mockRenderDigest).toHaveBeenCalledWith(
+      expect.objectContaining({ formName: "Contact us", count: 2 })
+    )
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "owner@example.com" })
+    )
+  })
+
+  it("fails a DIGEST job terminally when its payload is malformed", async () => {
+    const digestJob = makeJob({
+      type: "DIGEST",
+      submissionId: null,
+      payload: { formName: "Contact us" },
+    })
+    mockDb.emailJob.findMany.mockResolvedValue([digestJob])
+    const result = await processEmailOutbox()
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(mockRenderDigest).not.toHaveBeenCalled()
+    const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
+      data: { status: string }
+    }
+    expect(updateArg.data.status).toBe("FAILED")
   })
 })

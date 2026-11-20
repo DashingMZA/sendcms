@@ -7,17 +7,26 @@ import {
 } from "@sendcms/database"
 import type { FormField } from "@sendcms/database"
 
-import { ApiError } from "@sendcms/shared"
+import {
+  ApiError,
+  getSubmissionSender,
+  previewSubmissionText,
+} from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
 import {
+  generateDigest,
   getAiModel,
+  getDigestIntervalHours,
   getSpamThreshold,
   isAiConfigured,
   rescoreSpam,
 } from "@sendcms/ai"
 import { normalizeDomain } from "@sendcms/domains"
+import {
+  enqueueDigest,
+  enqueueSubmissionNotifications,
+} from "@sendcms/notifications"
 import { verifyTurnstileToken } from "./turnstile"
-import { enqueueSubmissionNotifications } from "@sendcms/notifications"
 import { HONEYPOT_FIELD, type SubmitBodyInput } from "./validators"
 
 const logger = createLogger("submissions")
@@ -626,4 +635,133 @@ export async function rescoreNewSubmissions({
     if (isSpam) markedSpam++
   }
   return { checked, markedSpam, skipped }
+}
+
+// ---------------------------------------------------------------------------
+// AI inbox digest (Phase 12, Step 3)
+// ---------------------------------------------------------------------------
+// Once per interval (AI_DIGEST_INTERVAL_HOURS, default 24 = daily),
+// the worker emails each AI-enabled form's owner a summary of the
+// form's NEW submissions since the last digest. The model writes the
+// summary; the email goes through the outbox (EmailJobType.DIGEST)
+// so delivery is retried like any other notification. A form with no
+// new submissions gets no email, and the window only advances when a
+// digest is actually sent.
+
+/** New submissions in a digest, most recent last. */
+export const DIGEST_MAX_SUBMISSIONS = 50
+
+export type DigestResult = {
+  sent: number
+  skipped: number
+}
+
+function dashboardInboxUrl(formId: string): string {
+  const base =
+    process.env.NEXT_PUBLIC_DASHBOARD_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "http://localhost:3002"
+  return `${base}/dashboard/inbox?formId=${formId}`
+}
+
+/** Sends every due digest. Returns the outcome counts. A single
+    failed model call is logged and the form is skipped — it never
+    fails the batch, and the window does not advance. */
+export async function sendDueDigests({
+  limit = 25,
+  env = process.env,
+}: {
+  limit?: number
+  env?: NodeJS.ProcessEnv
+} = {}): Promise<DigestResult> {
+  if (!isAiConfigured(env)) return { sent: 0, skipped: 0 }
+  const intervalMs = getDigestIntervalHours(env) * 3_600_000
+  const model = getAiModel(env)
+  const dueAt = new Date(Date.now() - intervalMs)
+
+  const forms = await db.form.findMany({
+    where: {
+      aiEnabled: true,
+      OR: [{ lastDigestAt: null }, { lastDigestAt: { lte: dueAt } }],
+    },
+    include: { owner: { select: { email: true } } },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  })
+
+  let sent = 0
+  let skipped = 0
+  for (const form of forms) {
+    const since = form.lastDigestAt ?? new Date(0)
+    const submissions = await db.submission.findMany({
+      where: {
+        formId: form.id,
+        status: SubmissionStatus.NEW,
+        createdAt: { gt: since },
+      },
+      orderBy: { createdAt: "asc" },
+      take: DIGEST_MAX_SUBMISSIONS,
+    })
+    if (submissions.length === 0) {
+      skipped++
+      continue
+    }
+    let summary
+    try {
+      summary = await generateDigest({
+        model,
+        formName: form.name,
+        submissions: submissions.map((s) => {
+          const sender = getSubmissionSender(s.data)
+          return {
+            senderName: sender.name,
+            senderEmail: sender.email,
+            snippet: previewSubmissionText(s.data).slice(0, 200),
+            receivedAt: s.createdAt,
+          }
+        }),
+      })
+    } catch (err) {
+      // A failed model call retries on a later poll (the window does
+      // not advance) — it must not fail the batch.
+      logger.error("ai digest failed", { error: err, formId: form.id })
+      skipped++
+      continue
+    }
+    const now = new Date()
+    // Enqueue first, then advance the window: a failed enqueue must
+    // not move the window (those submissions would be lost), while a
+    // failed window update only re-sends the same digest on the next
+    // poll. (Same rule as the submission notifications: enqueue after
+    // the save, never inside its transaction.)
+    await enqueueDigest({
+      formId: form.id,
+      to: form.owner.email,
+      subject: `${submissions.length} new submission${submissions.length === 1 ? "" : "s"} on ${form.name}`,
+      payload: {
+        formName: form.name,
+        count: submissions.length,
+        summary: summary.summary,
+        highlights: summary.highlights,
+        items: submissions.map((s) => {
+          const sender = getSubmissionSender(s.data)
+          return {
+            senderName: sender.name,
+            snippet: previewSubmissionText(s.data).slice(0, 200),
+            receivedAt: s.createdAt,
+          }
+        }),
+        inboxUrl: dashboardInboxUrl(form.id),
+        accentColor: "#0891b2",
+        footerText:
+          "You're receiving this because you get digests for this form.",
+      },
+    })
+    await db.form.update({
+      where: { id: form.id },
+      data: { lastDigestAt: now },
+    })
+    sent++
+  }
+  return { sent, skipped }
 }

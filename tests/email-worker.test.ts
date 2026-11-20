@@ -9,11 +9,15 @@ const mockProcessOutbox = vi.hoisted(() =>
 const mockRescore = vi.hoisted(() =>
   vi.fn(async () => ({ checked: 2, markedSpam: 1, skipped: 0 }))
 )
+const mockDigest = vi.hoisted(() =>
+  vi.fn(async () => ({ sent: 1, skipped: 0 }))
+)
 vi.mock("@sendcms/notifications", () => ({
   processEmailOutbox: mockProcessOutbox,
 }))
 vi.mock("@sendcms/submissions", () => ({
   rescoreNewSubmissions: mockRescore,
+  sendDueDigests: mockDigest,
 }))
 import { createEmailWorker } from "@sendcms/email-worker/worker"
 
@@ -27,6 +31,7 @@ afterEach(async () => {
   vi.clearAllMocks()
   mockProcessOutbox.mockResolvedValue({ processed: 1, sent: 1, failed: 0 })
   mockRescore.mockResolvedValue({ checked: 2, markedSpam: 1, skipped: 0 })
+  mockDigest.mockResolvedValue({ sent: 1, skipped: 0 })
 })
 
 describe("createEmailWorker", () => {
@@ -48,6 +53,7 @@ describe("createEmailWorker", () => {
         failed: number
         rescored: number
         markedSpam: number
+        digests: number
       } | null
       lastError: string | null
     }
@@ -59,6 +65,7 @@ describe("createEmailWorker", () => {
       failed: 0,
       rescored: 2,
       markedSpam: 1,
+      digests: 1,
     })
     expect(health.lastError).toBeNull()
   })
@@ -99,8 +106,10 @@ describe("createEmailWorker", () => {
       failed: 0,
       rescored: 2,
       markedSpam: 1,
+      digests: 1,
     })
     expect(mockProcessOutbox).toHaveBeenCalledWith({ limit: 100 })
     expect(mockRescore).toHaveBeenCalledWith({ limit: 100 })
+    expect(mockDigest).toHaveBeenCalledWith({ limit: 100 })
   })
 })

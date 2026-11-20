@@ -1,6 +1,7 @@
 import {
   EmailJobStatus,
   EmailJobType,
+  Prisma,
   SubmissionStatus,
   db,
   type EmailJob,
@@ -9,6 +10,7 @@ import {
 import { ApiError, getSubmissionSender } from "@sendcms/shared"
 import {
   notificationDeps,
+  type DigestProps,
   type SubmissionNotificationField,
   type SubmissionNotificationProps,
 } from "@sendcms/email"
@@ -38,6 +40,8 @@ import {
 // Re-exported for compatibility — the contract types now live in
 // `@sendcms/email` (one-way dependency: notifications → email).
 export type {
+  DigestItem,
+  DigestProps,
   NotificationDeps,
   NotificationEmailSender,
   NotificationRenderer,
@@ -125,6 +129,76 @@ export async function enqueueSubmissionNotifications(
   )
 }
 
+/** Creates one PENDING DIGEST job for the form owner. The digest
+    content is pre-rendered at enqueue time (the model's summary +
+    the submission list) and stored on the job payload — the send path
+    renders it, it never re-runs the model. */
+export async function enqueueDigest({
+  formId,
+  to,
+  subject,
+  payload,
+}: {
+  formId: string
+  to: string
+  subject: string
+  payload: DigestProps
+}): Promise<number> {
+  return enqueueEmailJobs([
+    {
+      type: EmailJobType.DIGEST,
+      to,
+      subject,
+      formId,
+      payload: payload as unknown as Prisma.InputJsonValue,
+    },
+  ])
+}
+
+/** The payload a DIGEST job carries. Written by the digest worker,
+    read by the send path — a malformed one fails the job, it never
+    sends a half-rendered digest. */
+export function parseDigestPayload(payload: unknown): DigestProps | null {
+  if (typeof payload !== "object" || payload === null) return null
+  const p = payload as Record<string, unknown>
+  if (
+    typeof p.formName !== "string" ||
+    typeof p.count !== "number" ||
+    typeof p.summary !== "string" ||
+    !Array.isArray(p.highlights) ||
+    !Array.isArray(p.items) ||
+    typeof p.inboxUrl !== "string"
+  ) {
+    return null
+  }
+  return {
+    formName: p.formName,
+    count: p.count,
+    summary: p.summary,
+    highlights: p.highlights.filter((h): h is string => typeof h === "string"),
+    items: p.items
+      .filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null
+      )
+      .map((item) => ({
+        senderName:
+          typeof item.senderName === "string" ? item.senderName : null,
+        snippet: typeof item.snippet === "string" ? item.snippet : "",
+        receivedAt:
+          item.receivedAt instanceof Date
+            ? item.receivedAt
+            : new Date(String(item.receivedAt)),
+      })),
+    inboxUrl: p.inboxUrl,
+    accentColor: typeof p.accentColor === "string" ? p.accentColor : "#0891b2",
+    footerText:
+      typeof p.footerText === "string"
+        ? p.footerText
+        : "You're receiving this because you get digests for this form.",
+  }
+}
+
 async function renderNotification(
   submission: SubmissionWithForm
 ): Promise<{ subject: string; html: string; text: string }> {
@@ -160,6 +234,24 @@ async function processOneJob(
 
   const attempts = job.attempts + 1
   try {
+    // DIGEST jobs carry their pre-rendered content on the payload —
+    // no submission to load, and the model is never re-run at send
+    // time.
+    if (job.type === EmailJobType.DIGEST) {
+      const props = parseDigestPayload(job.payload)
+      if (!props) {
+        throw new Error("Digest payload is missing or malformed.")
+      }
+      const { html, text } = await notificationDeps.renderDigest(props)
+      const { messageId } = await notificationDeps.sendEmail({
+        to: job.to,
+        subject: job.subject,
+        html,
+        text,
+      })
+      await markEmailJobSent(job.id, messageId)
+      return "sent"
+    }
     const full: EmailJobWithRelations | null = await loadEmailJob(job.id)
     if (!full?.submission || !full.form) {
       throw new Error("Submission or form no longer exists.")
@@ -184,7 +276,9 @@ async function processOneJob(
     await markEmailJobFailed(job.id, {
       error: message,
       attempts,
-      terminal: message === "Submission or form no longer exists.",
+      terminal:
+        message === "Submission or form no longer exists." ||
+        message === "Digest payload is missing or malformed.",
     })
     return "failed"
   }

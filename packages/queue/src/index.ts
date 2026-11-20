@@ -11,6 +11,7 @@
 import {
   EmailJobStatus,
   EmailJobType,
+  Prisma,
   db,
   type EmailJob,
   type Submission,
@@ -34,7 +35,11 @@ export type NewEmailJob = {
   to: string
   subject: string
   formId: string
-  submissionId: string
+  // Only submission-notification jobs point at a submission; DIGEST
+  // jobs (and auth jobs) have none.
+  submissionId?: string
+  // Only DIGEST jobs carry a payload (the pre-rendered digest content).
+  payload?: Prisma.InputJsonValue
 }
 
 /** Creates the jobs. Returns how many were created. */

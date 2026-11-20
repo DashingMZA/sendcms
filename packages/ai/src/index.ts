@@ -15,3 +15,10 @@ export {
   rescoreSpam,
 } from "./spam"
 export type { SpamVerdict } from "./spam"
+export {
+  DEFAULT_DIGEST_INTERVAL_HOURS,
+  DigestSummarySchema,
+  generateDigest,
+  getDigestIntervalHours,
+} from "./digest"
+export type { DigestSubmissionInput, DigestSummary } from "./digest"

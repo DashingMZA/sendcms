@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
-import { rescoreNewSubmissions } from "@sendcms/submissions"
+import { rescoreNewSubmissions, sendDueDigests } from "@sendcms/submissions"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
 // Email outbox worker (Phase 9). Hit on a schedule by the platform
@@ -13,6 +13,8 @@ import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 // Phase 12, Step 2: the same hit also runs the AI spam re-scoring, so
 // serverless deployments (no long-lived worker) still re-score. It is
 // a no-op when no provider is configured or no form has AI on.
+//
+// Phase 12, Step 3: the same hit also sends due AI digests.
 export async function GET(req: NextRequest) {
   try {
     const secret = process.env.CRON_SECRET
@@ -25,10 +27,12 @@ export async function GET(req: NextRequest) {
     }
     const result = await processEmailOutbox({ limit: 100 })
     const rescore = await rescoreNewSubmissions({ limit: 100 })
+    const digest = await sendDueDigests({ limit: 100 })
     return ok({
       ...result,
       rescored: rescore.checked,
       markedSpam: rescore.markedSpam,
+      digests: digest.sent,
     })
   } catch (err) {
     return handleApiError(err)

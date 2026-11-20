@@ -35,4 +35,31 @@ export type NotificationRenderer = (
 export type NotificationDeps = {
   sendEmail: NotificationEmailSender
   renderNotification: NotificationRenderer
+  renderDigest: DigestRenderer
 }
+
+// Digest email (Phase 12, Step 3). The props are the pre-rendered
+// digest content — generated at enqueue time by the worker and stored
+// on the EmailJob payload, then rendered at send time. `items` is the
+// mechanical list of the period's new submissions; `summary` and
+// `highlights` are the model's words.
+export type DigestItem = {
+  senderName: string | null
+  snippet: string
+  receivedAt: Date
+}
+
+export type DigestProps = {
+  formName: string
+  count: number
+  summary: string
+  highlights: string[]
+  items: DigestItem[]
+  inboxUrl: string
+  accentColor: string
+  footerText: string
+}
+
+export type DigestRenderer = (
+  props: DigestProps
+) => Promise<{ html: string; text: string }>
