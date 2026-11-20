@@ -237,6 +237,12 @@ model Form {
   redirectUrl      String?
   honeypotEnabled  Boolean  @default(true)
   turnstileEnabled Boolean  @default(false)
+  // Phase 12 (AI foundation): per-form opt-in for AI features
+  // (spam re-scoring, digest, form-builder, reply drafts). Default OFF —
+  // no submission content reaches a model provider unless the owner
+  // enables AI for this form. No AI capability reads this field until
+  // its own step ships; it is only the privacy gate.
+  aiEnabled        Boolean  @default(false)
   // Max submissions accepted per calendar day; null = unlimited.
   dailyLimit       Int?
   createdAt        DateTime @default(now())

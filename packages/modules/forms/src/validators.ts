@@ -145,6 +145,10 @@ export const UpdateFormSchema = z.object({
     .nullable(),
   honeypotEnabled: z.boolean().optional(),
   turnstileEnabled: z.boolean().optional(),
+  // Phase 12: per-form AI opt-in. Default OFF (DB default false) — no
+  // submission content reaches a model provider unless the owner
+  // enables AI for this form.
+  aiEnabled: z.boolean().optional(),
   dailyLimit: z.number().int().min(1).max(100000).optional().nullable(),
 })
 

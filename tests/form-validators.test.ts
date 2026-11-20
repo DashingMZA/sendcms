@@ -6,6 +6,7 @@ import {
   CreateFormSchema,
   LinkDomainSchema,
   UpdateFieldSchema,
+  UpdateFormSchema,
 } from "@sendcms/forms/validators"
 
 describe("CreateFormSchema", () => {
@@ -130,6 +131,21 @@ describe("LinkDomainSchema / AddNotificationEmailSchema", () => {
       AddNotificationEmailSchema.safeParse({ email: "owner@example.com" })
         .success
     ).toBe(true)
+  })
+})
+
+describe("UpdateFormSchema", () => {
+  it("accepts the AI opt-in flag and leaves it unset when omitted", () => {
+    const enabled = UpdateFormSchema.safeParse({ aiEnabled: true })
+    expect(enabled.success).toBe(true)
+    if (enabled.success) expect(enabled.data.aiEnabled).toBe(true)
+    const omitted = UpdateFormSchema.safeParse({})
+    expect(omitted.success).toBe(true)
+    if (omitted.success) expect(omitted.data.aiEnabled).toBeUndefined()
+  })
+
+  it("rejects a non-boolean AI opt-in flag", () => {
+    expect(UpdateFormSchema.safeParse({ aiEnabled: "yes" }).success).toBe(false)
   })
 })
 

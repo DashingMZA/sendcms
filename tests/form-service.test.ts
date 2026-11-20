@@ -134,6 +134,15 @@ describe("updateFormForUser", () => {
     )
   })
 
+  it("passes the AI opt-in flag through to the update", async () => {
+    await updateFormForUser("user-1", "form-1", { aiEnabled: true })
+    expect(mockDb.form.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ aiEnabled: true }),
+      })
+    )
+  })
+
   it("throws 404 for a form owned by someone else", async () => {
     mockDb.form.findFirst.mockResolvedValue(null)
     await expectApiError(

@@ -161,6 +161,7 @@ export function FormDetail({
   const [turnstileEnabled, setTurnstileEnabled] = useState(
     form.turnstileEnabled
   )
+  const [aiEnabled, setAiEnabled] = useState(form.aiEnabled)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -176,6 +177,7 @@ export function FormDetail({
         dailyLimit: dailyLimit ? Number(dailyLimit) : null,
         honeypotEnabled,
         turnstileEnabled,
+        aiEnabled,
       })
     } catch (err) {
       setSettingsError(
@@ -340,6 +342,21 @@ export function FormDetail({
               id="settings-turnstile"
               checked={turnstileEnabled}
               onCheckedChange={setTurnstileEnabled}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <Label htmlFor="settings-ai">AI features</Label>
+              <p className="text-xs text-muted-foreground">
+                Lets AI work on this form&apos;s submissions (spam re-scoring,
+                digest, form help, reply drafts). Off by default — nothing is
+                sent to any model provider while it is off.
+              </p>
+            </div>
+            <Switch
+              id="settings-ai"
+              checked={aiEnabled}
+              onCheckedChange={setAiEnabled}
             />
           </div>
           {settingsError && (

@@ -156,6 +156,7 @@ export async function updateFormForUser(
       ...(input.turnstileEnabled !== undefined
         ? { turnstileEnabled: input.turnstileEnabled }
         : {}),
+      ...(input.aiEnabled !== undefined ? { aiEnabled: input.aiEnabled } : {}),
       ...(input.dailyLimit !== undefined
         ? { dailyLimit: input.dailyLimit }
         : {}),
