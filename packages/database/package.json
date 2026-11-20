@@ -1,4 +1,20 @@
 {
+  "name": "@sendcms/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "dotenv run -f ../../.env -- prisma migrate dev",
+    "db:seed": "dotenv run -f ../../.env -- tsx prisma/seed.ts",
+    "db:studio": "dotenv run -f ../../.env -- prisma studio",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
@@ -11,21 +27,5 @@
     "prisma": "^7.10.1",
     "tsx": "^4.23.15",
     "typescript": "6.0.3"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "main": "./src/index.ts",
-  "name": "@sendcms/database",
-  "private": true,
-  "scripts": {
-    "db:generate": "prisma generate",
-    "db:migrate": "dotenv run -f ../../.env -- prisma migrate dev",
-    "db:seed": "dotenv run -f ../../.env -- tsx prisma/seed.ts",
-    "db:studio": "dotenv run -f ../../.env -- prisma studio",
-    "typecheck": "tsc --noEmit"
-  },
-  "type": "module",
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  }
 }

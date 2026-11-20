@@ -1,19 +1,20 @@
 {
+  "name": "@sendcms/observability",
+  "version": "0.1.0",
   "description": "Structured logging for SendCMS (JSON lines).",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "@types/node": "^26.6.6",
     "typescript": "6.0.3"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "main": "./src/index.ts",
-  "name": "@sendcms/observability",
-  "private": true,
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  }
 }

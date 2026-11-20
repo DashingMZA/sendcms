@@ -1,4 +1,17 @@
 {
+  "name": "@sendcms/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
+    "build:server": "pnpm --filter @sendcms/database db:generate && next build",
+    "dev": "dotenv run -f ../../.env -- next dev --turbopack --port 3002",
+    "lint": "eslint .",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@remixicon/react": "^4.9.0",
     "@sendcms/analytics": "workspace:*",
@@ -34,18 +47,5 @@
     "@types/react-dom": "^19.3.0",
     "eslint": "^10.15.0",
     "typescript": "6.0.3"
-  },
-  "name": "@sendcms/dashboard",
-  "private": true,
-  "scripts": {
-    "build": "next build",
-    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
-    "build:server": "pnpm --filter @sendcms/database db:generate && next build",
-    "dev": "dotenv run -f ../../.env -- next dev --turbopack --port 3002",
-    "lint": "eslint .",
-    "start": "next start",
-    "typecheck": "tsc --noEmit"
-  },
-  "type": "module",
-  "version": "0.1.0"
+  }
 }

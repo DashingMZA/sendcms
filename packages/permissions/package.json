@@ -1,18 +1,18 @@
 {
-  "devDependencies": {
-    "@sendcms/config": "workspace:*",
-    "typescript": "6.0.3"
-  },
+  "name": "@sendcms/permissions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
-  "main": "./src/index.ts",
-  "name": "@sendcms/permissions",
-  "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "type": "module",
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "typescript": "6.0.3"
+  }
 }

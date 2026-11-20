@@ -1,22 +1,23 @@
 {
+  "name": "@sendcms/security",
+  "version": "0.1.0",
+  "description": "Shared security headers + audit logging for SendCMS.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@sendcms/database": "workspace:*",
     "@sendcms/observability": "workspace:*"
   },
-  "description": "Shared security headers + audit logging for SendCMS.",
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "typescript": "6.0.3"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "main": "./src/index.ts",
-  "name": "@sendcms/security",
-  "private": true,
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  }
 }

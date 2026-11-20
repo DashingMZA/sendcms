@@ -1,4 +1,19 @@
 {
+  "name": "@sendcms/email-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./worker": "./src/worker.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
@@ -8,20 +23,5 @@
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "typescript": "6.0.3"
-  },
-  "exports": {
-    ".": "./src/index.ts",
-    "./worker": "./src/worker.ts"
-  },
-  "main": "./src/index.ts",
-  "name": "@sendcms/email-worker",
-  "private": true,
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "type": "module",
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  }
 }

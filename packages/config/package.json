@@ -1,10 +1,10 @@
 {
+  "name": "@sendcms/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "dependencies": {
     "eslint": "^10.15.0",
     "eslint-config-next": "16.4.6"
-  },
-  "name": "@sendcms/config",
-  "private": true,
-  "type": "module",
-  "version": "0.1.0"
+  }
 }

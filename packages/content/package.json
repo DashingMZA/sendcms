@@ -1,4 +1,16 @@
 {
+  "name": "@sendcms/content",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.3",
@@ -7,17 +19,5 @@
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "typescript": "6.0.3"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "main": "./src/index.ts",
-  "name": "@sendcms/content",
-  "private": true,
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "type": "module",
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  }
 }

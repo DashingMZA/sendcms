@@ -7,9 +7,12 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./validators": "./src/validators.ts",
+    "./dns-verification": "./src/dns-verification.ts",
     "./queries": "./src/queries.ts",
-    "./dns-verification": "./src/dns-verification.ts"
+    "./validators": "./src/validators.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@sendcms/database": "workspace:*",
@@ -17,18 +20,15 @@
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"
   },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.108.0",
+    "react": "^19.3.1"
+  },
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "@tanstack/react-query": "^5.108.0",
     "@types/react": "^19.3.0",
     "react": "^19.3.1",
     "typescript": "6.0.3"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "peerDependencies": {
-    "@tanstack/react-query": "^5.108.0",
-    "react": "^19.3.1"
   }
 }

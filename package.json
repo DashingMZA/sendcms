@@ -1,31 +1,31 @@
 {
   "name": "sendcms",
   "version": "0.1.0",
-  "type": "module",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@12.19.0",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run dev",
     "build": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run build --concurrency 1",
-    "prepare": "husky",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --config apps/api/wrangler.jsonc --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+    "db:generate": "pnpm --filter @sendcms/database db:generate",
     "db:migrate": "pnpm --filter @sendcms/database db:migrate",
     "db:migrate:deploy": "pnpm --filter @sendcms/database exec prisma migrate deploy",
-    "db:generate": "pnpm --filter @sendcms/database db:generate",
-    "db:seed": "pnpm --filter @sendcms/database db:seed",
-    "db:studio": "pnpm --filter @sendcms/database db:studio",
-    "db:status": "npx tsx scripts/db-manager.ts status",
     "db:reset": "npx tsx scripts/db-manager.ts reset",
-    "cf-typegen": "wrangler types --config apps/api/wrangler.jsonc --env-interface CloudflareEnv ./cloudflare-env.d.ts",
-    "sdk:build": "pnpm --filter @sendcms/sdk build"
+    "db:seed": "pnpm --filter @sendcms/database db:seed",
+    "db:status": "npx tsx scripts/db-manager.ts status",
+    "db:studio": "pnpm --filter @sendcms/database db:studio",
+    "dev": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run dev",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
+    "lint": "eslint",
+    "prepare": "husky",
+    "sdk:build": "pnpm --filter @sendcms/sdk build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

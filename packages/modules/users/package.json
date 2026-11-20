@@ -9,6 +9,9 @@
     ".": "./src/index.ts",
     "./validators": "./src/validators.ts"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@sendcms/database": "workspace:*",
     "@sendcms/shared": "workspace:*",
@@ -17,8 +20,5 @@
   "devDependencies": {
     "@sendcms/config": "workspace:*",
     "typescript": "6.0.3"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
   }
 }
