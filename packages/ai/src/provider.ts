@@ -40,11 +40,15 @@ export const PROVIDER_ENV_VARS: Record<AiProviderName, string> = {
 }
 
 /** Default model per provider. `AI_MODEL` overrides the default for
-    whichever provider is selected. */
+    whichever provider is selected.
+    Google default (2026-11-20): `gemini-3.8-flash`. Google retired
+    `gemini-2.5-flash` for new API keys (it 404s with "no longer
+    available to new users"); the error itself names `gemini-3.8-flash`
+    as the replacement, and it works on a fresh key. */
 export const DEFAULT_MODELS: Record<AiProviderName, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-haiku-4-5",
-  google: "gemini-2.5-flash",
+  google: "gemini-3.8-flash",
   deepseek: "deepseek-chat",
   openrouter: "openai/gpt-4o-mini",
 }
