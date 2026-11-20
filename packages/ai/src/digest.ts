@@ -20,6 +20,17 @@ export const DigestSummarySchema = z.object({
 
 export type DigestSummary = z.infer<typeof DigestSummarySchema>
 
+/** Relaxed schema for the model call only. Gemini's structured output
+    rejects the strict schema ("a constraint that has too many
+    states"): string length bounds and nested array maxes are among
+    the causes it names. So the model gets bare strings + an array,
+    and `generateDigest` still validates the reply against the strict
+    `DigestSummarySchema` at the boundary. */
+const DigestSummaryModelSchema = z.object({
+  summary: z.string(),
+  highlights: z.array(z.string()),
+})
+
 /** One digest item handed to the model — a short, pre-truncated view
     of a submission, not the full record. */
 export type DigestSubmissionInput = {
@@ -59,7 +70,7 @@ export async function generateDigest({
   })
   const { object } = await generateObject({
     model,
-    schema: DigestSummarySchema,
+    schema: DigestSummaryModelSchema,
     prompt: [
       "You are writing a short digest email for a website owner about the new messages on their contact form.",
       "Summarize what the new submissions are about in two or three sentences, then list up to 5 short highlights (a notable sender, a recurring theme, an urgent request).",

@@ -18,6 +18,16 @@ export const ReplyDraftSchema = z.object({
 
 export type ReplyDraft = z.infer<typeof ReplyDraftSchema>
 
+/** Relaxed schema for the model call only. Gemini's structured output
+    rejects the strict schema ("a constraint that has too many
+    states"): string length bounds are among the causes it names. So
+    the model gets bare strings, and `draftReply` still validates the
+    reply against the strict `ReplyDraftSchema` at the boundary. */
+const ReplyDraftModelSchema = z.object({
+  subject: z.string(),
+  body: z.string(),
+})
+
 /** Asks the model to draft a reply to one submission. Returns the
     draft — the caller shows it to the owner for review and editing.
     Throws when the provider call fails. */
@@ -38,7 +48,7 @@ export async function draftReply({
   const from = submission.senderName ?? submission.senderEmail ?? "A visitor"
   const { object } = await generateObject({
     model,
-    schema: ReplyDraftSchema,
+    schema: ReplyDraftModelSchema,
     // One retry only (default is 2) — same reason as suggestFields:
     // an interactive call, and the dashboard proxy gives up after
     // ~30s while the SDK's 3-attempt backoff burns ~30s on an

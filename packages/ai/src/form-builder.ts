@@ -43,6 +43,38 @@ export const FieldSuggestionsSchema = z.object({
 
 export type FieldSuggestions = z.infer<typeof FieldSuggestionsSchema>
 
+/** Relaxed schema for the model call only. Gemini's structured output
+    compiles the schema into a constrained-decoding grammar, and the
+    strict schema is too state-heavy for it to serve: the `name`
+    regex, the string length bounds, and the nested array maxes
+    together produce "a constraint that has too many states". So the
+    model gets this bare shape (types + the `type` enum + optionality)
+    and the strict `FieldSuggestionsSchema` above still validates the
+    reply at the boundary in `suggestFields`. */
+const FieldSuggestionModelSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  type: z.enum([
+    "TEXT",
+    "EMAIL",
+    "TEXTAREA",
+    "NUMBER",
+    "SELECT",
+    "CHECKBOX",
+    "RADIO",
+    "URL",
+    "TEL",
+    "DATE",
+  ]),
+  required: z.boolean(),
+  placeholder: z.string().optional(),
+  options: z.array(z.string()).optional(),
+})
+
+const FieldSuggestionsModelSchema = z.object({
+  fields: z.array(FieldSuggestionModelSchema),
+})
+
 /** Asks the model to suggest fields for a form described in plain
     language. Returns the suggestions — the caller shows them to the
     owner, who picks which to add. Throws when the provider call
@@ -64,7 +96,7 @@ export async function suggestFields({
       : "The form has no fields yet."
   const { object } = await generateObject({
     model,
-    schema: FieldSuggestionsSchema,
+    schema: FieldSuggestionsModelSchema,
     // One retry only (default is 2). This is an interactive call: the
     // dashboard's proxy to the api app gives up after ~30s, and the
     // SDK's 3-attempt backoff alone burns ~30s on an overloaded model.

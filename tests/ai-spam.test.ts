@@ -38,17 +38,28 @@ describe("rescoreSpam", () => {
     expect(call.prompt).toContain("Buy cheap backlinks now!")
   })
 
-  it("rejects a score outside 0–100 from the model", async () => {
+  it("clamps a score outside 0–100 from the model", async () => {
     mockGenerateObject.mockResolvedValue({
       object: { score: 150, reason: "Too high." },
     })
-    await expect(
-      rescoreSpam({
-        model: fakeModel,
-        formName: "Contact us",
-        data: { message: "hi" },
-      })
-    ).rejects.toThrow()
+    const verdict = await rescoreSpam({
+      model: fakeModel,
+      formName: "Contact us",
+      data: { message: "hi" },
+    })
+    expect(verdict.score).toBe(100)
+  })
+
+  it("rounds a fractional score from the model", async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: { score: 72.6, reason: "Likely spam." },
+    })
+    const verdict = await rescoreSpam({
+      model: fakeModel,
+      formName: "Contact us",
+      data: { message: "hi" },
+    })
+    expect(verdict.score).toBe(73)
   })
 })
 

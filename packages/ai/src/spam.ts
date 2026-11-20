@@ -19,6 +19,17 @@ export const SpamVerdictSchema = z.object({
 
 export type SpamVerdict = z.infer<typeof SpamVerdictSchema>
 
+/** Relaxed schema for the model call only. Gemini's structured output
+    rejects the strict schema ("a constraint that has too many
+    states"): an integer with min/max bounds is one of the causes it
+    names. So the model gets a plain number + string, and
+    `rescoreSpam` rounds/clamps the score and still validates the
+    reply against the strict `SpamVerdictSchema` at the boundary. */
+const SpamVerdictModelSchema = z.object({
+  score: z.number(),
+  reason: z.string(),
+})
+
 /** Score at or above this is spam. Overridable via AI_SPAM_THRESHOLD. */
 export const DEFAULT_SPAM_THRESHOLD = 70
 
@@ -44,7 +55,7 @@ export async function rescoreSpam({
 }): Promise<SpamVerdict> {
   const { object } = await generateObject({
     model,
-    schema: SpamVerdictSchema,
+    schema: SpamVerdictModelSchema,
     prompt: [
       "You are a spam filter for a website contact form.",
       "Score this submission from 0 (definitely a genuine message from a real person) to 100 (definitely spam).",
@@ -55,7 +66,13 @@ export async function rescoreSpam({
       "Reply with a spam score and a one-sentence reason.",
     ].join("\n"),
   })
-  // Validate at the boundary too: the SDK validates against the schema,
-  // but a malformed model reply must never reach the status change.
-  return SpamVerdictSchema.parse(object)
+  // Validate at the boundary too: the SDK validates against the
+  // relaxed model schema, but a malformed model reply must never
+  // reach the status change. Round + clamp first — the model may
+  // return a float or a value outside 0–100, and the strict schema
+  // requires an integer in range.
+  return SpamVerdictSchema.parse({
+    score: Math.min(100, Math.max(0, Math.round(object.score))),
+    reason: object.reason,
+  })
 }
