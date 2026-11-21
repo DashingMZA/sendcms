@@ -9,6 +9,8 @@ import {
 /**
  * Route protection (Better Auth, database sessions).
  * - No session → /sign-in.
+ * - A suspended/disabled user → /sign-in (their session is useless:
+ *   the auth() helper also returns null for them).
  * - Logged-in users without the platform capability for a route are sent
  *   to /dashboard (same behaviour as the old Auth.js `authorized` check).
  *
@@ -20,6 +22,13 @@ export default async function proxy(req: NextRequest) {
     headers: req.headers,
   })
   if (!result) {
+    const url = req.nextUrl.clone()
+    url.pathname = "/sign-in"
+    return NextResponse.redirect(url)
+  }
+
+  // Suspension enforcement (Admin Control Plane, Phase 3).
+  if ((result.user.status ?? "ACTIVE") !== "ACTIVE") {
     const url = req.nextUrl.clone()
     url.pathname = "/sign-in"
     return NextResponse.redirect(url)

@@ -45,7 +45,7 @@ export const SHARED_DOMAINS = [
 ] as const
 
 /** Admin-app domains that live at `locales/{locale}/admin/{domain}.json`. */
-export const ADMIN_DOMAINS = ["dashboard", "navigation"] as const
+export const ADMIN_DOMAINS = ["dashboard", "navigation", "users"] as const
 
 export type SharedDomain = (typeof SHARED_DOMAINS)[number]
 export type AdminDomain = (typeof ADMIN_DOMAINS)[number]

@@ -5,6 +5,12 @@ import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 import { AppSidebar } from "@/components/admin/app-sidebar"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 
+// NOTE: this layout lives at app/admin/layout.tsx (NOT in the (admin)
+// route group) because it must wrap /admin/*. A layout inside a route
+// group only wraps pages inside that group — the old
+// app/(admin)/layout.tsx never wrapped any page, so the admin app
+// rendered without its sidebar. Same shape as the dashboard's
+// app/dashboard/layout.tsx.
 export default async function AdminLayout({
   children,
 }: {

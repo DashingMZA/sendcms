@@ -6,7 +6,9 @@ import { sendPasswordResetEmail, sendVerificationEmail } from "@sendcms/email"
 import { createLogger } from "@sendcms/observability"
 import { logAudit } from "@sendcms/security"
 import { getConfiguredOAuthProviders } from "./providers"
-import type { PlatformRole } from "@sendcms/permissions"
+import type { AdminRole, PlatformRole } from "@sendcms/permissions"
+
+export type UserStatus = "ACTIVE" | "SUSPENDED" | "DISABLED"
 
 const logger = createLogger("auth")
 
@@ -43,6 +45,11 @@ export type AdminSession = {
     email: string
     image: string | null
     platformRole: PlatformRole
+    // Admin Control Plane (Phase 3): account status + staff role, carried
+    // on the session so proxies and server components can enforce them
+    // without an extra DB read. `adminRole` is null for plain customers.
+    status: UserStatus
+    adminRole: AdminRole | null
     emailVerified: boolean
   }
   session: {
@@ -162,6 +169,21 @@ export function createSendcmsAuth() {
           // Never settable from the client — only the server promotes users.
           input: false,
         },
+        // Admin Control Plane (Phase 3): account status + staff role.
+        // Both are server-managed only (admin actions) — never settable
+        // from the client. They are carried on the session so the proxies
+        // and the auth() helper can enforce suspension without an extra
+        // DB read.
+        status: {
+          type: "string",
+          defaultValue: "ACTIVE",
+          input: false,
+        },
+        adminRole: {
+          type: "string",
+          required: false,
+          input: false,
+        },
       },
     },
     databaseHooks: {
@@ -206,6 +228,14 @@ export function createSendcmsAuth() {
   /**
    * Server-side session helper. Keeps the existing `await auth()` call sites
    * (route handlers, server components) unchanged.
+   *
+   * Suspension enforcement (Admin Control Plane, Phase 3): a user whose
+   * status is not ACTIVE gets no session here — every session-gated route
+   * and server component treats them as signed out. The session row stays
+   * in the DB, so reactivating/restoring the account restores access
+   * without a fresh sign-in. (The proxies enforce the same rule for page
+   * access; a suspended user can still obtain a session cookie by signing
+   * in, but it is useless — every check rejects it.)
    */
   async function auth(): Promise<AdminSession | null> {
     const result = await betterAuth.api.getSession({
@@ -213,6 +243,8 @@ export function createSendcmsAuth() {
     })
     if (!result) return null
     const { user, session } = result
+    const status = (user.status ?? "ACTIVE") as UserStatus
+    if (status !== "ACTIVE") return null
     return {
       user: {
         id: user.id,
@@ -220,6 +252,8 @@ export function createSendcmsAuth() {
         email: user.email,
         image: user.image ?? null,
         platformRole: (user.platformRole ?? "PLATFORM_USER") as PlatformRole,
+        status,
+        adminRole: (user.adminRole ?? null) as AdminRole | null,
         emailVerified: user.emailVerified ?? false,
       },
       session: {

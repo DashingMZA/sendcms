@@ -81,12 +81,36 @@ audit gaps; no i18n at all; no CSP/rate-limit/step-up.
 Honest limits: staff-role enforcement is owner-only until Phase 3;
 only the Overview page is real; the 8 coming-soon locales have no files.
 
-### Phase 3 — Admin overview & user management — PENDING
+### Phase 3 — Admin overview & user management — DONE (2026-11-21)
 
-`User.status` (suspend/disable), `User.adminRole`, user list + detail
-(tabs per spec §5), admin actions (suspend/reactivate, role change, plan
-assign, quota adjust, revoke keys/sessions, notes, export, deletion
-requests), sensitive-data masking + access logging.
+- Schema: `User.status` (ACTIVE/SUSPENDED/DISABLED), `User.adminRole`
+  (SUPER_ADMIN/MANAGER/SUPPORT, nullable), `statusReason`,
+  `statusChangedAt`, `deletionRequestedAt`/`deletionRequestReason`,
+  `AdminNote` model. Migrations `20261121212116_add_user_status_admin_role_notes`
+  + `20261121212357_add_user_deletion_request` (27/27 applied).
+- Auth: session carries `status` + `adminRole` (additionalFields);
+  `auth()` returns null for non-ACTIVE users; both proxies enforce
+  suspension; admin proxy enforces staff roles via `adminCan`.
+- `packages/modules/admin-users` (`@sendcms/admin-users` — the name
+  `@sendcms/admin` was already taken by the app): 16 service functions
+  with in-service authorization + guards (owner never suspendable,
+  no self-suspend/self-role-change, MANAGER cannot change roles),
+  validators, React Query hooks, 16 api routes, email sender via
+  Better Auth's API. Tests 28/28.
+- Admin UI: `/admin/users` (search, status/role/verified filters
+  incl. "no staff role", pagination) + `/admin/users/[userId]` with
+  8 tabs (Profile + 11 actions, Forms, Domains, Submissions with
+  masked-by-default reveal + access audit, Package/AI planned in
+  Phases 4/5, MCP keys list, Audit + notes). i18n `admin/users.json`,
+  178 keys, en + ur 100%.
+- **Phase 2 defect fixed:** the admin layout lived in the `(admin)`
+  route group and never wrapped any page — the app rendered without
+  its sidebar. Moved to `app/admin/layout.tsx`; the dead group layout
+  is deleted. Sidebar now renders on `/admin/*` (visual check owed).
+- Gates: typecheck 0, lint 0, tests 344/344 (37 files), i18n 21 files /
+  536 keys en + ur 100%, admin + dashboard + api builds pass.
+- Open: email sends (verification/reset) are source-verified only, not
+  live-tested; visual check of the sidebar + RTL owed.
 
 ### Phase 4 — Plans & entitlements — PENDING
 

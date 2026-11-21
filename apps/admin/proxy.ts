@@ -13,16 +13,15 @@ import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
  *   to the admin page that was requested. The admin app has NO sign-up
  *   page — admin accounts are owner-created (role assignment lands in
  *   Phase 3).
+ * - A suspended/disabled user → the dashboard sign-in page too (their
+ *   session is useless: the auth() helper also returns null for them).
  * - A signed-in user without the admin capability is sent to
  *   /admin/unauthorized. That page is explicitly allowed through here
  *   (it is the denial page itself) — without the exemption the proxy
  *   would redirect it to itself in a loop.
- *
- * Until Phase 3 adds the `User.adminRole` field, the check can only use
- * the platform role, so only PLATFORM_OWNER passes. Staff roles
- * (SUPER_ADMIN / MANAGER / SUPPORT) activate in Phase 3, when the
- * session carries the admin role and the check below passes it to
- * `adminCan` as well.
+ * - Staff roles (Phase 3): the session carries `adminRole`, and the
+ *   check passes it to `adminCan`. PLATFORM_OWNER keeps every
+ *   capability; a plain customer (no adminRole) gets none.
  *
  * Session lookup hits Prisma, so this runs on the Node.js runtime (the
  * Next 16 proxy default) — it is NOT edge-safe.
@@ -37,6 +36,14 @@ export default async function proxy(req: NextRequest) {
     )
   }
 
+  // Suspension enforcement (Phase 3): a non-ACTIVE account cannot use
+  // the admin app at all.
+  if ((result.user.status ?? "ACTIVE") !== "ACTIVE") {
+    return NextResponse.redirect(
+      dashboardSignInURL(`${adminBaseURL()}${req.nextUrl.pathname}`)
+    )
+  }
+
   const path = req.nextUrl.pathname
   // The denial page itself: signed-in, but no capability needed to see it.
   if (path === "/admin/unauthorized") return NextResponse.next()
@@ -45,7 +52,11 @@ export default async function proxy(req: NextRequest) {
     (route) => path === route || path.startsWith(route + "/")
   )
   if (matched) {
-    const role = (result.user.platformRole ?? "PLATFORM_USER") as PlatformRole
+    const role =
+      result.user.platformRole === "PLATFORM_OWNER"
+        ? "PLATFORM_OWNER"
+        : ((result.user.adminRole ?? "PLATFORM_USER") as
+            PlatformRole | "SUPER_ADMIN" | "MANAGER" | "SUPPORT")
     if (!adminCan(role, PLATFORM_ROUTE_CAPABILITY[matched])) {
       return NextResponse.redirect(new URL("/admin/unauthorized", req.url))
     }

@@ -209,6 +209,9 @@ importers:
       '@opennextjs/cloudflare':
         specifier: ^1.20.17
         version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
+      '@sendcms/admin-users':
+        specifier: workspace:*
+        version: link:packages/modules/admin-users
       '@sendcms/ai':
         specifier: workspace:*
         version: link:packages/ai
@@ -338,6 +341,9 @@ importers:
       '@remixicon/react':
         specifier: ^4.9.0
         version: 4.9.0(react@19.3.1)
+      '@sendcms/admin-users':
+        specifier: workspace:*
+        version: link:../../packages/modules/admin-users
       '@sendcms/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
@@ -402,6 +408,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@sendcms/admin-users':
+        specifier: workspace:*
+        version: link:../../packages/modules/admin-users
       '@sendcms/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
@@ -942,6 +951,46 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/admin-users:
+    dependencies:
+      '@sendcms/auth':
+        specifier: workspace:*
+        version: link:../../auth
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../permissions
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
       typescript:
         specifier: 6.0.3
         version: 6.0.3

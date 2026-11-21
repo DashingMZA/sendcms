@@ -14,6 +14,27 @@ enum PlatformRole {
   PLATFORM_USER
 }
 
+// Admin Control Plane (Phase 3) — account status. SUSPENDED is a temporary
+// block (reversible via reactivate); DISABLED is an admin-closed account
+// (reversible via restore). Deletion/erasure is a separate soft flow
+// (deletion requests, Phase 7) — never a hard delete. A non-ACTIVE user
+// cannot sign in or use any session-gated route; their public forms keep
+// accepting submissions (never silently drop customer submissions).
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+// Admin Control Plane (Phase 3) — staff roles for the admin app. Mirrors
+// the AdminRole type in @sendcms/permissions (keep the two in sync).
+// Null = plain customer, no staff role.
+enum AdminRole {
+  SUPER_ADMIN
+  MANAGER
+  SUPPORT
+}
+
 // ─── Contact forms (SendCMS, Phase 1) ───────────────────────────────────────
 
 enum DomainStatus {
@@ -129,6 +150,21 @@ model User {
   emailVerified Boolean      @default(false)
   image         String?
   platformRole  PlatformRole @default(PLATFORM_USER)
+  // Admin Control Plane (Phase 3) — account status + staff role. `status`
+  // gates sign-in and every session-gated route (enforced in the auth
+  // session helper + both app proxies). `statusReason` holds the reason
+  // for the current status (required when suspending/disabling, cleared
+  // on reactivate/restore); the full history lives in AuditLog.
+  status          UserStatus   @default(ACTIVE)
+  statusReason    String?
+  statusChangedAt DateTime?
+  adminRole       AdminRole?
+  // Deletion request (Admin Control Plane, Phase 3): the user (or an
+  // admin on their behalf) asked for their account to be deleted. This
+  // only RECORDS the request — the actual erasure workflow is Phase 7.
+  // A requested deletion never hard-deletes anything by itself.
+  deletionRequestedAt DateTime?
+  deletionRequestReason String?
   // Preferred UI locale (BCP 47 code, e.g. "en", "ur"). Null = no preference
   // set; the app falls back to English. Validated against the locale
   // registry in @sendcms/i18n (packages/i18n/src/locales.ts) — keep the
@@ -145,6 +181,34 @@ model User {
   apiKeys          ApiKey[]
   submissionEvents SubmissionEvent[]
   auditLogs        AuditLog[]
+  adminNotes       AdminNote[] @relation("UserAdminNotes")
+  adminNotesWritten AdminNote[] @relation("AdminNotesWritten")
+
+  @@index([status])
+  @@index([adminRole])
+  @@index([createdAt])
+  @@index([platformRole])
+  @@index([emailVerified])
+}
+
+// ─── Admin Control Plane (Phase 3) ──────────────────────────────────────────
+// Internal notes an admin writes about a user. Visible only in the admin
+// app, never to the user themself. Deleting the user deletes their notes
+// (Cascade); deleting the admin who wrote a note keeps the note with a
+// null author (SetNull).
+model AdminNote {
+  id        String   @id @default(cuid())
+  userId    String
+  adminId   String?
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation("UserAdminNotes", fields: [userId], references: [id], onDelete: Cascade)
+  admin User? @relation("AdminNotesWritten", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Account {

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sendcms/admin-users": "workspace:*",
     "@sendcms/api-client": "workspace:*",
     "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",

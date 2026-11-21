@@ -1,22 +1,42 @@
 import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
+import { listUsers } from "@sendcms/admin-users"
+import { AdminUserListQuerySchema } from "@sendcms/admin-users/validators"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
-import { PlannedSection } from "@/components/admin/planned-section"
+import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { UsersTable } from "@/components/admin/users-table"
 
 export const metadata: Metadata = {
   title: "Users — SendCMS Admin",
   description: "Manage platform users.",
 }
 
-// User management lands in Phase 3.
-export default async function AdminUsersPage() {
+// Admin user list (Phase 3). The server fetches the first page via the
+// service layer and passes it as initialData; the client table owns
+// search, filters, and pagination from there (URL-as-state, like the
+// dashboard inbox).
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const session = await auth()
+  if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
+
+  const filters = AdminUserListQuerySchema.parse(await searchParams)
+  const initialData = await listUsers(session, filters)
+
   const locale = await getRequestLocale()
-  const t = await getTranslator(locale, "dashboard")
-  const tNav = await getTranslator(locale, "navigation")
+  const t = await getTranslator(locale, "users")
+
   return (
-    <PlannedSection
-      title={tNav("users")}
-      description={t("comingSoonDescription")}
-      phaseLabel={t("phase", { number: "3" })}
-    />
+    <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <p className="text-muted-foreground">{t("description")}</p>
+      </div>
+      <UsersTable initialData={initialData} filters={filters} />
+    </main>
   )
 }
