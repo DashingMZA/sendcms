@@ -1,0 +1,26 @@
+{
+  "branding": {
+    "enable": false,
+    "powered_by_html": "Powered by <a href=\"https://github.com/DashingMZA/sendcms\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"z-footer-link\">SendCMS</a>"
+  },
+  "email": {
+    "defaultAccentColor": "#0891b2",
+    "defaultFooterText": "You're receiving this because you get notifications for this form.",
+    "defaultSubjectPrefix": "[New Submission]",
+    "fromName": "SendCMS"
+  },
+  "metadata": {
+    "meta_author": "SendCMS",
+    "meta_description": "SendCMS Admin — the platform control plane. Manage users, plans, subscriptions, AI and MCP access, and platform operations.",
+    "meta_image": "/images/og-image.png"
+  },
+  "site": {
+    "favicon": "/images/favicon.png",
+    "logo": "/images/logo.png",
+    "logo_darkmode": "/images/logo-darkmode.png",
+    "logo_height": "50",
+    "logo_text": "SendCMS Admin",
+    "logo_width": "208",
+    "title": "SendCMS Admin"
+  }
+}

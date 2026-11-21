@@ -51,6 +51,32 @@ export const ChangeEmailSchema = z.object({
   email: z.string().email("Enter a valid email address"),
 })
 
+// Preferred UI locale. Keep this list in sync with the locale registry in
+// @sendcms/i18n (packages/i18n/src/locales.ts). Only "en" and "ur" have
+// complete translations in Phase 2; the other 8 are registered as
+// coming-soon and fall back to English in the UI, but the preference itself
+// is still stored.
+export const SupportedLocales = [
+  "en",
+  "ur",
+  "es",
+  "ar",
+  "fr",
+  "de",
+  "hi",
+  "bn",
+  "id",
+  "it",
+] as const
+
+export type SupportedLocale = (typeof SupportedLocales)[number]
+
+export const SetLocaleSchema = z.object({
+  locale: z.enum(SupportedLocales),
+})
+
+export type SetLocaleInput = z.infer<typeof SetLocaleSchema>
+
 export type SignUpInput = z.infer<typeof SignUpSchema>
 export type SignInInput = z.infer<typeof SignInSchema>
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>

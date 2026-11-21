@@ -25,3 +25,27 @@ export async function getUserAuthMethods(userId: string): Promise<{
   const providers = accounts.map((a) => a.providerId)
   return { hasPassword: providers.includes("credential"), providers }
 }
+
+/**
+ * Preferred UI locale for a user (BCP 47 code, e.g. "en", "ur").
+ * Null means no preference is stored — the app falls back to English
+ * (and offers the language prompt on first visit). The caller validates
+ * the code against SetLocaleSchema before calling this.
+ */
+export async function getUserLocale(userId: string): Promise<string | null> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { locale: true },
+  })
+  if (!user) throw new ApiError("No user found", 404)
+  return user.locale
+}
+
+export async function setUserLocale(userId: string, locale: string) {
+  const user = await db.user.update({
+    where: { id: userId },
+    data: { locale },
+    select: { id: true, locale: true },
+  })
+  return user
+}

@@ -35,7 +35,7 @@ Beta: APIs and schema may change without migration paths.
 Package manager: **pnpm** (v12).
 
 ```bash
-pnpm dev              # prisma generate + SDK build + turbo dev (all 5 apps, ports 3000–3004, + the email worker on 3005)
+pnpm dev              # prisma generate + SDK build + turbo dev (all 6 apps, ports 3000–3004 + 3006 (admin), + the email worker on 3005)
 pnpm build            # prisma generate + SDK build + turbo build --concurrency 1 (sequential — parallel builds contend on next/font, see ADR 0006)
 pnpm typecheck        # tsc --noEmit (run before declaring work done)
 pnpm lint             # eslint (root config ignores generated output workspace-wide)

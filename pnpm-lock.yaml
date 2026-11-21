@@ -333,6 +333,73 @@ importers:
         specifier: ^4.164.0
         version: 4.164.0(@types/node@26.6.6)
 
+  apps/admin:
+    dependencies:
+      '@remixicon/react':
+        specifier: ^4.9.0
+        version: 4.9.0(react@19.3.1)
+      '@sendcms/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
+      '@sendcms/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../packages/permissions
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@sendcms/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      lucide-react:
+        specifier: ^1.74.0
+        version: 1.74.0(@types/react@19.3.0)(react@19.3.1)
+      next:
+        specifier: 16.4.6
+        version: 16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next-themes:
+        specifier: ^0.4.6
+        version: 0.4.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.3.1
+        version: 19.3.1(react@19.3.1)
+      sonner:
+        specifier: ^2.0.8
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+    devDependencies:
+      '@opennextjs/cloudflare':
+        specifier: ^1.20.17
+        version: 1.20.17(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(supports-color@10.2.2)(wrangler@4.164.0(@types/node@26.6.6))
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      eslint:
+        specifier: ^10.15.0
+        version: 10.15.0(jiti@2.7.0)(supports-color@10.2.2)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   apps/api:
     dependencies:
       '@sendcms/api-client':
@@ -820,6 +887,15 @@ importers:
       react:
         specifier: ^19.3.1
         version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/i18n:
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: 6.0.3
         version: 6.0.3

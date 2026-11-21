@@ -1,0 +1,15 @@
+{
+  "allUsers": "All",
+  "changeRole": "Change role to…",
+  "email": "Email",
+  "name": "Name",
+  "noUsers": "No users found.",
+  "plan": "Plan",
+  "role": "Role",
+  "searchUsers": "Search Users",
+  "status": "Status",
+  "suspended": "Suspended",
+  "title": "Users",
+  "username": "Username",
+  "verified": "Verified"
+}

@@ -129,6 +129,12 @@ model User {
   emailVerified Boolean      @default(false)
   image         String?
   platformRole  PlatformRole @default(PLATFORM_USER)
+  // Preferred UI locale (BCP 47 code, e.g. "en", "ur"). Null = no preference
+  // set; the app falls back to English. Validated against the locale
+  // registry in @sendcms/i18n (packages/i18n/src/locales.ts) — keep the
+  // two in sync. Stored so a language switch (en -> ur) survives across
+  // browsers and sessions; the browser cookie is the fast path.
+  locale        String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

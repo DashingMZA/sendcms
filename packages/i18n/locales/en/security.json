@@ -1,0 +1,9 @@
+{
+  "auditLog": "Audit log",
+  "rateLimit": "Rate limiting",
+  "rateLimits": "Rate limits",
+  "revokeSession": "Revoke session",
+  "sensitiveAccess": "Sensitive data access",
+  "sessions": "Sessions",
+  "title": "Security"
+}

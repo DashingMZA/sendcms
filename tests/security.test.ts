@@ -76,7 +76,14 @@ describe("securityHeaders", () => {
     // one source — a hand-edited _headers file that drifts from it
     // fails here.
     const expected = renderHeadersFile()
-    for (const app of ["marketing", "api", "dashboard", "docs", "updates"]) {
+    for (const app of [
+      "marketing",
+      "api",
+      "dashboard",
+      "docs",
+      "updates",
+      "admin",
+    ]) {
       const file = readFileSync(`apps/${app}/public/_headers`, "utf8")
       expect(file, `${app}/public/_headers`).toBe(expected)
     }

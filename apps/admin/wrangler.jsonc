@@ -1,0 +1,57 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "sendcms-admin",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  // Per-app Cloudflare config (Phase 10). The platform admin app —
+  // Admin Control Plane pages (owner + staff only).
+  // The Cloudflare dashboard's Root directory for this project
+  // must be apps/admin — the build command runs there (see
+  // infrastructure/cloudflare/README.md). The public URLs below use
+  // the decided production domain (sendcms.bond) — change the vars,
+  // never the code.
+  "build": {
+    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+  },
+  // Dynamic Next.js App Router app (SSR + API routes + Prisma +
+  // Better Auth), so it cannot run as plain static assets — the
+  // Worker entry below serves it, and `.open-next/assets` holds
+  // only the static files.
+  "main": ".open-next/worker.js",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets",
+  },
+  // Bindings already configured in the Cloudflare dashboard — they
+  // must also live here, otherwise the next `wrangler deploy`
+  // drops them. NEXT_INC_CACHE_R2_BUCKET is the OpenNext
+  // incremental cache (infrastructure/cloudflare/open-next.config.ts
+  // enables the R2 cache); WORKER_SELF_REFERENCE is the self
+  // reference the adapter's queue/revalidation uses; IMAGES powers
+  // Next.js image optimization via Cloudflare Images.
+  "images": {
+    "binding": "IMAGES",
+  },
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "open-remark-opennext-cache",
+    },
+  ],
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "sendcms-admin",
+    },
+  ],
+  "observability": {
+    "enabled": false,
+  },
+  "vars": {
+    "NEXT_PUBLIC_ADMIN_URL": "https://admin.sendcms.bond",
+    "NEXT_PUBLIC_AUTH_URL": "https://api.sendcms.bond",
+    "NEXT_PUBLIC_API_URL": "https://api.sendcms.bond",
+  },
+  // Secrets are NOT stored here. Set them in the Cloudflare
+  // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET (its lib/auth creates a Better Auth instance and its layouts call auth()).
+}
