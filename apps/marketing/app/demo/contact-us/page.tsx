@@ -148,7 +148,12 @@ export default function ContactUsDemoPage() {
         const data = body as { id?: unknown; message?: unknown }
         setRestResult({
           ok: true,
-          text: `Sent! Submission id: ${typeof data.id === "string" ? data.id : "(none)"}\n${typeof data.message === "string" ? data.message : ""}`,
+          // End-user message only — the submission id stays in the API
+          // response for the integrator, it is not shown to the visitor.
+          text:
+            typeof data.message === "string" && data.message
+              ? data.message
+              : "Thanks! We'll get back to you soon.",
         })
         setRest(EMPTY_REST)
       }

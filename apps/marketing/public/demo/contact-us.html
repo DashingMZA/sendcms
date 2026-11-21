@@ -479,11 +479,10 @@
               false
             )
           } else {
+            // End-user message only — the submission id stays in the API
+            // response for the integrator, it is not shown to the visitor.
             showResult(
-              "Sent! Submission id: " +
-                (body.id || "(none)") +
-                "\n" +
-                (body.message || ""),
+              body.message || "Thanks! We'll get back to you soon.",
               true
             )
             restForm.reset()
