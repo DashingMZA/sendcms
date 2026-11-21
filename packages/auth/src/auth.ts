@@ -73,6 +73,13 @@ export function createSendcmsAuth() {
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
+    // Session lifetime: 30 days (Better Auth default is 7 days). The
+    // session is refreshed when used after `updateAge` (default 1 day),
+    // so active users stay signed in; an idle session expires 30 days
+    // after its last refresh.
+    session: {
+      expiresIn: 60 * 60 * 24 * 30, // 30 days
+    },
     // Cookie domain for the subdomain split (Phase 10): when the apps
     // run on subdomains of one domain (api.<domain>, <domain>), the
     // session cookie needs Domain=<domain> to be shared across them.
