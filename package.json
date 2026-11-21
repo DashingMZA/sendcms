@@ -61,6 +61,7 @@
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
+    "@sendcms/plans": "workspace:*",
     "@sendcms/queue": "workspace:*",
     "@sendcms/sdk": "workspace:*",
     "@sendcms/security": "workspace:*",

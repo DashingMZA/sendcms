@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto"
 import { ApiKeyScope, AuditAction, AuditResource, db } from "@sendcms/database"
 import { ApiError } from "@sendcms/shared"
 import { logAudit } from "@sendcms/security"
+import { checkLimitSafe } from "@sendcms/plans"
 import type { CreateApiKeyInput } from "./validators"
 
 // API keys (Phase 11, the MCP auth prerequisite). A key is a per-user
@@ -89,9 +90,14 @@ export async function createApiKeyForUser(
   const activeCount = await db.apiKey.count({
     where: { userId, revokedAt: null },
   })
-  if (activeCount >= MAX_ACTIVE_API_KEYS) {
+  // The limit comes from the user's effective plan entitlements; the
+  // constant is the fallback default when the lookup fails (fail-open),
+  // so a plans-module error never blocks key creation.
+  const limit = await checkLimitSafe(userId, "API_KEYS")
+  const maxKeys = limit?.limit ?? MAX_ACTIVE_API_KEYS
+  if (activeCount >= maxKeys) {
     throw new ApiError(
-      `You can have at most ${MAX_ACTIVE_API_KEYS} active API keys. Revoke one first.`,
+      `You can have at most ${maxKeys} active API keys. Revoke one first.`,
       409
     )
   }

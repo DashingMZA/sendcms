@@ -87,7 +87,7 @@ only the Overview page is real; the 8 coming-soon locales have no files.
   (SUPER_ADMIN/MANAGER/SUPPORT, nullable), `statusReason`,
   `statusChangedAt`, `deletionRequestedAt`/`deletionRequestReason`,
   `AdminNote` model. Migrations `20261121212116_add_user_status_admin_role_notes`
-  + `20261121212357_add_user_deletion_request` (27/27 applied).
+  - `20261121212357_add_user_deletion_request` (27/27 applied).
 - Auth: session carries `status` + `adminRole` (additionalFields);
   `auth()` returns null for non-ACTIVE users; both proxies enforce
   suspension; admin proxy enforces staff roles via `adminCan`.
@@ -112,11 +112,57 @@ only the Overview page is real; the 8 coming-soon locales have no files.
 - Open: email sends (verification/reset) are source-verified only, not
   live-tested; visual check of the sidebar + RTL owed.
 
-### Phase 4 — Plans & entitlements — PENDING
+### Phase 4 — Plans & entitlements — DONE (2026-11-21)
 
-Versioned plans (immutable versions; edits create a new version),
-subscriptions, entitlements, usage metering ledger, server-side
-enforcement on every relevant operation, precedence per spec §7.
+- Schema already applied by the parent (migration
+  `20261121224247`, 28/28): `Plan`, `PlanVersion` (immutable),
+  `Subscription`, `SubscriptionEvent` (append-only),
+  `UsageLedger` (idempotencyKey @unique), `EntitlementOverride`.
+- `packages/modules/plans` (`@sendcms/plans`): `PlanEntitlementsSchema`
+  (strict Zod) + `FREE_PLAN_V1_ENTITLEMENTS` (mirrors today's hardcoded
+  limits: API keys 10, AI 100/day, MCP 120/min + 2000/hour, rest
+  unlimited); plan CRUD + versioning (publish supersedes, archive,
+  duplicate, field-level version comparison); subscriptions (assign in
+  one transaction, migration preview + execute for selected users
+  only, cancel now / at period end); `getEffectiveEntitlements`
+  (precedence: emergency → suspension → override → subscription's
+  effective version → default Free plan; `ensureDefaultFreePlan`
+  idempotent under concurrency); usage metering (`recordUsage`
+  idempotent, `getUsage`, `checkLimit`, `consumeQuota`); overrides
+  (upsert by [userId, meter], reason required; API_KEYS/MCP null
+  rejected); React Query hooks. 18 api routes under
+  `/api/v1/admin/`. Tests 42/42.
+- Root `config/config.json` created (`platform.emergency: false`) —
+  the emergency switch; read by the service (workspace-root walk,
+  cached, default off). No root config file or runtime loader existed
+  before this phase.
+- Enforcement (all fail-open): form create (FORMS), domain register
+  (DOMAINS), API key create (API_KEYS, constant kept as fallback),
+  MCP rate limit (per-key-owner entitlements), AI rescore cap value
+  now from the form owner's entitlements (per-form usage counter
+  unchanged — documented), public submit (SUBMISSIONS monthly quota,
+  402 only when exhausted; ledger row on accept, best-effort).
+- Docs: `docs/admin-control-plane/plans-and-entitlements.md`.
+- Admin UI: `/admin/plans` (list + create), `/admin/plans/[planId]`
+  (current version, version history, publish, duplicate, archive,
+  field-level version comparison), `/admin/subscriptions` (list,
+  assign, cancel), `/admin/subscriptions/migrate` (4-step wizard:
+  target → scope → preview → confirm), `/admin/usage` (per-user
+  per-meter, user-picker-first — no global list endpoint), user
+  detail Package tab real (subscription + overrides + event history).
+  i18n `admin/plans.json` + `admin/subscriptions.json` +
+  `admin/usage.json`, en + ur 100% (24 files / 847 keys).
+- **Migration execute fix (parent, after UI):** `executeMigration`
+  now accepts `allOnVersionId` and resolves EVERY active
+  subscription on that version server-side — the wizard used to
+  execute only the previewed first 100. `usePlan("")` no longer
+  fires (hook has an `enabled` guard).
+- Gates: typecheck 0, lint 0, tests 387/387 (38 files, 43 plans
+  tests), i18n 24 files / 847 keys en + ur 100%, admin + dashboard
+  + api builds pass.
+- Open: no payments (Phase 8); no public pricing route (Phase 8);
+  quota guards are pre-insert checks (concurrent overshoot by one
+  possible — documented); emergency flag needs a restart to apply.
 
 ### Phase 5 — AI provider & BYOK architecture — PENDING
 

@@ -12,6 +12,8 @@ import { ApiError } from "@sendcms/shared"
 
 import { logAudit } from "@sendcms/security"
 
+import { checkLimitSafe } from "@sendcms/plans"
+
 import { checkVerification } from "./dns-verification"
 import type {
   CreateDomainInput,
@@ -114,6 +116,16 @@ export async function createDomainForUser(
   if (!user) throw new ApiError("Unauthorized", 401)
   if (!user.emailVerified) {
     throw new ApiError("Verify your email before registering a domain.", 403)
+  }
+  // Entitlement guard (Phase 4): the DOMAINS limit from the user's
+  // effective plan. Fail-open — a plans-module error must never block
+  // domain registration.
+  const limit = await checkLimitSafe(userId, "DOMAINS")
+  if (limit && !limit.allowed) {
+    throw new ApiError(
+      `Your plan allows at most ${limit.limit} domains. Upgrade your plan or ask an admin to raise your limit.`,
+      409
+    )
   }
   const domain = assertValidDomain(input.domain)
   const existing = await db.domain.findUnique({ where: { domain } })

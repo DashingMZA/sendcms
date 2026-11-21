@@ -68,6 +68,7 @@ import {
   RiStickyNoteLine,
 } from "@remixicon/react"
 import { useTranslation } from "@/components/admin/translation-provider"
+import { UserPackageTab } from "./user-package-tab"
 import { UserRoleBadge, UserStatusBadge } from "./user-status-badge"
 
 function formatDate(value: string | Date | null) {
@@ -660,10 +661,11 @@ export function UserDetail({ initialData, userId, actorId, actorRole }: Props) {
         </TabsContent>
 
         <TabsContent value="package" className="mt-6">
-          <PlannedTabContent
-            title={t("tabPackage")}
-            description={tDashboard("comingSoonDescription")}
-            phaseLabel={tDashboard("phase", { number: 4 })}
+          <UserPackageTab
+            userId={userId}
+            userName={profile.name}
+            userEmail={profile.email}
+            actorRole={actorRole}
           />
         </TabsContent>
 

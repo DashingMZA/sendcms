@@ -21,6 +21,7 @@
     "@sendcms/inbox": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
+    "@sendcms/plans": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"
   },

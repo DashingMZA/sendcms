@@ -48,6 +48,9 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "navigation",
   "language",
   "dashboard",
+  "plans",
+  "subscriptions",
+  "usage",
   "users",
 ] as const
 

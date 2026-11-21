@@ -118,6 +118,12 @@ enum AuditAction {
   VERIFY
   SUSPEND
   REACTIVATE
+  // Admin Control Plane (Phase 4) — plan / subscription actions.
+  PUBLISH
+  MIGRATE
+  CANCEL
+  ARCHIVE
+  ASSIGN
 }
 
 enum AuditResource {
@@ -127,6 +133,66 @@ enum AuditResource {
   USER
   SETTINGS
   API_KEY
+  // Admin Control Plane (Phase 4) — plan / subscription / entitlement.
+  PLAN
+  SUBSCRIPTION
+  ENTITLEMENT
+}
+
+// ─── Plans & entitlements (Admin Control Plane, Phase 4) ────────────────────
+
+enum PlanKind {
+  FREE
+  PAID
+}
+
+enum PlanStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PlanVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+  CUSTOM
+  ONE_TIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum SubscriptionEventType {
+  CREATED
+  MIGRATED
+  RENEWED
+  CANCELED
+  EXPIRED
+  REACTIVATED
+}
+
+// What a UsageLedger row counts. One meter per resource family; the
+// service maps each meter to the limit key in the effective plan
+// version's entitlements.
+enum UsageMeter {
+  FORMS
+  DOMAINS
+  SUBMISSIONS
+  API_KEYS
+  MCP_REQUESTS
+  AI_REQUESTS
 }
 
 // ─── API keys (MCP auth, Phase 11) ──────────────────────────────────────────
@@ -183,6 +249,13 @@ model User {
   auditLogs        AuditLog[]
   adminNotes       AdminNote[] @relation("UserAdminNotes")
   adminNotesWritten AdminNote[] @relation("AdminNotesWritten")
+  // Admin Control Plane (Phase 4) — plans, subscriptions, usage.
+  subscriptions         Subscription[]
+  subscriptionEvents    SubscriptionEvent[] @relation("SubscriptionEventsByAdmin")
+  planVersionsCreated   PlanVersion[] @relation("PlanVersionsCreatedBy")
+  usageLedger           UsageLedger[]
+  entitlementOverrides  EntitlementOverride[] @relation("EntitlementOverrideTarget")
+  entitlementOverridesSet EntitlementOverride[] @relation("EntitlementOverrideAdmin")
 
   @@index([status])
   @@index([adminRole])
@@ -586,4 +659,180 @@ model AiDailyUsage {
 
   @@unique([formId, date])
   @@index([formId])
+}
+
+// ─── Plans, subscriptions & usage (Admin Control Plane, Phase 4) ─────────────
+// Versioned plans: a Plan is the stable identity (slug); a PlanVersion is
+// one immutable snapshot of its price + entitlements. Editing a plan
+// NEVER mutates a published version — it creates a new PlanVersion.
+// Subscriptions always point at the version they were sold on, so a
+// plan edit can never rewrite an existing customer's terms. Migration
+// (admin-approved, recorded in SubscriptionEvent) is the only way a
+// subscription moves to another version. Plans are never hard-deleted;
+// ARCHIVED is the terminal state.
+
+// A plan's stable identity. `currentVersionId` points at the currently
+// published version (null until the first version is published).
+model Plan {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  kind        PlanKind   @default(FREE)
+  // Private plans are invisible to the public pricing page and can only
+  // be assigned by an admin.
+  isPrivate   Boolean    @default(false)
+  status      PlanStatus @default(DRAFT)
+  currentVersionId String?
+  currentVersion PlanVersion? @relation("PlanCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions      PlanVersion[] @relation("PlanVersions")
+  subscriptions Subscription[]
+
+  @@index([status])
+  @@index([kind])
+  @@index([status, kind])
+}
+
+// One immutable snapshot of a plan's price + entitlements. `version`
+// increments per plan (1, 2, 3…). A DRAFT version is editable only by
+// creating a replacement draft — a PUBLISHED version is never updated
+// in place; publishing a newer version SUPERSEDES the previous one.
+// `entitlements` is Json validated by Zod (PlanEntitlementsSchema in
+// @sendcms/plans) at the service boundary — never unchecked JSON.
+model PlanVersion {
+  id             String            @id @default(cuid())
+  planId         String
+  plan           Plan              @relation("PlanVersions", fields: [planId], references: [id], onDelete: Cascade)
+  version        Int
+  status         PlanVersionStatus @default(DRAFT)
+  // Price in minor units (cents). Null = free.
+  priceAmount    Int?
+  priceCurrency  String            @default("USD")
+  billingInterval BillingInterval  @default(MONTHLY)
+  trialDays      Int               @default(0)
+  entitlements   Json
+  // Why this version exists (admin-supplied, shown in version history).
+  changeReason   String?
+  publishedAt    DateTime?
+  createdById    String?
+  createdBy      User?             @relation("PlanVersionsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions      Subscription[]
+  currentForPlans    Plan[] @relation("PlanCurrentVersion")
+  fromEvents         SubscriptionEvent[] @relation("SubscriptionEventFromVersion")
+  toEvents           SubscriptionEvent[] @relation("SubscriptionEventToVersion")
+
+  @@unique([planId, version])
+  @@index([planId])
+  @@index([planId, status])
+  @@index([status, publishedAt])
+}
+
+// A customer's entitlement to one plan version. The effective version
+// (planVersionId) changes ONLY via an admin-approved migration, recorded
+// in SubscriptionEvent. One ACTIVE subscription per user is enforced in
+// the service (transaction: cancel the old one before creating the new
+// one) — a DB partial unique index is not expressible in Prisma schema.
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planVersionId      String
+  planVersion        PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events SubscriptionEvent[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([planId])
+  @@index([planVersionId])
+  @@index([status, currentPeriodEnd])
+}
+
+// Append-only history of every version transition on a subscription.
+// Rollback is a new MIGRATED event back to a previous version — history
+// is never rewritten.
+model SubscriptionEvent {
+  id                String                @id @default(cuid())
+  subscriptionId    String
+  subscription      Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  type              SubscriptionEventType
+  fromPlanVersionId String?
+  fromPlanVersion   PlanVersion?          @relation("SubscriptionEventFromVersion", fields: [fromPlanVersionId], references: [id], onDelete: SetNull)
+  toPlanVersionId   String?
+  toPlanVersion     PlanVersion?          @relation("SubscriptionEventToVersion", fields: [toPlanVersionId], references: [id], onDelete: SetNull)
+  adminId           String?
+  admin             User?                 @relation("SubscriptionEventsByAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  reason            String?
+
+  createdAt DateTime @default(now())
+
+  @@index([subscriptionId, createdAt])
+  @@index([subscriptionId, type, createdAt])
+}
+
+// Append-only metering ledger. One row per counted unit (or per batch
+// with quantity > 1). `idempotencyKey` is unique so a retried operation
+// can never double-count. `period` is the bucket start (month start for
+// monthly meters, day start for daily meters). Quota checks aggregate
+// this ledger — never scan all historical submissions per request.
+model UsageLedger {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meter          UsageMeter
+  quantity       Int        @default(1)
+  unit           String
+  period         DateTime
+  // What caused the usage, e.g. "submission:created", "mcp:tools/call".
+  sourceEvent    String?
+  // Unique per operation — retries with the same key are a no-op.
+  idempotencyKey String     @unique
+  // The resource counted, e.g. a formId, submissionId or apiKeyId.
+  resourceId     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, meter, period])
+  @@index([userId, meter, createdAt])
+  @@index([period])
+}
+
+// Per-user admin override of one meter's limit (precedence 3 in
+// entitlement resolution, above the subscription's plan version).
+// `value` null = unlimited for that meter. `reason` is required —
+// overrides are audited via AuditLog (ENTITLEMENT resource).
+model EntitlementOverride {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation("EntitlementOverrideTarget", fields: [userId], references: [id], onDelete: Cascade)
+  meter     UsageMeter
+  value     Int?
+  reason    String
+  adminId   String?
+  admin     User?      @relation("EntitlementOverrideAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, meter])
+  @@index([userId])
+  @@index([expiresAt])
 }

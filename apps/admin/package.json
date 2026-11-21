@@ -6,6 +6,7 @@
     "@sendcms/auth": "workspace:*",
     "@sendcms/i18n": "workspace:*",
     "@sendcms/permissions": "workspace:*",
+    "@sendcms/plans": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "@sendcms/ui": "workspace:*",
     "@tanstack/react-query": "^5.108.0",

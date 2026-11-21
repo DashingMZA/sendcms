@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@sendcms/database": "workspace:*",
+    "@sendcms/plans": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"

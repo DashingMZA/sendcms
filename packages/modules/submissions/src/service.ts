@@ -23,6 +23,12 @@ import {
 } from "@sendcms/ai"
 import { normalizeDomain } from "@sendcms/domains"
 import {
+  checkLimitSafe,
+  getEffectiveEntitlementsSafe,
+  recordUsage,
+  startOfUtcMonth,
+} from "@sendcms/plans"
+import {
   enqueueDigest,
   enqueueSubmissionNotifications,
 } from "@sendcms/notifications"
@@ -398,6 +404,15 @@ export async function submitForm(
       throw fail("This form has reached its daily submission limit.", 429)
     }
   }
+  // Plan quota (Phase 4): the form owner's monthly submission quota
+  // from their effective plan. Fail-open — any error in the check must
+  // NOT fail the submission (the core path stays independent of the
+  // plans module). Reject ONLY when the submission quota itself is
+  // exhausted — never because an unrelated AI/billing limit was hit.
+  const quota = await checkLimitSafe(form.ownerId, "SUBMISSIONS")
+  if (quota && !quota.allowed) {
+    throw fail("This form's monthly submission quota is exhausted.", 402)
+  }
   if (meta.ip) {
     const minuteAgo = new Date(Date.now() - 60_000)
     const recent = await db.submission.count({
@@ -472,6 +487,27 @@ export async function submitForm(
           error: err,
         })
       }
+    }
+    // Usage ledger (Phase 4, reporting): one row per accepted
+    // submission, idempotencyKey = the submission id so a retry can
+    // never double-count. Best-effort — a ledger failure must never
+    // fail the submission.
+    try {
+      await recordUsage({
+        userId: form.ownerId,
+        meter: "SUBMISSIONS",
+        quantity: 1,
+        unit: "submission",
+        period: startOfUtcMonth().toISOString(),
+        sourceEvent: "submission:created",
+        idempotencyKey: created.id,
+        resourceId: created.id,
+      })
+    } catch (err) {
+      logger.error("failed to record submission usage", {
+        submissionId: created.id,
+        error: err,
+      })
     }
     return {
       kind: "created",
@@ -554,7 +590,6 @@ export async function rescoreNewSubmissions({
 } = {}): Promise<RescoreResult> {
   if (!isAiConfigured(env)) return { checked: 0, markedSpam: 0, skipped: 0 }
   const threshold = getSpamThreshold(env)
-  const cap = getAiDailyCallCap(env)
   const model = getAiModel(env)
   const today = startOfUtcDay()
 
@@ -564,10 +599,33 @@ export async function rescoreNewSubmissions({
       aiScoredAt: null,
       form: { aiEnabled: true },
     },
-    include: { form: { select: { id: true, name: true } } },
+    include: { form: { select: { id: true, name: true, ownerId: true } } },
     orderBy: { createdAt: "asc" },
     take: limit,
   })
+
+  // The daily cap is the form OWNER's aiRequestsPerDay from their
+  // effective plan (Phase 4) — previously it was the global env default
+  // for every form. The usage counter stays per form (AiDailyUsage is
+  // keyed by form + day); the cap VALUE is what is now per-owner.
+  // A suspended owner has null entitlements → cap 0 (skipped). A failed
+  // lookup (null) → the env default, so a plans-module error never
+  // stops the rescore loop.
+  const ownerCap = new Map<string, number>()
+  async function getOwnerCap(ownerId: string | undefined): Promise<number> {
+    if (!ownerId) return getAiDailyCallCap(env)
+    const cached = ownerCap.get(ownerId)
+    if (cached !== undefined) return cached
+    const effective = await getEffectiveEntitlementsSafe(ownerId)
+    const cap =
+      effective === null
+        ? getAiDailyCallCap(env)
+        : effective.entitlements
+          ? (effective.entitlements.aiRequestsPerDay ?? getAiDailyCallCap(env))
+          : 0
+    ownerCap.set(ownerId, cap)
+    return cap
+  }
 
   let checked = 0
   let markedSpam = 0
@@ -579,6 +637,7 @@ export async function rescoreNewSubmissions({
       skipped++
       continue
     }
+    const cap = await getOwnerCap(submission.form.ownerId)
     const usage = await db.aiDailyUsage.findUnique({
       where: { formId_date: { formId, date: today } },
     })

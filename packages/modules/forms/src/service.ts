@@ -16,6 +16,7 @@ import {
   suggestFields,
   type FieldSuggestions,
 } from "@sendcms/ai"
+import { checkLimitSafe } from "@sendcms/plans"
 
 import type {
   AddNotificationEmailInput,
@@ -105,6 +106,16 @@ export async function createFormForUser(
   userId: string,
   input: CreateFormInput
 ) {
+  // Entitlement guard (Phase 4): the FORMS limit from the user's
+  // effective plan. Fail-open — a plans-module error must never block
+  // form creation; a null check means "no limit applies".
+  const limit = await checkLimitSafe(userId, "FORMS")
+  if (limit && !limit.allowed) {
+    throw new ApiError(
+      `Your plan allows at most ${limit.limit} forms. Upgrade your plan or ask an admin to raise your limit.`,
+      409
+    )
+  }
   const created = await db.form.create({
     data: {
       name: input.name,
