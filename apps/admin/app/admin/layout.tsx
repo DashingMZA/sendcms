@@ -4,6 +4,7 @@ import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 
 import { AppSidebar } from "@/components/admin/app-sidebar"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { getLocaleDirection, getRequestLocale } from "@/lib/i18n"
 
 // NOTE: this layout lives at app/admin/layout.tsx (NOT in the (admin)
 // route group) because it must wrap /admin/*. A layout inside a route
@@ -21,10 +22,19 @@ export default async function AdminLayout({
   // is the same check as defense-in-depth for direct renders.
   if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
 
+  // The sidebar sits on the inline-start side: left in LTR, right in
+  // RTL. The shadcn Sidebar pins itself with PHYSICAL left/right
+  // (data-[side=left]:left-0 / data-[side=right]:right-0), so
+  // dir="rtl" on <html> alone does NOT move it — the side must be
+  // passed explicitly. Language switching reloads the page, so this
+  // server-computed direction is never stale.
+  const locale = await getRequestLocale()
+  const side = getLocaleDirection(locale) === "rtl" ? "right" : "left"
+
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <AppSidebar user={session.user} />
+        <AppSidebar user={session.user} side={side} />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

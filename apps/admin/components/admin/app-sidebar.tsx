@@ -14,15 +14,21 @@ import {
   RiDashboardLine,
   RiExpandUpDownLine,
   RiFileListLine,
-  RiHistoryLine,
+  RiFileTextLine,
+  RiFlagLine,
+  RiGlobeLine,
+  RiInboxLine,
   RiKeyLine,
   RiLogoutBoxLine,
+  RiMegaphoneLine,
   RiMoonLine,
   RiPlugLine,
   RiPriceTag3Line,
+  RiPulseLine,
   RiRepeatLine,
   RiRobotLine,
   RiSettings3Line,
+  RiShieldLine,
   RiSunLine,
   RiUserLine,
 } from "@remixicon/react"
@@ -64,9 +70,15 @@ type NavGroup = {
 
 type Props = {
   user: { name?: string | null; email?: string | null; image?: string | null }
+  /** Which side the sidebar sits on: "left" in LTR, "right" in RTL.
+   * The shadcn Sidebar pins itself physically (left-0 / right-0), so
+   * this must come from the locale direction — dir="rtl" alone does
+   * not move it. Passed from the server layout (language switching
+   * reloads the page, so it is never stale). */
+  side: "left" | "right"
 }
 
-export function AppSidebar({ user }: Props) {
+export function AppSidebar({ user, side }: Props) {
   const { t } = useTranslation("navigation")
   const { t: tDashboard } = useTranslation("dashboard")
   const { t: tCommon } = useTranslation("common")
@@ -90,6 +102,11 @@ export function AppSidebar({ user }: Props) {
           label: t("usage"),
           href: "/admin/usage",
           icon: RiBarChartLine,
+        },
+        {
+          label: t("submissions"),
+          href: "/admin/submissions",
+          icon: RiInboxLine,
         },
       ],
     },
@@ -129,15 +146,40 @@ export function AppSidebar({ user }: Props) {
       label: t("operations"),
       items: [
         {
-          label: t("activity"),
-          href: "/admin/activity",
-          icon: RiHistoryLine,
+          label: t("features"),
+          href: "/admin/features",
+          icon: RiFlagLine,
+        },
+        {
+          label: t("announcements"),
+          href: "/admin/announcements",
+          icon: RiMegaphoneLine,
+        },
+        {
+          label: t("auditLogs"),
+          href: "/admin/audit-logs",
+          icon: RiFileTextLine,
         },
       ],
     },
     {
       label: t("system"),
       items: [
+        {
+          label: t("health"),
+          href: "/admin/health",
+          icon: RiPulseLine,
+        },
+        {
+          label: t("security"),
+          href: "/admin/security",
+          icon: RiShieldLine,
+        },
+        {
+          label: t("translations"),
+          href: "/admin/translations",
+          icon: RiGlobeLine,
+        },
         {
           label: t("settings"),
           href: "/admin/settings",
@@ -149,6 +191,9 @@ export function AppSidebar({ user }: Props) {
 
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
+  // Collapsed-icon tooltips sit on the sidebar's OUTER side: right
+  // when the sidebar is on the left, left when it is on the right.
+  const tooltipSide = side === "right" ? "left" : "right"
   const initials = (user.name ?? user.email ?? "U")
     .split(" ")
     .map((w) => w[0])
@@ -157,7 +202,7 @@ export function AppSidebar({ user }: Props) {
     .toUpperCase()
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" side={side}>
       {/* ── Header ──────────────────────────────────────── */}
       <SidebarHeader className="mb-0">
         <SidebarMenu>
@@ -166,7 +211,7 @@ export function AppSidebar({ user }: Props) {
               size="lg"
               className="flex items-center p-0 hover:bg-transparent"
             >
-              <Link href="/admin" className="max-h-[42px] pl-0">
+              <Link href="/admin" className="max-h-[42px] ps-0">
                 <Logo brand={config.site} />
               </Link>
             </SidebarMenuButton>
@@ -191,7 +236,7 @@ export function AppSidebar({ user }: Props) {
                       <SidebarMenuButton
                         asChild
                         isActive={active}
-                        tooltip={item.label}
+                        tooltip={{ children: item.label, side: tooltipSide }}
                       >
                         <Link href={item.href}>
                           <item.icon aria-hidden="true" />
@@ -212,11 +257,13 @@ export function AppSidebar({ user }: Props) {
         <SidebarMenu className="gap-1">
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip={
-                resolvedTheme === "dark"
-                  ? tDashboard("darkMode")
-                  : tDashboard("lightMode")
-              }
+              tooltip={{
+                children:
+                  resolvedTheme === "dark"
+                    ? tDashboard("darkMode")
+                    : tDashboard("lightMode"),
+                side: tooltipSide,
+              }}
               onClick={() =>
                 setTheme(resolvedTheme === "dark" ? "light" : "dark")
               }
@@ -233,7 +280,7 @@ export function AppSidebar({ user }: Props) {
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <LanguageSelector />
+          <LanguageSelector side={side} />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -250,7 +297,7 @@ export function AppSidebar({ user }: Props) {
                       {initials}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 overflow-hidden text-left leading-tight group-data-[collapsible=icon]:hidden">
+                  <div className="flex-1 overflow-hidden text-start leading-tight group-data-[collapsible=icon]:hidden">
                     <p className="truncate text-sm font-semibold">
                       {user.name}
                     </p>
@@ -259,7 +306,7 @@ export function AppSidebar({ user }: Props) {
                     </p>
                   </div>
                   <RiExpandUpDownLine
-                    className="ml-auto size-4 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden"
+                    className="ms-auto size-4 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden"
                     aria-hidden="true"
                   />
                 </SidebarMenuButton>

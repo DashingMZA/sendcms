@@ -29,8 +29,11 @@ import { usePersistLocale } from "@/components/admin/use-persist-locale"
  * stores the choice in the browser cookie and best-effort in the
  * database, then reloads so the whole UI re-renders in the new
  * language. The choice sticks until the user changes it again.
+ *
+ * `side` is the sidebar's side (left in LTR, right in RTL) — the
+ * collapsed-icon tooltip sits on the sidebar's outer side.
  */
-export function LanguageSelector() {
+export function LanguageSelector({ side }: { side: "left" | "right" }) {
   const { t } = useTranslation("language")
   const persistLocale = usePersistLocale()
   const [current, setCurrent] = useState<LocaleCode>("en")
@@ -60,7 +63,12 @@ export function LanguageSelector() {
     <SidebarMenuItem>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton tooltip={t("title")}>
+          <SidebarMenuButton
+            tooltip={{
+              children: t("title"),
+              side: side === "right" ? "left" : "right",
+            }}
+          >
             <RiGlobalLine className="size-4 shrink-0" aria-hidden="true" />
             <span className="group-data-[collapsible=icon]:hidden">
               {currentName}
