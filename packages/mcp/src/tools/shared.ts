@@ -1,8 +1,17 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
+import type { McpAuthContext } from "../auth"
 
 const logger = createLogger("mcp")
+
+// Whether a tool may be registered for this request's key: the
+// per-user allowlist (Phase 6) narrows what the key's scope already
+// permits. null/undefined = no allowlist set, every in-scope tool is
+// allowed; an explicit list = only those tools.
+export function isToolAllowed(auth: McpAuthContext, tool: string): boolean {
+  return auth.allowedTools == null || auth.allowedTools.includes(tool)
+}
 
 // Tool results are plain JSON text — every MCP client can read them,
 // and the shape matches the service return values the REST routes

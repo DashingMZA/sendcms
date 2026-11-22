@@ -69,9 +69,11 @@ import {
 } from "@remixicon/react"
 import { useTranslation } from "@/components/admin/translation-provider"
 import { UserAiTab } from "./user-ai-tab"
+import { UserMcpTab } from "./user-mcp-tab"
 import { UserPackageTab } from "./user-package-tab"
 import { UserRoleBadge, UserStatusBadge } from "./user-status-badge"
 import type { AiBillingMode } from "@sendcms/database"
+import type { UserMcpSettingsRow } from "@sendcms/mcp-admin"
 
 function formatDate(value: string | Date | null) {
   if (!value) return "—"
@@ -134,6 +136,8 @@ type Props = {
   actorId: string
   actorRole: PlatformRole | AdminRole
   aiBillingMode: AiBillingMode
+  mcpSettings: UserMcpSettingsRow | null
+  mcpToolNames: readonly string[]
 }
 
 export function UserDetail({
@@ -142,6 +146,8 @@ export function UserDetail({
   actorId,
   actorRole,
   aiBillingMode,
+  mcpSettings,
+  mcpToolNames,
 }: Props) {
   const { t } = useTranslation("users")
   const [tab, setTab] = useState("profile")
@@ -688,77 +694,87 @@ export function UserDetail({
         </TabsContent>
 
         <TabsContent value="mcp" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("mcpTitle")}</CardTitle>
-              <CardDescription>{t("mcpNote")}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {canManage && detail.apiKeys.length > 0 && (
-                <div>
-                  <Button
-                    variant="outline"
-                    onClick={() => openAction("revokeKeys")}
-                  >
-                    {t("revokeAllKeys")}
-                  </Button>
-                </div>
-              )}
-              {detail.apiKeys.length === 0 ? (
-                <EmptyState
-                  icon={
-                    <RiKeyLine
-                      className="mb-4 size-10 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  }
-                  title={t("mcpEmptyTitle")}
-                  description={t("mcpEmptyDescription")}
-                />
-              ) : (
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t("keyName")}</TableHead>
-                        <TableHead>{t("keyValue")}</TableHead>
-                        <TableHead>{t("keyScope")}</TableHead>
-                        <TableHead>{t("keyLastUsed")}</TableHead>
-                        <TableHead>{t("keyCreated")}</TableHead>
-                        <TableHead>{t("keyRevoked")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detail.apiKeys.map((key) => (
-                        <TableRow key={key.id}>
-                          <TableCell className="font-medium">
-                            {key.name}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {key.prefix}…{key.last4}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{key.scope}</Badge>
-                          </TableCell>
-                          <TableCell>{formatDate(key.lastUsedAt)}</TableCell>
-                          <TableCell>{formatDate(key.createdAt)}</TableCell>
-                          <TableCell>
-                            {key.revokedAt ? (
-                              <Badge variant="outline">{t("keyRevoked")}</Badge>
-                            ) : (
-                              <Badge variant="secondary">
-                                {t("keyActive")}
-                              </Badge>
-                            )}
-                          </TableCell>
+          <div className="flex flex-col gap-6">
+            <UserMcpTab
+              userId={userId}
+              actorRole={actorRole}
+              initialSettings={mcpSettings}
+              toolNames={mcpToolNames}
+            />
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("mcpTitle")}</CardTitle>
+                <CardDescription>{t("mcpNote")}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {canManage && detail.apiKeys.length > 0 && (
+                  <div>
+                    <Button
+                      variant="outline"
+                      onClick={() => openAction("revokeKeys")}
+                    >
+                      {t("revokeAllKeys")}
+                    </Button>
+                  </div>
+                )}
+                {detail.apiKeys.length === 0 ? (
+                  <EmptyState
+                    icon={
+                      <RiKeyLine
+                        className="mb-4 size-10 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    }
+                    title={t("mcpEmptyTitle")}
+                    description={t("mcpEmptyDescription")}
+                  />
+                ) : (
+                  <div className="rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t("keyName")}</TableHead>
+                          <TableHead>{t("keyValue")}</TableHead>
+                          <TableHead>{t("keyScope")}</TableHead>
+                          <TableHead>{t("keyLastUsed")}</TableHead>
+                          <TableHead>{t("keyCreated")}</TableHead>
+                          <TableHead>{t("keyRevoked")}</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {detail.apiKeys.map((key) => (
+                          <TableRow key={key.id}>
+                            <TableCell className="font-medium">
+                              {key.name}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {key.prefix}…{key.last4}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{key.scope}</Badge>
+                            </TableCell>
+                            <TableCell>{formatDate(key.lastUsedAt)}</TableCell>
+                            <TableCell>{formatDate(key.createdAt)}</TableCell>
+                            <TableCell>
+                              {key.revokedAt ? (
+                                <Badge variant="outline">
+                                  {t("keyRevoked")}
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">
+                                  {t("keyActive")}
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="audit" className="mt-6">

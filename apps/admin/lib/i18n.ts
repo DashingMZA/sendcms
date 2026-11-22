@@ -49,6 +49,7 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "navigation",
   "language",
   "dashboard",
+  "mcp",
   "plans",
   "subscriptions",
   "usage",

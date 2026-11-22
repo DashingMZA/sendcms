@@ -1,0 +1,37 @@
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { listMcpKeys } from "@sendcms/mcp-admin"
+import { McpPaginationQuerySchema } from "@sendcms/mcp-admin/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+
+// Every API key with its owner and its 30-day call count. Metadata
+// only — the key hash is never selected, and the plaintext key is
+// unrecoverable by design.
+export async function GET(req: NextRequest) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const parsed = McpPaginationQuerySchema.safeParse(
+      Object.fromEntries(req.nextUrl.searchParams)
+    )
+    if (!parsed.success) {
+      const flat = parsed.error.flatten()
+      const messages = [
+        ...flat.formErrors,
+        ...Object.values(flat.fieldErrors).flat(),
+      ].filter(Boolean)
+      return NextResponse.json(
+        { error: messages.join("; ") || "Validation failed" },
+        { status: 422 }
+      )
+    }
+    const result = await listMcpKeys(
+      session,
+      parsed.data.page,
+      parsed.data.perPage
+    )
+    return ok(result)
+  } catch (err) {
+    return handleApiError(err)
+  }
+}

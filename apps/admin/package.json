@@ -6,6 +6,8 @@
     "@sendcms/api-client": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/i18n": "workspace:*",
+    "@sendcms/mcp": "workspace:*",
+    "@sendcms/mcp-admin": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/shared": "workspace:*",

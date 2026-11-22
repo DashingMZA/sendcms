@@ -15,6 +15,7 @@ import {
   RiExpandUpDownLine,
   RiFileListLine,
   RiHistoryLine,
+  RiKeyLine,
   RiLogoutBoxLine,
   RiMoonLine,
   RiPlugLine,
@@ -117,6 +118,11 @@ export function AppSidebar({ user }: Props) {
           icon: RiSettings3Line,
         },
         { label: t("mcp"), href: "/admin/mcp", icon: RiPlugLine },
+        {
+          label: t("apiKeys"),
+          href: "/admin/mcp/keys",
+          icon: RiKeyLine,
+        },
       ],
     },
     {

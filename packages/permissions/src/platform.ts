@@ -20,6 +20,7 @@ export type PlatformCapability =
   | "MANAGE_USAGE"
   | "MANAGE_AI"
   | "MANAGE_MCP"
+  | "VIEW_MCP"
   | "MANAGE_FEATURE_FLAGS"
   | "VIEW_AUDIT_LOGS"
   // MANAGE_PLATFORM_SETTINGS is already in the legacy set above.
@@ -52,6 +53,7 @@ const PLATFORM_PERMISSIONS: Record<
     "MANAGE_USAGE",
     "MANAGE_AI",
     "MANAGE_MCP",
+    "VIEW_MCP",
     "MANAGE_FEATURE_FLAGS",
     "VIEW_AUDIT_LOGS",
     "MANAGE_ADMINISTRATORS",
@@ -96,6 +98,7 @@ const ADMIN_CAPABILITIES: readonly PlatformCapability[] = [
   "MANAGE_USAGE",
   "MANAGE_AI",
   "MANAGE_MCP",
+  "VIEW_MCP",
   "MANAGE_FEATURE_FLAGS",
   "VIEW_AUDIT_LOGS",
   "MANAGE_ADMINISTRATORS",
@@ -132,6 +135,7 @@ export const ADMIN_ROLE_CAPABILITIES: Record<
     "MANAGE_USAGE",
     "VIEW_AUDIT_LOGS",
     "VIEW_AI_USAGE",
+    "VIEW_MCP",
   ],
   // Support queries only: view users and their data, nothing else.
   SUPPORT: [
@@ -139,6 +143,7 @@ export const ADMIN_ROLE_CAPABILITIES: Record<
     "VIEW_USERS",
     "VIEW_CUSTOMER_DATA",
     "VIEW_SENSITIVE_SUBMISSIONS",
+    "VIEW_MCP",
   ],
 }
 

@@ -23,6 +23,7 @@ const ALL_CAPABILITIES: PlatformCapability[] = [
   "MANAGE_USAGE",
   "MANAGE_AI",
   "MANAGE_MCP",
+  "VIEW_MCP",
   "MANAGE_FEATURE_FLAGS",
   "VIEW_AUDIT_LOGS",
   "MANAGE_ADMINISTRATORS",
@@ -95,6 +96,7 @@ describe("adminCan", () => {
       "MANAGE_USAGE",
       "VIEW_AUDIT_LOGS",
       "VIEW_AI_USAGE",
+      "VIEW_MCP",
     ]
     expect([...ADMIN_ROLE_CAPABILITIES.MANAGER].sort()).toEqual(
       [...expected].sort()
@@ -110,6 +112,7 @@ describe("adminCan", () => {
       "VIEW_USERS",
       "VIEW_CUSTOMER_DATA",
       "VIEW_SENSITIVE_SUBMISSIONS",
+      "VIEW_MCP",
     ]
     expect([...ADMIN_ROLE_CAPABILITIES.SUPPORT].sort()).toEqual(
       [...expected].sort()

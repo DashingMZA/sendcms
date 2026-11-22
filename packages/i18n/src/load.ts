@@ -48,6 +48,7 @@ export const SHARED_DOMAINS = [
 export const ADMIN_DOMAINS = [
   "ai",
   "dashboard",
+  "mcp",
   "navigation",
   "plans",
   "subscriptions",

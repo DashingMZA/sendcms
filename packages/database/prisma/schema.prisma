@@ -139,6 +139,8 @@ enum AuditResource {
   ENTITLEMENT
   // Admin Control Plane (Phase 5) — a user's BYOK credential.
   AI_KEY
+  // Admin Control Plane (Phase 6) — MCP global / per-user controls.
+  MCP_SETTINGS
 }
 
 // ─── Plans & entitlements (Admin Control Plane, Phase 4) ────────────────────
@@ -296,6 +298,9 @@ model User {
   aiKeys                UserAiKey[]
   aiUsageRecords        AiUsageRecord[]
   aiSettings            UserAiSettings?
+  // Admin Control Plane (Phase 6) — MCP per-user controls + usage.
+  mcpSettings           McpUserSettings?
+  mcpUsageRecords       McpUsageRecord[]
 
   @@index([status])
   @@index([adminRole])
@@ -658,6 +663,7 @@ model ApiKey {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   rateLimit ApiKeyRateLimit?
+  mcpUsageRecords McpUsageRecord[]
 
   @@index([userId])
   @@index([userId, revokedAt, createdAt])
@@ -993,4 +999,76 @@ model UserAiSettings {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+// ─── MCP controls (Admin Control Plane, Phase 6) ────────────────────────────
+
+enum McpUsageStatus {
+  SUCCESS
+  FAILED
+}
+
+// Platform-wide MCP switch, set by an admin from /admin/mcp. ONE row
+// (the service upserts it on first read). When globalEnabled is
+// false, EVERY MCP call is refused with 503 — the kill-switch. This
+// is separate from the Phase 4 platform emergency flag in
+// config/config.json (which also zeroes AI and needs a restart to
+// change); the MCP switch flips from the admin UI with no restart.
+// It never touches form submission, the inbox, or any non-MCP
+// service. Changes are audited via AuditLog (MCP_SETTINGS).
+model McpSettings {
+  id            String   @id @default(cuid())
+  globalEnabled Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Per-user MCP controls (one row per user, created on first use).
+// `isEnabled` false = this user cannot call MCP at all (their keys
+// authenticate but every tool call is refused). `allowedTools` is the
+// per-tool allowlist: null = every tool the key's scope allows;
+// an explicit list = only those tools (an empty list = no tools).
+// `minuteLimit` / `hourLimit` override the plan entitlements for
+// this user; null = the plan's limits (then the platform defaults
+// 120/min + 2000/hour). Changes are audited (MCP_SETTINGS).
+model McpUserSettings {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isEnabled    Boolean  @default(true)
+  allowedTools Json?
+  minuteLimit  Int?
+  hourLimit    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// One row per MCP tool call — the analytics source (per-tool,
+// per-user, per-key). MCP volume is developer-driven, not form
+// volume, so per-call rows are honest and cheap. A row is written
+// for every call the MCP endpoint accepts for execution, including
+// failed tool executions (status FAILED); calls refused BEFORE
+// execution (kill-switch, disabled user, disallowed tool, over
+// quota) are NOT recorded here — they are rate-limit/audit events,
+// not tool usage. Never contains request arguments or results.
+model McpUsageRecord {
+  id         String         @id @default(cuid())
+  apiKeyId   String
+  apiKey     ApiKey         @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool       String
+  status     McpUsageStatus
+  durationMs Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([apiKeyId, createdAt])
+  @@index([tool, createdAt])
+  @@index([userId, tool, createdAt])
 }

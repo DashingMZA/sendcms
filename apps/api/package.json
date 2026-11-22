@@ -24,6 +24,7 @@
     "@sendcms/forms": "workspace:*",
     "@sendcms/inbox": "workspace:*",
     "@sendcms/mcp": "workspace:*",
+    "@sendcms/mcp-admin": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/plans": "workspace:*",

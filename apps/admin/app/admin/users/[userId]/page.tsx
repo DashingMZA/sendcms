@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth"
 import { notFound, redirect } from "next/navigation"
 import { getUserDetail } from "@sendcms/admin-users"
 import { getUserAiBillingMode } from "@sendcms/ai-settings"
+import { getUserMcpSettings, type UserMcpSettingsRow } from "@sendcms/mcp-admin"
+import { MCP_TOOL_NAMES } from "@sendcms/mcp"
 import { ApiError } from "@sendcms/shared"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { UserDetail } from "@/components/admin/user-detail"
@@ -43,6 +45,16 @@ export default async function AdminUserDetailPage({
   // AI settings row; the tab's mutations go through the api app.
   const aiBillingMode = await getUserAiBillingMode(userId)
 
+  // The MCP tab's per-user settings (Phase 6). A failed read (the
+  // actor lacks VIEW_MCP) must not break the whole page — the tab
+  // shows its no-permission card instead.
+  let mcpSettings: UserMcpSettingsRow | null = null
+  try {
+    mcpSettings = await getUserMcpSettings(session, userId)
+  } catch {
+    mcpSettings = null
+  }
+
   return (
     <UserDetail
       initialData={detail}
@@ -50,6 +62,8 @@ export default async function AdminUserDetailPage({
       actorId={session.user.id}
       actorRole={actorRole}
       aiBillingMode={aiBillingMode}
+      mcpSettings={mcpSettings}
+      mcpToolNames={MCP_TOOL_NAMES}
     />
   )
 }

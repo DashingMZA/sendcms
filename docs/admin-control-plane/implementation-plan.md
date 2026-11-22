@@ -164,7 +164,7 @@ only the Overview page is real; the 8 coming-soon locales have no files.
   quota guards are pre-insert checks (concurrent overshoot by one
   possible — documented); emergency flag needs a restart to apply.
 
-### Phase 5 — AI provider & BYOK architecture — DONE + VERIFIED 2026-11-21 (not yet pushed)
+### Phase 5 — AI provider & BYOK architecture — DONE + PUSHED 2026-11-21 (remote @ `414676a`)
 
 Schema (migrations `20261121233835_add_ai_byok_keys_usage` +
 `20261121234141_add_user_ai_settings`, 30/30 applied): `UserAiKey`
@@ -246,12 +246,85 @@ BYOK save/test/resolve is still owed); dashboard shell is still
 `lang="en"` with no `dir` handling (the /dashboard/ai content is
 translated, full dashboard RTL is a follow-up); the dashboard
 sidebar "AI" label is hardcoded English like every other dashboard
-sidebar label. **Not pushed — awaiting the owner's "push kr do".**
+sidebar label. **PUSHED 2026-11-21 (remote @ `414676a`; local
+`f4d0d19`, tree `57bb25f` verified; 77 files, 7,573 insertions).
+Push log: `~/workspace/push-admin-phase5.log`.**
 
-### Phase 6 — MCP controls — PENDING
+### Phase 6 — MCP controls — DONE (backend; admin UI pages follow)
 
 Global/per-user/plan controls, scopes, quotas, tool permissions,
-analytics, revocation — enforced by the MCP service itself.
+analytics, revocation — enforced by the MCP service itself, not only
+by the UI.
+
+- **Permissions:** `VIEW_MCP` added (`packages/permissions/src/
+platform.ts`); owner = all, SUPER_ADMIN = all admin caps except
+  `MANAGE_ADMINISTRATORS` (so it gets `VIEW_MCP`), MANAGER and
+  SUPPORT both get `VIEW_MCP`. Writes stay `MANAGE_MCP`.
+  `tests/permissions.test.ts` role-map assertions updated.
+- **Enforcement (`packages/mcp/`):** `src/tools/names.ts` is the
+  single 19-tool registry (`MCP_TOOL_NAMES`, `MCP_READ_TOOL_NAMES`,
+  `isMcpToolName`); all 19 registrations wrapped in
+  `isToolAllowed(auth, name)` (alongside the READ-scope mutation
+  gate). `src/access.ts` — `checkMcpAccess({ auth, tool? })` enforces
+  in order: (a) kill-switch off → 503, (b) revoked key → 401
+  (existing, in `resolveMcpAuth`), (c) suspended/disabled owner →
+  403, (d) per-user disabled → 403, (e) tool outside the allowlist
+  → 404 "Tool X not found" (same wording as the READ-scope
+  behaviour), (f) quota overrides returned for the rate limiter.
+  `parseMcpAllowedTools` exported (corrupt Json fails open to
+  "every tool the scope allows" + a warning log). `src/rate-limit.ts`
+  — `checkMcpRateLimit(keyId, overrides)` precedence: per-user
+  override → plan entitlements (`getEffectiveEntitlementsSafe`) →
+  platform defaults 120/min + 2000/hour; same DB-backed counters,
+  429 without incrementing, fail-open to the defaults when the
+  entitlements lookup fails. `src/usage.ts` — `recordMcpUsage` /
+  `recordMcpCallOutcomes` / `extractMcpCallOutcomes` (pure):
+  one row per executed call (tool, status, durationMs), best-effort
+  and awaited, never any arguments/results; non-`tools/call`
+  methods and unmatched responses record nothing. The route
+  (`apps/api/app/api/mcp/route.ts`) calls `checkMcpAccess` for
+  every request (tools/call with the tool name, everything else
+  without) and the rate limiter for `tools/call` before execution.
+- **Service (`packages/modules/mcp-admin/`, `@sendcms/mcp-admin`):**
+  `getMcpSettings` (upserts the singleton row, fixed id
+  `"platform"`), `setMcpSettings` (MANAGE_MCP, reason required,
+  audited `mcp-global-toggled` with old/new); `getUserMcpSettings`
+  (defaults when no row), `setUserMcpSettings` (MANAGE_MCP, reason
+  required, audited `mcp-user-settings-changed` with old/new;
+  tool names validated against `MCP_TOOL_NAMES`; 0/negative
+  quotas rejected 422 — use the enable switch to block);
+  `listMcpUsage` + `getMcpUsageSummary` (VIEW_MCP; totals,
+  per-tool counts, per-user top 10, last-24h error rate);
+  `listMcpKeys` (owner, scope, 30-day call count via one groupBy;
+  never selects `keyHash`) + `revokeMcpKey` (MANAGE_MCP, reuses
+  `@sendcms/api-keys` revoke, then logs a second admin audit row
+  `mcp-key-revoked` with the reason — the two rows together are
+  the key-lifecycle record and the admin action). No owner
+  protection / self-target ban on MCP settings (deliberate —
+  disabling MCP never locks anyone out of the dashboard). React
+  Query hooks in `src/queries.ts`. 6 thin routes under
+  `apps/api/app/api/v1/admin/mcp/` (settings, users/[userId]/
+  settings, usage, usage/summary, keys, keys/[keyId]/revoke).
+- **Docs:** `docs/admin-control-plane/mcp-management.md`
+  (kill-switch, per-user controls, quota precedence, usage
+  analytics, what is NOT recorded, revocation, the empty-allowlist
+  `-32601` edge case).
+- **Gates:** root typecheck 0, mcp + mcp-admin + api typecheck 0,
+  lint 0, **tests 480/480 (40 files; 52 new in
+  `tests/mcp-admin.test.ts`)**, prettier clean, `pnpm --filter
+@sendcms/api build:server` passes with all 6 new routes in the
+  build. Fixes made during verification: `Prisma` value import
+  (TS1361 on `Prisma.JsonNull`), top-users `orderBy`
+  `{ _count: { userId: "desc" } }` (`_all` is not a valid order
+  key), `setMcpSettings` reads the old value with `findFirst`
+  (consistent with `checkMcpAccess`), the keys mock handles the
+  service's `select.user` shape, and the empty-allowlist test
+  asserts the SDK's `-32601 Method not found` (the SDK serves no
+  `tools/list` handler when zero tools are registered).
+- **Open:** admin UI pages (`/admin/mcp/*`) are the next step —
+  the hooks already exist. No live verification against a real
+  MCP client yet (tests use an in-memory transport with mocked
+  services). No per-tool quota — only per-key minute/hour limits.
 
 ### Phase 7 — Platform operations — PENDING
 
@@ -275,9 +348,11 @@ proofs), CSP, rate limiting, step-up re-auth, final report.
 
 - `implementation-audit.md` — Phase 1 record (done).
 - `implementation-plan.md` — this file.
+- `plans-and-entitlements.md` — Phase 4 record (done).
+- `ai-byok.md` — Phase 5 record (done).
+- `ai-billing-and-access.md` — Phase 5 record (done).
+- `mcp-management.md` — Phase 6 record (done).
 - Still to write as phases land: `architecture.md`, `database-design.md`,
-  `authorization.md`, `plans-and-entitlements.md`, `usage-metering.md`,
-  `ai-byok.md`, `mcp-management.md`, `plan-versioning.md`,
-  `ai-billing-and-access.md`, `admin-audit-trail.md`,
-  `internationalization.md`, `translation-management.md`,
-  `implementation-report.md`.
+  `authorization.md`, `usage-metering.md`, `plan-versioning.md`,
+  `admin-audit-trail.md`, `internationalization.md`,
+  `translation-management.md`, `implementation-report.md`.
