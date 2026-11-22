@@ -27,6 +27,7 @@
     "@sendcms/inbox": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/permissions": "workspace:*",
+    "@sendcms/platform-ops": "workspace:*",
     "@sendcms/sdk": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "@sendcms/ui": "workspace:*",

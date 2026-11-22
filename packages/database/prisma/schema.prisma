@@ -141,6 +141,36 @@ enum AuditResource {
   AI_KEY
   // Admin Control Plane (Phase 6) — MCP global / per-user controls.
   MCP_SETTINGS
+  // Admin Control Plane (Phase 7) — platform operations.
+  FEATURE_FLAG
+  ANNOUNCEMENT
+  DELETION_REQUEST
+}
+
+// ─── Platform operations (Admin Control Plane, Phase 7) ─────────────────────
+
+// Outcome of an admin action, recorded on the audit row. FAILED rows
+// exist so refused sensitive actions are visible, not invisible.
+enum AuditOutcome {
+  SUCCESS
+  FAILED
+}
+
+// Who an announcement is shown to: ALL = customer dashboard banner +
+// admin; ADMIN_ONLY = admin app only. Announcements are never emailed.
+enum AnnouncementAudience {
+  ALL
+  ADMIN_ONLY
+}
+
+// Deletion-request workflow state. REQUESTED → APPROVED → COMPLETED
+// (or REJECTED). The row is never deleted — it is the record that the
+// erasure happened.
+enum DeletionRequestStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
 }
 
 // ─── Plans & entitlements (Admin Control Plane, Phase 4) ────────────────────
@@ -269,6 +299,9 @@ model User {
   // A requested deletion never hard-deletes anything by itself.
   deletionRequestedAt DateTime?
   deletionRequestReason String?
+  // Set by the Phase 7 erasure workflow when the account is anonymized.
+  // The row stays — billing/audit history must survive erasure.
+  deletionCompletedAt DateTime?
   // Preferred UI locale (BCP 47 code, e.g. "en", "ur"). Null = no preference
   // set; the app falls back to English. Validated against the locale
   // registry in @sendcms/i18n (packages/i18n/src/locales.ts) — keep the
@@ -301,6 +334,12 @@ model User {
   // Admin Control Plane (Phase 6) — MCP per-user controls + usage.
   mcpSettings           McpUserSettings?
   mcpUsageRecords       McpUsageRecord[]
+  // Admin Control Plane (Phase 7) — platform operations.
+  featureFlagOverrides      FeatureFlagOverride[] @relation("FeatureFlagOverrideTarget")
+  featureFlagOverridesSet   FeatureFlagOverride[] @relation("FeatureFlagOverrideAdmin")
+  deletionRequests          DeletionRequest[] @relation("DeletionRequestTarget")
+  deletionRequestsReviewed  DeletionRequest[] @relation("DeletionRequestReviewedBy")
+  announcementsCreated      Announcement[] @relation("AnnouncementsCreatedBy")
 
   @@index([status])
   @@index([adminRole])
@@ -621,6 +660,14 @@ model AuditLog {
   // What changed (before/after, reason). Append-only log row: createdAt only.
   detail       Json?
   ipAddress    String?
+  // Admin Control Plane (Phase 7) — the justification for the action
+  // (required for critical actions), the request correlation id
+  // (idempotency: one row per correlationId + action + resource), and
+  // whether the action succeeded. `reason` is also stored in `detail`
+  // by convention; the column makes it filterable.
+  reason        String?
+  correlationId String?
+  outcome       AuditOutcome @default(SUCCESS)
   createdAt    DateTime      @default(now())
 
   // Who did it; null for system actions. SetNull preserves the log.
@@ -630,6 +677,8 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([resourceType, resourceId, createdAt])
   @@index([createdAt])
+  @@index([correlationId])
+  @@index([outcome, createdAt])
 }
 
 // ─── API keys (MCP auth, Phase 11) ──────────────────────────────────────────
@@ -1071,4 +1120,94 @@ model McpUsageRecord {
   @@index([apiKeyId, createdAt])
   @@index([tool, createdAt])
   @@index([userId, tool, createdAt])
+}
+
+// ─── Platform operations (Admin Control Plane, Phase 7) ─────────────────────
+// Feature flags are DB-backed, NOT config.json — the admin UI flips them
+// with no restart. The Phase 4 emergency flag in config.json stays the
+// separate restart-gated kill-switch. Precedence: per-user override →
+// global flag → off. An unknown key is OFF (fail-closed). NO flag is
+// consumed by any feature yet — the registry + `isFeatureEnabled` API
+// is the Phase 7 deliverable; wiring gates into features is Phase 8.
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  isEnabled   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  overrides FeatureFlagOverride[]
+}
+
+// Per-user override of one flag. `reason` is required — an override is
+// an admin decision, not a toggle. One override per (flag, user).
+model FeatureFlagOverride {
+  id        String   @id @default(cuid())
+  flagId    String
+  flag      FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("FeatureFlagOverrideTarget", fields: [userId], references: [id], onDelete: Cascade)
+  isEnabled Boolean
+  reason    String
+  adminId   String?
+  admin     User?    @relation("FeatureFlagOverrideAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([flagId, userId])
+  @@index([userId])
+  @@index([flagId])
+}
+
+// Platform announcements. Active = isActive AND inside the optional
+// [startsAt, endsAt] window. Audience ALL shows on the customer
+// dashboard banner AND the admin overview; ADMIN_ONLY shows only in
+// the admin app. Announcements are never sent by email, and never
+// deleted — deactivation is the way to take one down.
+model Announcement {
+  id          String               @id @default(cuid())
+  title       String
+  body        String
+  audience    AnnouncementAudience @default(ALL)
+  isActive    Boolean              @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String?
+  createdBy   User?                @relation("AnnouncementsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([isActive, startsAt, endsAt])
+  @@index([audience, isActive])
+}
+
+// A deletion request and its review. The workflow: REQUESTED →
+// APPROVED → COMPLETED (erasure executed) or REJECTED. The row is
+// never deleted — it is the record the erasure happened. At most one
+// REQUESTED/APPROVED request per user (enforced in the service, no DB
+// unique). Erasure ANONYMIZES the user row (email → deleted-<id>@
+// deleted.local, name → "Deleted user", image → null, status →
+// DISABLED, deletionCompletedAt set) and deletes keys, sessions,
+// BYOK keys, MCP settings, flag/plan overrides and admin notes, and
+// the user's domains/forms (cascade removes submissions, fields,
+// email jobs, notification settings). AuditLog, Subscription,
+// SubscriptionEvent, UsageLedger, AiUsageRecord and McpUsageRecord
+// rows are KEPT — billing/audit history must survive erasure.
+model DeletionRequest {
+  id           String                @id @default(cuid())
+  userId       String
+  user         User                  @relation("DeletionRequestTarget", fields: [userId], references: [id], onDelete: Cascade)
+  status       DeletionRequestStatus @default(REQUESTED)
+  reason       String
+  reviewedById String?
+  reviewedBy   User?                 @relation("DeletionRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([userId, status])
+  @@index([status, createdAt])
 }

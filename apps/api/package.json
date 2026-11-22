@@ -28,6 +28,7 @@
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/plans": "workspace:*",
+    "@sendcms/platform-ops": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "next": "16.4.6",
     "react": "^19.3.1",

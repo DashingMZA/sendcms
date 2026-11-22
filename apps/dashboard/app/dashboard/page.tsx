@@ -4,6 +4,7 @@ import { getDashboardOverview } from "@sendcms/analytics"
 import { listFormsForUser } from "@sendcms/forms"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { AnnouncementBanner } from "@/components/dashboard/announcement-banner"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
 import { SubmissionStatusBadge } from "./inbox/submission-status-badge"
@@ -28,6 +29,7 @@ export default async function OverviewPage() {
 
   return (
     <div>
+      <AnnouncementBanner />
       <PageHeader
         title="Overview"
         description="Summary of your domains, forms and submissions"

@@ -47,11 +47,19 @@ export const SHARED_DOMAINS = [
 /** Admin-app domains that live at `locales/{locale}/admin/{domain}.json`. */
 export const ADMIN_DOMAINS = [
   "ai",
+  "announcements",
+  "audit-logs",
   "dashboard",
+  "features",
+  "health",
   "mcp",
   "navigation",
   "plans",
+  "security",
+  "settings",
+  "submissions",
   "subscriptions",
+  "translations",
   "usage",
   "users",
 ] as const

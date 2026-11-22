@@ -37,7 +37,7 @@ export default async function AdminOverviewPage() {
     { href: "/admin/plans", label: tNav("plans"), phase: 4 },
     { href: "/admin/ai", label: tNav("ai"), phase: 5 },
     { href: "/admin/mcp", label: tNav("mcp"), phase: 6 },
-    { href: "/admin/activity", label: tNav("activity"), phase: 7 },
+    { href: "/admin/audit-logs", label: tNav("auditLogs"), phase: 7 },
     { href: "/admin/settings", label: tNav("settings"), phase: 7 },
   ]
 

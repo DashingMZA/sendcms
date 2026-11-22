@@ -889,7 +889,10 @@ export async function exportUserData(actor: AdminSession, userId: string) {
 }
 
 // Records the request only — no data is deleted here. The actual
-// erasure workflow is Phase 7.
+// erasure workflow is Phase 7: this also creates the DeletionRequest
+// row the workflow reviews (REQUESTED → APPROVED → COMPLETED), in the
+// same transaction as the user flag, so the two can never disagree.
+// At most one open (REQUESTED/APPROVED) request per user.
 export async function requestDeletion(
   actor: AdminSession,
   userId: string,
@@ -900,22 +903,40 @@ export async function requestDeletion(
     throw new ApiError("Reason is required", 400)
   }
   await getTargetUserOrThrow(userId)
-  const now = new Date()
-  const updated = await db.user.update({
-    where: { id: userId },
-    data: { deletionRequestedAt: now, deletionRequestReason: input.reason },
-    select: {
-      id: true,
-      deletionRequestedAt: true,
-      deletionRequestReason: true,
-    },
+  const open = await db.deletionRequest.findFirst({
+    where: { userId, status: { in: ["REQUESTED", "APPROVED"] } },
+    select: { id: true },
   })
+  if (open) {
+    throw new ApiError("A deletion request is already open for this user.", 409)
+  }
+  const now = new Date()
+  const [updated, request] = await db.$transaction([
+    db.user.update({
+      where: { id: userId },
+      data: { deletionRequestedAt: now, deletionRequestReason: input.reason },
+      select: {
+        id: true,
+        deletionRequestedAt: true,
+        deletionRequestReason: true,
+      },
+    }),
+    db.deletionRequest.create({
+      data: { userId, reason: input.reason },
+    }),
+  ])
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
     resourceType: AuditResource.USER,
     resourceId: userId,
-    detail: { event: "deletion-requested", reason: input.reason },
+    detail: {
+      event: "deletion-requested",
+      reason: input.reason,
+      deletionRequestId: request.id,
+    },
   })
-  return updated
+  // The caller (and the Phase 7 deletion workflow) needs the workflow
+  // row's id, not just the user flag.
+  return { ...updated, deletionRequestId: request.id }
 }

@@ -34,6 +34,8 @@ export type PlatformCapability =
   | "EXPORT_AUDIT_LOGS"
   | "MANAGE_TRANSLATIONS"
   | "REVIEW_TRANSLATIONS"
+  // Admin Control Plane (Phase 7) — platform announcements.
+  | "MANAGE_ANNOUNCEMENTS"
 
 const PLATFORM_PERMISSIONS: Record<
   PlatformRole,
@@ -66,6 +68,7 @@ const PLATFORM_PERMISSIONS: Record<
     "EXPORT_AUDIT_LOGS",
     "MANAGE_TRANSLATIONS",
     "REVIEW_TRANSLATIONS",
+    "MANAGE_ANNOUNCEMENTS",
   ],
   PLATFORM_USER: [],
 }
@@ -111,6 +114,8 @@ const ADMIN_CAPABILITIES: readonly PlatformCapability[] = [
   "EXPORT_AUDIT_LOGS",
   "MANAGE_TRANSLATIONS",
   "REVIEW_TRANSLATIONS",
+  // Admin Control Plane (Phase 7) — platform announcements.
+  "MANAGE_ANNOUNCEMENTS",
 ]
 
 export const ADMIN_ROLE_CAPABILITIES: Record<

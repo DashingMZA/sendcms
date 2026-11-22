@@ -23,6 +23,9 @@ const mockDb = vi.hoisted(() => ({
   session: { deleteMany: vi.fn() },
   adminNote: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   auditLog: { findMany: vi.fn(), create: vi.fn() },
+  // Phase 7: requestDeletion checks for an open request, then creates
+  // the DeletionRequest row inside the same transaction.
+  deletionRequest: { findFirst: vi.fn(), create: vi.fn() },
   // Array form (suspend/disable run update + session wipe together):
   // the array already holds the mock calls' promises, so await them all.
   // Callback form (like rotateApiKeyForUser): run it against mockDb.
@@ -786,6 +789,7 @@ describe("requestDeletion", () => {
       deletionRequestedAt: new Date(),
       deletionRequestReason: "Leaving",
     })
+    mockDb.deletionRequest.create.mockResolvedValue({ id: "dr-1" })
     const updated = await requestDeletion(ownerActor(), userId, {
       reason: "Leaving",
     })

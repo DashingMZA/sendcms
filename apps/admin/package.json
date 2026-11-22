@@ -10,6 +10,7 @@
     "@sendcms/mcp-admin": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",
+    "@sendcms/platform-ops": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "@sendcms/ui": "workspace:*",
     "@tanstack/react-query": "^5.108.0",

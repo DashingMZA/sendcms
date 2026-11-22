@@ -36,6 +36,8 @@ const ALL_CAPABILITIES: PlatformCapability[] = [
   "EXPORT_AUDIT_LOGS",
   "MANAGE_TRANSLATIONS",
   "REVIEW_TRANSLATIONS",
+  // Admin Control Plane (Phase 7)
+  "MANAGE_ANNOUNCEMENTS",
 ]
 
 describe("platformCan", () => {

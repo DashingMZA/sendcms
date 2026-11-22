@@ -1,0 +1,19 @@
+{
+  "configTitle": "ترتیب",
+  "description": "پلیٹ فارم حقائق: رن ٹائم ورژن، ماحول، اور ترتیب۔",
+  "emergencyFlag": "ایمرجنسی فلیگ",
+  "emergencyOff": "آف",
+  "emergencyOn": "آن",
+  "emergencyRestartNote": "ایمرجنسی فلیگ config/config.json میں رہتا ہے اور اسے بدلنے کے لیے سرور دوبارہ شروع کرنا پڑتا ہے۔ اسے یہاں سے نہیں بدلا جا سکتا۔",
+  "envMissing": "غائب",
+  "envNote": "صرف موجودگی دکھائی جاتی ہے — قدریں کبھی نہیں دکھائی جاتیں۔",
+  "envPresent": "موجود",
+  "envTitle": "ماحول",
+  "loading": "ترتیبات لوڈ ہو رہی ہیں…",
+  "noPermission": "آپ کو پلیٹ فارم ترتیبات دیکھنے کی اجازت نہیں ہے۔",
+  "nodeVersion": "Node.js",
+  "postgresVersion": "PostgreSQL",
+  "prismaVersion": "پرزما کلائنٹ",
+  "title": "ترتیبات",
+  "versionsTitle": "ورژنز"
+}

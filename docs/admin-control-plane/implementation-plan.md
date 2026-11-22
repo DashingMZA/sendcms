@@ -326,11 +326,27 @@ platform.ts`); owner = all, SUPER_ADMIN = all admin caps except
   MCP client yet (tests use an in-memory transport with mocked
   services). No per-tool quota — only per-key minute/hour limits.
 
-### Phase 7 — Platform operations — PENDING
+### Phase 7 — Platform operations — DONE (services + UI)
 
-Feature flags, announcements, admin notes, abuse/spam management, audit
-log explorer, platform health, support architecture prep, data export &
-deletion workflows, translation management UI.
+Backend + admin UI done (see `platform-operations.md` +
+`admin-audit-trail.md`): DB-backed feature flags (override →
+global → off, fail-closed), announcements (active window +
+audience, never deleted), audit trail (`reason`/`correlationId`/
+`outcome`, idempotency, immutable), platform health + system
+summary (real queries only), abuse/spam queue (metadata-only list,
+audited sensitive reads, inbox transition rules), deletion workflow
+(REQUESTED → APPROVED → COMPLETED, anonymizing erasure,
+billing/audit history kept), translation completion (loader-based,
+read-only). Admin UI: `/admin/features`, `/admin/announcements`,
+`/admin/audit-logs` (replaces the dead `/admin/activity`),
+`/admin/health`, `/admin/settings` (system summary, replaces the
+Phase 2 planned empty state), `/admin/submissions`, `/admin/security`,
+`/admin/translations`, plus the dashboard announcement banner
+(audience ALL, dismissible). Support architecture prep was a design
+note, not a build. Tests: `tests/platform-ops.test.ts`, 31 tests;
+full suite 511/511. i18n: 35 files / 1359 keys en + ur 100%.
+Known open items: no live verification against the real dev DB; UI
+click-through owed (incl. RTL rendering of the new pages).
 
 ### Phase 8 — Marketing & customer integration — PENDING
 
@@ -352,7 +368,9 @@ proofs), CSP, rate limiting, step-up re-auth, final report.
 - `ai-byok.md` — Phase 5 record (done).
 - `ai-billing-and-access.md` — Phase 5 record (done).
 - `mcp-management.md` — Phase 6 record (done).
+- `platform-operations.md` — Phase 7 record (done).
+- `admin-audit-trail.md` — Phase 7 record (done).
 - Still to write as phases land: `architecture.md`, `database-design.md`,
   `authorization.md`, `usage-metering.md`, `plan-versioning.md`,
-  `admin-audit-trail.md`, `internationalization.md`,
+  `internationalization.md`,
   `translation-management.md`, `implementation-report.md`.

@@ -1,0 +1,316 @@
+import type { AdminSession } from "@sendcms/auth"
+import { AuditAction, AuditResource, db } from "@sendcms/database"
+import { createLogger } from "@sendcms/observability"
+import { logAudit } from "@sendcms/security"
+import { ApiError } from "@sendcms/shared"
+import type {
+  CreateFlagInput,
+  SetFlagInput,
+  SetFlagOverrideInput,
+} from "./validators"
+import {
+  getTargetUserOrThrow,
+  requireAdmin,
+  type AuditOpts,
+} from "./require-admin"
+
+// Feature flags (Admin Control Plane, Phase 7).
+// Framework-independent (no Next.js imports); only services import
+// @sendcms/database. Authorization lives HERE, not in the routes.
+//
+// The flags are DB-backed (NOT config/config.json) so an admin can
+// flip them from /admin/features with no restart and no redeploy.
+// The Phase 4 platform emergency flag in config/config.json stays
+// the separate restart-gated kill-switch — it is not a flag in this
+// registry and it is not toggled from here.
+//
+// Precedence: per-user override → global flag → default (off). An
+// unknown key is OFF — fail-closed. There are NO seed flags and NO
+// consumer wiring in this phase: the registry + API is the
+// deliverable; wiring gates into features is Phase 8.
+
+const logger = createLogger("platform-ops:flags")
+
+export type FeatureFlagRow = {
+  key: string
+  name: string
+  description: string | null
+  isEnabled: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+function toFlagRow(row: {
+  key: string
+  name: string
+  description: string | null
+  isEnabled: boolean
+  createdAt: Date
+  updatedAt: Date
+}): FeatureFlagRow {
+  return {
+    key: row.key,
+    name: row.name,
+    description: row.description,
+    isEnabled: row.isEnabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+export type FeatureFlagOverrideRow = {
+  flagKey: string
+  userId: string
+  user: { id: string; name: string | null; email: string } | null
+  isEnabled: boolean
+  reason: string
+  adminId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+async function getFlagOrThrow(key: string) {
+  const flag = await db.featureFlag.findUnique({ where: { key } })
+  if (!flag) throw new ApiError(`Feature flag "${key}" not found.`, 404)
+  return flag
+}
+
+/** One flag by key. MANAGE_FEATURE_FLAGS. */
+export async function getFlag(
+  actor: AdminSession,
+  key: string
+): Promise<FeatureFlagRow> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flag = await getFlagOrThrow(key)
+  return toFlagRow(flag)
+}
+
+/** Every flag, newest first. Reads and writes both need
+    MANAGE_FEATURE_FLAGS — the flags page is a management page, and
+    the role map keeps it owner + SUPER_ADMIN only. */
+export async function listFlags(
+  actor: AdminSession
+): Promise<{ flags: FeatureFlagRow[] }> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flags = await db.featureFlag.findMany({
+    orderBy: { createdAt: "desc" },
+  })
+  return { flags: flags.map(toFlagRow) }
+}
+
+/** Creates a flag (off by default). MANAGE_FEATURE_FLAGS, audited.
+    A duplicate key is a 409, never an upsert. */
+export async function createFlag(
+  actor: AdminSession,
+  input: CreateFlagInput,
+  opts: AuditOpts = {}
+): Promise<FeatureFlagRow> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const existing = await db.featureFlag.findUnique({
+    where: { key: input.key },
+    select: { key: true },
+  })
+  if (existing) {
+    throw new ApiError(`Feature flag "${input.key}" already exists.`, 409)
+  }
+  const flag = await db.featureFlag.create({
+    data: {
+      key: input.key,
+      name: input.name,
+      description: input.description ?? null,
+    },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.CREATE,
+    resourceType: AuditResource.FEATURE_FLAG,
+    resourceId: flag.key,
+    detail: { event: "flag-created", name: flag.name },
+    correlationId: opts.correlationId,
+  })
+  return toFlagRow(flag)
+}
+
+/** Flips the global switch. MANAGE_FEATURE_FLAGS, reason required,
+    audited with the old/new values. */
+export async function setFlag(
+  actor: AdminSession,
+  key: string,
+  input: SetFlagInput,
+  opts: AuditOpts = {}
+): Promise<FeatureFlagRow> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flag = await getFlagOrThrow(key)
+  const updated = await db.featureFlag.update({
+    where: { key },
+    data: { isEnabled: input.isEnabled },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FEATURE_FLAG,
+    resourceId: key,
+    detail: {
+      event: "flag-toggled",
+      reason: input.reason,
+      oldIsEnabled: flag.isEnabled,
+      newIsEnabled: updated.isEnabled,
+    },
+    reason: input.reason,
+    correlationId: opts.correlationId,
+  })
+  return toFlagRow(updated)
+}
+
+// ─── Per-user overrides ───────────────────────────────────────────────
+
+function toOverrideRow(
+  flagKey: string,
+  row: {
+    userId: string
+    user: { id: string; name: string | null; email: string } | null
+    isEnabled: boolean
+    reason: string
+    adminId: string | null
+    createdAt: Date
+    updatedAt: Date
+  }
+): FeatureFlagOverrideRow {
+  return { flagKey, ...row }
+}
+
+/** Every per-user override for one flag. MANAGE_FEATURE_FLAGS. */
+export async function listFlagOverrides(
+  actor: AdminSession,
+  key: string
+): Promise<{ overrides: FeatureFlagOverrideRow[] }> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flag = await getFlagOrThrow(key)
+  const rows = await db.featureFlagOverride.findMany({
+    where: { flagId: flag.id },
+    include: { user: { select: { id: true, name: true, email: true } } },
+    orderBy: { createdAt: "desc" },
+  })
+  return { overrides: rows.map((r) => toOverrideRow(key, r)) }
+}
+
+/** Sets (or replaces) one user's override. MANAGE_FEATURE_FLAGS,
+    reason required, audited with the old/new values. A user with an
+    override is unaffected by the global toggle. */
+export async function setFlagOverride(
+  actor: AdminSession,
+  key: string,
+  userId: string,
+  input: SetFlagOverrideInput,
+  opts: AuditOpts = {}
+): Promise<FeatureFlagOverrideRow> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flag = await getFlagOrThrow(key)
+  await getTargetUserOrThrow(userId)
+  const before = await db.featureFlagOverride.findUnique({
+    where: { flagId_userId: { flagId: flag.id, userId } },
+  })
+  const updated = await db.featureFlagOverride.upsert({
+    where: { flagId_userId: { flagId: flag.id, userId } },
+    update: {
+      isEnabled: input.isEnabled,
+      reason: input.reason,
+      adminId: actor.user.id,
+    },
+    create: {
+      flagId: flag.id,
+      userId,
+      isEnabled: input.isEnabled,
+      reason: input.reason,
+      adminId: actor.user.id,
+    },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FEATURE_FLAG,
+    resourceId: key,
+    detail: {
+      event: "flag-override-set",
+      reason: input.reason,
+      targetUserId: userId,
+      oldIsEnabled: before?.isEnabled ?? null,
+      newIsEnabled: updated.isEnabled,
+    },
+    reason: input.reason,
+    correlationId: opts.correlationId,
+  })
+  return toOverrideRow(key, updated)
+}
+
+/** Removes one user's override (the global flag applies again).
+    MANAGE_FEATURE_FLAGS, audited. 404 when no override exists. */
+export async function removeFlagOverride(
+  actor: AdminSession,
+  key: string,
+  userId: string,
+  opts: AuditOpts = {}
+): Promise<{ removed: true; flagKey: string; userId: string }> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  const flag = await getFlagOrThrow(key)
+  const existing = await db.featureFlagOverride.findUnique({
+    where: { flagId_userId: { flagId: flag.id, userId } },
+  })
+  if (!existing) {
+    throw new ApiError(
+      `No override exists for this user on flag "${key}".`,
+      404
+    )
+  }
+  await db.featureFlagOverride.delete({
+    where: { flagId_userId: { flagId: flag.id, userId } },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.DELETE,
+    resourceType: AuditResource.FEATURE_FLAG,
+    resourceId: key,
+    detail: {
+      event: "flag-override-removed",
+      targetUserId: userId,
+      oldIsEnabled: existing.isEnabled,
+    },
+    correlationId: opts.correlationId,
+  })
+  return { removed: true as const, flagKey: key, userId }
+}
+
+// ─── Evaluation ───────────────────────────────────────────────────────
+
+/** Reads one flag for one user: per-user override → global flag →
+    default (off). An unknown key is OFF — fail-closed. Never throws:
+    on a DB error it returns false and logs, so a flag lookup can
+    never break the request that asked. No actor, no capability —
+    this is the read path features call, not an admin action. */
+export async function isFeatureEnabled(
+  key: string,
+  userId?: string
+): Promise<boolean> {
+  try {
+    const flag = await db.featureFlag.findUnique({
+      where: { key },
+      select: { id: true, isEnabled: true },
+    })
+    if (!flag) return false
+    if (userId) {
+      const override = await db.featureFlagOverride.findUnique({
+        where: { flagId_userId: { flagId: flag.id, userId } },
+        select: { isEnabled: true },
+      })
+      if (override) return override.isEnabled
+    }
+    return flag.isEnabled
+  } catch (err) {
+    logger.warn("feature flag lookup failed, defaulting to off", {
+      error: err,
+      key,
+    })
+    return false
+  }
+}

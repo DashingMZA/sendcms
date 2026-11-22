@@ -1,0 +1,19 @@
+{
+  "configTitle": "Configuration",
+  "description": "Platform facts: runtime versions, environment, and configuration.",
+  "emergencyFlag": "Emergency flag",
+  "emergencyOff": "Off",
+  "emergencyOn": "On",
+  "emergencyRestartNote": "The emergency flag lives in config/config.json and needs a server restart to change. It is not toggled from here.",
+  "envMissing": "Missing",
+  "envNote": "Only presence is shown — values are never displayed.",
+  "envPresent": "Set",
+  "envTitle": "Environment",
+  "loading": "Loading settings…",
+  "noPermission": "You do not have permission to view platform settings.",
+  "nodeVersion": "Node.js",
+  "postgresVersion": "PostgreSQL",
+  "prismaVersion": "Prisma client",
+  "title": "Settings",
+  "versionsTitle": "Versions"
+}

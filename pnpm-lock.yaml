@@ -248,6 +248,9 @@ importers:
       '@sendcms/forms':
         specifier: workspace:*
         version: link:packages/modules/forms
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:packages/i18n
       '@sendcms/inbox':
         specifier: workspace:*
         version: link:packages/modules/inbox
@@ -269,6 +272,9 @@ importers:
       '@sendcms/plans':
         specifier: workspace:*
         version: link:packages/modules/plans
+      '@sendcms/platform-ops':
+        specifier: workspace:*
+        version: link:packages/modules/platform-ops
       '@sendcms/queue':
         specifier: workspace:*
         version: link:packages/queue
@@ -377,6 +383,9 @@ importers:
       '@sendcms/plans':
         specifier: workspace:*
         version: link:../../packages/modules/plans
+      '@sendcms/platform-ops':
+        specifier: workspace:*
+        version: link:../../packages/modules/platform-ops
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -474,6 +483,9 @@ importers:
       '@sendcms/plans':
         specifier: workspace:*
         version: link:../../packages/modules/plans
+      '@sendcms/platform-ops':
+        specifier: workspace:*
+        version: link:../../packages/modules/platform-ops
       '@sendcms/submissions':
         specifier: workspace:*
         version: link:../../packages/modules/submissions
@@ -553,6 +565,9 @@ importers:
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions
+      '@sendcms/platform-ops':
+        specifier: workspace:*
+        version: link:../../packages/modules/platform-ops
       '@sendcms/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -1356,6 +1371,55 @@ importers:
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../../permissions
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/platform-ops:
+    dependencies:
+      '@sendcms/auth':
+        specifier: workspace:*
+        version: link:../../auth
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:../../i18n
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../permissions
+      '@sendcms/plans':
+        specifier: workspace:*
+        version: link:../plans
       '@sendcms/security':
         specifier: workspace:*
         version: link:../../security

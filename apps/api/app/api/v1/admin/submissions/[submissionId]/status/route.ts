@@ -1,0 +1,39 @@
+import { randomUUID } from "node:crypto"
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { updatePlatformSubmissionStatus } from "@sendcms/platform-ops"
+import { UpdatePlatformSubmissionStatusSchema } from "@sendcms/platform-ops/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ submissionId: string }> }
+) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const { submissionId } = await params
+    const body = await req.json().catch(() => ({}))
+    const parsed = UpdatePlatformSubmissionStatusSchema.safeParse(body)
+    if (!parsed.success) {
+      const flat = parsed.error.flatten()
+      const messages = [
+        ...flat.formErrors,
+        ...Object.values(flat.fieldErrors).flat(),
+      ].filter(Boolean)
+      return NextResponse.json(
+        { error: messages.join("; ") || "Validation failed" },
+        { status: 422 }
+      )
+    }
+    const result = await updatePlatformSubmissionStatus(
+      session,
+      submissionId,
+      parsed.data,
+      { correlationId: randomUUID() }
+    )
+    return ok(result)
+  } catch (err) {
+    return handleApiError(err)
+  }
+}
