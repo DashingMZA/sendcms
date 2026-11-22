@@ -5,6 +5,7 @@ import { AuditAction, AuditResource, Prisma, db } from "@sendcms/database"
 import type {
   AdminRole,
   BillingInterval,
+  BillingProvider,
   Plan,
   PlanKind,
   PlanStatus,
@@ -500,9 +501,12 @@ async function getVersionOrThrow(versionId: string) {
   return version
 }
 
-// The subscription's period end for a billing interval. CUSTOM and
-// ONE_TIME have no automatic period (the admin sets dates, or none).
-function periodEndFor(interval: BillingInterval, start: Date): Date | null {
+// The next period end for a billing interval. CUSTOM and ONE_TIME
+// have no automatic period (the admin sets dates, or none).
+export function periodEndFor(
+  interval: BillingInterval,
+  start: Date
+): Date | null {
   const end = new Date(start)
   if (interval === "MONTHLY") {
     end.setUTCMonth(end.getUTCMonth() + 1)
@@ -1178,6 +1182,268 @@ export async function assignSubscription(
     },
   })
   return toSubscriptionSummary(created as SubscriptionWithRelations)
+}
+
+// ─── Billing webhooks (Phase 8) ──────────────────────────────────────────
+// System functions for the billing webhook handler. No actor: the
+// provider's verified webhook IS the authorization, and the plan
+// version is re-read from the DB here, never trusted from the event.
+
+export type PublicPlan = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  kind: PlanKind
+  version: {
+    id: string
+    version: number
+    priceAmount: number | null
+    priceCurrency: string
+    billingInterval: BillingInterval
+    trialDays: number
+    entitlements: PlanEntitlements
+  }
+}
+
+// Every published, non-private plan with its current published
+// version — the marketing pricing page and the public plans API.
+// Draft versions, unpublished plans, and private plans never appear.
+export async function listPublishedPlans(): Promise<PublicPlan[]> {
+  const plans = await db.plan.findMany({
+    where: { status: "PUBLISHED", isPrivate: false },
+    include: { currentVersion: true },
+    orderBy: { createdAt: "asc" },
+  })
+  const result: PublicPlan[] = []
+  for (const plan of plans) {
+    const version = plan.currentVersion
+    if (!version || version.status !== "PUBLISHED") continue
+    result.push({
+      id: plan.id,
+      name: plan.name,
+      slug: plan.slug,
+      description: plan.description,
+      kind: plan.kind,
+      version: {
+        id: version.id,
+        version: version.version,
+        priceAmount: version.priceAmount,
+        priceCurrency: version.priceCurrency,
+        billingInterval: version.billingInterval,
+        trialDays: version.trialDays,
+        entitlements: parseEntitlements(version.entitlements),
+      },
+    })
+  }
+  return result
+}
+
+// The signed-in user's own active subscription (if any) — for the
+// dashboard billing page. Ownership is the check: a user only ever
+// sees their own row.
+export async function getMySubscription(
+  userId: string
+): Promise<SubscriptionSummary | null> {
+  const row = await db.subscription.findFirst({
+    where: { userId, status: { in: ["ACTIVE", "TRIALING"] } },
+    include: subscriptionInclude,
+    orderBy: { createdAt: "desc" },
+  })
+  if (!row) return null
+  return toSubscriptionSummary(row as SubscriptionWithRelations)
+}
+
+export type ActivateSubscriptionFromCheckoutInput = {
+  userId: string
+  planVersionId: string
+  provider: BillingProvider
+  providerSubscriptionId: string
+  periodEnd?: Date | null
+}
+
+// Activate (or re-activate) a subscription from a verified checkout
+// webhook. Same one-active-per-user transaction as
+// assignSubscription: the previous ACTIVE/TRIALING subscription is
+// canceled, the new one is created ACTIVE on the webhook's plan
+// version with the provider subscription id stored. Idempotent per
+// provider subscription: a repeated delivery for the same provider
+// subscription id returns the existing row instead of creating a
+// second subscription.
+export async function activateSubscriptionFromCheckout(
+  input: ActivateSubscriptionFromCheckoutInput
+): Promise<SubscriptionSummary> {
+  const version = await getVersionOrThrow(input.planVersionId)
+  if (version.status !== "PUBLISHED") {
+    throw new ApiError("Only a published plan version can be assigned.", 409)
+  }
+  const target = await db.user.findUnique({
+    where: { id: input.userId },
+    select: { id: true },
+  })
+  if (!target) throw new ApiError("User not found", 404)
+  const now = new Date()
+  const created = await db.$transaction(async (tx) => {
+    const duplicate = await tx.subscription.findFirst({
+      where: {
+        provider: input.provider,
+        providerSubscriptionId: input.providerSubscriptionId,
+        status: { in: ["ACTIVE", "TRIALING"] },
+      },
+    })
+    if (duplicate) {
+      return tx.subscription.findUniqueOrThrow({
+        where: { id: duplicate.id },
+        include: subscriptionInclude,
+      })
+    }
+    const previous = await tx.subscription.findFirst({
+      where: {
+        userId: input.userId,
+        status: { in: ["ACTIVE", "TRIALING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    if (previous) {
+      await tx.subscription.update({
+        where: { id: previous.id },
+        data: { status: "CANCELED" },
+      })
+      await tx.subscriptionEvent.create({
+        data: {
+          subscriptionId: previous.id,
+          type: "CANCELED",
+          fromPlanVersionId: previous.planVersionId,
+          toPlanVersionId: null,
+          adminId: null,
+          reason: `Superseded by checkout via ${input.provider}`,
+        },
+      })
+    }
+    const next = await tx.subscription.create({
+      data: {
+        userId: input.userId,
+        planId: version.planId,
+        planVersionId: version.id,
+        status: "ACTIVE",
+        currentPeriodStart: now,
+        currentPeriodEnd:
+          input.periodEnd ?? periodEndFor(version.billingInterval, now),
+        cancelAtPeriodEnd: false,
+        provider: input.provider,
+        providerSubscriptionId: input.providerSubscriptionId,
+      },
+    })
+    await tx.subscriptionEvent.create({
+      data: {
+        subscriptionId: next.id,
+        type: "CREATED",
+        fromPlanVersionId: previous?.planVersionId ?? null,
+        toPlanVersionId: version.id,
+        adminId: null,
+        reason: `Checkout completed via ${input.provider}`,
+      },
+    })
+    return tx.subscription.findUniqueOrThrow({
+      where: { id: next.id },
+      include: subscriptionInclude,
+    })
+  })
+  await logAudit({
+    userId: input.userId,
+    action: AuditAction.ASSIGN,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: created.id,
+    detail: {
+      event: "subscription-activated-via-checkout",
+      userId: input.userId,
+      planVersionId: version.id,
+      provider: input.provider,
+      providerSubscriptionId: input.providerSubscriptionId,
+    },
+  })
+  return toSubscriptionSummary(created as SubscriptionWithRelations)
+}
+
+// Cancel the active subscription that belongs to a provider
+// subscription id (provider-side cancellation webhook). Returns null
+// when no active subscription matches — the provider may cancel
+// something SendCMS never activated, and that is not an error.
+export async function cancelSubscriptionFromProvider(
+  providerSubscriptionId: string,
+  reason: string
+): Promise<SubscriptionSummary | null> {
+  const existing = await db.subscription.findFirst({
+    where: {
+      providerSubscriptionId,
+      status: { in: ["ACTIVE", "TRIALING"] },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  if (!existing) return null
+  const updated = await db.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: existing.id },
+      data: { status: "CANCELED" },
+    })
+    await tx.subscriptionEvent.create({
+      data: {
+        subscriptionId: existing.id,
+        type: "CANCELED",
+        fromPlanVersionId: existing.planVersionId,
+        toPlanVersionId: null,
+        adminId: null,
+        reason,
+      },
+    })
+    return tx.subscription.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: subscriptionInclude,
+    })
+  })
+  await logAudit({
+    userId: existing.userId,
+    action: AuditAction.CANCEL,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: existing.id,
+    detail: { event: "subscription-canceled-by-provider", reason },
+  })
+  return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// Extend the current period of the active subscription that belongs
+// to a provider subscription id (renewal webhook). When the provider
+// does not give a period end, it is computed from the plan version's
+// billing interval, extending from the current end when that is
+// still in the future. Returns null when nothing matches.
+export async function extendSubscriptionPeriod(
+  providerSubscriptionId: string,
+  periodEnd: Date | null
+): Promise<SubscriptionSummary | null> {
+  const existing = await db.subscription.findFirst({
+    where: {
+      providerSubscriptionId,
+      status: { in: ["ACTIVE", "TRIALING"] },
+    },
+    include: {
+      planVersion: { select: { billingInterval: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  if (!existing) return null
+  const now = new Date()
+  const base =
+    existing.currentPeriodEnd && existing.currentPeriodEnd > now
+      ? existing.currentPeriodEnd
+      : now
+  const nextEnd =
+    periodEnd ?? periodEndFor(existing.planVersion.billingInterval, base)
+  const updated = await db.subscription.update({
+    where: { id: existing.id },
+    data: { currentPeriodEnd: nextEnd },
+    include: subscriptionInclude,
+  })
+  return toSubscriptionSummary(updated as SubscriptionWithRelations)
 }
 
 // Migration preview: which subscriptions a migration to `planVersionId`

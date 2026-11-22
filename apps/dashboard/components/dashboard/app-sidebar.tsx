@@ -17,12 +17,14 @@ import {
   RiCodeSSlashLine,
   RiKeyLine,
   RiRobotLine,
+  RiCustomerServiceLine,
   RiLogoutBoxLine,
   RiExpandUpDownLine,
   RiAddLine,
   RiSunLine,
   RiMoonLine,
   RiUserLine,
+  RiWalletLine,
 } from "@remixicon/react"
 import {
   Avatar,
@@ -121,12 +123,22 @@ export function AppSidebar({
           href: "/dashboard/ai",
           icon: RiRobotLine,
         },
+        {
+          label: "Support",
+          href: "/dashboard/support",
+          icon: RiCustomerServiceLine,
+        },
       ],
     },
     {
       label: "My Account",
       items: [
         { label: "Profile", href: "/dashboard/account", icon: RiUserLine },
+        {
+          label: "Billing",
+          href: "/dashboard/billing",
+          icon: RiWalletLine,
+        },
       ],
     },
   ]

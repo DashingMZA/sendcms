@@ -27,6 +27,10 @@ const mockAi = vi.hoisted(() => ({
   rescoreSpam: vi.fn(async () => ({ score: 10, reason: "Genuine." })),
 }))
 vi.mock("@sendcms/ai", () => mockAi)
+const mockIsFeatureEnabled = vi.hoisted(() => vi.fn(async () => true))
+vi.mock("@sendcms/platform-ops", () => ({
+  isFeatureEnabled: mockIsFeatureEnabled,
+}))
 vi.mock("@sendcms/notifications", () => ({
   enqueueSubmissionNotifications: vi.fn(async () => 1),
 }))
@@ -52,6 +56,7 @@ function makeCandidate(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockIsFeatureEnabled.mockResolvedValue(true)
   mockAi.isAiConfigured.mockReturnValue(true)
   mockAi.getSpamThreshold.mockReturnValue(70)
   mockAi.rescoreSpam.mockResolvedValue({ score: 10, reason: "Genuine." })
@@ -67,6 +72,15 @@ beforeEach(() => {
 })
 
 describe("rescoreNewSubmissions", () => {
+  it("does nothing when the ai-spam-rescore flag is off", async () => {
+    mockIsFeatureEnabled.mockResolvedValue(false)
+    const result = await rescoreNewSubmissions({ env: ENV })
+    expect(result).toEqual({ checked: 0, markedSpam: 0, skipped: 0 })
+    expect(mockIsFeatureEnabled).toHaveBeenCalledWith("ai-spam-rescore")
+    expect(mockDb.submission.findMany).not.toHaveBeenCalled()
+    expect(mockAi.rescoreSpam).not.toHaveBeenCalled()
+  })
+
   it("does nothing when no AI provider is configured", async () => {
     mockAi.isAiConfigured.mockReturnValue(false)
     const result = await rescoreNewSubmissions({ env: ENV })

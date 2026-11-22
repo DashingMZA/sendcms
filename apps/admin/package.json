@@ -1,10 +1,24 @@
 {
+  "name": "@sendcms/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
+    "build:server": "pnpm --filter @sendcms/database db:generate && next build",
+    "dev": "dotenv run -f ../../.env -- next dev --turbopack --port 3006",
+    "lint": "eslint .",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@remixicon/react": "^4.9.0",
     "@sendcms/admin-users": "workspace:*",
     "@sendcms/ai-settings": "workspace:*",
     "@sendcms/api-client": "workspace:*",
     "@sendcms/auth": "workspace:*",
+    "@sendcms/billing": "workspace:*",
     "@sendcms/i18n": "workspace:*",
     "@sendcms/mcp": "workspace:*",
     "@sendcms/mcp-admin": "workspace:*",
@@ -12,6 +26,7 @@
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
     "@sendcms/shared": "workspace:*",
+    "@sendcms/support": "workspace:*",
     "@sendcms/ui": "workspace:*",
     "@tanstack/react-query": "^5.108.0",
     "lucide-react": "^1.74.0",
@@ -29,18 +44,5 @@
     "@types/react-dom": "^19.3.0",
     "eslint": "^10.15.0",
     "typescript": "6.0.3"
-  },
-  "name": "@sendcms/admin",
-  "private": true,
-  "scripts": {
-    "build": "next build",
-    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
-    "build:server": "pnpm --filter @sendcms/database db:generate && next build",
-    "dev": "dotenv run -f ../../.env -- next dev --turbopack --port 3006",
-    "lint": "eslint .",
-    "start": "next start",
-    "typecheck": "tsc --noEmit"
-  },
-  "type": "module",
-  "version": "0.1.0"
+  }
 }

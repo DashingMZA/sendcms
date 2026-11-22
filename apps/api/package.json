@@ -18,6 +18,7 @@
     "@sendcms/api-client": "workspace:*",
     "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",
+    "@sendcms/billing": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
     "@sendcms/email": "workspace:*",
@@ -30,6 +31,7 @@
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
     "@sendcms/submissions": "workspace:*",
+    "@sendcms/support": "workspace:*",
     "next": "16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

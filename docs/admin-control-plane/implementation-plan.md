@@ -348,12 +348,71 @@ full suite 511/511. i18n: 35 files / 1359 keys en + ur 100%.
 Known open items: no live verification against the real dev DB; UI
 click-through owed (incl. RTL rendering of the new pages).
 
-### Phase 8 — Marketing & customer integration — PENDING
+### Phase 8 — Marketing & customer integration — DONE
 
-Pricing reads the same plan records; billing-provider abstraction
-(PayPal, Stripe, Gumroad, Freemius, Polar.sh) — design only, no fake
-payments. (The customer `/dashboard/ai` settings page landed in
-Phase 5.)
+- **Public plans + pricing:** `listPublishedPlans` in `@sendcms/plans`
+  (PUBLISHED, non-private plans only — current published version with
+  price + entitlements, no draft/internal fields) + public route
+  `GET /api/public/v1/plans` (no auth) + marketing `/pricing` page
+  reading those records live (no hardcoded prices; honest error state
+  when the API fails). The homepage's content-driven pricing section
+  is untouched (follow-up).
+- **Billing (`@sendcms/billing`, `packages/modules/billing/`):**
+  provider registry (Stripe → PayPal → Polar → Freemius → Gumroad,
+  env-var config checks, SDKs latest stable), admin enable/disable
+  gated on env presence (422 naming the missing vars), per-provider
+  countries via the `Country` + `BillingProviderCountry` tables (no
+  rows = all countries; PATCH validates codes, 422 on unknown;
+  customer country from IP geo headers with a manual-select
+  fallback), checkout (Stripe Checkout Session + signature-verified
+  webhook → subscription ACTIVE; PayPal Product→Plan→Subscription +
+  verified webhook; Polar/Freemius API-created hosted checkout +
+  webhooks; Gumroad registered-only, NO automated checkout — clear
+  422, never fake), webhook idempotency via `BillingEvent`, and
+  subscription activation reusing the Phase 4 `assign` flow (webhook
+  re-reads the plan version from the DB, never trusts client prices).
+  Admin page `/admin/billing`, dashboard `/dashboard/billing` +
+  `/dashboard/billing/checkout` (proper pages; confirmation dialog
+  only at confirmation time). Countries table seeded with all 249
+  ISO codes (migration `20261122050526_add_countries_table`).
+  `VIEW_BILLING` / `MANAGE_BILLING` capabilities (MANAGER reads
+  only). Docs: `billing-providers.md`.
+- **Tickets (`@sendcms/support`, `packages/modules/support/`):**
+  customer create/list/get/reply (reply reopens RESOLVED, refused
+  409 on CLOSED; another user's ticket is a 404, never a 403),
+  admin list/get/reply/status/assign with the `TICKET_TRANSITIONS`
+  machine and reason-required audited writes; reply, status change
+  and assignment need `MANAGE_USERS` or the SUPPORT role (owner
+  decision 2026-11-22 — support staff exist to answer tickets).
+  Dashboard `/dashboard/support` (+ `/new`, `+ /[ticketId]`),
+  admin `/admin/support` (+ `/[ticketId]`), all proper pages.
+  `TICKET_TRANSITIONS` lives in a pure `transitions.ts` so client
+  components can import it without pulling `@sendcms/database` into
+  the browser bundle. Docs: `support.md`.
+- **Feature-flag wiring:** the AI background jobs are gated by
+  DB-backed flags — `ai-spam-rescore` guards `rescoreNewSubmissions`,
+  `ai-digest` guards `sendDueDigests` (flag missing/disabled = job
+  off, fail-closed; the admin creates and enables them in
+  `/admin/features`). Gating lives in the jobs themselves, so it
+  covers both the cron route and the email worker.
+- **Schema:** migration `20261122050016_add_billing_support_tickets`
+  (`BillingProviderConfig`, `BillingEvent`, `SupportTicket`,
+  `TicketMessage`, `Subscription.provider` +
+  `providerSubscriptionId`) and `20261122050526_add_countries_table`
+  (`Country`, `BillingProviderCountry`, 249-code seed). Dev DB 34/34.
+- **Gates:** root typecheck 0, lint 0, **tests 553/553 (43 files;
+  21 new in `tests/billing.test.ts`, 19 in `tests/support.test.ts`,
+  2 new flag-gating tests)**, prettier clean, i18n en + ur 100%
+  (39 files), admin + dashboard + api + marketing builds pass with
+  every new route in the manifests. All `package.json` files
+  re-normalized to the standard order (`--check` clean, incl.
+  `apps/admin`).
+- **Open:** no live payment test (needs real Stripe test-mode keys
+  on the owner's machine); Freemius plan mapping is manual
+  (`FREEMIUS_PLAN_MAP`); no per-ticket email notifications; no live
+  verification of the new pages against the real dev DB (user visual
+  check owed); the real DB-backed admin overview (spec §3) was never
+  built — Phase 9 candidate.
 
 ### Phase 9 — Hardening & verification — PENDING
 
@@ -370,6 +429,8 @@ proofs), CSP, rate limiting, step-up re-auth, final report.
 - `mcp-management.md` — Phase 6 record (done).
 - `platform-operations.md` — Phase 7 record (done).
 - `admin-audit-trail.md` — Phase 7 record (done).
+- `billing-providers.md` — Phase 8 record (done).
+- `support.md` — Phase 8 record (done).
 - Still to write as phases land: `architecture.md`, `database-design.md`,
   `authorization.md`, `usage-metering.md`, `plan-versioning.md`,
   `internationalization.md`,

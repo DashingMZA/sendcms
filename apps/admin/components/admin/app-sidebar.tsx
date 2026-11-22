@@ -11,6 +11,7 @@ import { Logo } from "@sendcms/ui"
 import {
   RiBarChartLine,
   RiBrainLine,
+  RiCustomerServiceLine,
   RiDashboardLine,
   RiExpandUpDownLine,
   RiFileListLine,
@@ -31,6 +32,7 @@ import {
   RiShieldLine,
   RiSunLine,
   RiUserLine,
+  RiWalletLine,
 } from "@remixicon/react"
 import {
   Avatar,
@@ -104,6 +106,11 @@ export function AppSidebar({ user, side }: Props) {
           icon: RiBarChartLine,
         },
         {
+          label: t("billing"),
+          href: "/admin/billing",
+          icon: RiWalletLine,
+        },
+        {
           label: t("submissions"),
           href: "/admin/submissions",
           icon: RiInboxLine,
@@ -159,6 +166,11 @@ export function AppSidebar({ user, side }: Props) {
           label: t("auditLogs"),
           href: "/admin/audit-logs",
           icon: RiFileTextLine,
+        },
+        {
+          label: t("support"),
+          href: "/admin/support",
+          icon: RiCustomerServiceLine,
         },
       ],
     },

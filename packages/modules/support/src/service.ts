@@ -1,0 +1,609 @@
+import type { AdminSession } from "@sendcms/auth"
+import { AuditAction, AuditResource, db, Prisma } from "@sendcms/database"
+import type {
+  AdminRole,
+  PlatformRole,
+  TicketPriority,
+  TicketStatus,
+} from "@sendcms/database"
+import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { logAudit } from "@sendcms/security"
+import { ApiError } from "@sendcms/shared"
+import type {
+  AdminTicketsQuery,
+  AssignTicketInput,
+  CreateTicketInput,
+  MyTicketsQuery,
+  ReplyToTicketInput,
+  SetTicketStatusInput,
+} from "./validators"
+import { TICKET_TRANSITIONS } from "./transitions"
+
+// Support ticket system (Admin Control Plane, Phase 8).
+// Framework-independent (no Next.js imports); only services import
+// @sendcms/database. Authorization lives HERE, not in the routes.
+//
+// The core invariants:
+// - Tickets are created by SIGNED-IN users from the dashboard only.
+//   There is no public/anonymous ticket form on marketing, and no
+//   route here accepts a ticket from an unauthenticated caller.
+// - A customer sees and touches ONLY their own tickets. Another
+//   user's ticket is a 404 to them — never a 403 that leaks that the
+//   ticket exists.
+// - CLOSED is terminal: a closed ticket is never replied to or
+//   reopened. The customer opens a new ticket instead.
+// - A customer reply to a RESOLVED ticket reopens it to OPEN. An
+//   admin reply never reopens a resolved ticket — the admin reopens
+//   it with an explicit status change, or the customer reopens it by
+//   replying.
+// - Audit detail never carries a message body — only the subject,
+//   the status/priority values, and the reason. Ticket bodies may
+//   hold sensitive customer information.
+// - Admin reads need VIEW_CUSTOMER_DATA. Ticket writes — reply,
+//   status change, assignment, and the staff list for the assign
+//   picker — need MANAGE_USERS or the SUPPORT role. Support staff
+//   exist to answer tickets and queries (owner decision,
+//   2026-11-22).
+
+// ─── Authorization ────────────────────────────────────────────────────
+
+// The actor's effective role: the platform owner outranks everything,
+// a staff adminRole comes next, and everyone else is a plain user.
+function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
+  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
+  return session.user.adminRole ?? "PLATFORM_USER"
+}
+
+// Throws 403 unless the actor holds the capability.
+export function requireAdmin(
+  session: AdminSession,
+  capability: PlatformCapability
+): void {
+  if (!adminCan(getEffectiveRole(session), capability)) {
+    throw new ApiError(
+      "Forbidden: you do not have permission for this admin action.",
+      403
+    )
+  }
+}
+
+// Throws 403 unless the actor may write to a ticket (reply, status
+// change, assignment): MANAGE_USERS holders, or SUPPORT-role staff.
+// Support staff exist to answer tickets and queries, so ticket work
+// is part of their job.
+export function requireTicketWrite(session: AdminSession): void {
+  if (getEffectiveRole(session) === "SUPPORT") return
+  requireAdmin(session, "MANAGE_USERS")
+}
+
+// ─── Row shapes ───────────────────────────────────────────────────────
+
+type TicketUserRef = {
+  id: string
+  name: string | null
+  email: string
+} | null
+
+export type TicketMessageRow = {
+  id: string
+  authorId: string | null
+  author: TicketUserRef
+  body: string
+  createdAt: Date
+}
+
+export type TicketRow = {
+  id: string
+  userId: string
+  user: TicketUserRef
+  subject: string
+  status: TicketStatus
+  priority: TicketPriority
+  assignedToId: string | null
+  assignedTo: TicketUserRef
+  createdAt: Date
+  updatedAt: Date
+  messageCount: number
+}
+
+export type TicketDetailRow = TicketRow & { messages: TicketMessageRow[] }
+
+export type StaffUserRow = {
+  id: string
+  name: string | null
+  email: string
+  platformRole: PlatformRole
+  adminRole: AdminRole | null
+}
+
+type TicketListPayload = Prisma.SupportTicketGetPayload<{
+  include: {
+    user: { select: { id: true; name: true; email: true } }
+    assignedTo: { select: { id: true; name: true; email: true } }
+    _count: { select: { messages: true } }
+  }
+}>
+
+type TicketDetailPayload = Prisma.SupportTicketGetPayload<{
+  include: {
+    user: { select: { id: true; name: true; email: true } }
+    assignedTo: { select: { id: true; name: true; email: true } }
+    messages: {
+      include: { author: { select: { id: true; name: true; email: true } } }
+      orderBy: { createdAt: "asc" }
+    }
+    _count: { select: { messages: true } }
+  }
+}>
+
+function toTicketRow(row: TicketListPayload): TicketRow {
+  return {
+    id: row.id,
+    userId: row.userId,
+    user: row.user,
+    subject: row.subject,
+    status: row.status,
+    priority: row.priority,
+    assignedToId: row.assignedToId,
+    assignedTo: row.assignedTo,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    messageCount: row._count.messages,
+  }
+}
+
+function toTicketDetailRow(row: TicketDetailPayload): TicketDetailRow {
+  return {
+    ...toTicketRow(row),
+    messages: row.messages.map((m) => ({
+      id: m.id,
+      authorId: m.authorId,
+      author: m.author,
+      body: m.body,
+      createdAt: m.createdAt,
+    })),
+  }
+}
+
+// ─── Customer ─────────────────────────────────────────────────────────
+
+/** Creates a ticket + its first message in ONE transaction, then
+    audits the creation. The message body is never in the audit. */
+export async function createTicket(
+  userId: string,
+  input: CreateTicketInput
+): Promise<TicketDetailRow> {
+  const created = await db.$transaction(async (tx) => {
+    const ticket = await tx.supportTicket.create({
+      data: {
+        userId,
+        subject: input.subject,
+        priority: input.priority,
+      },
+    })
+    const message = await tx.ticketMessage.create({
+      data: { ticketId: ticket.id, authorId: userId, body: input.body },
+    })
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true },
+    })
+    return { ticket, message, user }
+  })
+  await logAudit({
+    userId,
+    action: AuditAction.CREATE,
+    resourceType: AuditResource.SUPPORT_TICKET,
+    resourceId: created.ticket.id,
+    detail: {
+      event: "ticket-created",
+      subject: input.subject,
+      priority: input.priority,
+    },
+  })
+  return {
+    id: created.ticket.id,
+    userId,
+    user: created.user,
+    subject: created.ticket.subject,
+    status: created.ticket.status,
+    priority: created.ticket.priority,
+    assignedToId: null,
+    assignedTo: null,
+    createdAt: created.ticket.createdAt,
+    updatedAt: created.ticket.updatedAt,
+    messageCount: 1,
+    messages: [
+      {
+        id: created.message.id,
+        authorId: created.message.authorId,
+        author: created.user,
+        body: created.message.body,
+        createdAt: created.message.createdAt,
+      },
+    ],
+  }
+}
+
+export type MyTicketsPage = {
+  tickets: TicketRow[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}
+
+/** The caller's own tickets, newest first. Ownership is the filter —
+    no capability check: any signed-in user may list their own. */
+export async function listMyTickets(
+  userId: string,
+  filters: MyTicketsQuery
+): Promise<MyTicketsPage> {
+  const where: Prisma.SupportTicketWhereInput = { userId }
+  if (filters.status) where.status = filters.status
+  const [total, rows] = await Promise.all([
+    db.supportTicket.count({ where }),
+    db.supportTicket.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+        _count: { select: { messages: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (filters.page - 1) * filters.perPage,
+      take: filters.perPage,
+    }),
+  ])
+  return {
+    tickets: rows.map(toTicketRow),
+    total,
+    page: filters.page,
+    perPage: filters.perPage,
+    totalPages: Math.max(1, Math.ceil(total / filters.perPage)),
+  }
+}
+
+// The ownership check doubles as the not-found case: another user's
+// ticket is a 404, never a 403 (see the header note).
+async function getOwnedTicketOrThrow(userId: string, ticketId: string) {
+  const ticket = await db.supportTicket.findUnique({
+    where: { id: ticketId },
+  })
+  if (!ticket || ticket.userId !== userId) {
+    throw new ApiError("Ticket not found.", 404)
+  }
+  return ticket
+}
+
+/** One of the caller's own tickets with the full thread, oldest
+    message first. 404 when missing or owned by someone else. */
+export async function getMyTicket(
+  userId: string,
+  ticketId: string
+): Promise<TicketDetailRow> {
+  await getOwnedTicketOrThrow(userId, ticketId)
+  const row = await db.supportTicket.findUnique({
+    where: { id: ticketId },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
+      messages: {
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      _count: { select: { messages: true } },
+    },
+  })
+  if (!row) throw new ApiError("Ticket not found.", 404)
+  return toTicketDetailRow(row)
+}
+
+/** Appends the caller's reply. Replying to a RESOLVED ticket reopens
+    it to OPEN; replying to a CLOSED ticket is refused (409) — closed
+    is terminal, open a new ticket instead. Audited. */
+export async function replyToTicket(
+  userId: string,
+  ticketId: string,
+  input: ReplyToTicketInput
+): Promise<TicketDetailRow> {
+  const ticket = await getOwnedTicketOrThrow(userId, ticketId)
+  if (ticket.status === "CLOSED") {
+    throw new ApiError(
+      "This ticket is closed. Please open a new ticket if you still need help.",
+      409
+    )
+  }
+  const reopened = ticket.status === "RESOLVED"
+  const [, updated] = await db.$transaction([
+    db.ticketMessage.create({
+      data: { ticketId: ticket.id, authorId: userId, body: input.body },
+    }),
+    db.supportTicket.update({
+      where: { id: ticket.id },
+      data: { status: reopened ? "OPEN" : ticket.status },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+        messages: {
+          include: {
+            author: { select: { id: true, name: true, email: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        _count: { select: { messages: true } },
+      },
+    }),
+  ])
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUPPORT_TICKET,
+    resourceId: ticket.id,
+    detail: {
+      event: "ticket-replied",
+      by: "customer",
+      reopened,
+    },
+  })
+  return toTicketDetailRow(updated)
+}
+
+// ─── Admin ────────────────────────────────────────────────────────────
+
+export type AdminTicketsPage = {
+  tickets: TicketRow[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}
+
+/** Every user's tickets, newest first. Reads need
+    VIEW_CUSTOMER_DATA. Search matches the subject, case-insensitive. */
+export async function listTickets(
+  actor: AdminSession,
+  filters: AdminTicketsQuery
+): Promise<AdminTicketsPage> {
+  requireAdmin(actor, "VIEW_CUSTOMER_DATA")
+  const where: Prisma.SupportTicketWhereInput = {}
+  if (filters.status) where.status = filters.status
+  if (filters.priority) where.priority = filters.priority
+  if (filters.assignedToId) where.assignedToId = filters.assignedToId
+  if (filters.search) {
+    where.subject = { contains: filters.search, mode: "insensitive" }
+  }
+  const [total, rows] = await Promise.all([
+    db.supportTicket.count({ where }),
+    db.supportTicket.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+        _count: { select: { messages: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (filters.page - 1) * filters.perPage,
+      take: filters.perPage,
+    }),
+  ])
+  return {
+    tickets: rows.map(toTicketRow),
+    total,
+    page: filters.page,
+    perPage: filters.perPage,
+    totalPages: Math.max(1, Math.ceil(total / filters.perPage)),
+  }
+}
+
+async function getTicketOrThrow(ticketId: string) {
+  const ticket = await db.supportTicket.findUnique({
+    where: { id: ticketId },
+  })
+  if (!ticket) throw new ApiError("Ticket not found.", 404)
+  return ticket
+}
+
+/** Any user's ticket with the full thread. Reads need
+    VIEW_CUSTOMER_DATA. */
+export async function getTicket(
+  actor: AdminSession,
+  ticketId: string
+): Promise<TicketDetailRow> {
+  requireAdmin(actor, "VIEW_CUSTOMER_DATA")
+  await getTicketOrThrow(ticketId)
+  const row = await db.supportTicket.findUnique({
+    where: { id: ticketId },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
+      messages: {
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      _count: { select: { messages: true } },
+    },
+  })
+  if (!row) throw new ApiError("Ticket not found.", 404)
+  return toTicketDetailRow(row)
+}
+
+/** A staff reply. The reply moves OPEN / IN_PROGRESS /
+    WAITING_ON_CUSTOMER tickets to IN_PROGRESS; a RESOLVED ticket
+    stays RESOLVED (the admin reopens it with an explicit status
+    change, or the customer reopens it by replying). Replying to a
+    CLOSED ticket is refused (409). Replying needs MANAGE_USERS or
+    the SUPPORT role. */
+export async function adminReply(
+  actor: AdminSession,
+  ticketId: string,
+  input: ReplyToTicketInput
+): Promise<TicketDetailRow> {
+  requireTicketWrite(actor)
+  const ticket = await getTicketOrThrow(ticketId)
+  if (ticket.status === "CLOSED") {
+    throw new ApiError("This ticket is closed.", 409)
+  }
+  const nextStatus = ticket.status === "RESOLVED" ? "RESOLVED" : "IN_PROGRESS"
+  const [, updated] = await db.$transaction([
+    db.ticketMessage.create({
+      data: {
+        ticketId: ticket.id,
+        authorId: actor.user.id,
+        body: input.body,
+      },
+    }),
+    db.supportTicket.update({
+      where: { id: ticket.id },
+      data: { status: nextStatus },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+        messages: {
+          include: {
+            author: { select: { id: true, name: true, email: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        _count: { select: { messages: true } },
+      },
+    }),
+  ])
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUPPORT_TICKET,
+    resourceId: ticket.id,
+    detail: {
+      event: "ticket-replied",
+      by: "admin",
+      statusChanged: nextStatus !== ticket.status,
+    },
+  })
+  return toTicketDetailRow(updated)
+}
+
+/** Moves a ticket along the status machine. Only the transitions in
+    TICKET_TRANSITIONS are allowed — anything else is a 409. Reason
+    required. Needs MANAGE_USERS or the SUPPORT role. */
+export async function setTicketStatus(
+  actor: AdminSession,
+  ticketId: string,
+  input: SetTicketStatusInput
+): Promise<TicketDetailRow> {
+  requireTicketWrite(actor)
+  const ticket = await getTicketOrThrow(ticketId)
+  if (!TICKET_TRANSITIONS[ticket.status].includes(input.status)) {
+    throw new ApiError(
+      `Cannot move a ${ticket.status} ticket to ${input.status}.`,
+      409
+    )
+  }
+  const updated = await db.supportTicket.update({
+    where: { id: ticket.id },
+    data: { status: input.status },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
+      messages: {
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      _count: { select: { messages: true } },
+    },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUPPORT_TICKET,
+    resourceId: ticket.id,
+    detail: {
+      event: "ticket-status-changed",
+      reason: input.reason,
+      oldStatus: ticket.status,
+      newStatus: input.status,
+    },
+  })
+  return toTicketDetailRow(updated)
+}
+
+/** Assigns a ticket to a staff user — the platform owner or a user
+    holding a staff adminRole. Anyone else is a 422. Reason required.
+    Needs MANAGE_USERS or the SUPPORT role. */
+export async function assignTicket(
+  actor: AdminSession,
+  ticketId: string,
+  input: AssignTicketInput
+): Promise<TicketDetailRow> {
+  requireTicketWrite(actor)
+  const ticket = await getTicketOrThrow(ticketId)
+  const assignee = await db.user.findUnique({
+    where: { id: input.assignedToId },
+    select: { id: true, platformRole: true, adminRole: true },
+  })
+  if (!assignee) throw new ApiError("User not found.", 404)
+  const isStaff =
+    assignee.platformRole === "PLATFORM_OWNER" || assignee.adminRole !== null
+  if (!isStaff) {
+    throw new ApiError(
+      "Tickets can only be assigned to platform staff (the owner or a staff admin role).",
+      422
+    )
+  }
+  const updated = await db.supportTicket.update({
+    where: { id: ticket.id },
+    data: { assignedToId: assignee.id },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
+      messages: {
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      _count: { select: { messages: true } },
+    },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.ASSIGN,
+    resourceType: AuditResource.SUPPORT_TICKET,
+    resourceId: ticket.id,
+    detail: {
+      event: "ticket-assigned",
+      reason: input.reason,
+      oldAssigneeId: ticket.assignedToId,
+      newAssigneeId: assignee.id,
+    },
+  })
+  return toTicketDetailRow(updated)
+}
+
+/** Every staff user (owner + adminRole holders), for the assign
+    picker. Needs MANAGE_USERS or the SUPPORT role — the picker is
+    only shown where the actor may assign. */
+export async function listStaffUsers(
+  actor: AdminSession
+): Promise<StaffUserRow[]> {
+  requireTicketWrite(actor)
+  return db.user.findMany({
+    where: {
+      OR: [{ platformRole: "PLATFORM_OWNER" }, { adminRole: { not: null } }],
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      platformRole: true,
+      adminRole: true,
+    },
+    orderBy: { name: "asc" },
+  })
+}

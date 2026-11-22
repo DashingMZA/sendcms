@@ -145,6 +145,9 @@ enum AuditResource {
   FEATURE_FLAG
   ANNOUNCEMENT
   DELETION_REQUEST
+  // Admin Control Plane (Phase 8) — billing providers + support tickets.
+  BILLING_PROVIDER
+  SUPPORT_TICKET
 }
 
 // ─── Platform operations (Admin Control Plane, Phase 7) ─────────────────────
@@ -340,6 +343,10 @@ model User {
   deletionRequests          DeletionRequest[] @relation("DeletionRequestTarget")
   deletionRequestsReviewed  DeletionRequest[] @relation("DeletionRequestReviewedBy")
   announcementsCreated      Announcement[] @relation("AnnouncementsCreatedBy")
+  // Admin Control Plane (Phase 8) — support tickets.
+  supportTickets         SupportTicket[] @relation("SupportTicketOwner")
+  supportTicketsAssigned SupportTicket[] @relation("SupportTicketAssignee")
+  ticketMessages         TicketMessage[] @relation("TicketMessageAuthor")
 
   @@index([status])
   @@index([adminRole])
@@ -847,6 +854,11 @@ model Subscription {
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
   cancelAtPeriodEnd  Boolean            @default(false)
+  // Admin Control Plane (Phase 8) — the billing provider that sold this
+  // subscription (null = assigned by an admin, no provider involved) and
+  // the provider's own subscription id (used by webhooks to find the row).
+  provider               BillingProvider?
+  providerSubscriptionId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -858,6 +870,7 @@ model Subscription {
   @@index([planId])
   @@index([planVersionId])
   @@index([status, currentPeriodEnd])
+  @@index([providerSubscriptionId])
 }
 
 // Append-only history of every version transition on a subscription.
@@ -1210,4 +1223,129 @@ model DeletionRequest {
 
   @@index([userId, status])
   @@index([status, createdAt])
+}
+
+// ─── Billing + support (Admin Control Plane, Phase 8) ───────────────────────
+
+// Billing providers. The registry in @sendcms/billing must stay in sync
+// with this enum.
+enum BillingProvider {
+  STRIPE
+  PAYPAL
+  GUMROAD
+  FREEMIUS
+  POLAR
+}
+
+// Support ticket lifecycle: OPEN → IN_PROGRESS → WAITING_ON_CUSTOMER →
+// RESOLVED → CLOSED. Reopening returns a ticket to OPEN. Every
+// transition is audited.
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// One row per billing provider. `isEnabled` is the admin's switch — it
+// can only be turned on when the provider's credentials exist in .env
+// (enforced in the billing service, not the DB). Which countries the
+// provider serves lives in BillingProviderCountry (no rows = everywhere,
+// the default). Intended defaults, set from the admin app and never
+// hardcoded: Stripe everywhere, PayPal US/GB/AU/DE and friends,
+// Gumroad PK.
+model BillingProviderConfig {
+  id        String          @id @default(cuid())
+  provider  BillingProvider @unique
+  isEnabled Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  countries BillingProviderCountry[]
+}
+
+// Webhook idempotency: one row per provider event id. The webhook
+// handler skips an event it has already processed, so a provider retry
+// can never double-activate a subscription.
+model BillingEvent {
+  id              String          @id @default(cuid())
+  provider        BillingProvider
+  providerEventId String
+  eventType       String
+  processedAt     DateTime?
+  createdAt       DateTime        @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([provider, createdAt])
+}
+
+// A support thread. Created by a signed-in user from /dashboard/support
+// only — there is no public/anonymous ticket form on marketing.
+model SupportTicket {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation("SupportTicketOwner", fields: [userId], references: [id], onDelete: Cascade)
+  subject      String
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(NORMAL)
+  assignedToId String?
+  assignedTo   User?          @relation("SupportTicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  messages TicketMessage[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([assignedToId])
+}
+
+// One message in a support thread, from the customer or a staff member.
+// Append-only: a correction is a new message, never an edit.
+model TicketMessage {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?         @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// Reference list of countries (ISO 3166-1 alpha-2). The code IS the id —
+// it is stable, unique, and the join table's FK target. Seeded by the
+// migration (INSERT ... ON CONFLICT DO NOTHING). The admin UI fetches
+// this list when setting up a billing provider; it is never hardcoded
+// in code.
+model Country {
+  code String @id
+  name String
+
+  providerCountries BillingProviderCountry[]
+
+  @@index([name])
+}
+
+// Which countries a billing provider is enabled for. NO rows for a
+// provider = all countries (the default). The admin picks countries
+// from the Country table when setting up a provider.
+model BillingProviderCountry {
+  id               String                @id @default(cuid())
+  providerConfigId String
+  providerConfig   BillingProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+  countryCode      String
+  country          Country               @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+
+  @@unique([providerConfigId, countryCode])
+  @@index([countryCode])
 }

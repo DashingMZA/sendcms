@@ -1,0 +1,32 @@
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { createCheckoutSession } from "@sendcms/billing"
+import { checkoutSessionSchema } from "@sendcms/billing/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+
+// Start a hosted checkout for the signed-in user. The body names
+// the plan version + provider + country; the service re-reads the
+// plan version from the DB and refuses free, unpublished, disabled,
+// unconfigured, or country-restricted checkouts.
+export async function POST(req: NextRequest) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const body = await req.json().catch(() => ({}))
+    const parsed = checkoutSessionSchema.safeParse(body)
+    if (!parsed.success) {
+      const flat = parsed.error.flatten()
+      const messages = [
+        ...flat.formErrors,
+        ...Object.values(flat.fieldErrors).flat(),
+      ].filter(Boolean)
+      return NextResponse.json(
+        { error: messages.join("; ") || "Validation failed" },
+        { status: 422 }
+      )
+    }
+    return ok(await createCheckoutSession(session, parsed.data))
+  } catch (err) {
+    return handleApiError(err)
+  }
+}

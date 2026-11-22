@@ -25,6 +25,10 @@ const mockAi = vi.hoisted(() => ({
   })),
 }))
 vi.mock("@sendcms/ai", () => mockAi)
+const mockIsFeatureEnabled = vi.hoisted(() => vi.fn(async () => true))
+vi.mock("@sendcms/platform-ops", () => ({
+  isFeatureEnabled: mockIsFeatureEnabled,
+}))
 const mockEnqueueDigest = vi.hoisted(() => vi.fn(async () => 1))
 vi.mock("@sendcms/notifications", () => ({
   enqueueDigest: mockEnqueueDigest,
@@ -62,6 +66,7 @@ function makeSubmission(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockIsFeatureEnabled.mockResolvedValue(true)
   mockAi.isAiConfigured.mockReturnValue(true)
   mockAi.getDigestIntervalHours.mockReturnValue(24)
   mockAi.generateDigest.mockResolvedValue({
@@ -75,6 +80,15 @@ beforeEach(() => {
 })
 
 describe("sendDueDigests", () => {
+  it("does nothing when the ai-digest flag is off", async () => {
+    mockIsFeatureEnabled.mockResolvedValue(false)
+    const result = await sendDueDigests({ env: ENV })
+    expect(result).toEqual({ sent: 0, skipped: 0 })
+    expect(mockIsFeatureEnabled).toHaveBeenCalledWith("ai-digest")
+    expect(mockDb.form.findMany).not.toHaveBeenCalled()
+    expect(mockAi.generateDigest).not.toHaveBeenCalled()
+  })
+
   it("does nothing when no AI provider is configured", async () => {
     mockAi.isAiConfigured.mockReturnValue(false)
     const result = await sendDueDigests({ env: ENV })

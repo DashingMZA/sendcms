@@ -38,6 +38,9 @@ const ALL_CAPABILITIES: PlatformCapability[] = [
   "REVIEW_TRANSLATIONS",
   // Admin Control Plane (Phase 7)
   "MANAGE_ANNOUNCEMENTS",
+  // Admin Control Plane (Phase 8)
+  "VIEW_BILLING",
+  "MANAGE_BILLING",
 ]
 
 describe("platformCan", () => {
@@ -99,6 +102,7 @@ describe("adminCan", () => {
       "VIEW_AUDIT_LOGS",
       "VIEW_AI_USAGE",
       "VIEW_MCP",
+      "VIEW_BILLING",
     ]
     expect([...ADMIN_ROLE_CAPABILITIES.MANAGER].sort()).toEqual(
       [...expected].sort()

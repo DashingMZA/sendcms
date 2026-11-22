@@ -1,19 +1,19 @@
 {
-  "devDependencies": {
-    "@sendcms/config": "workspace:*",
-    "typescript": "6.0.3"
-  },
+  "name": "@sendcms/i18n",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
-  "main": "./src/index.ts",
-  "name": "@sendcms/i18n",
-  "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
     "validate": "node scripts/validate-translations.mjs"
   },
-  "type": "module",
-  "types": "./src/index.ts",
-  "version": "0.1.0"
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "typescript": "6.0.3"
+  }
 }

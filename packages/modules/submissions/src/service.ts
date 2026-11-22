@@ -34,6 +34,7 @@ import {
   recordUsage,
   startOfUtcMonth,
 } from "@sendcms/plans"
+import { isFeatureEnabled } from "@sendcms/platform-ops"
 import {
   enqueueDigest,
   enqueueSubmissionNotifications,
@@ -584,6 +585,12 @@ export type RescoreResult = {
   skipped: number
 }
 
+/** Feature-flag keys for the AI background jobs (Admin Control Plane,
+    Phase 8). An admin creates and enables these in /admin/features;
+    a missing or disabled flag turns its job off — fail-closed. */
+export const AI_SPAM_RESCORE_FLAG = "ai-spam-rescore"
+export const AI_DIGEST_FLAG = "ai-digest"
+
 /** Re-scores unscored NEW submissions on AI-enabled forms. Returns the
     outcome counts. A single failed model call is logged and skipped —
     it never fails the batch. */
@@ -594,6 +601,11 @@ export async function rescoreNewSubmissions({
   limit?: number
   env?: NodeJS.ProcessEnv
 } = {}): Promise<RescoreResult> {
+  // Feature flag first: a missing or disabled flag turns the job off
+  // (fail-closed) — the admin enables it in /admin/features.
+  if (!(await isFeatureEnabled(AI_SPAM_RESCORE_FLAG))) {
+    return { checked: 0, markedSpam: 0, skipped: 0 }
+  }
   // The gate is "any AI at all": the platform key OR any stored BYOK
   // key. A BYOK-only deployment (no platform key) still runs its AI
   // jobs; per-owner resolution below decides which key each call uses.
@@ -789,6 +801,11 @@ export async function sendDueDigests({
   limit?: number
   env?: NodeJS.ProcessEnv
 } = {}): Promise<DigestResult> {
+  // Feature flag first: a missing or disabled flag turns the job off
+  // (fail-closed) — the admin enables it in /admin/features.
+  if (!(await isFeatureEnabled(AI_DIGEST_FLAG))) {
+    return { sent: 0, skipped: 0 }
+  }
   if (!isAiConfigured(env) && !(await anyByokKeyConfigured())) {
     return { sent: 0, skipped: 0 }
   }

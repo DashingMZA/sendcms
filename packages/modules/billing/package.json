@@ -1,0 +1,44 @@
+{
+  "name": "@sendcms/billing",
+  "version": "0.1.0",
+  "description": "Billing providers for SendCMS (Stripe, PayPal, Polar, Freemius, Gumroad) — provider registry, admin enable/disable + country mapping, checkout sessions and webhooks.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./queries": "./src/queries.ts",
+    "./registry": "./src/registry.ts",
+    "./validators": "./src/validators.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@freemius/sdk": "^0.5.0",
+    "@paypal/paypal-server-sdk": "^2.5.0",
+    "@polar-sh/sdk": "^1.3.2",
+    "@sendcms/auth": "workspace:*",
+    "@sendcms/database": "workspace:*",
+    "@sendcms/observability": "workspace:*",
+    "@sendcms/permissions": "workspace:*",
+    "@sendcms/plans": "workspace:*",
+    "@sendcms/security": "workspace:*",
+    "@sendcms/shared": "workspace:*",
+    "stripe": "^23.2.0",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.108.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "@tanstack/react-query": "^5.108.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1",
+    "typescript": "6.0.3"
+  }
+}

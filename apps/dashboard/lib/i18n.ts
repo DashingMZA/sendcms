@@ -42,6 +42,12 @@ export const LOCALE_COOKIE_NAME = "sendcms-locale"
 /** Dashboard-app domains loaded for the AI page. */
 export const DASHBOARD_AI_DOMAINS = ["ai"] as const
 
+/** Dashboard-app domains loaded for the billing pages. */
+export const DASHBOARD_BILLING_DOMAINS = ["billing"] as const
+
+/** Dashboard-app domains loaded for the support pages. */
+export const DASHBOARD_SUPPORT_DOMAINS = ["support"] as const
+
 /** Load one dashboard domain's messages for a locale. */
 async function loadMessages(
   locale: LocaleCode,

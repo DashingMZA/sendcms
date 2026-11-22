@@ -36,6 +36,9 @@ export type PlatformCapability =
   | "REVIEW_TRANSLATIONS"
   // Admin Control Plane (Phase 7) — platform announcements.
   | "MANAGE_ANNOUNCEMENTS"
+  // Admin Control Plane (Phase 8) — billing providers + payments.
+  | "VIEW_BILLING"
+  | "MANAGE_BILLING"
 
 const PLATFORM_PERMISSIONS: Record<
   PlatformRole,
@@ -69,6 +72,8 @@ const PLATFORM_PERMISSIONS: Record<
     "MANAGE_TRANSLATIONS",
     "REVIEW_TRANSLATIONS",
     "MANAGE_ANNOUNCEMENTS",
+    "VIEW_BILLING",
+    "MANAGE_BILLING",
   ],
   PLATFORM_USER: [],
 }
@@ -116,6 +121,9 @@ const ADMIN_CAPABILITIES: readonly PlatformCapability[] = [
   "REVIEW_TRANSLATIONS",
   // Admin Control Plane (Phase 7) — platform announcements.
   "MANAGE_ANNOUNCEMENTS",
+  // Admin Control Plane (Phase 8) — billing providers + payments.
+  "VIEW_BILLING",
+  "MANAGE_BILLING",
 ]
 
 export const ADMIN_ROLE_CAPABILITIES: Record<
@@ -141,6 +149,7 @@ export const ADMIN_ROLE_CAPABILITIES: Record<
     "VIEW_AUDIT_LOGS",
     "VIEW_AI_USAGE",
     "VIEW_MCP",
+    "VIEW_BILLING",
   ],
   // Support queries only: view users and their data, nothing else.
   SUPPORT: [

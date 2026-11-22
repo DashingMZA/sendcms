@@ -1,0 +1,35 @@
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { adminReply } from "@sendcms/support"
+import { ReplyToTicketSchema } from "@sendcms/support/validators"
+import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+
+// A staff reply to a ticket. MANAGE_USERS holders and SUPPORT-role
+// staff may reply (enforced in the service).
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ ticketId: string }> }
+) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const { ticketId } = await params
+    const body = await req.json().catch(() => ({}))
+    const parsed = ReplyToTicketSchema.safeParse(body)
+    if (!parsed.success) {
+      const flat = parsed.error.flatten()
+      const messages = [
+        ...flat.formErrors,
+        ...Object.values(flat.fieldErrors).flat(),
+      ].filter(Boolean)
+      return NextResponse.json(
+        { error: messages.join("; ") || "Validation failed" },
+        { status: 422 }
+      )
+    }
+    const ticket = await adminReply(session, ticketId, parsed.data)
+    return ok(ticket)
+  } catch (err) {
+    return handleApiError(err)
+  }
+}
