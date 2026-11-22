@@ -27,7 +27,15 @@
  * - `script-src 'self' 'nonce-…' 'strict-dynamic'` — Next's inline
  *   scripts carry the nonce; a nonced script may load further scripts
  *   (`strict-dynamic`). No `'unsafe-inline'`, ever.
- * - `style-src 'self' 'nonce-…'` — same shape for styles.
+ * - `style-src 'self' 'nonce-…'` — same shape for `<style>` elements.
+ * - `style-src-attr 'unsafe-inline'` — style ATTRIBUTES only. A nonce
+ *   does not cover `style="..."` attributes, and the apps set inline
+ *   styles (the shadcn sidebar's `--sidebar-width` vars, Radix
+ *   floating-UI positioning, chart sizing). Without this, the
+ *   enforcing policy silently drops those styles — the sidebar gap
+ *   collapses to 0 and page content slides under the fixed sidebar
+ *   (found live 2026-11-22, the day enforcing CSP shipped).
+ *   `<style>` elements still need the nonce; scripts stay strict.
  * - `img-src 'self' blob: data:` — same-origin images, plus blob:
  *   (download previews) and data: (inline SVG / data-URI images).
  * - `font-src 'self'` — no external font host is used (no next/font,
@@ -92,6 +100,7 @@ export function buildCsp(nonce: string, options: CspOptions = {}): string {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     `style-src 'self' 'nonce-${nonce}'`,
+    "style-src-attr 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self'",
     "object-src 'none'",

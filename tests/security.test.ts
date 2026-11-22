@@ -108,6 +108,7 @@ describe("Content-Security-Policy (Phase 9)", () => {
       `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
     )
     expect(policy).toContain(`style-src 'self' 'nonce-${nonce}'`)
+    expect(policy).toContain("style-src-attr 'unsafe-inline'")
     expect(policy).toContain("img-src 'self' blob: data:")
     expect(policy).toContain("font-src 'self'")
     expect(policy).toContain("object-src 'none'")
@@ -115,7 +116,16 @@ describe("Content-Security-Policy (Phase 9)", () => {
     expect(policy).toContain("form-action 'self'")
     expect(policy).toContain("frame-ancestors 'none'")
     expect(policy).toContain("upgrade-insecure-requests")
-    expect(policy).not.toContain("unsafe-inline")
+    // 'unsafe-inline' is allowed ONLY for style attributes: nonces do
+    // not cover style="..." attributes, and the apps set inline styles
+    // (shadcn sidebar CSS vars, Radix positioning). Scripts stay strict
+    // and <style> elements stay nonce-gated.
+    const scriptSrc =
+      policy.split("; ").find((d) => d.startsWith("script-src")) ?? ""
+    expect(scriptSrc).not.toContain("unsafe-inline")
+    const styleSrc =
+      policy.split("; ").find((d) => d.startsWith("style-src ")) ?? ""
+    expect(styleSrc).not.toContain("unsafe-inline")
     expect(policy).not.toContain("connect-src")
   })
 

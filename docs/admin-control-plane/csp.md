@@ -15,6 +15,7 @@ truth — the proxies and the tests both use it):
 default-src 'self';
 script-src 'self' 'nonce-…' 'strict-dynamic';
 style-src 'self' 'nonce-…';
+style-src-attr 'unsafe-inline';
 img-src 'self' blob: data:;
 font-src 'self';
 object-src 'none';
@@ -30,9 +31,12 @@ Marketing adds one directive (see "Per-app inventory" below):
 connect-src 'self' <api origin>
 ```
 
-There is no `'unsafe-inline'` anywhere, in either `script-src` or
-`style-src`. The policy is served as the enforcing
-`Content-Security-Policy` header (see "Report-only first" below).
+There is no `'unsafe-inline'` in `script-src` or in `style-src`
+(`<style>` elements still need the nonce). The one exception is
+`style-src-attr 'unsafe-inline'`, which covers ONLY `style="..."`
+attributes — see the `style-src` bullet below. The policy is served
+as the enforcing `Content-Security-Policy` header (see "Report-only
+first" below).
 
 ### Why each directive is what it is
 
@@ -42,7 +46,18 @@ There is no `'unsafe-inline'` anywhere, in either `script-src` or
   load further scripts (`strict-dynamic`). The demo page's SDK script
   is loaded this way (see below) — no host allowlist is needed for
   it.
-- `style-src 'self' 'nonce-…'` — same shape for styles.
+- `style-src 'self' 'nonce-…'` — same shape for `<style>` elements.
+- `style-src-attr 'unsafe-inline'` — style ATTRIBUTES only. A nonce
+  does not cover `style="..."` attributes, and the apps set inline
+  styles (the shadcn sidebar's `--sidebar-width` vars, Radix
+  floating-UI positioning, chart sizing). The first enforcing deploy
+  (2026-11-22) shipped without this: the browser silently dropped
+  the sidebar width variable, the sidebar gap collapsed to 0, and
+  page content slid under the fixed sidebar on dashboard and admin
+  (LTR and RTL). The fix — this directive, one line in `buildCsp` —
+  restores those styles; `<style>` elements still need the nonce
+  and scripts stay strict. The test pins all three facts
+  (`tests/security.test.ts`).
 - `img-src 'self' blob: data:` — same-origin images, plus `blob:`
   (download previews created with `URL.createObjectURL`) and `data:`
   (inline SVG / data-URI images).
@@ -238,7 +253,9 @@ data block, which is exempt).
 - The api app has no CSP (no HTML). Its routes also need no CSP.
 - The dashboard `/sign-in` page has no CSP header (outside the
   matcher — see "Matchers"). Follow-up, not done silently here.
-- No `'unsafe-inline'`, no hash allowlists, no new dependencies.
+- No `'unsafe-inline'` in `script-src` or `style-src`, no hash
+  allowlists, no new dependencies. The only `'unsafe-inline'` is
+  `style-src-attr`, scoped to style attributes (see above).
 - The CSP builder is imported by the proxies (and the tests) via a
   relative path (`../../packages/security/src/csp`), not from the
   `@sendcms/security` barrel: the barrel (`src/index.ts`) is owned by
