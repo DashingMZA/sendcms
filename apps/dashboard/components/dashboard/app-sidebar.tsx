@@ -7,6 +7,7 @@ import { authClient } from "@sendcms/auth/client"
 import { useTheme } from "next-themes"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
+import { LanguageSelector } from "@/components/dashboard/language-selector"
 import {
   RiDashboardLine,
   RiLinksLine,
@@ -66,6 +67,8 @@ type Props = {
   domainCount: number
   formCount: number
   inboxCount: number
+  /** Which side the sidebar sits on: "left" in LTR, "right" in RTL. */
+  side: "left" | "right"
 }
 
 export function AppSidebar({
@@ -73,6 +76,7 @@ export function AppSidebar({
   domainCount,
   formCount,
   inboxCount,
+  side,
 }: Props) {
   const router = useRouter()
   const navGroups: NavGroup[] = [
@@ -145,6 +149,9 @@ export function AppSidebar({
 
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
+  // Collapsed-icon tooltips sit on the sidebar's OUTER side: right
+  // when the sidebar is on the left, left when it is on the right.
+  const tooltipSide = side === "right" ? "left" : "right"
   const initials = (user.name ?? user.email ?? "U")
     .split(" ")
     .map((w) => w[0])
@@ -153,7 +160,7 @@ export function AppSidebar({
     .toUpperCase()
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" side={side}>
       {/* ── Header ──────────────────────────────────────── */}
       <SidebarHeader className="mb-0">
         <SidebarMenu>
@@ -162,7 +169,7 @@ export function AppSidebar({
               size="lg"
               className="flex items-center p-0 hover:bg-transparent"
             >
-              <Link href="/dashboard" className="max-h-[42px] pl-0">
+              <Link href="/dashboard" className="max-h-[42px] ps-0">
                 <Logo brand={config.site} />
               </Link>
             </SidebarMenuButton>
@@ -210,13 +217,13 @@ export function AppSidebar({
                       <SidebarMenuButton
                         asChild
                         isActive={active}
-                        tooltip={item.label}
+                        tooltip={{ children: item.label, side: tooltipSide }}
                       >
                         <Link href={item.href}>
                           <item.icon aria-hidden="true" />
                           <span className="truncate">{item.label}</span>
                           {item.badge !== undefined && (
-                            <span className="mr-1 ml-auto text-xs font-bold group-data-[collapsible=icon]:hidden">
+                            <span className="ms-auto me-1 text-xs font-bold group-data-[collapsible=icon]:hidden">
                               {item.badge}
                             </span>
                           )}
@@ -236,7 +243,10 @@ export function AppSidebar({
         <SidebarMenu className="gap-1">
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip={resolvedTheme === "dark" ? "Dark mode" : "Light mode"}
+              tooltip={{
+                children: resolvedTheme === "dark" ? "Dark mode" : "Light mode",
+                side: tooltipSide,
+              }}
               onClick={() =>
                 setTheme(resolvedTheme === "dark" ? "light" : "dark")
               }
@@ -251,6 +261,7 @@ export function AppSidebar({
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <LanguageSelector side={side} />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -267,7 +278,7 @@ export function AppSidebar({
                       {initials}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 overflow-hidden text-left leading-tight group-data-[collapsible=icon]:hidden">
+                  <div className="flex-1 overflow-hidden text-start leading-tight group-data-[collapsible=icon]:hidden">
                     <p className="truncate text-sm font-semibold">
                       {user.name}
                     </p>
@@ -276,7 +287,7 @@ export function AppSidebar({
                     </p>
                   </div>
                   <RiExpandUpDownLine
-                    className="ml-auto size-4 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden"
+                    className="ms-auto size-4 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden"
                     aria-hidden="true"
                   />
                 </SidebarMenuButton>

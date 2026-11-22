@@ -1,10 +1,12 @@
 import { cookies } from "next/headers"
 import {
+  DASHBOARD_DOMAINS,
   DEFAULT_LOCALE,
   createTranslator,
   getLocaleDirection,
   isSupportedLocale,
   loadLocaleAppDomain,
+  loadLocaleDomain,
   type LocaleCode,
   type LocaleInfo,
   type TranslationMessages,
@@ -48,13 +50,27 @@ export const DASHBOARD_BILLING_DOMAINS = ["billing"] as const
 /** Dashboard-app domains loaded for the support pages. */
 export const DASHBOARD_SUPPORT_DOMAINS = ["support"] as const
 
-/** Load one dashboard domain's messages for a locale. */
+/** Shared domains the dashboard shell loads for every page. */
+export const DASHBOARD_SHELL_DOMAINS = ["language"] as const
+
+function isDashboardDomain(domain: string): boolean {
+  return (DASHBOARD_DOMAINS as readonly string[]).includes(domain)
+}
+
+/**
+ * Load one domain's messages for a locale. Dashboard-app domains live
+ * at `locales/{locale}/dashboard/{domain}.json`; anything else is a
+ * shared domain at `locales/{locale}/{domain}.json` (mirrors the admin
+ * adapter). Returns {} when the file is absent.
+ */
 async function loadMessages(
   locale: LocaleCode,
   domain: string
 ): Promise<TranslationMessages> {
   try {
-    return await loadLocaleAppDomain(locale, "dashboard", domain)
+    return isDashboardDomain(domain)
+      ? await loadLocaleAppDomain(locale, "dashboard", domain)
+      : await loadLocaleDomain(locale, domain)
   } catch {
     return {}
   }
