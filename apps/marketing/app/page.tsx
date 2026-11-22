@@ -95,6 +95,9 @@ export default function HomePage() {
             <Logo brand={config.site} />
           </Link>
           <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href="/contact">Contact us</Link>
+            </Button>
             <Button asChild variant="ghost">
               <Link
                 href="https://github.com/DashingMZA/sendcms"
@@ -408,6 +411,13 @@ export default function HomePage() {
               className="underline underline-offset-4 hover:text-foreground"
             >
               view it on GitHub
+            </Link>{" "}
+            ·{" "}
+            <Link
+              href="/contact"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Contact us
             </Link>
           </p>
         </div>
