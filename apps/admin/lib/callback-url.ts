@@ -48,3 +48,11 @@ export function dashboardSignInURL(callbackURL?: string): string {
     ? `${url}?callbackURL=${encodeURIComponent(callbackURL)}`
     : url
 }
+
+/** The dashboard app's overview page (for signed-in non-admin users). */
+export function dashboardURL(): string {
+  const base = (
+    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
+  ).replace(/\/$/, "")
+  return `${base}/dashboard`
+}

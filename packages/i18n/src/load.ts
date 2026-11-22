@@ -53,6 +53,7 @@ export const ADMIN_DOMAINS = [
   "dashboard",
   "features",
   "health",
+  "landing",
   "mcp",
   "navigation",
   "overview",

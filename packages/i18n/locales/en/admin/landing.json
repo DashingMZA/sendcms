@@ -1,0 +1,6 @@
+{
+  "description": "Manage users, plans, subscriptions, AI and MCP access, and platform operations.",
+  "goToAdmin": "Go to admin dashboard",
+  "goToDashboard": "Go to dashboard",
+  "title": "SendCMS Admin"
+}
