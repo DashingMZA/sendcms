@@ -5,23 +5,56 @@ A dependency-free vanilla-TS snippet (7 KB minified) that turns any
 shows loading / success / error states, blocks double submits, adds a
 honeypot bot trap, and supports Turnstile.
 
+```mermaid
+flowchart TB
+    Page["Your page\n<script src=\".../forms/v1.js\">"]
+    Enhance["SDK auto-enhances\n<form data-cms-form>"]
+    Submit["Visitor submits\n→ collect fields + idempotency key\n+ page URL (+ Turnstile token)"]
+    API["POST /api/public/v1/submit"]
+    State["Button disabled, 'Sending…'\n→ success / error status\n→ reset or redirect"]
+
+    Page --> Enhance --> Submit --> API --> State
+```
+
+Source: `packages/sdk/` (esbuild → `apps/api/public/forms/v1.js`).
+Architecture detail: [Architecture — SDK architecture](architecture.md#sdk-architecture).
+Direct endpoint reference: [REST API](rest-api.md).
+
+## Contents
+
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Multiple forms and overrides](#multiple-forms-and-overrides)
+- [SPA navigation and Astro](#spa-navigation-and-astro)
+- [Programmatic API](#programmatic-api)
+- [Turnstile](#turnstile)
+- [Styling](#styling)
+- [Direct REST API](#direct-rest-api)
+- [No-JS fallback (plain HTML POST)](#no-js-fallback-plain-html-post)
+
 ## Quick start
 
 1. In the dashboard, open a form → **Embed on your site** and copy the
    snippet. It looks like this:
 
 ```html
-<script src="https://YOUR_APP/forms/v1.js"
-  data-user-id="USER_ID" data-form-id="FORM_ID"></script>
+<script
+  src="https://YOUR_APP/forms/v1.js"
+  data-user-id="USER_ID"
+  data-form-id="FORM_ID"
+></script>
 
 <form data-cms-form>
-  <label>Name
-    <input type="text" name="name" required>
+  <label
+    >Name
+    <input type="text" name="name" required />
   </label>
-  <label>Email
-    <input type="email" name="email" required>
+  <label
+    >Email
+    <input type="email" name="email" required />
   </label>
-  <label>Message
+  <label
+    >Message
     <textarea name="message" required></textarea>
   </label>
   <button type="submit">Send</button>
@@ -52,6 +85,10 @@ dashboard. Extra fields are rejected by the API (422).
 - Submissions are only accepted from domains that are **verified and
   linked to the form** (the API enforces this by the page's Origin).
   Link domains in the dashboard first, or every submit returns 403.
+
+Config resolution (highest priority first): form data attributes >
+`init()` options > script tag data attributes. The API origin resolves
+from the script `src` origin first, then the build-time `__APP_URL__`.
 
 ## Multiple forms and overrides
 
@@ -92,8 +129,12 @@ SendCMS.init({
   redirectUrl: "https://example.com/thanks",
   resetOnSuccess: true, // default true
   honeypot: true, // default true
-  onSuccess: (result, form) => { /* result.id, result.message */ },
-  onError: (error, form) => { /* error.status, error.message */ },
+  onSuccess: (result, form) => {
+    /* result.id, result.message */
+  },
+  onError: (error, form) => {
+    /* error.status, error.message */
+  },
   onSubmit: (form) => {},
 })
 
@@ -105,16 +146,16 @@ const result = await SendCMS.submit(formElement, {
 })
 ```
 
-| Option | Default | Notes |
-|---|---|---|
-| `userId` / `formId` | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win |
-| `apiUrl` | origin of the `<script>` tag | Override only when the bundle is hosted elsewhere |
-| `turnstileSiteKey` | — | Set when the form has Turnstile on (see below) |
-| `redirectUrl` | — | The form's own redirectUrl wins when set |
-| `resetOnSuccess` | `true` | Skipped when redirecting |
-| `honeypot` | `true` | Adds the hidden trap input |
-| `messages` | see code | `sending`, `success`, `error` |
-| `onSuccess` / `onError` / `onSubmit` | — | Errors in callbacks never break the flow |
+| Option                               | Default                                      | Notes                                             |
+| ------------------------------------ | -------------------------------------------- | ------------------------------------------------- |
+| `userId` / `formId`                  | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win              |
+| `apiUrl`                             | origin of the `<script>` tag                 | Override only when the bundle is hosted elsewhere |
+| `turnstileSiteKey`                   | —                                            | Set when the form has Turnstile on (see below)    |
+| `redirectUrl`                        | —                                            | The form's own redirectUrl wins when set          |
+| `resetOnSuccess`                     | `true`                                       | Skipped when redirecting                          |
+| `honeypot`                           | `true`                                       | Adds the hidden trap input                        |
+| `messages`                           | see code                                     | `sending`, `success`, `error`                     |
+| `onSuccess` / `onError` / `onSubmit` | —                                            | Errors in callbacks never break the flow          |
 
 ## Turnstile
 
@@ -122,9 +163,12 @@ If a form has Turnstile enabled, pass its site key and the SDK
 fetches a token on submit (invisible widget, fail closed):
 
 ```html
-<script src="https://YOUR_APP/forms/v1.js"
-  data-user-id="USER_ID" data-form-id="FORM_ID"
-  data-turnstile-site-key="0x4AAAAAAA…"></script>
+<script
+  src="https://YOUR_APP/forms/v1.js"
+  data-user-id="USER_ID"
+  data-form-id="FORM_ID"
+  data-turnstile-site-key="0x4AAAAAAA…"
+></script>
 ```
 
 Or per form: `<form data-cms-form data-turnstile-site-key="…">`, or
@@ -155,18 +199,19 @@ Content-Type: application/json
 }
 ```
 
-| Status | Meaning |
-|---|---|
-| 201 | Saved. Body: `{ ok, id, message, redirectUrl }` |
-| 200 | Duplicate — same idempotency key, or same content within 10 minutes. Same body, original `id` |
-| 403 | Origin not allowed (domain not verified/linked), form paused, or Turnstile failed |
-| 413 | Payload over 64 KB |
-| 422 | Validation failed (unknown field, bad email, missing required, …) |
-| 429 | Daily form limit, or per-IP 10/min / 100/hour |
-| 503 | Turnstile is enabled but the server has no secret configured |
+| Status | Meaning                                                                                       |
+| ------ | --------------------------------------------------------------------------------------------- |
+| 201    | Saved. Body: `{ ok, id, message, redirectUrl }`                                               |
+| 200    | Duplicate — same idempotency key, or same content within 10 minutes. Same body, original `id` |
+| 403    | Origin not allowed (domain not verified/linked), form paused, or Turnstile failed             |
+| 413    | Payload over 64 KB                                                                            |
+| 422    | Validation failed (unknown field, bad email, missing required, …)                             |
+| 429    | Daily form limit, or per-IP 10/min / 100/hour                                                 |
+| 503    | Turnstile is enabled but the server has no secret configured                                  |
 
 The honeypot field (`_sendcms_honeypot`) returns 201 with a fake id
 and saves nothing. CORS headers are only echoed for allowed origins.
+Full reference: [REST API](rest-api.md).
 
 ## No-JS fallback (plain HTML POST)
 
@@ -175,10 +220,10 @@ data straight to the same endpoint:
 
 ```html
 <form action="https://YOUR_APP/api/public/v1/submit" method="POST">
-  <input type="hidden" name="userId" value="USER_ID">
-  <input type="hidden" name="formId" value="FORM_ID">
-  <input name="name" required>
-  <input name="email" type="email" required>
+  <input type="hidden" name="userId" value="USER_ID" />
+  <input type="hidden" name="formId" value="FORM_ID" />
+  <input name="name" required />
+  <input name="email" type="email" required />
   <textarea name="message" required></textarea>
   <button type="submit">Send</button>
 </form>

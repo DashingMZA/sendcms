@@ -7,6 +7,25 @@ platforms, or all of them together in one Docker Compose stack on a
 single server. Cloudflare Workers is the original path (see
 `infrastructure/cloudflare/README.md`); this document covers the rest.
 
+📌 **Production domain: `sendcms.bond`** (decided 2026-11-20).
+Marketing `https://sendcms.bond`, api `https://api.sendcms.bond`,
+dashboard `https://dashboard.sendcms.bond`, docs
+`https://docs.sendcms.bond`, updates `https://updates.sendcms.bond`.
+The `feature/ai` branch is deployed to production on all five Vercel
+projects. Deploys are **manual only** (Ignored Build Step).
+
+## Contents
+
+- [The one rule every platform shares](#the-one-rule-every-platform-shares)
+- [Build-time vs runtime variables](#build-time-vs-runtime-variables)
+- [Platform × app matrix](#platform--app-matrix)
+- [Vercel](#vercel)
+- [Node server / Docker](#node-server--docker)
+- [Render](#render)
+- [Netlify](#netlify)
+- [Railway](#railway)
+- [What is not verified here](#what-is-not-verified-here)
+
 ## The one rule every platform shares
 
 Each app builds with the same command, `build:server` — Prisma client
@@ -46,7 +65,8 @@ bundle. Secrets (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `*_KEY`,
 `BETTER_AUTH_SECRET` must be the **same value** on the api and
 dashboard apps (they share the session cookie). `BETTER_AUTH_URL` is
 the api app's public URL on every platform; `TRUSTED_ORIGINS` is the
-dashboard app's public URL.
+dashboard app's public URL. Full variable table:
+[Deployment](../deployment.md#environment-variables).
 
 ## Platform × app matrix
 
@@ -66,30 +86,34 @@ cannot host it — there the cron route
 `GET /api/cron/email-outbox` (Bearer `CRON_SECRET`) is the outbox
 drain; call it every 5 minutes from an external scheduler (Vercel Cron
 cannot send the `Authorization` header, so front it with a small proxy
-or use an external scheduler — see `docs/deployment.md`).
+or use an external scheduler — see
+[Deployment](../deployment.md#email-outbox-cron)).
 
 ## Vercel
 
 One project per app (all in the same team, all linked to
 `DashingMZA/sendcms`):
 
-| Project             | Build command                                   | Output directory       |
-| ------------------- | ----------------------------------------------- | ---------------------- |
-| `sendcms`           | `pnpm --filter @sendcms/marketing build`        | `apps/marketing/.next` |
-| `sendcms-api`       | `pnpm --filter @sendcms/api build:server`       | `apps/api/.next`       |
-| `sendcms-dashboard` | `pnpm --filter @sendcms/dashboard build:server` | `apps/dashboard/.next` |
-| `sendcms-docs`      | `pnpm --filter @sendcms/docs build:server`      | `apps/docs/.next`      |
-| `sendcms-updates`   | `pnpm --filter @sendcms/updates build:server`   | `apps/updates/.next`   |
+| Project             | Build command                                   | Output directory       | Production domain        |
+| ------------------- | ----------------------------------------------- | ---------------------- | ------------------------ |
+| `sendcms`           | `pnpm --filter @sendcms/marketing build`        | `apps/marketing/.next` | `sendcms.bond`           |
+| `sendcms-api`       | `pnpm --filter @sendcms/api build:server`       | `apps/api/.next`       | `api.sendcms.bond`       |
+| `sendcms-dashboard` | `pnpm --filter @sendcms/dashboard build:server` | `apps/dashboard/.next` | `dashboard.sendcms.bond` |
+| `sendcms-docs`      | `pnpm --filter @sendcms/docs build:server`      | `apps/docs/.next`      | `docs.sendcms.bond`      |
+| `sendcms-updates`   | `pnpm --filter @sendcms/updates build:server`   | `apps/updates/.next`   | `updates.sendcms.bond`   |
 
 (The marketing project predates `build:server` and still uses plain
 `next build` — marketing needs no Prisma generate, so the two are
 equivalent there; switching it to `build:server` is a no-op.)
 
-Git pushes auto-deploy: the production branch (`main`) deploys to
-production, every other branch deploys as a preview. Set the env vars
-in each project's dashboard before the first deploy — the
-`NEXT_PUBLIC_*_URL` vars must be that project's siblings' public URLs
-(see the env table in `docs/deployment.md`), and `DATABASE_URL` /
+Deploys are **manual only**: the Ignored Build Step ("Don't build
+anything") cancels git-triggered deploys, so pushing to `main` triggers
+nothing. Deploy from the dashboard (or via the agent) when tested and
+ready. The `feature/ai` branch is deployed to production on all five
+projects. Set the env vars in each project's dashboard before the
+first deploy — the `NEXT_PUBLIC_*_URL` vars must be that project's
+siblings' public URLs (see the env table in
+[Deployment](../deployment.md#environment-variables)), and `DATABASE_URL` /
 `BETTER_AUTH_SECRET` / `RESEND_API_KEY` / OAuth secrets must be set
 per project (they are not shared between projects). Preview
 deployments are behind the team's SSO protection; custom domains are
@@ -147,9 +171,10 @@ the verification step for this path.
 5 web services + the email worker + managed Postgres. Create it from
 the dashboard: New → Blueprint → this repo.
 
-- `branch: feature/monorepo-architecture-migration` — the monorepo
-  code lives there until it is merged; change it to `main` after the
-  merge.
+- ⚠️ `branch: feature/monorepo-architecture-migration` — the
+  monorepo code lived there until it was merged; the file still says
+  that branch. Change it to the branch you deploy from before using
+  the Blueprint.
 - `region: singapore` — the closest Render region to Pakistan; the
   database must stay in the same region as the services.
 - `plan: free` everywhere, so the Blueprint deploys with no card.
@@ -209,8 +234,9 @@ and new services cannot opt into it — do not add those files. The
 supported path is the Dockerfile:
 
 1. One Railway project, one service per app + one for the worker,
-   all from this repo (branch `feature/monorepo-architecture-migration`
-   until the merge).
+   all from this repo (⚠️ the Railway notes still name the old
+   `feature/monorepo-architecture-migration` branch — use the branch
+   you deploy from).
 2. Keep each service's source root at the **repository root** — the
    Dockerfile needs the lockfile and the whole workspace as its build
    context.
@@ -247,11 +273,10 @@ Dockerfile's CMD does this). The worker binds `$PORT` when set, else
   accounts (none are connected here). The configs in this repo are the
   complete setup; the dashboard steps above are what the owner does
   once. Vercel is the only platform with a live deployment proven
-  from this repo so far (the marketing preview; the four new projects
-  have no deployment yet — they need their env vars set first, then
-  a push or a manual deploy).
-- **The production domain is still undecided.** Every platform's
-  `NEXT_PUBLIC_*_URL` / `BETTER_AUTH_URL` values are placeholders
-  pointing at the platform's default hostnames until the domain
-  decision is made. When it is decided, update them on every
-  platform and redeploy (the browser bundles bake the values in).
+  from this repo so far (the `feature/ai` branch on all five projects,
+  at `sendcms.bond`).
+- **The Cloudflare `vars` still point at `jadoo.bond` placeholders**
+  for the five original apps (only the admin app's `wrangler.jsonc`
+  uses `sendcms.bond`). When the Cloudflare path is next deployed,
+  update them together — see
+  [Deployment](../deployment.md#cloudflare-notes-phase-10--five-workers-one-per-app).

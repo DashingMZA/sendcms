@@ -9,7 +9,7 @@ dashboard is.
 
 Branch: `feature/admin-control-plane` (cut from `feature/ai` @
 `843ce3b`, 2026-11-21). This doc describes the system as it stands
-after Phase 9 (2026-11-22, uncommitted work included — see
+after Phase 9 (2026-11-22, pushed @ `a331cc6` — see
 [implementation-report](./implementation-report.md)).
 
 ## Contents

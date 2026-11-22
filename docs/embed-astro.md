@@ -1,5 +1,26 @@
 # Embedding SendCMS in Astro
 
+Add a SendCMS contact form to an Astro site with one script tag and a
+normal HTML form. The SDK handles submit, loading/success/error
+states, and Astro's page transitions with no extra code.
+
+```mermaid
+flowchart LR
+    Page["Astro page\n(.astro)"]
+    SDK["forms/v1.js\n(listens for astro:page-load)"]
+    API["POST /api/public/v1/submit"]
+    Inbox["Dashboard inbox"]
+
+    Page --> SDK --> API --> Inbox
+```
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [1. Add the form to a page](#1-add-the-form-to-a-page)
+- [2. Page transitions](#2-page-transitions)
+- [3. Check it works](#3-check-it-works)
+
 ## Prerequisites
 
 - An Astro site
@@ -7,6 +28,12 @@
   [Getting started](getting-started.md))
 - Your **userId** and the form's **formId** from the dashboard
   (form detail page → "Embed on your site")
+
+| Placeholder    | Replace with                                                               |
+| -------------- | -------------------------------------------------------------------------- |
+| `YOUR_APP`     | Your SendCMS deployment URL (the api app, e.g. `https://api.sendcms.bond`) |
+| `YOUR_USER_ID` | Your public user id (form detail page)                                     |
+| `YOUR_FORM_ID` | The form's id (form detail page)                                           |
 
 ## 1. Add the form to a page
 
@@ -61,3 +88,6 @@ that works too: the SDK enhances forms whenever they appear.
    there with the page URL and origin domain.
 3. If it returns 403, the page's origin is not a verified domain linked
    to the form — see [Troubleshooting](troubleshooting.md).
+
+Full SDK reference: [SDK](sdk.md). Direct endpoint:
+[REST API](rest-api.md).

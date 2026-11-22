@@ -1,8 +1,31 @@
 # REST API
 
-Base URL: `https://YOUR_APP` (your SendCMS deployment). There is no API
+Base URL: `https://YOUR_APP` (your SendCMS deployment — in production,
+the api app, e.g. `https://api.sendcms.bond`). There is no API
 version in the path beyond `/v1/` and no API key — authentication is the
-`Origin` header (see below).
+`Origin` header (see below). The public surface is the single submit
+endpoint; the session-cookie admin API under `/api/v1/` is used by the
+dashboard and is not documented for external use.
+
+```mermaid
+flowchart LR
+    Site["Your site\n(Origin: verified domain)"]
+    Submit["POST /api/public/v1/submit"]
+    Checks["Origin → form → honeypot\n→ Turnstile → validation\n→ dedupe → rate limit → spam"]
+    DB[("PostgreSQL\nSubmission + event")]
+    Outbox["EmailJob outbox\n(notifications)"]
+
+    Site --> Submit --> Checks --> DB --> Outbox
+```
+
+## Contents
+
+- [POST /api/public/v1/submit](#post-apipublicv1submit)
+- [Responses](#responses)
+- [CORS](#cors)
+- [Idempotency and duplicates](#idempotency-and-duplicates)
+- [No-JS fallback (form posts)](#no-js-fallback-form-posts)
+- [Authenticated admin API](#authenticated-admin-api)
 
 ## POST /api/public/v1/submit
 
@@ -33,15 +56,15 @@ Origin: https://your-site.example
 }
 ```
 
-| Field | Required | Notes |
-| ----- | -------- | ----- |
-| `userId` | yes | Your public user id (dashboard → API & SDK). |
-| `formId` | yes | The form's id (form detail page). |
-| `fields` | yes | Object of field values. Keys must match the form's configured fields; unknown keys are rejected. At most 50 keys; each value at most 10,000 characters. |
-| `idempotencyKey` | no | 1–100 chars. Replaying the same key returns the original submission instead of creating a duplicate. |
-| `pageUrl` | no | Where the submission came from (max 2,048 chars). |
-| `turnstileToken` | no | Required when Turnstile is enabled on the form. |
-| `_sendcms_honeypot` | no | Top-level key, not inside `fields`. If non-empty and honeypot is enabled, the request gets a fake success and nothing is saved. |
+| Field               | Required | Notes                                                                                                                                                   |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userId`            | yes      | Your public user id (dashboard → API & SDK).                                                                                                            |
+| `formId`            | yes      | The form's id (form detail page).                                                                                                                       |
+| `fields`            | yes      | Object of field values. Keys must match the form's configured fields; unknown keys are rejected. At most 50 keys; each value at most 10,000 characters. |
+| `idempotencyKey`    | no       | 1–100 chars. Replaying the same key returns the original submission instead of creating a duplicate.                                                    |
+| `pageUrl`           | no       | Where the submission came from (max 2,048 chars).                                                                                                       |
+| `turnstileToken`    | no       | Required when Turnstile is enabled on the form.                                                                                                         |
+| `_sendcms_honeypot` | no       | Top-level key, not inside `fields`. If non-empty and honeypot is enabled, the request gets a fake success and nothing is saved.                         |
 
 Field values are validated per the form's field config: required fields
 must be present, emails must look like emails, URLs must start with
@@ -52,24 +75,24 @@ payload must stay under 64 KB.
 
 ### Responses
 
-| Status | Meaning |
-| ------ | ------- |
-| **201** | Submission saved. Body: `{ "ok": true, "id": "<submission id>", "message": "<form success message>", "redirectUrl": "<form redirect URL or null>" }`. |
-| **200** | Duplicate — same `idempotencyKey`, or identical content within 10 minutes. Same body, same `id`. |
-| **400** | Malformed JSON or body. |
+| Status  | Meaning                                                                                                                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **201** | Submission saved. Body: `{ "ok": true, "id": "<submission id>", "message": "<form success message>", "redirectUrl": "<form redirect URL or null>" }`.                                                                            |
+| **200** | Duplicate — same `idempotencyKey`, or identical content within 10 minutes. Same body, same `id`.                                                                                                                                 |
+| **400** | Malformed JSON or body.                                                                                                                                                                                                          |
 | **403** | Form inactive, origin not allowed, or Turnstile verification failed. The origin must be a **verified domain linked to the form** — an unlinked or unverified domain, a missing `Origin`, and a non-HTTP origin are all rejected. |
-| **404** | Unknown `userId`/`formId` pair. |
-| **413** | Payload over 64 KB. |
-| **422** | Field validation failed (missing required field, bad email, unknown field, bad option, value too long). The response names the problem field. |
-| **429** | Rate limit: 10 submissions/min or 100/hour per IP, or the form's daily limit reached. |
-| **503** | Turnstile is enabled on the form but the server has no `TURNSTILE_SECRET_KEY` configured. |
+| **404** | Unknown `userId`/`formId` pair.                                                                                                                                                                                                  |
+| **413** | Payload over 64 KB.                                                                                                                                                                                                              |
+| **422** | Field validation failed (missing required field, bad email, unknown field, bad option, value too long). The response names the problem field.                                                                                    |
+| **429** | Rate limit: 10 submissions/min or 100/hour per IP, or the form's daily limit reached.                                                                                                                                            |
+| **503** | Turnstile is enabled on the form but the server has no `TURNSTILE_SECRET_KEY` configured.                                                                                                                                        |
 
 Spam is not an error: a submission that trips the spam heuristics
 (more than 3 links, or the same word repeated 10+ times in one value)
 is saved with status `SPAM` and returns **201**. It shows in the inbox
 Spam tab and triggers no notification.
 
-### CORS
+## CORS
 
 Preflight (`OPTIONS`) always answers 204. A successful or duplicate
 response echoes the request's `Origin` in
@@ -77,14 +100,14 @@ response echoes the request's `Origin` in
 Rejected requests carry no CORS headers, so a browser will not expose
 the error body to the page.
 
-### Idempotency and duplicates
+## Idempotency and duplicates
 
 Send a client-generated `idempotencyKey` (e.g. a UUID per submit click)
 to make retries safe. Without a key, submissions with identical content
 to the same form within 10 minutes are treated as duplicates and return
 the original submission id with 200.
 
-### No-JS fallback (form posts)
+## No-JS fallback (form posts)
 
 Post a plain HTML form to the same URL. The form must include
 `userId` and `formId` as hidden inputs; every other input becomes a
@@ -113,4 +136,5 @@ honeypot field is `_sendcms_honeypot`.
 The dashboard uses a session-cookie API under `/api/v1/` (domains,
 forms, inbox, email jobs) — it is not a public API and is not
 documented for external use. The public surface is the single submit
-endpoint above.
+endpoint above. AI hosts use the separate [MCP server](mcp.md)
+(`POST /api/mcp`, bearer API key) instead.

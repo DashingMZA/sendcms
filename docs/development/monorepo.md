@@ -1,22 +1,42 @@
 # Developing in the SendCMS monorepo
 
-SendCMS is a pnpm + Turborepo monorepo: five Next.js apps, twenty
+SendCMS is a pnpm + Turborepo monorepo: six Next.js apps, thirty-one
 workspace packages, one standalone service, and one infrastructure
 folder. The root is a pure workspace root — there is no app, `lib/`,
 or `public/` at the root since Phase 8. The full layout lives in the
 `project-guidelines` skill (`folder-structure.md`); this document is
 the day-to-day guide for working in it.
 
+📌 **Branch note:** this doc describes the `feature/admin-control-plane`
+branch (sixth app `apps/admin`, admin/AI/MCP modules, 46 test files).
+That branch is **not merged to main and not deployed**; production is
+`sendcms.bond` on the `feature/ai` branch.
+
+## Contents
+
+- [Layout (short version)](#layout-short-version)
+- [Commands](#commands)
+- [Dev ports](#dev-ports)
+- [The layered flow (hard rule)](#the-layered-flow-hard-rule)
+- [Adding something](#adding-something)
+- [Tests](#tests)
+- [Commits](#commits)
+- [Gotchas](#gotchas)
+
 ## Layout (short version)
 
 ```
-apps/            marketing (3000), api (3001), dashboard (3002), docs (3003), updates (3004)
+apps/            marketing (3000), api (3001), dashboard (3002), docs (3003),
+                 updates (3004), admin (3006)
 packages/        config, shared, api-client, sdk, content, ui, database,
-                 auth, permissions, email, queue, security, observability
-packages/modules/  domains, forms, submissions, inbox, notifications, users, analytics
+                 auth, permissions, email, queue, security, observability,
+                 ai, mcp, i18n
+packages/modules/  domains, forms, submissions, inbox, notifications, users,
+                 analytics, api-keys, admin-users, plans, ai-settings,
+                 mcp-admin, platform-ops, billing, support
 services/        email-worker (3005)
 infrastructure/  cloudflare/ (shared OpenNext config + deploy README)
-tests/           the whole test suite — 23 files, 227 tests (see "Tests" below)
+tests/           the whole test suite — 46 files (see "Tests" below)
 docs/            user docs (served by apps/docs) + architecture/ + this file
 ```
 
@@ -32,7 +52,7 @@ or the `extends` fails (TS6053).
 
 ```bash
 pnpm install        # install + regenerate the lockfile (workspace-aware)
-pnpm dev            # db:generate + sdk:build + turbo dev (all 5 apps + the worker)
+pnpm dev            # db:generate + sdk:build + turbo dev (all 6 apps + the worker)
 pnpm build          # db:generate + sdk:build + turbo build --concurrency 1
 pnpm typecheck      # tsc --noEmit (root) — run before declaring work done
 pnpm lint           # eslint (root config ignores generated output workspace-wide)
@@ -66,8 +86,9 @@ pnpm --filter @sendcms/database db:generate
 | docs          | 3003 | http://localhost:3003        |
 | updates       | 3004 | http://localhost:3004        |
 | email worker  | 3005 | http://localhost:3005/health |
+| admin         | 3006 | http://localhost:3006        |
 
-`pnpm dev` starts all six. To start one app, use
+`pnpm dev` starts all seven. To start one app, use
 `pnpm --filter @sendcms/<app> dev` — but note the apps depend on each
 other at runtime: the dashboard's sign-in links point at the api app
 (`NEXT_PUBLIC_AUTH_URL`), and the landing's embed snippet points at
@@ -80,14 +101,13 @@ dashboard for auth flows. The five public URL vars
 
 ## The layered flow (hard rule)
 
-```
-apps/api/app/api/**  route handler — thin: parse, auth, call service, respond (≤25 lines)
-  ↓
-packages/modules/**  business logic — NO Next.js imports (framework-agnostic)
-  ↓
-@sendcms/database     Prisma singleton (db) — ONLY services may import this
-  ↓
-PostgreSQL
+```mermaid
+flowchart TB
+    Route["apps/api/app/api/**\nroute handler — thin (≤25 lines)\nparse, auth, call service, respond"]
+    Service["packages/modules/**\nbusiness logic — NO Next.js imports"]
+    DBL[("@sendcms/database\nPrisma singleton `db`")]
+    PG[("PostgreSQL")]
+    Route --> Service --> DBL --> PG
 ```
 
 - Route handlers never import `@sendcms/database` — they call services.
@@ -114,7 +134,7 @@ PostgreSQL
   the app dir) and `transpilePackages` listing every `@sendcms/*`
   package it imports. A nested app also needs its own `proxy.ts` or
   it inherits the workspace-root one. Dev port: the next free one
-  after 3004.
+  after 3006.
 - **A new package** (`packages/<name>`): only with a real
   responsibility — no empty placeholders. It needs `package.json`
   (with `exports` / `main` / `types` → `./src/index.ts`, or
@@ -143,9 +163,11 @@ not co-locate with the packages they cover**. The audit's Phase 13 row
 said "tests moved with code"; the owner overruled it: one suite, one
 place, one command (`pnpm test`).
 
-- 23 files, 227 tests (vitest). The root `package.json` declares the
+- 46 files (vitest). The root `package.json` declares the
   workspace packages the tests import as devDependencies, because the
-  root app no longer depends on them.
+  root app no longer depends on them. The Phase 9 acceptance record
+  ([admin-control-plane/acceptance-matrix.md](../admin-control-plane/acceptance-matrix.md))
+  reports 615/615 passing on this branch.
 - Services import `db` and Prisma enums from the single
   `@sendcms/database` module, so a test mock of that module must spread
   the real module (`importOriginal`) and override only `db`, or the
@@ -167,7 +189,7 @@ imperative, <72 chars). Never push to `main` from here, never merge,
 never open a PR unless the owner asks. The husky pre-commit hook runs
 lint + format:check + typecheck; it needs `pnpm` on PATH
 (`export PATH="$HOME/.local/bin:$PATH"`) and, since the workspace
-grew to 5 apps + 25 packages, the eslint step can OOM on the default
+grew to 6 apps + 31 packages, the eslint step can OOM on the default
 2 GB heap — commit with `NODE_OPTIONS=--max-old-space-size=4096`.
 Prettier must cover all staged files (including `git mv` renames).
 Stage by explicit paths — never `git add -A` (the untracked

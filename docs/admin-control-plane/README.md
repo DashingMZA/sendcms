@@ -104,6 +104,6 @@ flowchart TB
   "billing-provider abstraction (design only)" — superseded by
   the owner's 2026-11-22 decision to build payments real.
   Recorded in the matrix; the audit doc is not edited.
-- **Phase 9 is uncommitted** at this writing (HEAD `0395930`).
+- **Phase 9 is pushed** (`a331cc6`, 2026-11-22).
   The two Phase 9 migrations exist in the tree; the dev DB
   stands at 36/36 after integration.

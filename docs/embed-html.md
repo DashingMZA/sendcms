@@ -1,7 +1,26 @@
 # Embedding SendCMS in plain HTML
 
 No framework, no build step. Works on any static site, WordPress page
-(with a Custom HTML block), or hand-written HTML file.
+(with a Custom HTML block), or hand-written HTML file — paste one
+script tag and a normal form, or post the form directly with no
+JavaScript at all.
+
+```mermaid
+flowchart LR
+    Page["Static HTML page"]
+    SDK["forms/v1.js\n(or plain POST)"]
+    API["POST /api/public/v1/submit"]
+    Inbox["Dashboard inbox"]
+
+    Page --> SDK --> API --> Inbox
+```
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [1. Paste the snippet](#1-paste-the-snippet)
+- [2. No JavaScript at all](#2-no-javascript-at-all)
+- [3. Check it works](#3-check-it-works)
 
 ## Prerequisites
 
@@ -10,11 +29,20 @@ No framework, no build step. Works on any static site, WordPress page
 - Your **userId** and the form's **formId** from the dashboard
   (form detail page → "Embed on your site")
 
+| Placeholder    | Replace with                                                               |
+| -------------- | -------------------------------------------------------------------------- |
+| `YOUR_APP`     | Your SendCMS deployment URL (the api app, e.g. `https://api.sendcms.bond`) |
+| `YOUR_USER_ID` | Your public user id (form detail page)                                     |
+| `YOUR_FORM_ID` | The form's id (form detail page)                                           |
+
 ## 1. Paste the snippet
 
 ```html
-<script src="https://YOUR_APP/forms/v1.js"
-  data-user-id="YOUR_USER_ID" data-form-id="YOUR_FORM_ID"></script>
+<script
+  src="https://YOUR_APP/forms/v1.js"
+  data-user-id="YOUR_USER_ID"
+  data-form-id="YOUR_FORM_ID"
+></script>
 
 <form data-cms-form>
   <label>
@@ -71,3 +99,5 @@ redirected back with `?cms_error=<message>`. See
    there with the page URL and origin domain.
 3. If it returns 403, the page's origin is not a verified domain linked
    to the form — see [Troubleshooting](troubleshooting.md).
+
+Full SDK reference: [SDK](sdk.md).

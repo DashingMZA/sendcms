@@ -3,11 +3,32 @@
 - Branch: `feature/monorepo-architecture-migration` (14 commits, `main`
   untouched at `4fc2d17`)
 - Dates: 2026-11-18 → 2026-11-19
-- Plan: `docs/architecture/migration-audit.md` (audit §10, 13 phases)
+- Plan: [architecture/migration-audit.md](migration-audit.md) (audit §10, 13 phases)
 - Decisions: `docs/architecture/decisions/` (ADR 0001–0010)
 - Status: **complete** — every phase done, verified, and pushed
   (Phase 13's commit is the last one on the branch). No merge, no PR
   opened — that happens only when the owner asks.
+
+📌 **Status note (2026-11-22):** this is a historical record of the
+migration as it stood on 2026-11-19 — its claims, dates, SHAs, and
+counts are kept as written. What changed since: the production domain
+**is decided** (`sendcms.bond`; the "still undecided" items below are
+superseded), MCP and AI were built on `feature/ai` (the "design docs
+only" items below are superseded — see [MCP](../mcp.md)), and the
+admin control plane (including the `apps/admin` this report says was
+"explicitly not created") is in progress on
+`feature/admin-control-plane` (see
+[../admin-control-plane/README.md](../admin-control-plane/README.md)).
+
+## Contents
+
+- [What the migration did](#what-the-migration-did)
+- [The 13 phases](#the-13-phases)
+- [Final verification (Phase 13, 2026-11-19)](#final-verification-phase-13-2026-11-19)
+- [Deviations from the audit (owner decisions)](#deviations-from-the-audit-owner-decisions)
+- [Deferred / not built (carried forward)](#deferred--not-built-carried-forward)
+- [Open owner items (unchanged from the transformation)](#open-owner-items-unchanged-from-the-transformation)
+- [How to proceed](#how-to-proceed)
 
 ## What the migration did
 
@@ -101,7 +122,7 @@ The Phase 5 journey's first run was 41/43 on a cold dev server and
 1. **Tests stay in `tests/`** (Phase 13, 2026-11-19). The audit's
    Phase 13 row said "tests moved with code". The owner overruled it:
    one suite, one place, one command. Recorded in
-   `docs/development/monorepo.md`, `AGENTS.md`, and the
+   [../development/monorepo.md](../development/monorepo.md), `AGENTS.md`, and the
    `folder-structure.md` skill reference.
 2. **MCP and AI are design docs only** (owner decision 2026-11-18,
    confirmed per phase 2026-11-19). ADR 0009 (MCP) and ADR 0010 (AI)
@@ -144,7 +165,7 @@ The Phase 5 journey's first run was 41/43 on a cold dev server and
 - Upload `sendcms-verification.txt` at the root of `jadoo.cyou`
   (domain is PENDING, FILE method).
 - Check the delivered Resend test emails in `zaheerinfo6@gmail.com`.
-- Deployment steps from `docs/sendcms-final-report.md` (now five
+- Deployment steps from [../sendcms-final-report.md](../sendcms-final-report.md) (now five
   per-app Cloudflare projects — see
   `infrastructure/cloudflare/README.md`): build command, `wrangler
 deploy`, delete the old `open-remark` worker once the new `sendcms`
@@ -166,6 +187,6 @@ deploy`, delete the old `open-remark` worker once the new `sendcms`
   `~/workspace/.push-state-sendcms.json`). Before any push to `main`,
   restore `BRANCH = 'main'` in the script and the main state file
   (backup at `~/workspace/.push-state-sendcms-main.json`).
-- **Developing**: `docs/development/monorepo.md`. **Operating**:
-  `docs/operations/runbook.md`. **Deploying**:
-  `docs/deployment.md` + `infrastructure/cloudflare/README.md`.
+- **Developing**: [../development/monorepo.md](../development/monorepo.md). **Operating**:
+  [../operations/runbook.md](../operations/runbook.md). **Deploying**:
+  [../deployment.md](../deployment.md) + `infrastructure/cloudflare/README.md`.

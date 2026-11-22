@@ -1,5 +1,18 @@
 # Troubleshooting
 
+Fixes for the problems that come up most often, grouped by area. If a
+symptom is not here, check the [operations runbook](operations/runbook.md)
+for what to look at first, and the [REST API](rest-api.md) status table
+for what a submit status code means.
+
+## Contents
+
+- [Sign-in and verification](#sign-in-and-verification)
+- [Domain verification](#domain-verification)
+- [Submissions](#submissions)
+- [Email notifications](#email-notifications)
+- [SDK](#sdk)
+
 ## Sign-in and verification
 
 **"Email not verified" when signing in with email/password.**
@@ -60,38 +73,14 @@ The domain is still pending. Verify it first, then link it to the form.
 
 ## Submissions
 
-**Submissions return 403.**
-The form's `Origin` must be a verified domain **linked to the form**.
-Check, in order: (1) the domain is verified, (2) it is linked on the
-form detail page, (3) the form is active, (4) the page actually sends an
-`Origin` header (a `file://` page or a missing header is rejected).
-Note that a 403 response carries no CORS headers, so the browser console
-shows a CORS error instead of the real message — check the network tab
-for the status code.
-
-**Submissions return 422.**
-A field failed validation. Common causes: a required field is empty, the
-email is not an email, a select value is not one of the configured
-options, or a field name in the form does not match the form's
-configuration (unknown keys are rejected). The response names the field.
-
-**Submissions return 429.**
-Rate limit (10/min or 100/hour per IP) or the form's daily limit. Wait,
-or raise the daily limit on the form detail page.
-
-**Submissions return 503.**
-Turnstile is enabled on the form but the server has no
-`TURNSTILE_SECRET_KEY`. Either set the key or turn Turnstile off.
-
-**The form submits but nothing appears in the inbox.**
-Check the Spam tab — the submission may have tripped the spam
-heuristics. Also check you are looking at the right form: the inbox
-filter may be set to another form or a date range.
-
-**Double submissions.**
-Send an `idempotencyKey` with each submit (the SDK generates one per
-submit). Without it, identical content within 10 minutes is deduped,
-but genuinely different content submitted twice is two submissions.
+| Symptom                                           | Cause / fix                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **403**                                           | The form's `Origin` must be a verified domain **linked to the form**. Check, in order: (1) the domain is verified, (2) it is linked on the form detail page, (3) the form is active, (4) the page actually sends an `Origin` header (a `file://` page or a missing header is rejected). Note that a 403 response carries no CORS headers, so the browser console shows a CORS error instead of the real message — check the network tab for the status code. |
+| **422**                                           | A field failed validation. Common causes: a required field is empty, the email is not an email, a select value is not one of the configured options, or a field name in the form does not match the form's configuration (unknown keys are rejected). The response names the field.                                                                                                                                                                          |
+| **429**                                           | Rate limit (10/min or 100/hour per IP) or the form's daily limit. Wait, or raise the daily limit on the form detail page.                                                                                                                                                                                                                                                                                                                                    |
+| **503**                                           | Turnstile is enabled on the form but the server has no `TURNSTILE_SECRET_KEY`. Either set the key or turn Turnstile off.                                                                                                                                                                                                                                                                                                                                     |
+| **Form submits but nothing appears in the inbox** | Check the Spam tab — the submission may have tripped the spam heuristics. Also check you are looking at the right form: the inbox filter may be set to another form or a date range.                                                                                                                                                                                                                                                                         |
+| **Double submissions**                            | Send an `idempotencyKey` with each submit (the SDK generates one per submit). Without it, identical content within 10 minutes is deduped, but genuinely different content submitted twice is two submissions.                                                                                                                                                                                                                                                |
 
 ## Email notifications
 
@@ -105,7 +94,8 @@ The submission is always saved first; delivery is separate. Check the
 delivery log (`/dashboard/notifications`): a `PENDING` job with a future
 `nextAttemptAt` is waiting for its retry slot. Retries run on the cron
 route — if `CRON_SECRET` is unset or the cron is not scheduled, retries
-never run. See [Deployment](deployment.md).
+never run. See [Deployment](deployment.md#email-outbox-cron) and
+[Email notifications](email-notifications.md).
 
 ## SDK
 

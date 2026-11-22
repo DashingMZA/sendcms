@@ -5,6 +5,28 @@ WordPress, or plain HTML. You register your domain, create a form, paste one
 script tag, and every submission lands in a dashboard inbox with spam
 filtering and email notifications. No server code on your site, no API keys.
 
+```mermaid
+flowchart LR
+    Account["1. Create an account"]
+    Domain["2. Register + verify\na domain"]
+    Form["3. Create a form"]
+    Embed["4. Embed it\non your site"]
+    Inbox["5. Read submissions\nin the inbox"]
+    Notify["6. Get email\nnotifications"]
+
+    Account --> Domain --> Form --> Embed --> Inbox --> Notify
+```
+
+## Contents
+
+- [1. Create an account](#1-create-an-account)
+- [2. Register and verify a domain](#2-register-and-verify-a-domain)
+- [3. Create a form](#3-create-a-form)
+- [4. Put the form on your site](#4-put-the-form-on-your-site)
+- [5. Read submissions in the inbox](#5-read-submissions-in-the-inbox)
+- [6. Email notifications](#6-email-notifications)
+- [What SendCMS does not do](#what-sendcms-does-not-do)
+
 ## 1. Create an account
 
 1. Open the app and go to **Sign up**.
@@ -17,11 +39,11 @@ filtering and email notifications. No server code on your site, no API keys.
 
 Notes on OAuth email verification:
 
-- **Google** — trusted when Google reports the address as verified.
-- **GitHub** — trusted when GitHub reports the address as verified.
-- **Facebook** — never trusted: Facebook confirms the address exists, not
-  that it is verified. Facebook sign-ins land unverified and get a
-  verification email; click it before registering a domain.
+| Provider     | Email trusted?                                                                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Google**   | Yes — when Google reports the address as verified.                                                                                                                        |
+| **GitHub**   | Yes — when GitHub reports the address as verified.                                                                                                                        |
+| **Facebook** | No — Facebook confirms the address exists, not that it is verified. Facebook sign-ins land unverified and get a verification email; click it before registering a domain. |
 
 If you signed in before verifying, the dashboard shows a
 **Resend verification email** button on the account page. Verification
@@ -42,9 +64,9 @@ what stops anyone else from pointing a form at your inbox.
 
 Add a TXT record at your DNS provider:
 
-| Field | Value |
-| ----- | ----- |
-| Name  | `sendcms._domainkey.example.com` |
+| Field | Value                                          |
+| ----- | ---------------------------------------------- |
+| Name  | `sendcms._domainkey.example.com`               |
 | Value | the 48-character code shown on the domain page |
 
 Wait for DNS propagation (usually minutes, sometimes up to an hour),
@@ -89,16 +111,16 @@ until it is unlinked.
    linked domains can submit to the form. A pending domain cannot be
    linked.
 4. Optional settings on the form detail page:
-   - **Success message** — shown after a successful submit.
-   - **Redirect URL** — where the visitor goes after submitting (SDK and
-     no-JS fallback follow it; the REST API returns it in the response).
-   - **Daily limit** — maximum submissions per day (empty = unlimited).
-   - **Honeypot** — on by default; an invisible trap field catches bots.
-   - **Turnstile** — Cloudflare Turnstile challenge; needs
-     `TURNSTILE_SECRET_KEY` (and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` for the
-     SDK). Turnstile failures reject the submission.
-   - **Notification emails** — one or more addresses that receive an
-     email per submission. Each address can be enabled or disabled.
+
+   | Setting                 | What it does                                                                                                                                               |
+   | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | **Success message**     | Shown after a successful submit.                                                                                                                           |
+   | **Redirect URL**        | Where the visitor goes after submitting (SDK and no-JS fallback follow it; the REST API returns it in the response).                                       |
+   | **Daily limit**         | Maximum submissions per day (empty = unlimited).                                                                                                           |
+   | **Honeypot**            | On by default; an invisible trap field catches bots.                                                                                                       |
+   | **Turnstile**           | Cloudflare Turnstile challenge; needs `TURNSTILE_SECRET_KEY` (and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` for the SDK). Turnstile failures reject the submission. |
+   | **Notification emails** | One or more addresses that receive an email per submission. Each address can be enabled or disabled.                                                       |
+
 5. Note the form's **formId** and your **userId** on the form detail page
    (the "Embed on your site" section shows a ready-made snippet). Both
    are public identifiers — they go in your site's code.
@@ -110,8 +132,11 @@ See [SDK](sdk.md) for the full reference and [REST API](rest-api.md) for
 the direct endpoint and the no-JS fallback.
 
 ```html
-<script src="https://YOUR_APP/forms/v1.js"
-  data-user-id="YOUR_USER_ID" data-form-id="YOUR_FORM_ID"></script>
+<script
+  src="https://YOUR_APP/forms/v1.js"
+  data-user-id="YOUR_USER_ID"
+  data-form-id="YOUR_FORM_ID"
+></script>
 
 <form data-cms-form>
   <input name="name" placeholder="Your name" required />

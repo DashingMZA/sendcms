@@ -4,6 +4,26 @@ Admin controls for the MCP endpoint (`POST /api/mcp`), enforced by the
 MCP service itself — not only by the admin UI. Every control changed
 in the admin app takes effect on the next MCP request.
 
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). No live verification against a real MCP
+client yet — the tests use an in-memory transport with mocked
+services.
+
+## Contents
+
+- [What exists](#what-exists)
+- [The global kill-switch](#the-global-kill-switch)
+- [Kill-switch flow](#kill-switch-flow)
+- [Per-user controls](#per-user-controls)
+- [Enforcement order (the route, every request)](#enforcement-order-the-route-every-request)
+- [Quota precedence](#quota-precedence)
+- [Usage recording](#usage-recording)
+- [Usage analytics](#usage-analytics)
+- [Keys: list + revoke](#keys-list--revoke)
+- [Permissions](#permissions)
+- [Tests](#tests)
+- [Known limitations](#known-limitations)
+
 ## What exists
 
 | Control                                                     | Where                                                                      | Capability                           |
@@ -38,7 +58,41 @@ takes effect immediately and can be flipped back from the admin UI.
 
 Toggling it requires a reason (`SetMcpSettingsSchema.reason`, max
 500 chars) and is audited (`UPDATE` / `MCP_SETTINGS`, detail event
-`mcp-global-toggled`, old + new values).
+`mcp-global-toggled`, old + new values). The audit writer is
+documented in [admin-audit-trail](./admin-audit-trail.md).
+
+## Kill-switch flow
+
+```mermaid
+flowchart TB
+    Req["POST /api/mcp\n(API-key auth)"]
+    Kill{"globalEnabled?"}
+    Revoked{"Key revoked?"}
+    Suspended{"Owner ACTIVE?"}
+    UserEnabled{"Per-user isEnabled?"}
+    Allowlist{"Tool in allowlist?"}
+    Quota{"Quota\n(override → plan → default)"}
+    Exec["Execute tool\n+ record usage"]
+    R503["503 — MCP temporarily\ndisabled by the platform\nadministrator"]
+    R401["401 — revoked key"]
+    R403["403 — suspended owner /\nMCP disabled for account"]
+    R404["404 — tool not found\n(allowlist never leaked)"]
+    R429["429 — over quota\n(counter not incremented)"]
+
+    Req --> Kill
+    Kill -- "false" --> R503
+    Kill -- "true" --> Revoked
+    Revoked -- "yes" --> R401
+    Revoked -- "no" --> Suspended
+    Suspended -- "no" --> R403
+    Suspended -- "yes" --> UserEnabled
+    UserEnabled -- "false" --> R403
+    UserEnabled -- "true" --> Allowlist
+    Allowlist -- "no" --> R404
+    Allowlist -- "yes" --> Quota
+    Quota -- "over" --> R429
+    Quota -- "within" --> Exec
+```
 
 ## Per-user controls
 
@@ -117,7 +171,8 @@ resolve in this order:
    `McpUserSettings`, when non-null) — wins over the plan.
 2. **The key owner's effective plan entitlements**
    (`mcpRequestsPerMinute` / `mcpRequestsPerHour` via
-   `getEffectiveEntitlementsSafe` from `@sendcms/plans`).
+   `getEffectiveEntitlementsSafe` from `@sendcms/plans`) — see the
+   precedence chain in [usage-metering](./usage-metering.md).
 3. **Platform defaults: 120/min + 2000/hour**
    (`MCP_MINUTE_LIMIT` / `MCP_HOUR_LIMIT` in
    `packages/mcp/src/rate-limit.ts`).
@@ -190,7 +245,15 @@ New capability: `VIEW_MCP` (reads — the MCP pages + usage).
 `MANAGE_MCP` (writes) already existed. Role map (owner = all
 capabilities; SUPER_ADMIN = all admin capabilities except
 `MANAGE_ADMINISTRATORS`, so it gets `VIEW_MCP`; MANAGER and SUPPORT
-both get `VIEW_MCP`).
+both get `VIEW_MCP`). Full matrix: see
+[authorization](./authorization.md).
+
+📌 Note: the Phase 6 text said the admin UI pages (`/admin/mcp/*`)
+were built in a later UI step. That step shipped — `/admin/mcp`
+(settings, usage) and `/admin/mcp/keys` exist, using the hooks
+(`useMcpSettings`, `useUserMcpSettings`, `useMcpUsage`,
+`useMcpUsageSummary`, `useMcpKeys` + mutations) in
+`@sendcms/mcp-admin/queries`.
 
 ## Tests
 
@@ -211,13 +274,10 @@ change without a reason is rejected.
 - Quota guards are the existing fixed-window counters — two
   concurrent calls at the exact limit can overshoot by one (same
   pattern as the rest of the codebase; the usage ledger is the
-  audit trail).
+  audit trail). The same limitation applies to the Phase 4 quota
+  guards — see
+  [plans-and-entitlements](./plans-and-entitlements.md#known-limitations).
 - There is no per-tool quota — only per-key minute/hour limits.
-- The admin UI pages (`/admin/mcp/*`) are built in the UI step
-  after this backend; the hooks (`useMcpSettings`,
-  `useUserMcpSettings`, `useMcpUsage`, `useMcpUsageSummary`,
-  `useMcpKeys` + mutations) already exist in
-  `@sendcms/mcp-admin/queries`.
 - No live verification against a real MCP client yet — the tests
   use an in-memory transport with mocked services (same pattern as
   `tests/mcp-server.test.ts`).

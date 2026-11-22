@@ -74,8 +74,9 @@ packages/i18n/
     locales.ts        # registry (above)
     load.ts           # domain loaders (loadLocaleDomain / loadLocaleAppDomain)
     translate.ts      # createTranslator, interpolation, plurals
-    validate.ts       # validation script (pnpm --filter @sendcms/i18n validate)
     index.ts          # barrel
+  scripts/
+    validate-translations.mjs  # validation script (pnpm --filter @sendcms/i18n validate)
   locales/
     en/               # 41 files
       navigation.json
@@ -103,9 +104,11 @@ commit as the page.
 
 ## The translator
 
-`createTranslator(locale, domain)` (in
-`packages/i18n/src/translate.ts`) returns a `t(key, vars?)`
-function:
+`getTranslator(locale, domain)` (in
+`packages/i18n/src/load.ts`) returns a `t(key, vars?)`
+function — it loads the domain file and builds the translator
+with `createTranslator(messages)` (in
+`packages/i18n/src/translate.ts`):
 
 - **Interpolation:** `{name}` placeholders, e.g.
   `t("welcome", { name })`.
@@ -138,7 +141,7 @@ translations.
 ## Validation
 
 Command: `pnpm --filter @sendcms/i18n validate`
-(`packages/i18n/src/validate.ts`). It loads every domain for
+(`packages/i18n/scripts/validate-translations.mjs`). It loads every domain for
 every locale through the same loaders the apps use
 (`loadLocaleDomain` / `loadLocaleAppDomain`) and compares
 against `en`:
@@ -162,7 +165,8 @@ it: not started (0/41 files)
 ✓ en and ur are complete and in sync.
 ```
 
-The script runs in CI. A missing key in a complete locale
+The script does not run in CI yet — run it by hand before
+pushing (or add it to `.github/workflows/ci.yml`). A missing key in a complete locale
 fails the check. Coming-soon locales are reported as "not
 started", not failed — the check knows the difference between
 "not built yet" and "broken".

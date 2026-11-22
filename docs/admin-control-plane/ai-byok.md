@@ -1,15 +1,5 @@
 # AI BYOK — Bring Your Own Key (Phase 5)
 
-**Branch:** `feature/admin-control-plane`
-**Module:** `packages/modules/ai-settings` (`@sendcms/ai-settings`)
-**Crypto:** `packages/ai/src/byok-crypto.ts` (envelope encryption)
-**Routes:** `apps/api/app/api/v1/ai/keys/*`, `.../ai/billing-mode`,
-`.../admin/ai/providers/*`, `.../admin/ai/usage/*`,
-`.../admin/ai/users/[userId]/keys`, `.../admin/ai/users/[userId]/billing-mode`
-**Tests:** `tests/ai-byok.test.ts` (41 tests)
-
-## What this phase built
-
 Customers can use their own AI provider keys (one per provider, up
 to five: OpenAI, Anthropic, Google, DeepSeek, OpenRouter) instead of
 — or alongside — the platform key. Keys are stored **encrypted**
@@ -19,6 +9,29 @@ button, and the billing mode (BYOK / PLATFORM / DISABLED) decides
 which key a call uses. Provider resolution is a single function
 (`resolveAiModelForUser`) that every AI capability calls, and it
 **never silently falls back BYOK → platform**.
+
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). Live verification against a real provider
+is still owed.
+
+## Contents
+
+- [Encryption design (read this before touching the code)](#encryption-design-read-this-before-touching-the-code)
+- [Storage choices (the owner's design, 2026-11-21)](#storage-choices-the-owners-design-2026-11-21)
+- [Provider resolution](#provider-resolution)
+- [Wiring the existing capabilities](#wiring-the-existing-capabilities)
+- [Admin controls](#admin-controls)
+- [Audit events (AI_KEY / USER / SETTINGS)](#audit-events-ai_key--user--settings)
+- [What is NOT in this phase](#what-is-not-in-this-phase)
+
+Module: `packages/modules/ai-settings` (`@sendcms/ai-settings`).
+Crypto: `packages/ai/src/byok-crypto.ts` (envelope encryption).
+Routes: `apps/api/app/api/v1/ai/keys/*`, `.../ai/billing-mode`,
+`.../admin/ai/providers/*`, `.../admin/ai/usage/*`,
+`.../admin/ai/users/[userId]/keys`, `.../admin/ai/users/[userId]/billing-mode`.
+Tests: `tests/ai-byok.test.ts` (41 tests). Billing modes and
+attribution are covered in
+[ai-billing-and-access](./ai-billing-and-access.md).
 
 ## Encryption design (read this before touching the code)
 
@@ -120,6 +133,29 @@ capability calls. Precedence:
    available" error (`AiNotAvailableError`, 503). Callers degrade to
    the non-AI behavior.
 
+```mermaid
+flowchart TB
+    Call["AI capability call\n(purpose + resourceId)"]
+    Browser{"Browser-only key\non this request?"}
+    Mode{"Billing mode?"}
+    BYOK{"Stored BYOK key\nfor this provider?"}
+    Platform{"Plan allows platform AI\n+ provider enabled\n+ emergency flag off?"}
+    Model["Return { model, billingMode,\nprovider, modelId }"]
+    Err503["AiNotAvailableError (503)\ncaller degrades to non-AI"]
+    ErrKey["Clear error — NO silent\nfallback to platform key"]
+
+    Call --> Browser
+    Browser -- "yes" --> Model
+    Browser -- "no" --> Mode
+    Mode -- "BYOK" --> BYOK
+    BYOK -- "yes, enabled" --> Model
+    BYOK -- "missing / disabled / unreadable" --> ErrKey
+    Mode -- "PLATFORM" --> Platform
+    Platform -- "yes" --> Model
+    Platform -- "no" --> Err503
+    Mode -- "DISABLED" --> Err503
+```
+
 Two fallbacks exist, and they are deliberately different:
 
 - **Store-availability fallback (inside the resolver):** if the
@@ -137,7 +173,11 @@ Two fallbacks exist, and they are deliberately different:
 A customer's key is never sent to a different provider: it is bound
 to its provider by the crypto AAD and by the lookup. The resolution
 returns `{ model, billingMode, provider, modelId }` so callers can
-record usage on completion/failure.
+record usage on completion/failure. Billing-mode validation and
+BYOK-vs-platform attribution are covered in
+[ai-billing-and-access](./ai-billing-and-access.md); the
+entitlement precedence chain is in
+[usage-metering](./usage-metering.md).
 
 ## Wiring the existing capabilities
 
@@ -153,7 +193,10 @@ is unconfigured (no crash, no submission dropped). The per-form
 - Worker paths (`rescoreNewSubmissions`, `sendDueDigests`): the
   early gate is now "any AI at all" — the platform key OR any stored
   BYOK key (`anyByokKeyConfigured`), so a BYOK-only deployment
-  (no platform key) still runs its AI jobs.
+  (no platform key) still runs its AI jobs. The two worker jobs are
+  additionally gated by the feature flags `ai-spam-rescore` and
+  `ai-digest` — see
+  [platform-operations](./platform-operations.md#feature-flags).
 - Interactive paths (`suggestFieldsForForm`,
   `draftReplyForSubmission`): the `isAiConfigured` pre-check is
   gone — the resolver owns availability. Both take an optional
@@ -192,18 +235,22 @@ is unconfigured (no crash, no submission dropped). The per-form
 `ai-billing-mode-changed` (UPDATE on USER),
 `ai-provider-config-changed` (UPDATE on SETTINGS). Every audit
 detail carries only the provider + fingerprint last4 — never key
-material.
+material. The writer is documented in
+[admin-audit-trail](./admin-audit-trail.md).
 
 ## What is NOT in this phase
 
-- No admin app UI for AI (pages are the Phase 5 follow-up; the
-  hooks in `packages/modules/ai-settings/src/queries.ts` —
-  `useAiKeys`, `useAiBillingMode`, `useAiUsage`,
-  `useProviderConfigs` + mutations — are ready for them).
-- No dashboard customer page (`/dashboard/ai` is the follow-up;
-  the hooks + routes are ready).
 - No cost reporting beyond provider-reported costs: `costMicros`
   is only ever set when a provider reports a reliable cost. Never
   an estimate, never a price-table lookup.
 - No key rotation UI yet: replacing a key (save again) is the
   rotation path; `keyVersion` tracks it.
+
+📌 Note: the Phase 5 text originally said no admin or dashboard AI
+UI existed yet. That is superseded — the follow-up UI shipped:
+`/admin/ai/*` (overview, providers, settings, usage, models) and
+`/dashboard/ai` (billing mode, per-provider cards, storage popup,
+Test button), using the hooks in
+`packages/modules/ai-settings/src/queries.ts` (`useAiKeys`,
+`useAiBillingMode`, `useAiUsage`, `useProviderConfigs` +
+mutations).

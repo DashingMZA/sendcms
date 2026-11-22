@@ -2,19 +2,38 @@
 
 Feature flags, announcements, audit log explorer, platform health,
 abuse/spam queue, data export & deletion workflows, and translation
-completion — the backend only. The admin UI pages for these land
-afterwards; the React Query hooks they need already exist in
+completion — the backend plus the admin pages that consume it. The
+React Query hooks the pages need live in
 `packages/modules/platform-ops/src/queries.ts`.
+
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). Live verification against the real dev DB
+is still owed.
+
+## Contents
+
+- [Feature flags](#feature-flags)
+- [Announcements](#announcements)
+- [Health + system](#health--system)
+- [Abuse / spam queue](#abuse--spam-queue)
+- [Deletion workflow](#deletion-workflow)
+- [Translation completion](#translation-completion)
+- [Support architecture prep](#support-architecture-prep)
+- [React Query hooks](#react-query-hooks)
+- [Tests](#tests)
+- [Open items](#open-items)
 
 Service module: `packages/modules/platform-ops/` (`@sendcms/platform-ops`)
 — per-domain services (`flags`, `announcements`, `audit`, `health`,
 `abuse`, `deletion`, `translations`) + `validators.ts` + `queries.ts` +
 `service.ts` (barrel) + `index.ts`. Routes are thin handlers under
 `apps/api/app/api/v1/` (21 routes, all in the api build). Authorization
-lives in the services via `requireAdmin`, never in the routes. The one
+lives in the services via `requireAdmin`, never in the routes — see
+[authorization](./authorization.md). The one
 new capability is `MANAGE_ANNOUNCEMENTS` (owner + SUPER_ADMIN only;
 MANAGER and SUPPORT do not get it — announcements are a platform-wide
-voice, not a support action).
+voice, not a support action). The audit trail these actions write is
+documented in [admin-audit-trail](./admin-audit-trail.md).
 
 ## Feature flags
 
@@ -23,6 +42,7 @@ DB-backed (`FeatureFlag` + `FeatureFlagOverride`), NOT
 restart and no redeploy. The Phase 4 platform emergency flag in
 `config/config.json` stays the separate restart-gated kill-switch —
 it is not a flag in this registry and it is not toggled from here.
+See [plans-and-entitlements](./plans-and-entitlements.md#the-emergency-flag).
 
 Precedence: per-user override → global flag → off. An unknown key is
 OFF — fail-closed. `isFeatureEnabled(key, userId?)` never throws: on
@@ -47,9 +67,12 @@ audited with the old/new values (`flag-toggled`,
 409, never an upsert. Removing an override makes the global flag
 apply again.
 
-There are NO seed flags and NO consumer wiring in this phase: the
-registry + API is the deliverable. Wiring gates into features is
-Phase 8 — no feature reads a flag yet, by design.
+There are NO seed flags. Phase 7 shipped the registry + API with no
+consumer wiring, by design — the wiring landed in Phase 8:
+`ai-spam-rescore` gates `rescoreNewSubmissions` and `ai-digest`
+gates `sendDueDigests` in `@sendcms/submissions` (flag
+missing/disabled = job off). See
+[ai-byok](./ai-byok.md#wiring-the-existing-capabilities).
 
 ## Announcements
 
@@ -97,7 +120,8 @@ deployment status.
 - `ai` — today's `AiDailyUsage` total + count of enabled AI
   providers.
 - `mcp` — `McpUsageRecord` calls in the last 24 h + error rate +
-  the global kill-switch state.
+  the global kill-switch state (see
+  [mcp-management](./mcp-management.md#the-global-kill-switch)).
 - `emergency` — the Phase 4 emergency flag from
   `config/config.json` (`readPlatformConfig`).
 
@@ -145,6 +169,24 @@ State machine: `REQUESTED` → `APPROVED` or `REJECTED` → `COMPLETED`.
 The request row is never deleted; it is the record that the erasure
 happened.
 
+```mermaid
+flowchart TB
+    Request["Deletion requested\n(Phase 3 requestDeletion)"]
+    Requested["REQUESTED"]
+    Review{"Admin review\n(reason required)"}
+    Approved["APPROVED"]
+    Rejected["REJECTED\n(terminal)"]
+    Erase["Erase (APPROVED only)\nOne transaction:\nanonymize + deletes +\nCOMPLETED"]
+    Completed["COMPLETED\n(request row kept\nas the record)"]
+    Refuse["409 — wrong state\n(refusal audit-logged\nwith outcome FAILED)"]
+
+    Request --> Requested --> Review
+    Review -- "approve" --> Approved --> Erase --> Completed
+    Review -- "reject" --> Rejected
+    Review -- "not REQUESTED" --> Refuse
+    Erase -- "not APPROVED" --> Refuse
+```
+
 | Operation                         | Endpoint                                           | Capability     |
 | --------------------------------- | -------------------------------------------------- | -------------- |
 | List requests (status filter)     | `GET /api/v1/admin/deletion-requests`              | `MANAGE_USERS` |
@@ -154,7 +196,8 @@ happened.
 Review and erasure both require a reason. Only a `REQUESTED`
 request can be reviewed and only an `APPROVED` request can be
 erased; any other state is a 409, and the refusal is audit-logged
-with outcome `FAILED` (see `admin-audit-trail.md`).
+with outcome `FAILED` (see
+[admin-audit-trail](./admin-audit-trail.md#failed-actions-are-recorded-never-dropped)).
 
 ### How a request starts
 
@@ -216,9 +259,12 @@ single bundle for external review; an unknown locale is a 422.
 
 NO write endpoints — no ordinary admin may overwrite translation
 files from the browser (spec rule). Translation changes go through
-the version-controlled workflow (see `translation-management.md`
-when it lands). AI translation is NOT built: it is
-permission-controlled, reviewable, and deferred.
+the version-controlled workflow (see
+[translation-management](./translation-management.md)). AI
+translation is NOT built: it is permission-controlled, reviewable,
+and deferred. The honest i18n state (en + ur complete, the other 8
+locales coming-soon) is in
+[internationalization](./internationalization.md).
 
 ## Support architecture prep
 
@@ -226,8 +272,9 @@ A design note, not a build: no separate support module was built in
 this phase. What support staff use is the surface above — the abuse
 queue (`VIEW_CUSTOMER_DATA` / `VIEW_SENSITIVE_SUBMISSIONS`), user
 management (Phase 3), and the audit explorer — plus the per-user
-AI/MCP tabs from Phases 5–6. A dedicated support workspace (queues,
-assignment, SLAs) is a later design item, not part of this phase.
+AI/MCP tabs from Phases 5–6. The dedicated support workspace
+(tickets, assignment, staff replies) shipped later as its own
+module in Phase 8 — see [support](./support.md).
 
 ## React Query hooks
 
@@ -275,8 +322,11 @@ directly.
 
 - No live verification against the real dev DB or a real MCP client
   (all proofs are mocked); live click-through of the admin UI is
-  owed once the pages land.
+  still owed now that the pages have landed.
 - No per-tool quota (Phase 6 note, unchanged).
-- No consumer wiring for flags (Phase 8).
-- The admin UI pages for this phase are the next step — the hooks
-  already exist.
+
+📌 Note: the Phase 7 text said the admin UI pages for this phase
+land afterwards. They shipped — 8 new admin pages (`/admin/features`,
+`/admin/announcements`, `/admin/audit-logs`, `/admin/health`,
+`/admin/submissions`, `/admin/translations`, plus the overview and
+system views) and the dashboard announcement banner.

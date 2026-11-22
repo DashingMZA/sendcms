@@ -1,5 +1,28 @@
 # Embedding SendCMS in Hugo
 
+Add a SendCMS contact form to a Hugo site as a reusable partial, then
+include it from any layout or shortcode. One script tag, one normal
+HTML form — no build plugin needed.
+
+```mermaid
+flowchart LR
+    Partial["layouts/partials/sendcms-form.html"]
+    Page["Hugo page / layout\n(partial or shortcode)"]
+    SDK["forms/v1.js"]
+    API["POST /api/public/v1/submit"]
+    Inbox["Dashboard inbox"]
+
+    Partial --> Page --> SDK --> API --> Inbox
+```
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [1. Create a contact form partial](#1-create-a-contact-form-partial)
+- [2. Include the partial in a page](#2-include-the-partial-in-a-page)
+- [3. Check it works](#3-check-it-works)
+- [Self-hosting note](#self-hosting-note)
+
 ## Prerequisites
 
 - A Hugo site
@@ -7,6 +30,12 @@
   [Getting started](getting-started.md))
 - Your **userId** and the form's **formId** from the dashboard
   (form detail page → "Embed on your site")
+
+| Placeholder    | Replace with                                                               |
+| -------------- | -------------------------------------------------------------------------- |
+| `YOUR_APP`     | Your SendCMS deployment URL (the api app, e.g. `https://api.sendcms.bond`) |
+| `YOUR_USER_ID` | Your public user id (form detail page)                                     |
+| `YOUR_FORM_ID` | The form's id (form detail page)                                           |
 
 ## 1. Create a contact form partial
 
@@ -47,9 +76,7 @@ In any layout or content file, for example `layouts/page/contact.html`:
   {{ .Content }}
 </article>
 
-<section aria-label="Contact form">
-  {{ partial "sendcms-form.html" . }}
-</section>
+<section aria-label="Contact form">{{ partial "sendcms-form.html" . }}</section>
 {{ end }}
 ```
 
@@ -64,6 +91,9 @@ with the same markup, used as `{{< sendcms-form >}}` in Markdown).
    there with the page URL and origin domain.
 3. If it returns 403, the page's origin is not a verified domain linked
    to the form — see [Troubleshooting](troubleshooting.md).
+
+Full SDK reference: [SDK](sdk.md). Direct endpoint:
+[REST API](rest-api.md).
 
 ## Self-hosting note
 

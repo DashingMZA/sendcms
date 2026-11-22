@@ -10,6 +10,28 @@ RBAC, schema rules, route templates). Work on branch `feat/contact-form-saas`,
 one phase per commit, push after each verified phase. No destructive production
 DB operation without explicit approval.
 
+📌 **Status note (2026-11-22):** this is a historical record of the plan
+as written on 2026-11-17 — its claims, dates, SHAs, and counts are kept
+as written. What changed since: Phases 0–11 all completed (see
+[sendcms-final-report.md](sendcms-final-report.md)), the comment system
+was removed and the branch was shifted to `main` (§ "Post-Phase 11"),
+the monorepo migration completed (see
+[architecture/migration-final-report.md](architecture/migration-final-report.md)),
+the production domain **is decided** (`sendcms.bond`), MCP and AI were
+built on `feature/ai`, and the admin control plane is in progress on
+`feature/admin-control-plane`.
+
+## Contents
+
+- [1. Audit summary (verified in source, 2026-11-17)](#1-audit-summary-verified-in-source-2026-11-17)
+- [2. Target product (per brief)](#2-target-product-per-brief)
+- [3. Target folder structure (professional SaaS layout)](#3-target-folder-structure-professional-saas-layout)
+- [4. Dependencies — latest, verified live from npmjs (2026-11-17)](#4-dependencies--latest-verified-live-from-npmjs-2026-11-17)
+- [5. Implementation phases (one phase = one verified commit)](#5-implementation-phases-one-phase--one-verified-commit)
+- [Post-Phase 11 — comment-system removal + branch shift (2026-11-18)](#post-phase-11--comment-system-removal--branch-shift-2026-11-18)
+- [6. Decisions needed from the user (before / during implementation)](#6-decisions-needed-from-the-user-before--during-implementation)
+- [7. Risks / limitations (stated upfront)](#7-risks--limitations-stated-upfront)
+
 ## 1. Audit summary (verified in source, 2026-11-17)
 
 - Stack: Next.js 16.4.6 (App Router, Turbopack), React 19.3.1, TypeScript 6.0.3,
@@ -30,6 +52,7 @@ DB operation without explicit approval.
 ### Key findings (audit report — full detail in chat 2026-11-17)
 
 **Security (fix in transformation):**
+
 1. `lib/auth-widget.ts:11` — `WIDGET_JWT_SECRET ?? "fallback-secret"`: unset secret ⇒ forgeable widget JWTs.
 2. `lib/cors.ts` — empty allowlist returns `true` (any origin allowed); `GET /api/widget/comments` never checks origin.
 3. `lib/db.ts:13-22` — strips `?sslmode=` and sets `ssl: { rejectUnauthorized: false }` (MITM-able).
@@ -39,17 +62,10 @@ DB operation without explicit approval.
 7. Domain validation regex accepts `:` and `/`; `Site.domain` not `@unique`, no normalization, no index.
 8. SMTP transporter has `logger: true, debug: true` in production.
 
-**Correctness / gaps:**
-9. No spam detection (`SPAM` status never assigned), no honeypot, no Turnstile, no idempotency.
-10. Email is synchronous in the request path, failures swallowed (`console.error`), silently skipped when no SMTP configured. No queue/retries/tracking.
-11. Auth is Google-only. No GitHub/Facebook, no email/password, no password reset. `VerificationToken` model unused; `User.emailVerified` never read; nothing gates on verified email.
-12. `Site.allowAnonymous` is dead (widget POST always requires Bearer token). Replies are 2-level only. Widget/server char-limit mismatch (2,000 vs 5,000).
-13. Stubs shipped in prod: `/dashboard/settings` and `/dashboard/notice-board` ("coming soon"), `/elements` design showcase.
-14. Docs/schema drift: schema doc claims `Site.domain @unique` (false), `EmbedConfig` (doesn't exist), `Json` columns (violated by `Site.allowedOrigins String`), `createdAt+updatedAt` everywhere (violated by `Page`, `CommentLike`, `ModerationLog`).
-15. Deployment: `wrangler.jsonc` has no `build` key; `build:cf` skips `prisma generate` + `widget:build` (clean checkout fails or ships stale/missing `embed.js`). Dual production URLs: `jadoo.bond` (wrangler vars) vs `openremark.bond` (README/vercel.json/docs). No CSP/security-headers file for Cloudflare.
-16. Root clutter: stray `.sitepins/config.json` + `.sketivo/config.json` (other projects), committed `tsconfig.tsbuildinfo` (604K) and `generated/` (Prisma client, 1M) that belong in `.gitignore`; three deploy targets at once; leftover "Zeon" branding (`window.ZeonComments`, `zeon_widget_token`, DB name `zeon`).
+**Correctness / gaps:** 9. No spam detection (`SPAM` status never assigned), no honeypot, no Turnstile, no idempotency. 10. Email is synchronous in the request path, failures swallowed (`console.error`), silently skipped when no SMTP configured. No queue/retries/tracking. 11. Auth is Google-only. No GitHub/Facebook, no email/password, no password reset. `VerificationToken` model unused; `User.emailVerified` never read; nothing gates on verified email. 12. `Site.allowAnonymous` is dead (widget POST always requires Bearer token). Replies are 2-level only. Widget/server char-limit mismatch (2,000 vs 5,000). 13. Stubs shipped in prod: `/dashboard/settings` and `/dashboard/notice-board` ("coming soon"), `/elements` design showcase. 14. Docs/schema drift: schema doc claims `Site.domain @unique` (false), `EmbedConfig` (doesn't exist), `Json` columns (violated by `Site.allowedOrigins String`), `createdAt+updatedAt` everywhere (violated by `Page`, `CommentLike`, `ModerationLog`). 15. Deployment: `wrangler.jsonc` has no `build` key; `build:cf` skips `prisma generate` + `widget:build` (clean checkout fails or ships stale/missing `embed.js`). Dual production URLs: `jadoo.bond` (wrangler vars) vs `openremark.bond` (README/vercel.json/docs). No CSP/security-headers file for Cloudflare. 16. Root clutter: stray `.sitepins/config.json` + `.sketivo/config.json` (other projects), committed `tsconfig.tsbuildinfo` (604K) and `generated/` (Prisma client, 1M) that belong in `.gitignore`; three deploy targets at once; leftover "Zeon" branding (`window.ZeonComments`, `zeon_widget_token`, DB name `zeon`).
 
 ### Reusable as-is (keep, extend)
+
 Next.js dashboard shell + sidebar/nav; Prisma/Postgres + `lib/db.ts`; Better Auth 1.7.25 + Prisma adapter + database sessions (switched from Auth.js v5, 2026-11-17);
 `Site`/`SiteMember`/`SiteInvite` + `requireSiteAccess` + `lib/permissions/*`; email rendering pattern
 (React Email layout); widget build pipeline (esbuild IIFE + lightningcss, compile-time defines);
@@ -58,6 +74,7 @@ Next.js dashboard shell + sidebar/nav; Prisma/Postgres + `lib/db.ts`; Better Aut
 (`lib/api-client.ts`, `lib/queries/*`); health check.
 
 ### Comment-only — remove
+
 `Page`, `Commenter`, `Comment`, `CommentLike`, `ModerationLog`, `BannedCommenter` models;
 `comment-service`, `moderation-service`, `page-service`, comment validators/queries;
 `/api/v1/comments/*`, `/api/widget/comments/*`, `/api/widget/auth`, `/api/widget/oauth-callback`,
@@ -140,6 +157,7 @@ Most deps are already at latest. Updates to apply in Phase 0 (patch/minor only):
 `react-email` 6.11.12 → 6.11.15, `recharts` 3.10.1 → 3.11.0,
 `wrangler` 4.161.0 → 4.164.0. Re-check live again at upgrade time.
 **Do NOT blindly take `latest`:**
+
 - `next-auth`: REMOVED — replaced by **`better-auth` 1.7.25** (latest stable,
   verified live 2026-11-17; no beta). `AUTH_SECRET`/`NEXTAUTH_URL` →
   `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`; auth tables reshaped to Better
@@ -191,25 +209,26 @@ when untrusted. Fix first-user `PLATFORM_OWNER` race. Gate: manual journey
 register → verify → login (all providers). **Status: DONE 2026-11-17** —
 Better Auth `emailAndPassword` (requireEmailVerification, min 8 chars) +
 `emailVerification` (sendOnSignUp, autoSignInAfterVerification, 24h expiry)
-+ GitHub/Facebook OAuth (env-gated via `lib/auth-providers.ts`; UI only
-offers configured providers) + `user.changeEmail`. Auth mail
-(`lib/email/auth-mailer.ts`) via platform SMTP (`SMTP_*`); no SMTP → dev
-logs the link server-side, production throws. Verification trust verified
-in better-auth 1.7.25 source: Google profile `email_verified`, GitHub
-`/user/emails` verified flag, Facebook none (gets a verification email on
-sign-up). Owner race fixed with a single-statement conditional UPDATE +
-partial unique index (migration `20261117190655_single_platform_owner`).
-Pages: sign-up, forgot-password, reset-password (query token — the
-email link is /api/auth/reset-password/:token, which redirects here with
-?token=…; the earlier /reset-password/[token] route never received the
-redirect), verify-email; sign-in gained an email form; account page gained
-verification status/resend, name, email change (verification to the NEW
-address), password change (revokes other sessions), provider linking. The
-forgot-password form MUST pass redirectTo "/reset-password" or the reset
-link lands on an error. Gate green
-(typecheck clean, lint 0 errors / 1 pre-existing warning, tests 25/25,
-build SUCCESS dummy env). Manual live journey (real OAuth + SMTP + DB)
-still needs the owner on his machine — see the Phase 2 report checklist.
+
+- GitHub/Facebook OAuth (env-gated via `lib/auth-providers.ts`; UI only
+  offers configured providers) + `user.changeEmail`. Auth mail
+  (`lib/email/auth-mailer.ts`) via platform SMTP (`SMTP_*`); no SMTP → dev
+  logs the link server-side, production throws. Verification trust verified
+  in better-auth 1.7.25 source: Google profile `email_verified`, GitHub
+  `/user/emails` verified flag, Facebook none (gets a verification email on
+  sign-up). Owner race fixed with a single-statement conditional UPDATE +
+  partial unique index (migration `20261117190655_single_platform_owner`).
+  Pages: sign-up, forgot-password, reset-password (query token — the
+  email link is /api/auth/reset-password/:token, which redirects here with
+  ?token=…; the earlier /reset-password/[token] route never received the
+  redirect), verify-email; sign-in gained an email form; account page gained
+  verification status/resend, name, email change (verification to the NEW
+  address), password change (revokes other sessions), provider linking. The
+  forgot-password form MUST pass redirectTo "/reset-password" or the reset
+  link lands on an error. Gate green
+  (typecheck clean, lint 0 errors / 1 pre-existing warning, tests 25/25,
+  build SUCCESS dummy env). Manual live journey (real OAuth + SMTP + DB)
+  still needs the owner on his machine — see the Phase 2 report checklist.
 
 **Phase 3 — Domains.** CRUD, normalize (lowercase, strip scheme/path, www/
 subdomain handling), `@unique` + index, ownership verification via DNS TXT
@@ -335,15 +354,16 @@ FAILED only when terminal; cron route `GET /api/cron/email-outbox`
 (Bearer CRON_SECRET); immediate attempt via the submit route's
 `after()` hook; submission-notification React Email template with
 sender/page/domain context; delivery log `/dashboard/notifications`
-+ test-email button on the form detail (direct send, 502 + provider
-message on failure). Tests 132/132 (12 new). Live journey 21/21 on
-the dev DB with NO provider (outage path): submission saved, job
-queued, first attempt failed honestly ("No email provider
-configured", retry scheduled), cron auth 401s, retry attempts=2,
-submission never lost, test email 502, pages 200. **Real delivery
-through Resend is NOT yet verified — needs the owner's RESEND_API_KEY
-(+ RESEND_FROM on a verified domain).** Spam submissions get no
-notification. Docs: `docs/email-notifications.md`.
+
+- test-email button on the form detail (direct send, 502 + provider
+  message on failure). Tests 132/132 (12 new). Live journey 21/21 on
+  the dev DB with NO provider (outage path): submission saved, job
+  queued, first attempt failed honestly ("No email provider
+  configured", retry scheduled), cron auth 401s, retry attempts=2,
+  submission never lost, test email 502, pages 200. **Real delivery
+  through Resend is NOT yet verified — needs the owner's RESEND_API_KEY
+  (+ RESEND_FROM on a verified domain).** Spam submissions get no
+  notification. Docs: `docs/email-notifications.md`.
 
 **Phase 9 — Dashboard completion.** Overview, Domains, Forms, Inbox,
 Notifications, Analytics, API & SDK, Account Settings — all real, no stubs,
@@ -470,16 +490,17 @@ domains, 1 form intact). Deleted: `widget/`, `/api/widget/*`,
 `lib/rate-limit.ts`, `lib/email/email-service.ts`, `lib/sanitize.ts`,
 comment email templates, `lib/permissions/site.ts`, 5 query files, 3
 validators, `lib/types/commenter.ts`, the administration + site-settings-form
-+ team component folders, 9 orphaned dashboard components, benchmark
-scripts, `public/demo.html`. `lib/cors.ts` kept minus the legacy
-`isOriginAllowed` (the public submit route still uses
-`getEffectiveOrigin`); `WIDGET_JWT_SECRET` removed from `.env.example`,
-`.dev.vars.example`, wrangler comments, AGENTS.md, README, deployment
-docs; terms.md rewritten SendCMS-only; skill references updated to
-SendCMS. Gate green: format, typecheck clean, lint 0 errors / 1
-pre-existing warning, tests 202/202 (4 `siteCan` tests removed with the
-feature), `pnpm build` + `pnpm build:cf` SUCCESS (`.open-next` has no
-`embed.js` anymore), full 16-step journey 43/43 live.
+
+- team component folders, 9 orphaned dashboard components, benchmark
+  scripts, `public/demo.html`. `lib/cors.ts` kept minus the legacy
+  `isOriginAllowed` (the public submit route still uses
+  `getEffectiveOrigin`); `WIDGET_JWT_SECRET` removed from `.env.example`,
+  `.dev.vars.example`, wrangler comments, AGENTS.md, README, deployment
+  docs; terms.md rewritten SendCMS-only; skill references updated to
+  SendCMS. Gate green: format, typecheck clean, lint 0 errors / 1
+  pre-existing warning, tests 202/202 (4 `siteCan` tests removed with the
+  feature), `pnpm build` + `pnpm build:cf` SUCCESS (`.open-next` has no
+  `embed.js` anymore), full 16-step journey 43/43 live.
 
 **Branch shift — DONE 2026-11-18 (owner: "main branch empty kr k, just
 1 branch ho").** `main` was force-updated to the `feat/contact-form-saas`

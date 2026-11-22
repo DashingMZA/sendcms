@@ -1,10 +1,24 @@
 # Operations runbook
 
 How SendCMS runs in production. Deployment (builds, dashboard steps,
-per-app wrangler files) lives in `docs/deployment.md` and
+per-app wrangler files) lives in [Deployment](../deployment.md) and
 `infrastructure/cloudflare/README.md`; this document is the
 day-to-day operating picture: what runs where, what the env vars do,
 and what to check when something is wrong.
+
+📌 **Production is `sendcms.bond`** (decided 2026-11-20), running the
+`feature/ai` branch on Vercel. The `feature/admin-control-plane`
+branch (this branch) is **not deployed** — the ✅ items marked
+"on this branch" below exist in code here, not in production.
+
+## Contents
+
+- [What runs where](#what-runs-where)
+- [Environment variables (per app)](#environment-variables-per-app)
+- [The email outbox (how notifications actually flow)](#the-email-outbox-how-notifications-actually-flow)
+- [Logs and the audit log](#logs-and-the-audit-log)
+- [Security posture (what is and isn't in place)](#security-posture-what-is-and-isnt-in-place)
+- [When something is wrong](#when-something-is-wrong)
 
 ## What runs where
 
@@ -33,20 +47,28 @@ on `WORKER_PORT`, default 3005; polls the outbox every
 shutdown). Its production hosting is a separate decision. Until it is
 hosted, the cron route (`GET /api/cron/email-outbox`) is the hosted
 drain for failed deliveries — schedule it every 5 minutes with a
-`Bearer <CRON_SECRET>` header.
+`Bearer <CRON_SECRET>` header (on Vercel Hobby it currently runs once
+daily; see [Deployment](../deployment.md#email-outbox-cron)).
 
-The production domain is **undecided**. All per-app `vars` use
+The **admin app** (`apps/admin`, :3006, `admin.sendcms.bond`) exists
+only on the `feature/admin-control-plane` branch — it is not deployed
+and not part of the five-worker Cloudflare set above. Its own
+`wrangler.jsonc` already uses `sendcms.bond` vars.
+
+⚠️ The five original apps' `wrangler.jsonc` `vars` still use
 `jadoo.bond` hosts as placeholders (`https://jadoo.bond`,
-`https://api.jadoo.bond`, `https://dashboard.jadoo.bond`, …). When the
-domain is decided, change the `vars` in all five `wrangler.jsonc`
-files together — and the `FALLBACK_APP_URL` in the per-app
-`lib/utils.ts` files, which uses the same placeholder.
+`https://api.jadoo.bond`, `https://dashboard.jadoo.bond`, …) even
+though the production domain is decided. When the domain is decided
+for the Cloudflare path, change the `vars` in all five
+`wrangler.jsonc` files together — and the `FALLBACK_APP_URL` in the
+per-app `lib/utils.ts` files, which uses the same placeholder.
 
 ## Environment variables (per app)
 
 Secrets are set in the Cloudflare dashboard per worker, never in a
 file. `wrangler.jsonc` holds only non-secret `vars` (plus a comment
-listing the secrets each worker needs).
+listing the secrets each worker needs). The full table with
+descriptions is in [Deployment](../deployment.md#environment-variables).
 
 | Variable                                                  | Where                     | Notes                                                                                      |
 | --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
@@ -73,6 +95,22 @@ listing the secrets each worker needs).
 | `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                 | email worker              | Defaults 3005 / 30000.                                                                     |
 
 ## The email outbox (how notifications actually flow)
+
+```mermaid
+flowchart TB
+    Save["Submission saved (201)"]
+    Enqueue["after(): enqueue one EmailJob\nper enabled NotificationSettings row"]
+    Claim["Claim atomically\nPENDING → SENDING (attempts +1)"]
+    Send["Send via Resend → SMTP → none"]
+    Sent["SENT"]
+    Fail["FAILED + backoff\n1m / 5m / 15m / 1h / 4h (5 attempts)"]
+    Cron["Cron route (every 5 min, or daily on Hobby)\n+ email worker (every 30 s)"]
+
+    Save --> Enqueue --> Claim --> Send
+    Send -- "ok" --> Sent
+    Send -- "error" --> Fail
+    Cron --> Claim
+```
 
 1. A submission is saved (201). In `after()`, the submit route
    enqueues one `EmailJob` per enabled `NotificationSettings` row and
@@ -104,7 +142,10 @@ listing the secrets each worker needs).
   REACTIVATE) via the one `logAudit()` writer in `@sendcms/security`.
   It never blocks the action it records (best-effort, never throws)
   and never records submission content. There is no admin UI for
-  reading it — query the table directly.
+  reading it — query the table directly. (On the
+  `feature/admin-control-plane` branch there is an audit explorer at
+  `/admin/audit-logs` — see
+  [admin-control-plane/admin-audit-trail.md](../admin-control-plane/admin-audit-trail.md).)
 - What to check first when something is wrong: the api worker's logs
   for `scope: "api"` errors (unhandled API errors) and
   `scope: "submissions"` errors (failed notification enqueue); the
@@ -116,21 +157,29 @@ listing the secrets each worker needs).
 
 - Security headers come from one shared definition in
   `@sendcms/security` (each app's `next.config.mjs` `headers()` +
-  that app's `public/_headers`). There is **no
-  Content-Security-Policy** yet — Next.js inlines scripts/styles, so
-  a CSP would need `unsafe-inline` and add nothing; a real CSP is a
-  separate, tested pass.
-- The admin REST API and the auth routes have **no rate limiting**
-  (ADR 0008, deferred gap). The public submit API is the only
-  rate-limited surface (DB-backed: 10/min + 100/hour per IP, per-form
-  daily cap).
+  that app's `public/_headers`). ✅ On this branch (Phase 9) a
+  nonce-based Content-Security-Policy is **enforcing** on all five
+  page apps — see
+  [admin-control-plane/csp.md](../admin-control-plane/csp.md). It is
+  **not deployed** (this branch is unmerged); production still has
+  no CSP.
+- ✅ On this branch (Phase 9) the admin REST API and the auth routes
+  **are rate limited** (admin API 600/min + 10,000/hour per user;
+  sign-in 20/min per IP + 10/min per email) — see
+  [admin-control-plane/rate-limiting.md](../admin-control-plane/rate-limiting.md).
+  In production (the `feature/ai` branch) the gap from ADR 0008 still
+  stands: the public submit API is the only rate-limited surface
+  (DB-backed: 10/min + 100/hour per IP, per-form daily cap).
 - Registration is enable/disable-able from dashboard settings; new
   users are never auto-approved (the admin manually approves each
   account); email verification after registration is mandatory.
   Sensitive profile actions (password/email changes, 2FA changes)
   require email-OTP verification on top of password confirmation.
-- No MCP server and no AI features exist (ADR 0009, ADR 0010). API
-  keys do not exist either — the MCP build is blocked on them.
+- ✅ On this branch there **is** an MCP server (`POST /api/mcp`,
+  19 tools, bearer API keys — see [MCP](../mcp.md)) and AI features
+  (`packages/ai`: spam re-scoring, digest, form-builder, reply
+  drafts). Both are live on the `feature/ai` production branch; the
+  admin-side MCP controls live on this branch only.
 
 ## When something is wrong
 

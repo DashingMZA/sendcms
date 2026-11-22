@@ -1,13 +1,32 @@
 # Deployment
 
-SendCMS is a pnpm + Turborepo monorepo (five Next.js apps, twenty
+SendCMS is a pnpm + Turborepo monorepo (six Next.js apps, thirty-one
 workspace packages, one standalone service) with PostgreSQL (Prisma)
 and a vanilla-TS SDK bundle built by esbuild. It runs anywhere
 Next.js runs — Vercel, Cloudflare Workers (OpenNext), plain Node /
 Docker, Render, Netlify, and Railway are all supported; the
-per-platform setup lives in `docs/deployment/platforms.md`. The
-production domain for this instance is not decided yet — nothing in
-this document assumes a particular host.
+per-platform setup lives in
+[deployment/platforms.md](deployment/platforms.md).
+
+📌 **Production domain: `sendcms.bond` (decided 2026-11-20).**
+Marketing `https://sendcms.bond`, api `https://api.sendcms.bond`,
+dashboard `https://dashboard.sendcms.bond`, docs
+`https://docs.sendcms.bond`, updates `https://updates.sendcms.bond`.
+The `feature/ai` branch is deployed to production on all five Vercel
+projects. The `feature/admin-control-plane` branch (this branch) is
+**not deployed**. Deploys are **manual only** — auto-deploy on git
+push is disabled via the Ignored Build Step (owner directive
+2026-10-05); pushing to main triggers nothing.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Environment variables](#environment-variables)
+- [Database](#database)
+- [Build and run](#build-and-run)
+- [Email outbox cron](#email-outbox-cron)
+- [Vercel notes](#vercel-notes)
+- [Cloudflare notes](#cloudflare-notes-phase-10--five-workers-one-per-app)
 
 ## Requirements
 
@@ -18,36 +37,36 @@ this document assumes a particular host.
 
 ## Environment variables
 
-| Variable                                                            | Required               | Notes                                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                                                               |
-| `BETTER_AUTH_SECRET`                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                                                                 |
-| `BETTER_AUTH_URL`                                                   | yes                    | The **api app's** public URL, e.g. `https://api.example.com` (the auth handler lives there).                                                                                                |
-| `TRUSTED_ORIGINS`                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                                                                     |
-| `NEXT_PUBLIC_APP_URL`                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                                                                |
-| `NEXT_PUBLIC_API_URL`                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                                                                  |
-| `NEXT_PUBLIC_DASHBOARD_URL`                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                                                               |
-| `NEXT_PUBLIC_DOCS_URL`                                              | yes                    | The docs app's public URL.                                                                                                                                                                  |
-| `NEXT_PUBLIC_UPDATES_URL`                                           | yes                    | The updates app's public URL.                                                                                                                                                               |
-| `NEXT_PUBLIC_AUTH_URL`                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                                                                         |
-| `COOKIE_DOMAIN`                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                                                            |
-| `LOG_LEVEL`                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                                                           |
-| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000). The worker binds `PORT` first when a platform injects it (Render/Railway), else `WORKER_PORT`. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                                                                        |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                                                           |
-| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                                                                 |
-| `RESEND_API_KEY`                                                    | for email              | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here.                                                                                          |
-| `RESEND_FROM`                                                       | with Resend            | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@example.com>`.                                                                                              |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP fallback          | Used only when no Resend key is set.                                                                                                                                                        |
-| `CRON_SECRET`                                                       | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run.                                           |
-| `TURNSTILE_SECRET_KEY`                                              | for Turnstile          | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503.                                                                                                                |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`                                    | for Turnstile          | Turnstile site key (public, baked into the SDK).                                                                                                                                            |
-| `AI_PROVIDER`                                                       | no                     | AI provider to use when more than one key is set: `openai` / `anthropic` / `google` / `deepseek` / `openrouter`. Unset = auto-detect from the keys present.                              |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` / `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` | for AI | One provider key enables all AI features (spam re-scoring, digest, form-builder, reply drafts). No key = clean no-op; nothing is sent to a model. |
-| `AI_MODEL`                                                          | no                     | Model id override. Defaults: openai `gpt-4o-mini`, anthropic `claude-haiku-4-5`, google `gemini-3.5-flash-lite`, deepseek `deepseek-chat`, openrouter `openai/gpt-4o-mini`.                  |
-| `AI_SPAM_THRESHOLD`                                                 | no                     | 0–100 (default 70). A re-scored submission at/above this is marked SPAM.                                                                                                                   |
-| `AI_DAILY_CALL_CAP`                                                 | no                     | Model calls allowed per form per day (default 100).                                                                                                                                         |
-| `AI_DIGEST_INTERVAL_HOURS`                                          | no                     | Inbox digest interval in hours (default 24 = daily; 168 = weekly).                                                                                                                         |
+| Variable                                                                                                            | Required               | Notes                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                                                               |
+| `BETTER_AUTH_SECRET`                                                                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                                                                 |
+| `BETTER_AUTH_URL`                                                                                                   | yes                    | The **api app's** public URL, e.g. `https://api.sendcms.bond` (the auth handler lives there).                                                                                               |
+| `TRUSTED_ORIGINS`                                                                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                                                                     |
+| `NEXT_PUBLIC_APP_URL`                                                                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                                                                |
+| `NEXT_PUBLIC_API_URL`                                                                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                                                                  |
+| `NEXT_PUBLIC_DASHBOARD_URL`                                                                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                                                               |
+| `NEXT_PUBLIC_DOCS_URL`                                                                                              | yes                    | The docs app's public URL.                                                                                                                                                                  |
+| `NEXT_PUBLIC_UPDATES_URL`                                                                                           | yes                    | The updates app's public URL.                                                                                                                                                               |
+| `NEXT_PUBLIC_AUTH_URL`                                                                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                                                                         |
+| `COOKIE_DOMAIN`                                                                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                                                            |
+| `LOG_LEVEL`                                                                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                                                           |
+| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                                                                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000). The worker binds `PORT` first when a platform injects it (Render/Railway), else `WORKER_PORT`. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                                                                         | for Google sign-in     | Google Cloud Console → authorized redirect URI `<APP_URL>/api/auth/callback/google`.                                                                                                        |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                                                                         | for GitHub sign-in     | GitHub OAuth app → callback `<APP_URL>/api/auth/callback/github`.                                                                                                                           |
+| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`                                                                     | for Facebook sign-in   | Meta app → callback `<APP_URL>/api/auth/callback/facebook`.                                                                                                                                 |
+| `RESEND_API_KEY`                                                                                                    | for email              | Resend API key. The app's key is separate from any key stored in the Muse connector — set it here.                                                                                          |
+| `RESEND_FROM`                                                                                                       | with Resend            | A sending address on a **verified** Resend domain, e.g. `SendCMS <notifications@sendcms.bond>`.                                                                                             |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`                                                 | SMTP fallback          | Used only when no Resend key is set.                                                                                                                                                        |
+| `CRON_SECRET`                                                                                                       | yes, for email retries | Bearer token for `GET /api/cron/email-outbox`. Without it the outbox still delivers immediately on submit, but retries after an outage never run.                                           |
+| `TURNSTILE_SECRET_KEY`                                                                                              | for Turnstile          | Cloudflare Turnstile secret. Without it, Turnstile-enabled forms answer 503.                                                                                                                |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`                                                                                    | for Turnstile          | Turnstile site key (public, baked into the SDK).                                                                                                                                            |
+| `AI_PROVIDER`                                                                                                       | no                     | AI provider to use when more than one key is set: `openai` / `anthropic` / `google` / `deepseek` / `openrouter`. Unset = auto-detect from the keys present.                                 |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` / `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` | for AI                 | One provider key enables all AI features (spam re-scoring, digest, form-builder, reply drafts). No key = clean no-op; nothing is sent to a model.                                           |
+| `AI_MODEL`                                                                                                          | no                     | Model id override. Defaults: openai `gpt-4o-mini`, anthropic `claude-haiku-4-5`, google `gemini-3.5-flash-lite`, deepseek `deepseek-chat`, openrouter `openai/gpt-4o-mini`.                 |
+| `AI_SPAM_THRESHOLD`                                                                                                 | no                     | 0–100 (default 70). A re-scored submission at/above this is marked SPAM.                                                                                                                    |
+| `AI_DAILY_CALL_CAP`                                                                                                 | no                     | Model calls allowed per form per day (default 100).                                                                                                                                         |
+| `AI_DIGEST_INTERVAL_HOURS`                                                                                          | no                     | Inbox digest interval in hours (default 24 = daily; 168 = weekly).                                                                                                                          |
 
 Copy `.env.example` to `.env` for local development. Never commit
 `.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
@@ -70,9 +89,21 @@ confirmation for that reason).
 
 ## Build and run
 
+```mermaid
+flowchart LR
+    Install["pnpm install"]
+    Generate["pnpm db:generate\nPrisma client"]
+    SDK["pnpm sdk:build\nforms/v1.js (api only)"]
+    Build["pnpm build\nturbo build --concurrency 1"]
+    Migrate["pnpm db:migrate:deploy"]
+    Start["next start -H 0.0.0.0 -p $PORT"]
+
+    Install --> Generate --> SDK --> Build --> Migrate --> Start
+```
+
 ```bash
 pnpm build            # prisma generate + SDK build + turbo build (sequential, --concurrency 1)
-pnpm dev              # same generation steps, then turbo dev (all 5 apps + the email worker)
+pnpm dev              # same generation steps, then turbo dev (all 6 apps + the email worker)
 ```
 
 Each app also has a `build:server` script — the single command every
@@ -85,7 +116,7 @@ pnpm --filter @sendcms/<app> build:server   # marketing | api | dashboard | docs
 
 `pnpm dev` does the same generation steps, then starts the dev
 servers with Turbopack (marketing :3000, api :3001, dashboard :3002,
-docs :3003, updates :3004, worker :3005). The SDK bundle
+docs :3003, updates :3004, worker :3005, admin :3006). The SDK bundle
 (`apps/api/public/forms/v1.js`) is built from source and gitignored —
 never commit it, and make sure CI builds it before testing (the CI
 workflow runs `pnpm db:generate` and `pnpm sdk:build`). There is no
@@ -102,34 +133,41 @@ GET /api/cron/email-outbox
 Authorization: Bearer <CRON_SECRET>
 ```
 
-It processes up to 100 due jobs per call. Schedule it every 5 minutes.
-On Vercel, add a `vercel.json` cron entry:
+It processes up to 100 due jobs per call. The root `vercel.json`
+schedules it **once daily** (`0 0 * * *`, midnight UTC) — the Hobby
+plan allows one cron per day, and the owner chose to stay on Hobby
+for now (2026-11-20). To go faster later, change the schedule back
+to `*/5 * * * *` (or use an external cron service) when the plan
+allows it.
 
 ```json
 {
-  "crons": [{ "path": "/api/cron/email-outbox", "schedule": "*/5 * * * *" }]
+  "crons": [{ "path": "/api/cron/email-outbox", "schedule": "0 0 * * *" }]
 }
 ```
 
-The route needs the `Authorization` header — Vercel Cron cannot send
-custom headers, so either call it from an external scheduler that can,
-or front it with a small proxy that adds the header. Without the header
-the route answers 401; without `CRON_SECRET` set at all it answers 503.
+⚠️ **The route needs the `Authorization` header.** Vercel Cron
+cannot send custom headers, so either call it from an external
+scheduler that can, or front it with a small proxy that adds the
+header. Without the header the route answers 401; without
+`CRON_SECRET` set at all it answers 503. (The same rule applies on
+every platform — see [Email notifications](email-notifications.md).)
 
 ## Vercel notes
 
-- One project per app (see `docs/deployment/platforms.md` for the
-  table). Git pushes auto-deploy: the production branch (`main`)
-  deploys to production, every other branch deploys as a preview.
+- One project per app (see [deployment/platforms.md](deployment/platforms.md)
+  for the table). Deploys are **manual only** — the Ignored Build Step
+  ("Don't build anything") cancels git-triggered deploys; deploy from
+  the dashboard or via the agent when tested and ready.
 - Set every variable above in each project's settings before the
   first deploy. `NEXT_PUBLIC_APP_URL` must be the production URL or
   SDK snippets and email links will point at the wrong host.
   `BETTER_AUTH_SECRET` must be the same value on the api and
   dashboard projects.
-- The `vercel.json` redirect to the old `openremark.bond` host was
-  removed — there is no production domain to redirect to yet. When
-  the production domain is decided, add the redirect (or a `vercel.json`
-  cron entry — see above) then.
+- `BETTER_AUTH_URL` must be `https://api.sendcms.bond` (the auth
+  handler lives only on the api app). OAuth redirect URIs for Google,
+  GitHub, and Facebook are set in their consoles; sign-in is verified
+  working.
 
 ## Cloudflare notes (Phase 10 — five Workers, one per app)
 
@@ -153,10 +191,17 @@ build` (also in each `wrangler.jsonc`'s `build.command` and as that
 - Security headers come from one shared definition in
   `@sendcms/security` — each app's `next.config.mjs` `headers()` plus
   that app's `public/_headers` (nosniff, referrer policy, SAMEORIGIN
-  framing, no camera/mic/geolocation). There is no
-  Content-Security-Policy yet — Next.js inlines scripts/styles, so a
-  CSP would need `unsafe-inline` and add nothing; a real CSP is a
-  separate, tested pass.
+  framing, no camera/mic/geolocation). ✅ On this branch (Phase 9)
+  a nonce-based Content-Security-Policy is enforcing on all five page
+  apps — see
+  [admin-control-plane/csp.md](admin-control-plane/csp.md). It is
+  **not deployed** (this branch is unmerged).
+- ⚠️ The five original apps' `wrangler.jsonc` `vars` still use
+  `jadoo.bond` hosts as placeholders (`https://jadoo.bond`,
+  `https://api.jadoo.bond`, …) even though the production domain is
+  now decided (`sendcms.bond`); only the admin app's `wrangler.jsonc`
+  already uses `sendcms.bond`. Update the five files together when
+  the Cloudflare path is next deployed.
 - The R2 cache bucket is still `open-remark-opennext-cache` — it is a
   real Cloudflare resource, so renaming it needs a new bucket created
   in the dashboard first; the cache can be recreated empty. All five

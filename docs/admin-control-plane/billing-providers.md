@@ -6,9 +6,34 @@ them the provider stays disabled by default and never appears at
 checkout. Provider API keys are never shown in the admin UI — only
 whether they are set.
 
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). No live payment test has been run yet — that
+needs real Stripe test-mode keys on the owner's machine.
+
+📌 Note: this phase supersedes the Phase 4 record. The
+Phase 1 audit doc
+([implementation-audit](./implementation-audit.md), historical —
+do not edit) and the Phase 4 doc
+([plans-and-entitlements](./plans-and-entitlements.md)) both
+described the billing-provider abstraction as "design only". The
+owner decided on 2026-11-22 to build payments real, and this doc
+records the build as shipped.
+
 Provider order (owner decision, 2026-11-22): **Stripe first, then
 PayPal, then Polar, then Freemius, then Gumroad.** Checkout shows
 providers in that order.
+
+## Contents
+
+- [The registry](#the-registry)
+- [Admin provider configs](#admin-provider-configs)
+- [Per-provider countries](#per-provider-countries)
+- [Checkout](#checkout)
+- [Checkout flow](#checkout-flow)
+- [Webhooks](#webhooks)
+- [Public plans + pricing page](#public-plans--pricing-page)
+- [i18n + tests](#i18n--tests)
+- [What is NOT done / honest limits](#what-is-not-done--honest-limits)
 
 ## The registry
 
@@ -53,7 +78,8 @@ Enabling/disabling requires a reason and is audited (`UPDATE` /
 `BILLING_PROVIDER`, detail event `billing-provider-updated`, old +
 new `isEnabled` + countries). `MANAGER` gets `VIEW_BILLING` only;
 `SUPPORT` gets neither. `VIEW_BILLING` / `MANAGE_BILLING` are in
-`packages/permissions/src/platform.ts`.
+`packages/permissions/src/platform.ts` — see
+[authorization](./authorization.md).
 
 ## Per-provider countries
 
@@ -109,6 +135,23 @@ customer to pick a country. `GET /api/v1/billing/providers?country=XX`
 lists the providers for a country; `GET /api/public/v1/billing/
 countries` lists the reference countries for the picker.
 
+## Checkout flow
+
+```mermaid
+flowchart TB
+    Customer["Customer\n/dashboard/billing/checkout"]
+    Plan["Plan version re-read\nfrom DB (never trusts\nclient-supplied price)"]
+    Country["Country from IP geo headers\nor customer picker"]
+    Providers["Providers enabled\nfor that country\n(in Stripe → PayPal →\nPolar → Freemius → Gumroad order)"]
+    Hosted["Provider hosted checkout\n(Stripe / PayPal / Polar / Freemius)"]
+    Webhook["Webhook → BillingEvent\n(idempotent) → subscription\nactivation"]
+    Refuse["422 — free plan, disabled /\nunconfigured provider, wrong\ncountry, Gumroad, unmapped\nFreemius version"]
+
+    Customer --> Plan --> Country --> Providers
+    Providers -- "provider OK" --> Hosted --> Webhook
+    Providers -- "refusal" --> Refuse
+```
+
 ## Webhooks
 
 `POST /api/public/v1/billing/webhooks/{stripe,paypal,polar,freemius}`
@@ -127,7 +170,11 @@ transaction), `cancelSubscriptionFromProvider`,
 `extendSubscriptionPeriod` (computes the period end from the plan
 interval when the provider gives none), `getMySubscription`.
 Subscription activation reuses the Phase 4 `assign` flow — a webhook
-never invents a price or an entitlement.
+never invents a price or an entitlement. The plan and subscription
+model is documented in
+[plans-and-entitlements](./plans-and-entitlements.md) and the
+version lifecycle in
+[plan-versioning](./plan-versioning.md).
 
 ## Public plans + pricing page
 
@@ -157,6 +204,9 @@ dialog with a reason field and the countries.
 - `packages/i18n/locales/{en,ur}/admin/billing.json` and
   `{en,ur}/dashboard/billing.json`, real Urdu script in `ur`.
   `pnpm --filter @sendcms/i18n validate`: en + ur 100% in sync.
+  (i18n is en + ur only — the other 8 locales are coming-soon by
+  owner decision; see
+  [internationalization](./internationalization.md).)
 - Tests: `tests/billing.test.ts`, 21 tests — registry
   configured/unconfigured, enable refused without env (422 naming
   vars), countries filter (US → Stripe + PayPal, PK/AE → Stripe
@@ -168,7 +218,7 @@ dialog with a reason field and the countries.
 
 ## What is NOT done / honest limits
 
-- **No live payment test yet.** No real checkout or webhook
+- ⚠️ **No live payment test yet.** No real checkout or webhook
   delivery has been tested — that needs real Stripe test-mode keys
   on the owner's machine. The checkout code paths are typechecked
   and unit-tested at the refusal/webhook layer only, never executed

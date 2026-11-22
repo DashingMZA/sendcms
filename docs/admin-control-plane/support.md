@@ -5,6 +5,21 @@ ticket from `/dashboard/support` when they have a problem. **There
 is no ticket submission from marketing** — no public or anonymous
 form. Staff answer from the admin app.
 
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). The user's visual check of the pages is
+still owed.
+
+## Contents
+
+- [What exists](#what-exists)
+- [Ownership — a 404, never a 403](#ownership--a-404-never-a-403)
+- [The status machine](#the-status-machine)
+- [Ticket lifecycle](#ticket-lifecycle)
+- [Who may do what](#who-may-do-what)
+- [Pages (not dialogs)](#pages-not-dialogs)
+- [i18n + tests](#i18n--tests)
+- [What is NOT done / honest limits](#what-is-not-done--honest-limits)
+
 ## What exists
 
 Service module: `packages/modules/support/` (`@sendcms/support`) —
@@ -64,8 +79,38 @@ moves `OPEN` / `IN_PROGRESS` / `WAITING_ON_CUSTOMER` tickets to
 `IN_PROGRESS`; a RESOLVED ticket stays RESOLVED.
 
 Status changes and assignments require a **reason** (max 500 chars)
-and are audited with the old/new values. Closing asks for
+and are audited with the old/new values — see
+[admin-audit-trail](./admin-audit-trail.md). Closing asks for
 confirmation first in the UI — it is final.
+
+## Ticket lifecycle
+
+```mermaid
+flowchart TB
+    New["Customer creates ticket\n(+ first message, one transaction)\n→ OPEN"]
+    Open["OPEN"]
+    Progress["IN_PROGRESS\n(staff reply moves\nOPEN here)"]
+    Waiting["WAITING_ON_CUSTOMER"]
+    Resolved["RESOLVED"]
+    Closed["CLOSED\n(terminal — never replied\nto or reopened)"]
+    Reopen["Customer reply\nreopens → OPEN"]
+
+    New --> Open
+    Open --> Progress
+    Open --> Waiting
+    Open --> Resolved
+    Open --> Closed
+    Progress --> Waiting
+    Progress --> Resolved
+    Progress --> Closed
+    Progress --> Open
+    Waiting --> Progress
+    Waiting --> Resolved
+    Waiting --> Closed
+    Waiting --> Open
+    Resolved --> Closed
+    Resolved -- "customer reply" --> Reopen --> Open
+```
 
 ## Who may do what
 
@@ -82,7 +127,8 @@ SUPPORT role — enforced in the service by `requireTicketWrite`
 (`packages/modules/support/src/service.ts`). A plain signed-in user
 gets a 403 on every admin ticket action. Assigning is restricted to
 staff: the assignee must be the platform owner or hold a staff
-`adminRole`, else **422**; an unknown assignee is a 404.
+`adminRole`, else **422**; an unknown assignee is a 404. Full role
+matrix: see [authorization](./authorization.md).
 
 Audit detail never carries a message body — only the subject, the
 status/priority values, and the reason. Ticket bodies may hold
@@ -91,7 +137,9 @@ sensitive customer information.
 ## Pages (not dialogs)
 
 Per the Phase 8 UX rule, everything is a proper page — a popup
-appears only at confirmation time (closing a ticket).
+appears only at confirmation time (closing a ticket). The same rule
+applies to the billing checkout — see
+[billing-providers](./billing-providers.md#public-plans--pricing-page).
 
 - Dashboard: `/dashboard/support` (list: status filter, pagination,
   URL-as-state), `/dashboard/support/new` (new-ticket form page),
@@ -109,6 +157,9 @@ appears only at confirmation time (closing a ticket).
 - `packages/i18n/locales/{en,ur}/admin/support.json` (62 keys) and
   `{en,ur}/dashboard/support.json` (43 keys), real Urdu script in
   `ur`. `pnpm --filter @sendcms/i18n validate`: en + ur 100% in sync.
+  (i18n is en + ur only — the other 8 locales are coming-soon by
+  owner decision; see
+  [internationalization](./internationalization.md).)
 - Tests: `tests/support.test.ts`, 19 tests — ownership 404s (read +
   reply), `listMyTickets` only queries own tickets, reply reopens
   RESOLVED, reply to CLOSED 409 (customer + admin), invalid
@@ -120,7 +171,7 @@ appears only at confirmation time (closing a ticket).
 
 ## What is NOT done / honest limits
 
-- **No per-ticket notifications.** The customer is not emailed when
+- ⚠️ **No per-ticket notifications.** The customer is not emailed when
   staff reply — a follow-up through the outbox.
 - **No customer-side search** (status filter only); no "unassigned"
   queue filter on the admin side (the assignee filter lists staff

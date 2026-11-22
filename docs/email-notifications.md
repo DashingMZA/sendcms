@@ -1,4 +1,4 @@
-# Email notifications (Phase 9)
+# Email notifications
 
 When a visitor submits a form, SendCMS saves the submission first and
 then queues one notification email per enabled recipient of that form
@@ -6,21 +6,42 @@ then queues one notification email per enabled recipient of that form
 detail page). Delivery runs through the `EmailJob` outbox, so a dead
 mail provider delays the email, never the submission.
 
+```mermaid
+flowchart TB
+    Submit["Submission saved (201)"]
+    Enqueue["enqueueSubmissionNotifications()\none EmailJob per enabled recipient\n(SPAM gets none)"]
+    After["Submit route after()\nprocessEmailOutbox() — immediate attempt"]
+    Claim["Claim: PENDING → SENDING\n(atomic — one processor only)"]
+    Send["Send via Resend → SMTP → none"]
+    Sent["SENT"]
+    Retry["FAILED → retry\n1m / 5m / 15m / 1h / 4h\n(5 attempts, then terminal FAILED)"]
+    Drain["Cron GET /api/cron/email-outbox\nor email worker (every 30 s)"]
+
+    Submit --> Enqueue --> After --> Claim --> Send
+    Send -- "ok" --> Sent
+    Send -- "error" --> Retry
+    Drain --> Claim
+```
+
+## Contents
+
+- [Provider](#provider)
+- [Outbox and retries](#outbox-and-retries)
+- [Cron worker](#cron-worker)
+- [Standalone worker](#standalone-worker)
+- [Test email](#test-email)
+- [Failure modes](#failure-modes)
+
 ## Provider
 
 One send path for all platform mail (verification, password reset,
 submission notifications), in priority order:
 
-1. **Resend** (recommended) — set `RESEND_API_KEY`. Create a key at
-   https://resend.com/api-keys and verify a sending domain at
-   https://resend.com/domains. Set `RESEND_FROM` to an address on
-   that verified domain (e.g. `SendCMS <notifications@yourdomain.com>`).
-   Resend rejects mail from unverified domains, so the From address
-   is its own setting and never silently reused from SMTP.
-2. **Platform SMTP** — `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`
-   (+ optional `SMTP_FROM`, `SMTP_PORT`). Kept from Phase 2.
-3. **None** — auth mail logs the link in dev and throws in
-   production; outbox jobs fail with a clear error and are retried.
+| #   | Provider                 | Setup                                                                                                                                                                                                                                                                                                                                                          |
+| --- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Resend** (recommended) | Set `RESEND_API_KEY`. Create a key at https://resend.com/api-keys and verify a sending domain at https://resend.com/domains. Set `RESEND_FROM` to an address on that verified domain (e.g. `SendCMS <notifications@yourdomain.com>`). Resend rejects mail from unverified domains, so the From address is its own setting and never silently reused from SMTP. |
+| 2   | **Platform SMTP**        | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (+ optional `SMTP_FROM`, `SMTP_PORT`). Kept from Phase 2.                                                                                                                                                                                                                                                                |
+| 3   | **None**                 | Auth mail logs the link in dev and throws in production; outbox jobs fail with a clear error and are retried.                                                                                                                                                                                                                                                  |
 
 No provider is needed to develop against the outbox: jobs queue and
 fail honestly, which is how the outage path is tested.
@@ -46,24 +67,29 @@ fail honestly, which is how the outage path is tested.
 `GET /api/cron/email-outbox` processes up to 100 due jobs. Auth is a
 shared secret: the scheduler sends
 `Authorization: Bearer <CRON_SECRET>`. Without `CRON_SECRET` the
-route answers 503.
+route answers 503; without the header it answers 401.
 
-Vercel Cron (`vercel.json`, deploy target still open — see the plan):
+The root `vercel.json` schedules it **once daily** (`0 0 * * *`,
+midnight UTC) — the Hobby plan allows one cron per day (owner decision
+2026-11-20; reply emails can wait up to a day). To go faster later,
+change the schedule to `*/5 * * * *` when the plan allows it.
 
 ```json
 {
   "crons": [
     {
       "path": "/api/cron/email-outbox",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
 ```
 
-Set `CRON_SECRET` in the project env vars; Vercel Cron sends the
-header automatically when the cron is configured with a secret
-(else call the route from any scheduler with the header).
+⚠️ **Vercel Cron cannot send custom headers.** The cron route needs
+`Authorization: Bearer <CRON_SECRET>`, so call it from an external
+scheduler that can send the header, or front it with a small proxy
+that adds the header. Set `CRON_SECRET` in the project env vars.
+See [Deployment](deployment.md#email-outbox-cron).
 
 ## Standalone worker
 
@@ -83,7 +109,7 @@ and the last error. The worker shuts down gracefully on SIGTERM/SIGINT
 never kills it — the next poll retries. Running the worker and the cron
 together is safe: the PENDING → SENDING claim means a job is owned by
 exactly one processor. In dev, `pnpm dev` starts the worker alongside
-the five apps.
+the six apps.
 
 ## Test email
 
@@ -94,10 +120,8 @@ returns the provider and message id, or the provider's error.
 
 ## Failure modes
 
-- No provider configured → the job stays PENDING with `lastError`
-  set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 5 attempts
-  it becomes FAILED. Fix the config, the next cron run sends it.
-- Provider rejects (bad key, unverified From domain) → same, with
-  the provider's message in `lastError`.
-- Submission deleted before delivery → job FAILED, "Submission or
-  form no longer exists", no retry (unrecoverable).
+| Situation                                          | What happens                                                                                                                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No provider configured                             | The job stays PENDING with `lastError` set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 5 attempts it becomes FAILED. Fix the config, the next cron run sends it. |
+| Provider rejects (bad key, unverified From domain) | Same, with the provider's message in `lastError`.                                                                                                                       |
+| Submission deleted before delivery                 | Job FAILED, "Submission or form no longer exists", no retry (unrecoverable).                                                                                            |

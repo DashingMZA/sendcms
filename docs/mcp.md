@@ -9,8 +9,30 @@ functions the dashboard uses, so a key can never see another owner's
 data.
 
 Base URL: `https://YOUR_APP` (your SendCMS deployment — the api app's
-URL). One endpoint: `POST /api/mcp`. Transport is Streamable HTTP
-(stateless, no sessions); the older HTTP+SSE transport is not offered.
+URL; in production `https://api.sendcms.bond`). One endpoint:
+`POST /api/mcp`. Transport is Streamable HTTP (stateless, no sessions);
+the older HTTP+SSE transport is not offered.
+
+```mermaid
+flowchart LR
+    Client["MCP client\n(Claude Desktop / IDE / agent)"]
+    Endpoint["POST /api/mcp\nStreamable HTTP"]
+    Auth["Bearer API key\nSHA-256 hash lookup\n+ scope check"]
+    Tools["19 tools\nREAD: 9 · FULL: 19"]
+    Services["packages/modules/*\nservices (same as dashboard)"]
+    DB[("PostgreSQL")]
+
+    Client --> Endpoint --> Auth --> Tools --> Services --> DB
+```
+
+## Contents
+
+- [Create an API key](#create-an-api-key)
+- [Connect a client](#connect-a-client)
+- [Tools](#tools)
+- [Rate limits](#rate-limits)
+- [Errors](#errors)
+- [Security notes](#security-notes)
 
 ## Create an API key
 
@@ -20,9 +42,12 @@ key.
 
 1. Dashboard → **API Keys** (`/dashboard/api-keys`).
 2. Give the key a name and pick a scope:
-   - **FULL** — all 19 tools, including mutations (create/delete
-     domains and forms, update submissions, send test emails).
-   - **READ** — only the 9 read-only tools (list/get/overview).
+
+   | Scope    | Tools       | Includes                                                                           |
+   | -------- | ----------- | ---------------------------------------------------------------------------------- |
+   | **FULL** | all 19      | Mutations (create/delete domains and forms, update submissions, send test emails). |
+   | **READ** | 9 read-only | List/get/overview only.                                                            |
+
 3. Copy the key when it appears. **It is shown once** — the server
    stores only a SHA-256 hash of it, so a lost key cannot be recovered;
    create a new one instead.
@@ -117,3 +142,8 @@ tool errors (`isError: true`) with a plain message, not as HTTP errors.
   another owner's domains, forms, or submissions.
 - If a key leaks, revoke it immediately from `/dashboard/api-keys` and
   create a replacement. Revocation takes effect on the next request.
+
+Admin-side MCP controls (kill-switch, per-user settings, usage) live
+in the admin control plane — see
+[admin-control-plane/mcp-management.md](admin-control-plane/mcp-management.md)
+(`feature/admin-control-plane` branch, not deployed).

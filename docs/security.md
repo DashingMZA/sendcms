@@ -1,17 +1,30 @@
 # Security
 
+How SendCMS protects submissions, accounts, and data — and what it
+deliberately does not verify. The system-level view (apps, layered
+flow, data model) is in [Architecture](architecture.md); day-to-day
+operations are in the [runbook](operations/runbook.md).
+
+## Contents
+
+- [How submissions are protected](#how-submissions-are-protected)
+- [How accounts are protected](#how-accounts-are-protected)
+- [What is logged, and what is not](#what-is-logged-and-what-is-not)
+- [Platform security (admin control plane)](#platform-security-admin-control-plane)
+- [Reporting a vulnerability](#reporting-a-vulnerability)
+
 ## How submissions are protected
 
-| Threat | Mitigation |
-| ------ | ---------- |
-| Someone else submitting to your form | `Origin` allowlist: only **verified domains linked to the form** are accepted. Anything else gets 403 with no CORS headers. |
-| Cross-site request forgery | The public API takes no cookies and no session — the `Origin` check is the CSRF protection. |
-| Bot spam | Honeypot trap field (on by default), spam heuristics (link count, repeated content), optional Cloudflare Turnstile (fail-closed: a failed check rejects the submission, and a missing server secret answers 503 instead of letting bots through). |
-| Duplicate / replayed submits | Idempotency keys plus a 10-minute content-hash dedupe window. |
-| Flooding | 10 submissions/min and 100/hour per IP, plus a per-form daily limit. Payloads over 64 KB are rejected. |
-| Malicious field content | Field values are validated against the form's config (types, lengths, allowed options) and stored as JSON; the dashboard renders them as text, never as HTML. |
-| Fake submissions from your own site's visitors | None of the above verifies the *person* — SendCMS verifies the *origin*. If your site itself is compromised, submissions from it will look legitimate. |
-| Credential theft | No API keys exist to steal. The only secrets are server-side: `BETTER_AUTH_SECRET`, `RESEND_API_KEY` (or SMTP credentials), `CRON_SECRET`, and the Turnstile secret. |
+| Threat                                         | Mitigation                                                                                                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Someone else submitting to your form           | `Origin` allowlist: only **verified domains linked to the form** are accepted. Anything else gets 403 with no CORS headers.                                                                                                                       |
+| Cross-site request forgery                     | The public API takes no cookies and no session — the `Origin` check is the CSRF protection.                                                                                                                                                       |
+| Bot spam                                       | Honeypot trap field (on by default), spam heuristics (link count, repeated content), optional Cloudflare Turnstile (fail-closed: a failed check rejects the submission, and a missing server secret answers 503 instead of letting bots through). |
+| Duplicate / replayed submits                   | Idempotency keys plus a 10-minute content-hash dedupe window.                                                                                                                                                                                     |
+| Flooding                                       | 10 submissions/min and 100/hour per IP, plus a per-form daily limit. Payloads over 64 KB are rejected.                                                                                                                                            |
+| Malicious field content                        | Field values are validated against the form's config (types, lengths, allowed options) and stored as JSON; the dashboard renders them as text, never as HTML.                                                                                     |
+| Fake submissions from your own site's visitors | None of the above verifies the _person_ — SendCMS verifies the _origin_. If your site itself is compromised, submissions from it will look legitimate.                                                                                            |
+| Credential theft                               | No API keys exist to steal. The only secrets are server-side: `BETTER_AUTH_SECRET`, `RESEND_API_KEY` (or SMTP credentials), `CRON_SECRET`, and the Turnstile secret.                                                                              |
 
 ## How accounts are protected
 
@@ -40,6 +53,23 @@
   random token, not a hash of anything.
 - Email delivery attempts (provider, message id, error) are logged per
   job in the delivery log (`/dashboard/notifications`).
+
+## Platform security (admin control plane)
+
+✅ On the `feature/admin-control-plane` branch (Phase 9, **not
+deployed**), the platform adds:
+
+| Control                                                                                                            | Where                                                                                |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Nonce-based CSP, enforcing on all five page apps                                                                   | [admin-control-plane/csp.md](admin-control-plane/csp.md)                             |
+| Admin-API rate limiting (600/min + 10,000/hour per user) and auth sign-in limits (20/min per IP, 10/min per email) | [admin-control-plane/rate-limiting.md](admin-control-plane/rate-limiting.md)         |
+| Step-up re-auth (10-minute window) for irreversible actions                                                        | [admin-control-plane/authorization.md](admin-control-plane/authorization.md)         |
+| Capability model (26 capabilities) and role matrix                                                                 | [admin-control-plane/authorization.md](admin-control-plane/authorization.md)         |
+| Append-only audit trail with `reason` / `correlationId` / `outcome`                                                | [admin-control-plane/admin-audit-trail.md](admin-control-plane/admin-audit-trail.md) |
+
+Until that branch merges and deploys, the production posture is the one
+in the sections above: no CSP, and no rate limiting on the admin REST
+API or the auth routes (deferred gap, ADR 0008).
 
 ## Reporting a vulnerability
 

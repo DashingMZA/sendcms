@@ -1,12 +1,25 @@
 # AI Billing & Access (Phase 5)
 
-**Branch:** `feature/admin-control-plane`
-**Module:** `packages/modules/ai-settings` (`@sendcms/ai-settings`)
-**Entitlements:** `packages/modules/plans` (`@sendcms/plans`,
-`getEffectiveEntitlements` / `getEffectiveEntitlementsSafe`)
-**Routes:** `apps/api/app/api/v1/ai/billing-mode`,
-`.../admin/ai/usage/*`, `.../admin/ai/users/[userId]/billing-mode`
-**Tests:** `tests/ai-byok.test.ts` (38 tests)
+One billing mode per user decides whose key pays for each AI call:
+the customer's own key (BYOK), the platform key, or no AI at all.
+The mode is validated against the user's effective plan
+entitlements at set time and re-checked at resolution time, and
+every model call is recorded with its attribution — BYOK usage
+never consumes platform credits and platform usage is never
+attributed to BYOK.
+
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed). Live verification against a real provider
+is still owed.
+
+## Contents
+
+- [Billing modes](#billing-modes)
+- [Plan validation](#plan-validation)
+- [Attribution (BYOK vs platform, never mixed)](#attribution-byok-vs-platform-never-mixed)
+- [Admin controls](#admin-controls)
+- [What AI limits never do](#what-ai-limits-never-do)
+- [Deferred (not in this phase)](#deferred-not-in-this-phase)
 
 ## Billing modes
 
@@ -14,7 +27,8 @@ One mode per user, stored in `UserAiSettings` (default PLATFORM when
 no row exists). The mode is validated against the user's EFFECTIVE
 plan entitlements (`getEffectiveEntitlements` — the same precedence
 as Phase 4: emergency → suspension → override → subscription →
-Free) at set time, and re-checked at resolution time.
+Free, see [usage-metering](./usage-metering.md)) at set time, and
+re-checked at resolution time.
 
 | Mode       | Meaning                                                                                                    | Requires                                                                          |
 | ---------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -25,13 +39,22 @@ Free) at set time, and re-checked at resolution time.
 - BYOK means "use my keys where I have them" — for a provider with
   NO stored BYOK key there is NO silent platform fallback.
   Resolution throws a clear error instead, and the caller degrades
-  to the non-AI behavior.
+  to the non-AI behavior. See the resolution flow in
+  [ai-byok](./ai-byok.md#provider-resolution).
 - A suspended user cannot enable AI (BYOK/PLATFORM are refused
   with 403; DISABLED is still allowed).
 - Setting a mode is audited (UPDATE on USER,
   `detail.event: "ai-billing-mode-changed"`, with the previous mode).
   The admin version (`setUserAiBillingModeForAdmin`, MANAGE_AI)
   applies the same validation to another user.
+
+Module: `packages/modules/ai-settings` (`@sendcms/ai-settings`).
+Entitlements: `packages/modules/plans` (`@sendcms/plans`,
+`getEffectiveEntitlements` / `getEffectiveEntitlementsSafe`).
+Routes: `apps/api/app/api/v1/ai/billing-mode`,
+`.../admin/ai/usage/*`, `.../admin/ai/users/[userId]/billing-mode`.
+Tests: `tests/ai-byok.test.ts` (41 tests, shared with
+[ai-byok](./ai-byok.md)).
 
 ## Plan validation
 
@@ -103,9 +126,9 @@ Every model call records an `AiUsageRecord`:
   (BYOK + platform). It needs a restart to take effect (config is
   read once and cached by `@sendcms/plans`).
 - **Audit:** every billing-mode change, provider-config change, and
-  BYOK key change is audited (see `ai-byok.md` for the event list).
-  Audit records never contain key material, tokens, or submission
-  content.
+  BYOK key change is audited (see [ai-byok](./ai-byok.md) for the
+  event list). Audit records never contain key material,
+  tokens, or submission content.
 
 ## What AI limits never do
 
@@ -121,13 +144,18 @@ Every model call records an `AiUsageRecord`:
 ## Deferred (not in this phase)
 
 - No payments or billing provider: there is no charging, no
-  invoicing, and no price-table cost estimation. The Phase 8 billing
-  abstraction (PayPal, Stripe, Gumroad, Freemius, Polar.sh) is a
-  separate phase; entitlement logic stays provider-agnostic.
+  invoicing, and no price-table cost estimation. Real payments
+  arrived later in Phase 8 — see
+  [billing-providers](./billing-providers.md); entitlement logic
+  stays provider-agnostic.
 - No per-user platform-AI budgets/quotas beyond the plan's
   `aiRequestsPerDay` (enforced per form by the worker's daily cap).
   Per-user platform budgets are a follow-up.
 - No cost reporting beyond provider-reported costs (see above).
-- No admin app UI for AI yet (routes + hooks are ready; the pages
-  are the follow-up). No dashboard customer page (`/dashboard/ai`)
-  yet.
+
+📌 Note: the Phase 5 text originally said no admin or dashboard AI
+UI existed yet. That is superseded — the follow-up UI shipped:
+`/admin/ai/*` (overview, providers, settings, usage, models) and
+`/dashboard/ai` (billing mode, per-provider cards, storage popup,
+Test button). See
+[implementation-report](./implementation-report.md#phase-5--ai-provider--byok-2026-11-21).

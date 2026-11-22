@@ -1,5 +1,28 @@
 # Embedding SendCMS in Next.js
 
+Add a SendCMS contact form to a Next.js site (App Router or Pages
+Router) with `next/script` and a normal HTML form. Put the ids on the
+**form** itself — `next/script` loads scripts dynamically, so the
+script tag's own data attributes are not readable then.
+
+```mermaid
+flowchart LR
+    Page["Next.js page\n(next/script afterInteractive)"]
+    SDK["forms/v1.js\n(MutationObserver picks up\nclient-side navigation)"]
+    API["POST /api/public/v1/submit"]
+    Inbox["Dashboard inbox"]
+
+    Page --> SDK --> API --> Inbox
+```
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [1. Add the form to a page](#1-add-the-form-to-a-page)
+- [2. Client-side navigation](#2-client-side-navigation)
+- [3. Check it works](#3-check-it-works)
+- [Alternative: server action / route handler](#alternative-server-action--route-handler)
+
 ## Prerequisites
 
 - A Next.js site (App Router or Pages Router)
@@ -7,6 +30,12 @@
   [Getting started](getting-started.md))
 - Your **userId** and the form's **formId** from the dashboard
   (form detail page → "Embed on your site")
+
+| Placeholder    | Replace with                                                               |
+| -------------- | -------------------------------------------------------------------------- |
+| `YOUR_APP`     | Your SendCMS deployment URL (the api app, e.g. `https://api.sendcms.bond`) |
+| `YOUR_USER_ID` | Your public user id (form detail page)                                     |
+| `YOUR_FORM_ID` | The form's id (form detail page)                                           |
 
 ## 1. Add the form to a page
 
@@ -70,6 +99,8 @@ to (re-)register callbacks.
    there with the page URL and origin domain.
 3. If it returns 403, the page's origin is not a verified domain linked
    to the form — see [Troubleshooting](troubleshooting.md).
+
+Full SDK reference: [SDK](sdk.md).
 
 ## Alternative: server action / route handler
 

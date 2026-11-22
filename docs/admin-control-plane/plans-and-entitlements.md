@@ -1,13 +1,5 @@
 # Plans & Entitlements (Phase 4)
 
-**Branch:** `feature/admin-control-plane`
-**Module:** `packages/modules/plans` (`@sendcms/plans`)
-**Routes:** `apps/api/app/api/v1/admin/plans/*`, `.../subscriptions/*`,
-`.../usage`, `.../users/[userId]/subscription`,
-`.../users/[userId]/overrides/*`
-
-## What this phase built
-
 Versioned plans, subscriptions, a single entitlement resolver, an
 idempotency-keyed usage ledger, per-user overrides, and server-side
 enforcement in the existing services — without changing any existing
@@ -15,6 +7,32 @@ user's behaviour. The default Free plan (version 1) mirrors today's
 hardcoded limits exactly (API keys 10, AI 100 calls/day, MCP 120/min +
 2000/hour, everything else unlimited), so creating it changes nothing
 for current users; limits are admin-configurable from here on.
+
+Branch: `feature/admin-control-plane` (pushed, not merged to
+`main`, not deployed).
+
+## Contents
+
+- [Plan versioning](#plan-versioning)
+- [Entitlements](#entitlements)
+- [Entitlement resolution — precedence](#entitlement-resolution--precedence)
+- [The emergency flag](#the-emergency-flag)
+- [Subscriptions](#subscriptions)
+- [Usage metering](#usage-metering)
+- [Enforcement points (server-side, fail-open)](#enforcement-points-server-side-fail-open)
+- [Behaviour change: AI rescore cap value is now per owner, not global](#behaviour-change-ai-rescore-cap-value-is-now-per-owner-not-global)
+- [Audit](#audit)
+- [Capabilities](#capabilities)
+- [What is NOT built (deferred)](#what-is-not-built-deferred)
+- [Known limitations](#known-limitations)
+
+Module: `packages/modules/plans` (`@sendcms/plans`).
+Routes: `apps/api/app/api/v1/admin/plans/*`, `.../subscriptions/*`,
+`.../usage`, `.../users/[userId]/subscription`,
+`.../users/[userId]/overrides/*`. The version lifecycle is
+documented in full in [plan-versioning](./plan-versioning.md);
+how "used" is computed per meter is in
+[usage-metering](./usage-metering.md).
 
 ## Plan versioning
 
@@ -79,6 +97,9 @@ data and fails loudly (500), never silently enforced wrong.
    deliberately archived the Free plan, the resolver falls back to the
    in-memory `FREE_PLAN_V1_ENTITLEMENTS` instead of resurrecting it.
    Never throws for a missing plan; 404 only for an unknown user.
+
+The full precedence chain, with the per-meter "used" computation,
+is in [usage-metering](./usage-metering.md).
 
 ### The emergency flag
 
@@ -164,7 +185,7 @@ operation proceeds with the platform default:
 | Form create (`@sendcms/forms`)         | FORMS                     | 409 only when the limit is a number and the live count reaches it                                                                                                                                                 |
 | Domain register (`@sendcms/domains`)   | DOMAINS                   | same pattern                                                                                                                                                                                                      |
 | API key create (`@sendcms/api-keys`)   | API_KEYS                  | replaces the hardcoded `MAX_ACTIVE_API_KEYS = 10` (kept as the fallback default)                                                                                                                                  |
-| MCP `tools/call` (`@sendcms/mcp`)      | mcpRequestsPerMinute/Hour | per-key-owner entitlements; constants stay as defaults when the entitlement is null or the lookup fails                                                                                                           |
+| MCP `tools/call` (`@sendcms/mcp`)      | mcpRequestsPerMinute/Hour | per-key-owner entitlements; constants stay as defaults when the entitlement is null or the lookup fails — see [mcp-management](./mcp-management.md#quota-precedence)                                              |
 | AI rescore (`@sendcms/submissions`)    | aiRequestsPerDay          | the cap **value** now comes from the form owner's effective plan (was the global env default for every form); the per-form daily usage counter (AiDailyUsage) is unchanged; env default 100 when the lookup fails |
 | Public submit (`@sendcms/submissions`) | SUBMISSIONS (monthly)     | 402 only when the submission quota itself is exhausted; on accept, one UsageLedger row (idempotencyKey = submission id). IP rate limits are anti-abuse, not entitlements — untouched                              |
 
@@ -189,7 +210,9 @@ Every mutation writes an AuditLog row via `logAudit` (best-effort):
 plan create / version create / publish / archive / duplicate (PLAN),
 subscription assign / migrate / cancel (SUBSCRIPTION), override set /
 remove (ENTITLEMENT). Reasons are recorded in `detail` for publish,
-migrate, assign, and overrides. No secrets are ever logged.
+migrate, assign, and overrides. No secrets are ever logged. The
+writer is documented in
+[admin-audit-trail](./admin-audit-trail.md).
 
 ## Capabilities
 
@@ -199,16 +222,11 @@ Mutations: `MANAGE_PLANS` (create / version / archive / duplicate),
 `PUBLISH_PLAN_VERSIONS` (publish), `MANAGE_SUBSCRIPTIONS` (assign /
 cancel), `MIGRATE_SUBSCRIPTIONS` (preview / execute),
 `MANAGE_USAGE` (overrides, usage reads). All enforced in the service
-via `requireAdmin`; the admin UI's hiding is UX only.
+via `requireAdmin`; the admin UI's hiding is UX only. Full matrix:
+see [authorization](./authorization.md).
 
 ## What is NOT built (deferred)
 
-- **No payments.** Subscriptions are admin-assigned (manual). The
-  billing-provider abstraction (PayPal, Stripe, Gumroad, Freemius,
-  Polar.sh) is Phase 8 — design only, no fake payments.
-- **No public pricing route yet.** Marketing pricing reads the same
-  plan records in Phase 8; this phase builds the records + the admin
-  contract only.
 - **No scheduled plan changes** (a dated "switch this plan on X"
   feature) — the migration workflow is explicit and immediate.
 - **No UsageAggregate table.** Aggregates are computed on read from
@@ -216,13 +234,30 @@ via `requireAdmin`; the admin UI's hiding is UX only.
   query patterns (`[userId, meter, period]`,
   `[userId, meter, createdAt]`).
 
+📌 Note — two Phase 4 statements are superseded by Phase 8
+(2026-11-22):
+
+- **Payments are real now.** The deferred item that called the
+  billing-provider abstraction (PayPal, Stripe, Gumroad, Freemius,
+  Polar.sh) "Phase 8 — design only, no fake payments" is superseded
+  by the owner's decision to build payments real. See
+  [billing-providers](./billing-providers.md).
+- **The public pricing route exists now.** Marketing pricing reads
+  the same plan records via `GET /api/public/v1/plans` and the
+  `/pricing` page renders every published plan live — see
+  [billing-providers](./billing-providers.md#public-plans--pricing-page).
+  Subscriptions are still admin-assigned or webhook-activated; there
+  is no self-serve plan change outside checkout.
+
 ## Known limitations
 
 - The quota guards are pre-insert checks (count, then create), not
   serializable transactions — two concurrent creates at the exact
   limit can overshoot by one. This matches the codebase's existing
   pattern; the ledger provides the audit trail. A strict guarantee
-  would need a DB-level counter per meter.
+  would need a DB-level counter per meter. The same pattern applies
+  to the MCP quota guards — see
+  [mcp-management](./mcp-management.md#known-limitations).
 - `checkLimit` for MCP_REQUESTS reports the hourly aggregate only;
   the per-minute limit is enforced per key inside the MCP limiter.
 - The emergency flag is cached per process; changing
