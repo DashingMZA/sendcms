@@ -3,11 +3,21 @@ export {
   DEFAULT_MODELS,
   PROVIDER_ENV_VARS,
   getAiModel,
+  getAiModelForKey,
   getAiModelId,
   isAiConfigured,
   resolveAiProvider,
+  toAiCallUsage,
 } from "./provider"
-export type { AiProvider, AiProviderName } from "./provider"
+export type { AiCallUsage, AiProvider, AiProviderName } from "./provider"
+export {
+  BYOK_MASTER_KEY_VERSION,
+  decryptByokKey,
+  encryptByokKey,
+  fingerprintKey,
+  getByokMasterKey,
+} from "./byok-crypto"
+export type { EncryptedByokKey } from "./byok-crypto"
 export {
   DEFAULT_SPAM_THRESHOLD,
   SpamVerdictSchema,

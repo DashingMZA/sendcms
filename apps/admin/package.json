@@ -2,6 +2,7 @@
   "dependencies": {
     "@remixicon/react": "^4.9.0",
     "@sendcms/admin-users": "workspace:*",
+    "@sendcms/ai-settings": "workspace:*",
     "@sendcms/api-client": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/i18n": "workspace:*",

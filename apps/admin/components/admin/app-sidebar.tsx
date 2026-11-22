@@ -9,19 +9,21 @@ import config from "@/config/config.json"
 import { dashboardSignInURL } from "@/lib/callback-url"
 import { Logo } from "@sendcms/ui"
 import {
+  RiBarChartLine,
+  RiBrainLine,
   RiDashboardLine,
-  RiUserLine,
+  RiExpandUpDownLine,
+  RiFileListLine,
+  RiHistoryLine,
+  RiLogoutBoxLine,
+  RiMoonLine,
+  RiPlugLine,
   RiPriceTag3Line,
   RiRepeatLine,
-  RiBarChartLine,
   RiRobotLine,
-  RiPlugLine,
-  RiHistoryLine,
   RiSettings3Line,
-  RiLogoutBoxLine,
-  RiExpandUpDownLine,
   RiSunLine,
-  RiMoonLine,
+  RiUserLine,
 } from "@remixicon/react"
 import {
   Avatar,
@@ -94,6 +96,26 @@ export function AppSidebar({ user }: Props) {
       label: t("ai"),
       items: [
         { label: t("ai"), href: "/admin/ai", icon: RiRobotLine },
+        {
+          label: t("aiProviders"),
+          href: "/admin/ai/providers",
+          icon: RiBrainLine,
+        },
+        {
+          label: t("aiModels"),
+          href: "/admin/ai/models",
+          icon: RiFileListLine,
+        },
+        {
+          label: t("aiUsage"),
+          href: "/admin/ai/usage",
+          icon: RiBarChartLine,
+        },
+        {
+          label: t("aiSettings"),
+          href: "/admin/ai/settings",
+          icon: RiSettings3Line,
+        },
         { label: t("mcp"), href: "/admin/mcp", icon: RiPlugLine },
       ],
     },

@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
+import { toAiCallUsage, type AiCallUsage } from "./provider"
+
 // AI inbox digest (Phase 12, Step 3). The model call only — the
 // orchestration (which forms are due, the window, the enqueue) lives
 // in `@sendcms/submissions`. The model sees the new submissions'
@@ -54,21 +56,25 @@ export function getDigestIntervalHours(
 
 /** Asks the model to summarize a form's new submissions. Returns the
     summary and highlights. Throws when the provider call fails — the
-    caller decides whether to retry on the next poll or skip the form. */
+    caller decides whether to retry on the next poll or skip the form.
+    `onUsage` (optional) receives the token usage the provider
+    reported, for attribution. */
 export async function generateDigest({
   model,
   formName,
   submissions,
+  onUsage,
 }: {
   model: LanguageModel
   formName: string
   submissions: DigestSubmissionInput[]
+  onUsage?: (usage: AiCallUsage | null) => void
 }): Promise<DigestSummary> {
   const lines = submissions.map((s, i) => {
     const from = s.senderName ?? s.senderEmail ?? "Unknown sender"
     return `${i + 1}. ${from} (${s.receivedAt.toISOString()}): ${s.snippet}`
   })
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model,
     schema: DigestSummaryModelSchema,
     prompt: [
@@ -80,6 +86,7 @@ export async function generateDigest({
       ...lines,
     ].join("\n"),
   })
+  onUsage?.(toAiCallUsage(usage))
   // Validate at the boundary too: a malformed model reply must never
   // reach the email.
   return DigestSummarySchema.parse(object)

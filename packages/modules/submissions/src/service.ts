@@ -15,12 +15,18 @@ import {
 import { createLogger } from "@sendcms/observability"
 import {
   generateDigest,
-  getAiModel,
   getDigestIntervalHours,
   getSpamThreshold,
   isAiConfigured,
   rescoreSpam,
+  type AiCallUsage,
 } from "@sendcms/ai"
+import {
+  anyByokKeyConfigured,
+  recordAiUsage,
+  resolveAiModelForUserSafe,
+  type ResolvedAiModel,
+} from "@sendcms/ai-settings"
 import { normalizeDomain } from "@sendcms/domains"
 import {
   checkLimitSafe,
@@ -588,9 +594,13 @@ export async function rescoreNewSubmissions({
   limit?: number
   env?: NodeJS.ProcessEnv
 } = {}): Promise<RescoreResult> {
-  if (!isAiConfigured(env)) return { checked: 0, markedSpam: 0, skipped: 0 }
+  // The gate is "any AI at all": the platform key OR any stored BYOK
+  // key. A BYOK-only deployment (no platform key) still runs its AI
+  // jobs; per-owner resolution below decides which key each call uses.
+  if (!isAiConfigured(env) && !(await anyByokKeyConfigured())) {
+    return { checked: 0, markedSpam: 0, skipped: 0 }
+  }
   const threshold = getSpamThreshold(env)
-  const model = getAiModel(env)
   const today = startOfUtcDay()
 
   const candidates = await db.submission.findMany({
@@ -627,6 +637,23 @@ export async function rescoreNewSubmissions({
     return cap
   }
 
+  // Resolved once per form owner per run: the same owner keeps the
+  // same mode/key for the whole batch. A null means "no AI for this
+  // owner" (BYOK without a key, disabled, suspended) — those
+  // submissions are skipped, never dropped.
+  const ownerModel = new Map<string, ResolvedAiModel | null>()
+  async function getOwnerModel(
+    ownerId: string
+  ): Promise<ResolvedAiModel | null> {
+    if (ownerModel.has(ownerId)) return ownerModel.get(ownerId) ?? null
+    const resolved = await resolveAiModelForUserSafe(ownerId, {
+      purpose: "spam-rescore",
+      env,
+    })
+    ownerModel.set(ownerId, resolved)
+    return resolved
+  }
+
   let checked = 0
   let markedSpam = 0
   let skipped = 0
@@ -646,17 +673,35 @@ export async function rescoreNewSubmissions({
       skipped++
       continue
     }
+    const resolved = await getOwnerModel(submission.form.ownerId)
+    if (!resolved) {
+      skipped++
+      continue
+    }
     let verdict
+    const callUsage: { current: AiCallUsage | null } = { current: null }
     try {
       verdict = await rescoreSpam({
-        model,
+        model: resolved.model,
         formName: submission.form.name,
         data: submission.data as Record<string, unknown>,
+        onUsage: (u) => {
+          callUsage.current = u
+        },
       })
     } catch (err) {
       // A failed model call is retried on a later poll (the row stays
       // unscored) — it must not fail the batch or lose the submission.
       logger.error("ai rescore failed", { error: err, formId })
+      await recordAiUsage({
+        userId: submission.form.ownerId,
+        provider: resolved.provider,
+        model: resolved.modelId,
+        billingMode: resolved.billingMode,
+        status: "FAILED",
+        sourceEvent: "spam-rescore",
+        resourceId: submission.id,
+      })
       skipped++
       continue
     }
@@ -664,6 +709,17 @@ export async function rescoreNewSubmissions({
       where: { formId_date: { formId, date: today } },
       create: { formId, date: today, calls: 1 },
       update: { calls: { increment: 1 } },
+    })
+    await recordAiUsage({
+      userId: submission.form.ownerId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "SUCCESS",
+      tokensIn: callUsage.current?.promptTokens ?? null,
+      tokensOut: callUsage.current?.completionTokens ?? null,
+      sourceEvent: "spam-rescore",
+      resourceId: submission.id,
     })
     const isSpam = verdict.score >= threshold
     const now = new Date()
@@ -733,9 +789,10 @@ export async function sendDueDigests({
   limit?: number
   env?: NodeJS.ProcessEnv
 } = {}): Promise<DigestResult> {
-  if (!isAiConfigured(env)) return { sent: 0, skipped: 0 }
+  if (!isAiConfigured(env) && !(await anyByokKeyConfigured())) {
+    return { sent: 0, skipped: 0 }
+  }
   const intervalMs = getDigestIntervalHours(env) * 3_600_000
-  const model = getAiModel(env)
   const dueAt = new Date(Date.now() - intervalMs)
 
   const forms = await db.form.findMany({
@@ -747,6 +804,20 @@ export async function sendDueDigests({
     orderBy: { createdAt: "asc" },
     take: limit,
   })
+
+  // Resolved once per form owner per run (see rescore above).
+  const ownerModel = new Map<string, ResolvedAiModel | null>()
+  async function getOwnerModel(
+    ownerId: string
+  ): Promise<ResolvedAiModel | null> {
+    if (ownerModel.has(ownerId)) return ownerModel.get(ownerId) ?? null
+    const resolved = await resolveAiModelForUserSafe(ownerId, {
+      purpose: "digest",
+      env,
+    })
+    ownerModel.set(ownerId, resolved)
+    return resolved
+  }
 
   let sent = 0
   let skipped = 0
@@ -765,10 +836,16 @@ export async function sendDueDigests({
       skipped++
       continue
     }
+    const resolved = await getOwnerModel(form.ownerId)
+    if (!resolved) {
+      skipped++
+      continue
+    }
     let summary
+    const callUsage: { current: AiCallUsage | null } = { current: null }
     try {
       summary = await generateDigest({
-        model,
+        model: resolved.model,
         formName: form.name,
         submissions: submissions.map((s) => {
           const sender = getSubmissionSender(s.data)
@@ -779,14 +856,37 @@ export async function sendDueDigests({
             receivedAt: s.createdAt,
           }
         }),
+        onUsage: (u) => {
+          callUsage.current = u
+        },
       })
     } catch (err) {
       // A failed model call retries on a later poll (the window does
       // not advance) — it must not fail the batch.
       logger.error("ai digest failed", { error: err, formId: form.id })
+      await recordAiUsage({
+        userId: form.ownerId,
+        provider: resolved.provider,
+        model: resolved.modelId,
+        billingMode: resolved.billingMode,
+        status: "FAILED",
+        sourceEvent: "digest",
+        resourceId: form.id,
+      })
       skipped++
       continue
     }
+    await recordAiUsage({
+      userId: form.ownerId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "SUCCESS",
+      tokensIn: callUsage.current?.promptTokens ?? null,
+      tokensOut: callUsage.current?.completionTokens ?? null,
+      sourceEvent: "digest",
+      resourceId: form.id,
+    })
     const now = new Date()
     // Enqueue first, then advance the window: a failed enqueue must
     // not move the window (those submissions would be lost), while a

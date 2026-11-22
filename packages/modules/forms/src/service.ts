@@ -11,11 +11,12 @@ import { ApiError } from "@sendcms/shared"
 
 import { logAudit } from "@sendcms/security"
 import {
-  getAiModel,
-  isAiConfigured,
   suggestFields,
+  type AiCallUsage,
+  type AiProviderName,
   type FieldSuggestions,
 } from "@sendcms/ai"
+import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
 import { checkLimitSafe } from "@sendcms/plans"
 
 import type {
@@ -483,12 +484,20 @@ export async function deleteNotificationEmailForUser(
 /** Suggests fields for a form from a plain-language description.
     The owner reviews the suggestions in the dashboard and picks which
     to add. Throws 403 when AI is off for the form, 503 when no
-    provider is configured. */
+    provider is configured. The model is resolved for the FORM OWNER
+    (BYOK key, browser-only key, or platform key — see
+    resolveAiModelForUser); `opts` carries an optional per-request
+    browser-only key, which is never stored. */
 export async function suggestFieldsForForm(
   userId: string,
   formId: string,
   prompt: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  opts: {
+    provider?: AiProviderName
+    browserKey?: string
+    browserModel?: string
+  } = {}
 ): Promise<FieldSuggestions> {
   const form = await getOwnedFormOrThrow(userId, formId)
   if (!form.aiEnabled) {
@@ -497,19 +506,57 @@ export async function suggestFieldsForForm(
       403
     )
   }
-  if (!isAiConfigured(env)) {
-    throw new ApiError(
-      "No AI provider is configured. Set a provider key first.",
-      503
-    )
+  let resolved
+  try {
+    resolved = await resolveAiModelForUser(userId, {
+      purpose: "suggest-fields",
+      resourceId: formId,
+      provider: opts.provider,
+      browserKey: opts.browserKey,
+      browserModel: opts.browserModel,
+      env,
+    })
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError("AI is not available right now. Try again later.", 503)
   }
-  return suggestFields({
-    model: getAiModel(env),
-    prompt,
-    existingFields: form.fields.map((f) => ({
-      name: f.name,
-      label: f.label,
-      type: f.type,
-    })),
+  const usage: { current: AiCallUsage | null } = { current: null }
+  let result
+  try {
+    result = await suggestFields({
+      model: resolved.model,
+      prompt,
+      existingFields: form.fields.map((f) => ({
+        name: f.name,
+        label: f.label,
+        type: f.type,
+      })),
+      onUsage: (u) => {
+        usage.current = u
+      },
+    })
+  } catch (err) {
+    await recordAiUsage({
+      userId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "FAILED",
+      sourceEvent: "suggest-fields",
+      resourceId: formId,
+    })
+    throw err
+  }
+  await recordAiUsage({
+    userId,
+    provider: resolved.provider,
+    model: resolved.modelId,
+    billingMode: resolved.billingMode,
+    status: "SUCCESS",
+    tokensIn: usage.current?.promptTokens ?? null,
+    tokensOut: usage.current?.completionTokens ?? null,
+    sourceEvent: "suggest-fields",
+    resourceId: formId,
   })
+  return result
 }

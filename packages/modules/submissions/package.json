@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@sendcms/ai": "workspace:*",
+    "@sendcms/ai-settings": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
     "@sendcms/notifications": "workspace:*",

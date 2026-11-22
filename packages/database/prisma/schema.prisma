@@ -137,6 +137,8 @@ enum AuditResource {
   PLAN
   SUBSCRIPTION
   ENTITLEMENT
+  // Admin Control Plane (Phase 5) — a user's BYOK credential.
+  AI_KEY
 }
 
 // ─── Plans & entitlements (Admin Control Plane, Phase 4) ────────────────────
@@ -193,6 +195,40 @@ enum UsageMeter {
   API_KEYS
   MCP_REQUESTS
   AI_REQUESTS
+}
+
+// ─── AI provider & BYOK (Admin Control Plane, Phase 5) ──────────────────────
+
+// The five AI providers. Mirrors AI_PROVIDERS in @sendcms/ai
+// (packages/ai/src/provider.ts) — keep the two in sync.
+enum AiProvider {
+  OPENAI
+  ANTHROPIC
+  GOOGLE
+  DEEPSEEK
+  OPENROUTER
+}
+
+// How a user's AI usage is billed. BYOK = the user's own key;
+// PLATFORM = the system's .env key; DISABLED = no AI for this user.
+enum AiBillingMode {
+  BYOK
+  PLATFORM
+  DISABLED
+}
+
+// Outcome of one AI call, for cost attribution.
+enum AiUsageStatus {
+  SUCCESS
+  FAILED
+  RETRY
+}
+
+// Result of the last Test-button call for a stored BYOK key.
+enum AiKeyTestStatus {
+  OK
+  FAILED
+  UNTESTED
 }
 
 // ─── API keys (MCP auth, Phase 11) ──────────────────────────────────────────
@@ -256,6 +292,10 @@ model User {
   usageLedger           UsageLedger[]
   entitlementOverrides  EntitlementOverride[] @relation("EntitlementOverrideTarget")
   entitlementOverridesSet EntitlementOverride[] @relation("EntitlementOverrideAdmin")
+  // Admin Control Plane (Phase 5) — AI BYOK keys + usage attribution.
+  aiKeys                UserAiKey[]
+  aiUsageRecords        AiUsageRecord[]
+  aiSettings            UserAiSettings?
 
   @@index([status])
   @@index([adminRole])
@@ -835,4 +875,122 @@ model EntitlementOverride {
   @@unique([userId, meter])
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ─── AI provider & BYOK (Admin Control Plane, Phase 5) ──────────────────────
+// A customer's own AI provider key, stored ENCRYPTED (envelope
+// encryption — see packages/ai/src/byok-crypto.ts), NEVER hashed: a
+// hash is one-way and could never be used to call the provider. One
+// key per provider per user (@@unique([userId, provider])). The
+// plaintext key is NEVER stored, logged, returned by any API, or put
+// in an audit record — only its SHA-256 fingerprint (for display and
+// matching) is kept. "Browser only" keys never reach the server at
+// all, so they have no row here; a row means "Both (browser +
+// server)".
+
+// Envelope layout (all base64): a random data key (DEK) encrypts the
+// API key (AES-256-GCM, random IV, AAD binds userId + provider); the
+// DEK itself is encrypted with the master key from .env
+// (AI_BYOK_MASTER_KEY). Rotating the master key only re-encrypts the
+// DEKs (masterKeyVersion tracks which master key encrypted a row).
+model UserAiKey {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         AiProvider
+  // The API key, encrypted with the row's DEK.
+  encryptedKey     String
+  // The DEK, encrypted with the master key.
+  encryptedDek     String
+  keyIv            String
+  keyTag           String
+  // SHA-256 hex of the plaintext key — display/matching only. It can
+  // never be reversed into the key.
+  keyFingerprint   String
+  // The model the user chose for this provider (null = provider default).
+  model            String?
+  // A paused key is never used for resolution until re-enabled.
+  isEnabled        Boolean         @default(true)
+  // Increments when the user replaces the key (rotation history).
+  keyVersion       Int             @default(1)
+  // Which master key version encrypted this row's DEK.
+  masterKeyVersion Int             @default(1)
+  lastTestedAt     DateTime?
+  lastTestStatus   AiKeyTestStatus @default(UNTESTED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([provider])
+  @@index([userId, isEnabled])
+}
+
+// Platform-side provider configuration, set by an admin (never by a
+// customer). The platform/master KEY itself lives in .env, same as
+// Phase 12 — this row only controls whether the provider is available
+// and which models it may use. Changes are audited via AuditLog.
+model AiProviderConfig {
+  id             String     @id @default(cuid())
+  provider       AiProvider @unique
+  isEnabled      Boolean    @default(true)
+  // Model ids the platform key may call (Json string[]). Empty = the
+  // provider default only.
+  allowedModels  Json
+  defaultModel   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([provider])
+}
+
+// Cost attribution for one AI call. Billing mode is recorded per call
+// so platform vs BYOK usage is never mixed up. Tokens are recorded
+// when the provider reports them; costMicros (micro-dollars, 1e-6 USD)
+// is set ONLY when the provider reports reliable usage/cost data —
+// never an estimate presented as exact.
+model AiUsageRecord {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     AiProvider
+  model        String
+  billingMode  AiBillingMode
+  tokensIn     Int?
+  tokensOut    Int?
+  costMicros   Int?
+  status       AiUsageStatus
+  // What triggered the call, e.g. "spam-rescore", "suggest-fields",
+  // "draft-reply", "key-test".
+  sourceEvent  String?
+  // The resource the call was for, e.g. a formId or submissionId.
+  resourceId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([provider, createdAt])
+  @@index([billingMode, createdAt])
+  @@index([userId, billingMode, createdAt])
+}
+
+// Per-user AI access settings (one row per user, created on first
+// use). `billingMode` is the single source of truth for how this
+// user's AI is billed: BYOK = their own key (the platform key is
+// PAUSED for them while BYOK is selected, until they re-enable it);
+// PLATFORM = the system's .env key (the default); DISABLED = no AI.
+// Validated against the effective plan entitlements (aiByokAllowed /
+// aiPlatformAllowed) whenever it is set.
+model UserAiSettings {
+  id          String        @id @default(cuid())
+  userId      String        @unique
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  billingMode AiBillingMode @default(PLATFORM)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }

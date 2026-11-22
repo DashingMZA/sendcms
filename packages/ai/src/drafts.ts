@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
+import { toAiCallUsage, type AiCallUsage } from "./provider"
+
 // Auto-reply drafts (Phase 12, Step 4). The model call only — the
 // orchestration (ownership, the aiEnabled opt-in, the send) lives in
 // `@sendcms/inbox` + `@sendcms/notifications`. The owner reviews and
@@ -30,11 +32,13 @@ const ReplyDraftModelSchema = z.object({
 
 /** Asks the model to draft a reply to one submission. Returns the
     draft — the caller shows it to the owner for review and editing.
-    Throws when the provider call fails. */
+    Throws when the provider call fails. `onUsage` (optional)
+    receives the token usage the provider reported, for attribution. */
 export async function draftReply({
   model,
   formName,
   submission,
+  onUsage,
 }: {
   model: LanguageModel
   formName: string
@@ -44,9 +48,10 @@ export async function draftReply({
     content: string
     receivedAt: Date
   }
+  onUsage?: (usage: AiCallUsage | null) => void
 }): Promise<ReplyDraft> {
   const from = submission.senderName ?? submission.senderEmail ?? "A visitor"
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model,
     schema: ReplyDraftModelSchema,
     // One retry only (default is 2) — same reason as suggestFields:
@@ -64,6 +69,7 @@ export async function draftReply({
       "Reply with a subject line and a plain-text body.",
     ].join("\n"),
   })
+  onUsage?.(toAiCallUsage(usage))
   // Validate at the boundary too: a malformed model reply must never
   // reach the owner.
   return ReplyDraftSchema.parse(object)

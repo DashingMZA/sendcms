@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
+import { toAiCallUsage, type AiCallUsage } from "./provider"
+
 // AI spam re-scoring (Phase 12, Step 2). The model call only — the
 // orchestration (which submissions to score, the daily cap, the
 // status change) lives in `@sendcms/submissions`. The model sees the
@@ -43,17 +45,21 @@ export function getSpamThreshold(env: NodeJS.ProcessEnv = process.env): number {
 
 /** Asks the model to score one submission. Returns the score and a
     short reason. Throws when the provider call fails — the caller
-    decides whether to retry later or skip the submission. */
+    decides whether to retry later or skip the submission. `onUsage`
+    (optional) receives the token usage the provider reported, so the
+    caller can attribute the call without changing this return value. */
 export async function rescoreSpam({
   model,
   formName,
   data,
+  onUsage,
 }: {
   model: LanguageModel
   formName: string
   data: Record<string, unknown>
+  onUsage?: (usage: AiCallUsage | null) => void
 }): Promise<SpamVerdict> {
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model,
     schema: SpamVerdictModelSchema,
     prompt: [
@@ -66,6 +72,7 @@ export async function rescoreSpam({
       "Reply with a spam score and a one-sentence reason.",
     ].join("\n"),
   })
+  onUsage?.(toAiCallUsage(usage))
   // Validate at the boundary too: the SDK validates against the
   // relaxed model schema, but a malformed model reply must never
   // reach the status change. Round + clamp first — the model may

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@remixicon/react": "^4.9.0",
+    "@sendcms/ai-settings": "workspace:*",
     "@sendcms/analytics": "workspace:*",
     "@sendcms/api-client": "workspace:*",
     "@sendcms/api-keys": "workspace:*",
@@ -22,6 +23,7 @@
     "@sendcms/domains": "workspace:*",
     "@sendcms/email": "workspace:*",
     "@sendcms/forms": "workspace:*",
+    "@sendcms/i18n": "workspace:*",
     "@sendcms/inbox": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/permissions": "workspace:*",

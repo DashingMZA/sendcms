@@ -46,6 +46,7 @@ export const SHARED_DOMAINS = [
 
 /** Admin-app domains that live at `locales/{locale}/admin/{domain}.json`. */
 export const ADMIN_DOMAINS = [
+  "ai",
   "dashboard",
   "navigation",
   "plans",
@@ -54,8 +55,12 @@ export const ADMIN_DOMAINS = [
   "users",
 ] as const
 
+/** Dashboard-app domains that live at `locales/{locale}/dashboard/{domain}.json`. */
+export const DASHBOARD_DOMAINS = ["ai"] as const
+
 export type SharedDomain = (typeof SHARED_DOMAINS)[number]
 export type AdminDomain = (typeof ADMIN_DOMAINS)[number]
+export type DashboardDomain = (typeof DASHBOARD_DOMAINS)[number]
 
 /** Relative path of a shared domain file, e.g. `locales/en/common.json`. */
 export function translationPath(locale: string, domain: string): string {

@@ -14,10 +14,11 @@ import {
 } from "@sendcms/shared"
 import {
   draftReply,
-  getAiModel,
-  isAiConfigured,
+  type AiCallUsage,
+  type AiProviderName,
   type ReplyDraft,
 } from "@sendcms/ai"
+import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
 import { enqueueReply } from "@sendcms/notifications"
 
 // ---------------------------------------------------------------------------
@@ -453,48 +454,92 @@ async function getOwnedSubmissionWithFormOrThrow(
   return submission
 }
 
-function requireAiForForm(
-  form: { aiEnabled: boolean },
-  env: NodeJS.ProcessEnv
-): void {
+function requireAiForForm(form: { aiEnabled: boolean }): void {
   if (!form.aiEnabled) {
     throw new ApiError(
       "AI is not enabled for this form. Enable it in the form settings first.",
       403
     )
   }
-  if (!isAiConfigured(env)) {
-    throw new ApiError(
-      "No AI provider is configured. Set a provider key first.",
-      503
-    )
-  }
+  // No provider check here — the resolver owns availability (BYOK,
+  // browser-only, or platform key) and throws its own 503.
 }
 
 /** Drafts a reply to one submission. Returns the draft — nothing is
     sent. Throws 403 when AI is off for the form, 503 when no provider
-    is configured. */
+    is configured. The model is resolved for the submission's OWNER;
+    `opts` carries an optional per-request browser-only key, which is
+    never stored. */
 export async function draftReplyForSubmission(
   userId: string,
   submissionId: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  opts: {
+    provider?: AiProviderName
+    browserKey?: string
+    browserModel?: string
+  } = {}
 ): Promise<ReplyDraft> {
   const submission = await getOwnedSubmissionWithFormOrThrow(
     userId,
     submissionId
   )
-  requireAiForForm(submission.form, env)
+  requireAiForForm(submission.form)
+  let resolved
+  try {
+    resolved = await resolveAiModelForUser(userId, {
+      purpose: "draft-reply",
+      resourceId: submissionId,
+      provider: opts.provider,
+      browserKey: opts.browserKey,
+      browserModel: opts.browserModel,
+      env,
+    })
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError("AI is not available right now. Try again later.", 503)
+  }
   const sender = getSubmissionSender(submission.data)
-  return draftReply({
-    model: getAiModel(env),
-    formName: submission.form.name,
-    submission: {
-      senderName: sender.name,
-      senderEmail: sender.email,
-      content: previewSubmissionText(submission.data),
-      receivedAt: submission.createdAt,
-    },
+  const usage: { current: AiCallUsage | null } = { current: null }
+  let draft
+  try {
+    draft = await draftReply({
+      model: resolved.model,
+      formName: submission.form.name,
+      submission: {
+        senderName: sender.name,
+        senderEmail: sender.email,
+        content: previewSubmissionText(submission.data),
+        receivedAt: submission.createdAt,
+      },
+      onUsage: (u) => {
+        usage.current = u
+      },
+    })
+  } catch (err) {
+    await recordAiUsage({
+      userId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "FAILED",
+      sourceEvent: "draft-reply",
+      resourceId: submissionId,
+    })
+    throw err
+  }
+  await recordAiUsage({
+    userId,
+    provider: resolved.provider,
+    model: resolved.modelId,
+    billingMode: resolved.billingMode,
+    status: "SUCCESS",
+    tokensIn: usage.current?.promptTokens ?? null,
+    tokensOut: usage.current?.completionTokens ?? null,
+    sourceEvent: "draft-reply",
+    resourceId: submissionId,
   })
+  return draft
 }
 
 /** Sends the owner's reply to a submission's sender through the

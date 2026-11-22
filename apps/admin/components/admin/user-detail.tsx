@@ -68,8 +68,10 @@ import {
   RiStickyNoteLine,
 } from "@remixicon/react"
 import { useTranslation } from "@/components/admin/translation-provider"
+import { UserAiTab } from "./user-ai-tab"
 import { UserPackageTab } from "./user-package-tab"
 import { UserRoleBadge, UserStatusBadge } from "./user-status-badge"
+import type { AiBillingMode } from "@sendcms/database"
 
 function formatDate(value: string | Date | null) {
   if (!value) return "—"
@@ -131,11 +133,17 @@ type Props = {
   userId: string
   actorId: string
   actorRole: PlatformRole | AdminRole
+  aiBillingMode: AiBillingMode
 }
 
-export function UserDetail({ initialData, userId, actorId, actorRole }: Props) {
+export function UserDetail({
+  initialData,
+  userId,
+  actorId,
+  actorRole,
+  aiBillingMode,
+}: Props) {
   const { t } = useTranslation("users")
-  const { t: tDashboard } = useTranslation("dashboard")
   const [tab, setTab] = useState("profile")
   const [action, setAction] = useState<ActionKind | null>(null)
   const [reason, setReason] = useState("")
@@ -670,10 +678,12 @@ export function UserDetail({ initialData, userId, actorId, actorRole }: Props) {
         </TabsContent>
 
         <TabsContent value="ai" className="mt-6">
-          <PlannedTabContent
-            title={t("tabAi")}
-            description={tDashboard("comingSoonDescription")}
-            phaseLabel={tDashboard("phase", { number: 5 })}
+          <UserAiTab
+            userId={userId}
+            userName={profile.name}
+            userEmail={profile.email}
+            actorRole={actorRole}
+            initialBillingMode={aiBillingMode}
           />
         </TabsContent>
 
@@ -989,36 +999,6 @@ function EmptyState({
       {icon}
       <h3 className="mb-1 text-lg font-semibold text-balance">{title}</h3>
       <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
-    </div>
-  )
-}
-
-/**
- * Honest "planned in a later phase" box for a tab. Same visual pattern
- * as the shared PlannedSection, but without its <main> wrapper — this
- * renders inside the detail page's own <main>, so a nested <main>
- * (and duplicate id) would be invalid HTML.
- */
-function PlannedTabContent({
-  title,
-  description,
-  phaseLabel,
-}: {
-  title: string
-  description: string
-  phaseLabel: string
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-16 text-center">
-      <RiInformationLine
-        className="mb-3 size-8 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <h2 className="mb-2 text-xl font-bold tracking-tight">{title}</h2>
-      <p className="mb-4 max-w-md leading-relaxed text-muted-foreground">
-        {description}
-      </p>
-      <Badge variant="secondary">{phaseLabel}</Badge>
     </div>
   )
 }

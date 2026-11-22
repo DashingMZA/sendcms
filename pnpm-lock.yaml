@@ -215,6 +215,9 @@ importers:
       '@sendcms/ai':
         specifier: workspace:*
         version: link:packages/ai
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:packages/modules/ai-settings
       '@sendcms/analytics':
         specifier: workspace:*
         version: link:packages/modules/analytics
@@ -347,6 +350,9 @@ importers:
       '@sendcms/admin-users':
         specifier: workspace:*
         version: link:../../packages/modules/admin-users
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../../packages/modules/ai-settings
       '@sendcms/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
@@ -417,6 +423,9 @@ importers:
       '@sendcms/admin-users':
         specifier: workspace:*
         version: link:../../packages/modules/admin-users
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../../packages/modules/ai-settings
       '@sendcms/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
@@ -493,6 +502,9 @@ importers:
       '@remixicon/react':
         specifier: ^4.9.0
         version: 4.9.0(react@19.3.1)
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../../packages/modules/ai-settings
       '@sendcms/analytics':
         specifier: workspace:*
         version: link:../../packages/modules/analytics
@@ -517,6 +529,9 @@ importers:
       '@sendcms/forms':
         specifier: workspace:*
         version: link:../../packages/modules/forms
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@sendcms/inbox':
         specifier: workspace:*
         version: link:../../packages/modules/inbox
@@ -1007,6 +1022,58 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  packages/modules/ai-settings:
+    dependencies:
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../ai
+      '@sendcms/auth':
+        specifier: workspace:*
+        version: link:../../auth
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../permissions
+      '@sendcms/plans':
+        specifier: workspace:*
+        version: link:../plans
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      ai:
+        specifier: 7.0.178
+        version: 7.0.178(zod@4.6.7)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/modules/analytics:
     dependencies:
       '@sendcms/database':
@@ -1099,6 +1166,9 @@ importers:
       '@sendcms/ai':
         specifier: workspace:*
         version: link:../../ai
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../ai-settings
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
@@ -1139,6 +1209,9 @@ importers:
       '@sendcms/ai':
         specifier: workspace:*
         version: link:../../ai
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../ai-settings
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
@@ -1256,6 +1329,9 @@ importers:
       '@sendcms/ai':
         specifier: workspace:*
         version: link:../../ai
+      '@sendcms/ai-settings':
+        specifier: workspace:*
+        version: link:../ai-settings
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database

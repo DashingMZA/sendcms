@@ -30,6 +30,58 @@ export const AI_PROVIDERS = [
 export type AiProviderName = (typeof AI_PROVIDERS)[number]
 export type AiProvider = AiProviderName | "none"
 
+/**
+ * Token usage a provider reports for one model call. The Vercel AI
+ * SDK attaches it to every generateObject/generateText result; a
+ * null means the provider did not report usage for that call (the
+ * caller records the call with null tokens, never an estimate).
+ * The capability functions surface it through an optional `onUsage`
+ * callback so the caller can attribute the call (BYOK vs platform)
+ * without changing the capability's return value.
+ */
+export type AiCallUsage = {
+  promptTokens: number
+  completionTokens: number
+}
+
+/** Normalizes the SDK's usage object (or its absence) to AiCallUsage.
+    AI SDK 7 reports `inputTokens`/`outputTokens`; the legacy
+    `promptTokens`/`completionTokens` names are accepted too. */
+export function toAiCallUsage(
+  usage:
+    | {
+        inputTokens?: number
+        outputTokens?: number
+        promptTokens?: number
+        completionTokens?: number
+      }
+    | null
+    | undefined
+): AiCallUsage | null {
+  const promptTokens =
+    typeof usage?.inputTokens === "number"
+      ? usage.inputTokens
+      : typeof usage?.promptTokens === "number"
+        ? usage.promptTokens
+        : undefined
+  const completionTokens =
+    typeof usage?.outputTokens === "number"
+      ? usage.outputTokens
+      : typeof usage?.completionTokens === "number"
+        ? usage.completionTokens
+        : undefined
+  if (
+    typeof promptTokens === "number" &&
+    typeof completionTokens === "number"
+  ) {
+    return {
+      promptTokens,
+      completionTokens,
+    }
+  }
+  return null
+}
+
 /** The API-key env var each provider reads. */
 export const PROVIDER_ENV_VARS: Record<AiProviderName, string> = {
   openai: "OPENAI_API_KEY",
@@ -94,6 +146,33 @@ export function getAiModelId(
   env: NodeJS.ProcessEnv = process.env
 ): string {
   return env.AI_MODEL?.trim() || DEFAULT_MODELS[provider]
+}
+
+/**
+ * Builds a provider's language model from an EXPLICIT api key (a
+ * decrypted BYOK key, or a browser-only key passed per request).
+ * The key is used for this one model only — it is never stored,
+ * logged, or sent to any other provider. `modelId` defaults to the
+ * provider's default when omitted.
+ */
+export function getAiModelForKey(
+  provider: AiProviderName,
+  apiKey: string,
+  modelId?: string
+): LanguageModel {
+  const id = modelId?.trim() || DEFAULT_MODELS[provider]
+  switch (provider) {
+    case "openai":
+      return createOpenAI({ apiKey })(id)
+    case "anthropic":
+      return createAnthropic({ apiKey })(id)
+    case "google":
+      return createGoogleGenerativeAI({ apiKey })(id)
+    case "deepseek":
+      return createDeepSeek({ apiKey })(id)
+    case "openrouter":
+      return createOpenRouter({ apiKey })(id)
+  }
 }
 
 /** Returns the configured provider's language model. Throws a clear

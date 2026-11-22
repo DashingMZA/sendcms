@@ -159,16 +159,94 @@ only the Overview page is real; the 8 coming-soon locales have no files.
   fires (hook has an `enabled` guard).
 - Gates: typecheck 0, lint 0, tests 387/387 (38 files, 43 plans
   tests), i18n 24 files / 847 keys en + ur 100%, admin + dashboard
-  + api builds pass.
+  - api builds pass.
 - Open: no payments (Phase 8); no public pricing route (Phase 8);
   quota guards are pre-insert checks (concurrent overshoot by one
   possible — documented); emergency flag needs a restart to apply.
 
-### Phase 5 — AI provider & BYOK architecture — PENDING
+### Phase 5 — AI provider & BYOK architecture — DONE + VERIFIED 2026-11-21 (not yet pushed)
 
-Per the BYOK design above. Provider resolution: BYOK → platform →
-no AI. Never silently fall back BYOK → platform. Envelope encryption,
-key versioning + rotation, cost attribution (platform vs BYOK vs failed).
+Schema (migrations `20261121233835_add_ai_byok_keys_usage` +
+`20261121234141_add_user_ai_settings`, 30/30 applied): `UserAiKey`
+(one per provider, envelope-encrypted — never hashed, never
+plaintext), `AiProviderConfig` (admin on/off + allowed/default
+models per provider), `AiUsageRecord` (per-call attribution: BYOK vs
+PLATFORM, tokens when reported, costMicros only when reliable),
+`UserAiSettings` (billing mode BYOK/PLATFORM/DISABLED, default
+PLATFORM). Encryption (`packages/ai/src/byok-crypto.ts`, written by
+the parent, round-trip + AAD-binding verified): AES-256-GCM, per-key
+random DEK, master key `AI_BYOK_MASTER_KEY` in .env (documented in
+`.env.example`); `getAiModelForKey` builds a model from any explicit
+key. `packages/ai/tsconfig.json` now lists `"types": ["node"]` (the
+package already had @types/node; the crypto module needs Node types).
+
+Services (`packages/modules/ai-settings/`, `@sendcms/ai-settings`):
+BYOK save (upsert, keyVersion++ on replace) / list / get / enable /
+disable / delete — metadata only (fingerprint last4, never key
+material); Test button (`testUserAiKey`, one-token generateText probe,
+records a key-test BYOK usage row either way); billing mode get/set
+validated against the effective plan entitlements
+(aiByokAllowed/aiPlatformAllowed), suspended users refused;
+`resolveAiModelForUser` — browser-only key → stored BYOK key →
+platform key → `AiNotAvailableError`; a missing/disabled/failing
+BYOK key NEVER silently falls back to platform (proven by tests).
+The only fallback is store-availability: when the settings store
+itself is unreadable the mode is unknown, so the platform default is
+used (`resolveAiModelLegacy`) — never a key fallback. Existing
+capabilities (spam rescore, digest, suggestFields, draftReply) are
+wired through per-owner resolution with the same degrade-to-non-AI
+behaviour; capability routes accept `browserKey` + `browserProvider`
+
+- `browserModel`. Admin: provider configs, health (counts only),
+  usage list + BYOK-vs-platform summary, per-user keys (metadata) +
+  billing mode. 14 API routes (customer `ai/keys/*` incl.
+  `test-browser`, `ai/billing-mode`; admin `admin/ai/*`).
+  Tests: `tests/ai-byok.test.ts`, 41 tests. Docs:
+  `docs/admin-control-plane/ai-byok.md` + `ai-billing-and-access.md`.
+
+UI: admin `/admin/ai` (overview), `/admin/ai/providers`,
+`/admin/ai/models`, `/admin/ai/usage`, `/admin/ai/settings`
+(emergency flag display-only, with the plain sentence that it never
+disables form submission, the inbox, or non-AI services); the
+user-detail AI tab is REAL (billing mode + keys metadata + per-user
+usage); dashboard `/dashboard/ai` — billing-mode selector with the
+"platform key paused" notice under BYOK, one card per provider with
+save/test/enable/disable/delete, the storage popup on save AND test
+("Browser only" vs "Both (browser + server)"), Test button with
+every key. i18n: `admin/ai.json` (100 keys) + `dashboard/ai.json`
+(53 keys) en + ur, real Urdu.
+
+**Browser-only live test (fixed by the parent after the UI
+subagent's report):** the test route first only tested server-stored
+keys. Added `testBrowserKey` + `POST
+/api/v1/ai/keys/[provider]/test-browser` — the raw key is sent for
+one live probe and never stored or logged (only a key-test BYOK
+usage row, no resourceId); the dashboard now calls it for
+browser-only keys and shows the result on the card. 3 tests added
+(live test without storing, failed test without fallback, too-short
+key rejected). The shared probe was extracted (`probeKey`) and
+`testUserAiKey` rewritten on top of it — its 38 tests still pass
+unchanged.
+
+**Bugs/gaps found and fixed in Phase 5:** `toAiCallUsage` read
+`promptTokens`/`completionTokens` but AI SDK 7 reports
+`inputTokens`/`outputTokens` — usage would always have been null
+(fixed in `packages/ai/src/provider.ts`, both shapes accepted);
+provider config/health had no capability check (now MANAGE_AI).
+
+Gates (verified by the parent): root typecheck 0, lint 0, **tests
+428/428 (39 files, 41 BYOK tests)**, i18n validation 26 files /
+1000 keys en + ur 100%, admin + dashboard + api builds pass
+(admin: all 5 AI routes; api: all 14 AI routes incl. test-browser;
+dashboard: /dashboard/ai). `pnpm-lock.yaml` settled (only the
+ai-settings + i18n workspace links added).
+Open: no live verification against a real provider or the dev DB
+(all tests mocked — a live journey with a real Gemini key and a real
+BYOK save/test/resolve is still owed); dashboard shell is still
+`lang="en"` with no `dir` handling (the /dashboard/ai content is
+translated, full dashboard RTL is a follow-up); the dashboard
+sidebar "AI" label is hardcoded English like every other dashboard
+sidebar label. **Not pushed — awaiting the owner's "push kr do".**
 
 ### Phase 6 — MCP controls — PENDING
 
@@ -185,7 +263,8 @@ deletion workflows, translation management UI.
 
 Pricing reads the same plan records; billing-provider abstraction
 (PayPal, Stripe, Gumroad, Freemius, Polar.sh) — design only, no fake
-payments. Customer `/dashboard/ai` settings page.
+payments. (The customer `/dashboard/ai` settings page landed in
+Phase 5.)
 
 ### Phase 9 — Hardening & verification — PENDING
 

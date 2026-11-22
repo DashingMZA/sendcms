@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { notFound, redirect } from "next/navigation"
 import { getUserDetail } from "@sendcms/admin-users"
+import { getUserAiBillingMode } from "@sendcms/ai-settings"
 import { ApiError } from "@sendcms/shared"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { UserDetail } from "@/components/admin/user-detail"
@@ -38,12 +39,17 @@ export default async function AdminUserDetailPage({
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
+  // The AI tab's billing mode (Phase 5) — a plain read of the user's
+  // AI settings row; the tab's mutations go through the api app.
+  const aiBillingMode = await getUserAiBillingMode(userId)
+
   return (
     <UserDetail
       initialData={detail}
       userId={userId}
       actorId={session.user.id}
       actorRole={actorRole}
+      aiBillingMode={aiBillingMode}
     />
   )
 }

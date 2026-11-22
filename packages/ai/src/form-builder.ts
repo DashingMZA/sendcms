@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
+import { toAiCallUsage, type AiCallUsage } from "./provider"
+
 // AI-assisted form building (Phase 12, Step 4). The model call only —
 // the orchestration (ownership, the aiEnabled opt-in) lives in
 // `@sendcms/forms`. The owner reviews the suggestions before any
@@ -78,15 +80,18 @@ const FieldSuggestionsModelSchema = z.object({
 /** Asks the model to suggest fields for a form described in plain
     language. Returns the suggestions — the caller shows them to the
     owner, who picks which to add. Throws when the provider call
-    fails. */
+    fails. `onUsage` (optional) receives the token usage the provider
+    reported, for attribution. */
 export async function suggestFields({
   model,
   prompt,
   existingFields,
+  onUsage,
 }: {
   model: LanguageModel
   prompt: string
   existingFields: { name: string; label: string; type: string }[]
+  onUsage?: (usage: AiCallUsage | null) => void
 }): Promise<FieldSuggestions> {
   const existing =
     existingFields.length > 0
@@ -94,7 +99,7 @@ export async function suggestFields({
           .map((f) => `${f.name} (${f.type}, "${f.label}")`)
           .join(", ")}.`
       : "The form has no fields yet."
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model,
     schema: FieldSuggestionsModelSchema,
     // One retry only (default is 2). This is an interactive call: the
@@ -112,6 +117,7 @@ export async function suggestFields({
       existing,
     ].join("\n"),
   })
+  onUsage?.(toAiCallUsage(usage))
   // Validate at the boundary too: a malformed model reply must never
   // reach the form.
   return FieldSuggestionsSchema.parse(object)
