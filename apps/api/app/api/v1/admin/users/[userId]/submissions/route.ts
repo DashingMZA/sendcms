@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { listUserSubmissions } from "@sendcms/admin-users"
 import { AdminUserSubmissionsQuerySchema } from "@sendcms/admin-users/validators"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
@@ -11,6 +12,8 @@ export async function GET(
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const { userId } = await params
     const parsed = AdminUserSubmissionsQuerySchema.safeParse(
       Object.fromEntries(req.nextUrl.searchParams)

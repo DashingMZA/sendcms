@@ -10,4 +10,38 @@
  */
 export { logAudit } from "./audit"
 export type { AuditLogInput } from "./audit"
+export {
+  buildCsp,
+  createCspNonce,
+  cspHeaderName,
+  CSP_HEADER_NAME,
+  CSP_REPORT_ONLY,
+  CSP_REPORT_ONLY_HEADER_NAME,
+} from "./csp"
+export type { CspOptions } from "./csp"
+export {
+  checkAdminApiRateLimit,
+  checkAuthSignInRateLimit,
+  checkRateLimit,
+  DEFAULT_ADMIN_API_HOUR_LIMIT,
+  DEFAULT_ADMIN_API_MINUTE_LIMIT,
+  DEFAULT_AUTH_SIGNIN_MINUTE_PER_EMAIL_LIMIT,
+  DEFAULT_AUTH_SIGNIN_MINUTE_PER_IP_LIMIT,
+  DEFAULT_RATE_LIMIT_CONFIG,
+  parseRateLimitConfig,
+  readRateLimitConfig,
+  resetRateLimitConfigCache,
+} from "./rate-limit"
+export type { RateLimitConfig, RateLimitResult } from "./rate-limit"
+export {
+  DEFAULT_STEP_UP_CONFIG,
+  DEFAULT_STEP_UP_MAX_ATTEMPTS_PER_HOUR,
+  DEFAULT_STEP_UP_TTL_MINUTES,
+  parseStepUpConfig,
+  readStepUpConfig,
+  requireStepUp,
+  resetStepUpConfigCache,
+  verifyStepUp,
+} from "./step-up"
+export type { StepUpConfig, StepUpResult, StepUpSession } from "./step-up"
 export { renderHeadersFile, securityHeaders } from "./headers.mjs"

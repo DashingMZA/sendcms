@@ -4,7 +4,7 @@ import type { AdminRole, McpUsageStatus, PlatformRole } from "@sendcms/database"
 import { MCP_TOOL_NAMES, parseMcpAllowedTools } from "@sendcms/mcp"
 import { revokeApiKeyForUser } from "@sendcms/api-keys"
 import { adminCan, type PlatformCapability } from "@sendcms/permissions"
-import { logAudit } from "@sendcms/security"
+import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type {
   McpUsageListQuery,
@@ -108,6 +108,9 @@ export async function setMcpSettings(
   input: SetMcpSettingsInput
 ): Promise<McpSettingsRow> {
   requireAdmin(actor, "MANAGE_MCP")
+  // Step-up (Phase 9): the kill-switch is high-impact — the actor
+  // re-enters their password first. Checked before the write.
+  await requireStepUp(actor)
   const before = await db.mcpSettings.findFirst({
     select: { globalEnabled: true },
   })
@@ -557,6 +560,11 @@ export async function revokeMcpKey(
     select: { id: true, userId: true, name: true },
   })
   if (!key) throw new ApiError("API key not found.", 404)
+  // Step-up (Phase 9): revoking a key is irreversible for that key —
+  // the actor re-enters their password first. Enforced here, at the
+  // admin entry point: the dashboard's self-service revoke calls the
+  // @sendcms/api-keys primitive directly and is not a step-up action.
+  await requireStepUp(actor)
   await revokeApiKeyForUser(key.userId, keyId)
   await logAudit({
     userId: actor.user.id,

@@ -124,6 +124,12 @@ enum AuditAction {
   CANCEL
   ARCHIVE
   ASSIGN
+  // Admin Control Plane (Phase 9) — step-up re-authentication.
+  // VERIFIED = the password check passed; FAILED = it did not (or no
+  // password is set). The password itself never appears in the audit
+  // detail.
+  STEP_UP_VERIFIED
+  STEP_UP_FAILED
 }
 
 enum AuditResource {
@@ -347,6 +353,8 @@ model User {
   supportTickets         SupportTicket[] @relation("SupportTicketOwner")
   supportTicketsAssigned SupportTicket[] @relation("SupportTicketAssignee")
   ticketMessages         TicketMessage[] @relation("TicketMessageAuthor")
+  // Admin Control Plane (Phase 9) — step-up verifications.
+  stepUpVerifications    StepUpVerification[]
 
   @@index([status])
   @@index([adminRole])
@@ -1348,4 +1356,65 @@ model BillingProviderCountry {
 
   @@unique([providerConfigId, countryCode])
   @@index([countryCode])
+}
+
+// Fixed-window rate-limit scope. ADMIN_API = the admin REST API
+// (per-user buckets); AUTH = auth sign-in attempts (per-IP and
+// per-email buckets); STEP_UP = step-up password attempts (per-user
+// buckets). A new scope needs a new enum value + migration.
+enum RateLimitScope {
+  ADMIN_API
+  AUTH
+  STEP_UP
+}
+
+// Phase 9 (admin rate limiting, ADR 0008 §6): one row per
+// (scope, subject) — the generic fixed-window bucket behind the
+// admin-API and auth sign-in limiters. Subjects are opaque strings:
+// "user:<id>" for an authenticated admin caller, "ip:<ip>" for an
+// unauthenticated caller, "email:<lowercased email>" for an auth
+// sign-in attempt. Rows are created lazily on first use; the counters
+// are advanced by a single INSERT ... ON CONFLICT ... RETURNING
+// statement in @sendcms/security (rate-limit.ts), so concurrent
+// requests cannot overshoot the limit. Rows are never deleted — a
+// subject that stops calling keeps its last window (one row per
+// subject, like ApiKeyRateLimit keeps one row per key).
+model RateLimitBucket {
+  id     String         @id @default(cuid())
+  scope  RateLimitScope
+  subject String
+
+  minuteWindowStart DateTime
+  minuteCount       Int      @default(0)
+  hourWindowStart   DateTime
+  hourCount         Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, subject])
+}
+
+// Step-up re-authentication (Admin Control Plane, Phase 9): one row
+// per successful password re-entry, before a high-impact admin
+// action. Append-only — rows are never updated or deleted by the app;
+// they expire by `expiresAt` and are simply ignored afterwards.
+// `requireStepUp` accepts any unexpired row for the user, so a single
+// verification covers the actions taken inside its TTL window. No
+// password material ever lives on this row (or anywhere else in the
+// step-up flow) — the password is checked against the credential
+// Account row and then dropped.
+model StepUpVerification {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  verifiedAt DateTime @default(now())
+  expiresAt  DateTime
+
+  // createdAt only: append-only event rows have no updatedAt.
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }

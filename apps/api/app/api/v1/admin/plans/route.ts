@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { createPlan, listPlans } from "@sendcms/plans"
 import {
   CreatePlanSchema,
@@ -11,6 +12,8 @@ export async function GET(req: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const parsed = PlanListQuerySchema.safeParse(
       Object.fromEntries(req.nextUrl.searchParams)
     )
@@ -36,6 +39,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const body = await req.json().catch(() => ({}))
     const parsed = CreatePlanSchema.safeParse(body)
     if (!parsed.success) {

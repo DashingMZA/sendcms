@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
@@ -37,11 +38,18 @@ export default async function RootLayout({
 }>) {
   // The admin's language comes from the `sendcms-locale` cookie (set by
   // the language prompt/selector, or by the stored user preference).
-  // English is the fallback; `ur` and `ar` render right-to-left.
+  // English is the fallback; `ur` renders right-to-left (`ar` is
+  // registered as RTL too, but has no translation files yet).
   const locale = await getRequestLocale()
   const direction = getLocaleDirection(locale)
   const dictionaries = await getDictionaries(locale, SHELL_TRANSLATION_DOMAINS)
   const t = await getTranslator(locale, "dashboard")
+  // CSP nonce (Admin Control Plane, Phase 9): the proxy sets `x-nonce`
+  // on the request, and the inline theme script next-themes renders
+  // needs that nonce on its `<script>` tag or the enforcing policy
+  // blocks it. Next.js only nonces its own scripts — this one has to
+  // be threaded through explicitly.
+  const nonce = (await headers()).get("x-nonce") ?? undefined
 
   return (
     <html
@@ -60,7 +68,7 @@ export default async function RootLayout({
         >
           {t("skipToContent")}
         </a>
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           <QueryProvider>
             <TranslationProvider dictionaries={dictionaries}>
               {children}

@@ -32,6 +32,7 @@ import {
 } from "@sendcms/ui"
 import { useTranslation } from "@/components/admin/translation-provider"
 import { formatDate } from "./plan-format"
+import { StepUpDialog } from "./step-up-dialog"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
@@ -55,6 +56,8 @@ export function McpKeysTable({ actorRole }: Props) {
 
   const [revokeId, setRevokeId] = useState<string | null>(null)
   const [reason, setReason] = useState("")
+  // Step-up (Phase 9): the password dialog for key revoke.
+  const [stepUpOpen, setStepUpOpen] = useState(false)
 
   if (!canViewMcp) {
     return (
@@ -246,7 +249,7 @@ export function McpKeysTable({ actorRole }: Props) {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={confirmRevoke}
+                  onClick={() => setStepUpOpen(true)}
                   disabled={revokeKey.isPending || reason.trim() === ""}
                 >
                   {t("revokeConfirm")}
@@ -256,6 +259,11 @@ export function McpKeysTable({ actorRole }: Props) {
           )}
         </DialogContent>
       </Dialog>
+      <StepUpDialog
+        open={stepUpOpen}
+        onOpenChange={setStepUpOpen}
+        onVerified={() => void confirmRevoke()}
+      />
     </Card>
   )
 }

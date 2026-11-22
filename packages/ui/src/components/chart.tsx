@@ -371,3 +371,16 @@ export {
   ChartLegendContent,
   ChartStyle,
 }
+
+// Re-export the Recharts primitives the apps build charts with, so
+// pages import every chart piece from @sendcms/ui (never recharts
+// directly).
+export {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts"

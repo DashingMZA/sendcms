@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
@@ -20,11 +21,19 @@ const fontMono = Geist_Mono({
   variable: "--font-mono",
 })
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // CSP nonce (Admin Control Plane, Phase 9): the proxy sets `x-nonce`
+  // on the request, and the inline theme script next-themes renders
+  // needs that nonce on its `<script>` tag or the enforcing policy
+  // blocks it. Next.js only nonces its own scripts — this one has to
+  // be threaded through explicitly. No proxy ran (unmatched route) →
+  // no nonce, and no CSP header on that response either.
+  const nonce = (await headers()).get("x-nonce") ?? undefined
+
   return (
     <html
       lang="en"
@@ -41,7 +50,7 @@ export default function RootLayout({
         >
           Skip to main content
         </a>
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster richColors position="top-right" />
         </ThemeProvider>

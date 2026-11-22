@@ -227,3 +227,65 @@ export const DeletionRequestsQuerySchema =
   })
 
 export type DeletionRequestsQuery = z.infer<typeof DeletionRequestsQuerySchema>
+
+// ─── Admin overview ─────────────────────────────────────────────────
+
+export const OVERVIEW_RANGES = [
+  "24h",
+  "7d",
+  "30d",
+  "90d",
+  "12mo",
+  "custom",
+] as const
+
+export type OverviewRangeKey = (typeof OVERVIEW_RANGES)[number]
+
+// The overview date filter: a preset range, or a custom from/to pair.
+// Query params arrive as strings, so from/to are validated as
+// parseable dates here (a date input sends "YYYY-MM-DD") — not
+// datetime-only.
+export const OverviewQuerySchema = z
+  .object({
+    range: z.enum(OVERVIEW_RANGES).default("7d"),
+    from: z.string().trim().min(1).optional(),
+    to: z.string().trim().min(1).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.range !== "custom") return
+    if (!v.from || !v.to) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Custom range needs from and to.",
+        path: ["from"],
+      })
+      return
+    }
+    const from = new Date(v.from)
+    const to = new Date(v.to)
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      ctx.addIssue({
+        code: "custom",
+        message: "from and to must be valid dates.",
+        path: ["from"],
+      })
+      return
+    }
+    if (to <= from) {
+      ctx.addIssue({
+        code: "custom",
+        message: "to must be after from.",
+        path: ["to"],
+      })
+      return
+    }
+    if (to.getTime() - from.getTime() > 366 * 24 * 60 * 60 * 1000) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Custom range is at most 366 days.",
+        path: ["to"],
+      })
+    }
+  })
+
+export type OverviewQuery = z.infer<typeof OverviewQuerySchema>

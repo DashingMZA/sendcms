@@ -30,6 +30,7 @@
     "@sendcms/observability": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
+    "@sendcms/security": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "@sendcms/support": "workspace:*",
     "next": "16.4.6",

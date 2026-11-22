@@ -414,10 +414,31 @@ click-through owed (incl. RTL rendering of the new pages).
   check owed); the real DB-backed admin overview (spec §3) was never
   built — Phase 9 candidate.
 
-### Phase 9 — Hardening & verification — PENDING
+### Phase 9 — Hardening & verification — DONE (2026-11-22, uncommitted)
 
 Full acceptance matrix (spec §23 + additional requirements §7: 15
-proofs), CSP, rate limiting, step-up re-auth, final report.
+proofs), real admin overview, CSP, rate limiting, step-up re-auth,
+final report. See [acceptance-matrix](./acceptance-matrix.md) and
+[implementation-report](./implementation-report.md).
+
+| Piece                         | What shipped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Proof                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Real admin overview (spec §3) | `getAdminOverview` in `@sendcms/platform-ops` — user totals + new users + status split, submission totals + in-range status split + per-day series, form/domain totals, active subscriptions by plan, AI + MCP call counts; ranges 24h / 7d / 30d / 90d / 12mo / custom; `GET /api/v1/admin/overview` (`VIEW_ADMIN_DASHBOARD`); admin page rebuilt on it with Recharts                                                                                                                                                                               | `tests/admin-overview.test.ts`, 17 tests               |
+| Rate limiting                 | Admin API 600/min + 10,000/hour per user, auth sign-in 20/min per IP + 10/min per email; generic `RateLimitBucket` + atomic upsert + fail-open; wired into **78/78** admin routes (the overview route included — the earlier "76 routes, overview still needs the two lines" note is superseded by integration) + `POST /api/auth/sign-in/email`. Migration `20261122064351_add_rate_limit_buckets` **applied to the dev DB** (the earlier "NOT applied" note is superseded); live upsert smoke test passed. See [rate-limiting](./rate-limiting.md) | `tests/admin-rate-limit.test.ts`, 18 tests             |
+| CSP                           | Nonce-based policy on every document response from the five page apps (`packages/security/src/csp.ts`); report-only run clean (caught the un-nonced theme script), flipped to enforcing (`CSP_REPORT_ONLY = false`); all 5 page apps dev-verified. The dashboard `/sign-in` gap is **closed in integration**: the dashboard proxy matcher now covers the five auth pages with a pass-through carrying the CSP header. See [csp](./csp.md)                                                                                                            | `tests/security.test.ts`, 12 tests ("ships enforcing") |
+| Step-up re-auth               | `verifyStepUp` / `requireStepUp` in `@sendcms/security`; password re-check writes a `StepUpVerification` row valid 10 minutes; scope per the owner's 2026-11-22 decision — user disable, admin role change, MCP kill-switch toggle, MCP key revoke, deletion review, deletion erasure. Migration `20261122070123_add_step_up_verification` **applied to the dev DB**. See [authorization](./authorization.md#step-up-re-authentication)                                                                                                              | `tests/step-up.test.ts`, 21 tests                      |
+| Acceptance matrix + docs      | [acceptance-matrix](./acceptance-matrix.md) (15 proofs + per-phase rows, 17 PASS / 3 PARTIAL / 3 NOT MET across 23 items; 7 live verifications OWED) + [architecture](./architecture.md), [database-design](./database-design.md), [authorization](./authorization.md), [usage-metering](./usage-metering.md), [plan-versioning](./plan-versioning.md), [internationalization](./internationalization.md), [translation-management](./translation-management.md), [implementation-report](./implementation-report.md), [README](./README.md)         | Read back after writing                                |
+
+- **Gates:** root typecheck 0, lint 0, **tests 615/615 (46 files)**,
+  prettier clean, i18n en + ur 100% (41 files), all 4 builds pass.
+  Migrations in the tree: 36 (34 committed + 2 Phase 9); dev DB
+  36/36 after integration.
+- **Open:** live verifications owed (BYOK live journey, MCP live
+  client, Phase 7 live DB, Phase 8 billing pages + live payment
+  test, overview live DB check, step-up live journey, signed-in
+  CSP nonce check) — see
+  [acceptance-matrix](./acceptance-matrix.md#live-verification-still-owed);
+  the 30-day session deploy is still the owner's to do.
 
 ## Docs (under `docs/admin-control-plane/`)
 
@@ -431,7 +452,15 @@ proofs), CSP, rate limiting, step-up re-auth, final report.
 - `admin-audit-trail.md` — Phase 7 record (done).
 - `billing-providers.md` — Phase 8 record (done).
 - `support.md` — Phase 8 record (done).
-- Still to write as phases land: `architecture.md`, `database-design.md`,
-  `authorization.md`, `usage-metering.md`, `plan-versioning.md`,
-  `internationalization.md`,
-  `translation-management.md`, `implementation-report.md`.
+- `rate-limiting.md` — Phase 9 record (done).
+- `csp.md` — Phase 9 record (done).
+- `architecture.md` — Phase 9 record (done).
+- `database-design.md` — Phase 9 record (done).
+- `authorization.md` — Phase 9 record (done).
+- `usage-metering.md` — Phase 9 record (done).
+- `plan-versioning.md` — Phase 9 record (done).
+- `internationalization.md` — Phase 9 record (done).
+- `translation-management.md` — Phase 9 record (done).
+- `acceptance-matrix.md` — Phase 9 record (done).
+- `implementation-report.md` — Phase 9 final report (done).
+- `README.md` — folder index, reading order (done).

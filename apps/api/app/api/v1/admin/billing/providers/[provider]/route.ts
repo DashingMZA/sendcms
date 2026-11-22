@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { BillingProvider } from "@sendcms/database"
 import { auth } from "@/lib/auth"
+import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setProviderConfig } from "@sendcms/billing"
 import { setProviderConfigSchema } from "@sendcms/billing/validators"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
@@ -13,6 +14,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const { provider } = await params
     const parsedProvider =
       BillingProvider[provider.toUpperCase() as keyof typeof BillingProvider]

@@ -43,6 +43,7 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import { useTranslation } from "@/components/admin/translation-provider"
+import { StepUpDialog } from "./step-up-dialog"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
@@ -110,6 +111,13 @@ function SecurityInner() {
   // The request being erased: null = no dialog.
   const [pendingErase, setPendingErase] = useState<string | null>(null)
   const [eraseReason, setEraseReason] = useState("")
+  // Step-up (Phase 9): approving a deletion + the erasure need a
+  // password re-entry first. The review/erase dialog stays open
+  // behind the step-up dialog; onVerified runs the same confirm.
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+  const [stepUpTarget, setStepUpTarget] = useState<"review" | "erase" | null>(
+    null
+  )
 
   const { data, isLoading } = useDeletionRequests({
     status: status === "all" ? undefined : status,
@@ -151,6 +159,24 @@ function SecurityInner() {
     } catch {
       // The global mutation error toast already shows the failure.
     }
+  }
+
+  // Step-up routing: APPROVE goes through the password dialog,
+  // REJECT runs straight through (it preserves the account).
+  function handleReviewConfirm() {
+    if (!pendingReview) return
+    if (pendingReview.decision === "APPROVED") {
+      setStepUpTarget("review")
+      setStepUpOpen(true)
+      return
+    }
+    void confirmReview()
+  }
+
+  function handleStepUpVerified() {
+    if (stepUpTarget === "review") void confirmReview()
+    else if (stepUpTarget === "erase") void confirmErase()
+    setStepUpTarget(null)
   }
 
   return (
@@ -394,7 +420,7 @@ function SecurityInner() {
                       ? "default"
                       : "destructive"
                   }
-                  onClick={confirmReview}
+                  onClick={handleReviewConfirm}
                   disabled={review.isPending || reviewReason.trim() === ""}
                 >
                   {pendingReview.decision === "APPROVED"
@@ -465,7 +491,10 @@ function SecurityInner() {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={confirmErase}
+                  onClick={() => {
+                    setStepUpTarget("erase")
+                    setStepUpOpen(true)
+                  }}
                   disabled={erase.isPending || eraseReason.trim() === ""}
                 >
                   {t("erase")}
@@ -475,6 +504,12 @@ function SecurityInner() {
           )}
         </DialogContent>
       </Dialog>
+
+      <StepUpDialog
+        open={stepUpOpen}
+        onOpenChange={setStepUpOpen}
+        onVerified={handleStepUpVerified}
+      />
     </div>
   )
 }

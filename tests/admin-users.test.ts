@@ -26,6 +26,14 @@ const mockDb = vi.hoisted(() => ({
   // Phase 7: requestDeletion checks for an open request, then creates
   // the DeletionRequest row inside the same transaction.
   deletionRequest: { findFirst: vi.fn(), create: vi.fn() },
+  // Phase 9: the gated actions (disable, role change) call
+  // requireStepUp, which reads the latest unexpired verification.
+  // These tests run as a verified admin.
+  stepUpVerification: {
+    findFirst: vi.fn(async () => ({
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    })),
+  },
   // Array form (suspend/disable run update + session wipe together):
   // the array already holds the mock calls' promises, so await them all.
   // Callback form (like rotateApiKeyForUser): run it against mockDb.

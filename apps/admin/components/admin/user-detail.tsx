@@ -68,6 +68,7 @@ import {
   RiStickyNoteLine,
 } from "@remixicon/react"
 import { useTranslation } from "@/components/admin/translation-provider"
+import { StepUpDialog } from "./step-up-dialog"
 import { UserAiTab } from "./user-ai-tab"
 import { UserMcpTab } from "./user-mcp-tab"
 import { UserPackageTab } from "./user-package-tab"
@@ -155,6 +156,8 @@ export function UserDetail({
   const [reason, setReason] = useState("")
   const [roleValue, setRoleValue] = useState<string>("none")
   const [noteBody, setNoteBody] = useState("")
+  // Step-up (Phase 9): the password dialog for disable + role change.
+  const [stepUpOpen, setStepUpOpen] = useState(false)
 
   const { data } = useAdminUser(userId, initialData)
   const detail = data ?? initialData
@@ -209,6 +212,17 @@ export function UserDetail({
   const reasonOptional = action === "reactivate" || action === "restore"
   const confirmDisabled =
     confirmPending || (reasonRequired && reason.trim() === "")
+
+  // Step-up (Phase 9): disable + role change need a password
+  // re-entry first. The confirm dialog stays open behind the
+  // step-up dialog; onVerified runs the same confirmAction.
+  function handleConfirmClick() {
+    if (action === "disable" || action === "role") {
+      setStepUpOpen(true)
+      return
+    }
+    void confirmAction()
+  }
 
   async function confirmAction() {
     if (!action) return
@@ -970,7 +984,7 @@ export function UserDetail({
                   variant={
                     dialogCopy[action].destructive ? "destructive" : "default"
                   }
-                  onClick={confirmAction}
+                  onClick={handleConfirmClick}
                   disabled={confirmDisabled}
                 >
                   {dialogCopy[action].confirm}
@@ -980,6 +994,11 @@ export function UserDetail({
           )}
         </DialogContent>
       </Dialog>
+      <StepUpDialog
+        open={stepUpOpen}
+        onOpenChange={setStepUpOpen}
+        onVerified={() => void confirmAction()}
+      />
     </main>
   )
 }

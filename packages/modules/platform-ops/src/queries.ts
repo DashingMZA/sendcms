@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@sendcms/shared"
 import type {
   AnnouncementRow,
+  AdminOverview,
   FeatureFlagOverrideRow,
   FeatureFlagRow,
   PlatformHealth,
@@ -19,6 +20,7 @@ import type {
   CreateAnnouncementInput,
   CreateFlagInput,
   ExecuteErasureInput,
+  OverviewQuery,
   ReviewDeletionRequestInput,
   SetAnnouncementActiveInput,
   SetFlagInput,
@@ -44,6 +46,7 @@ export const PLATFORM_OPS_KEYS = {
   auditLog: (id: string) => ["platform-audit-log", id] as const,
   health: ["platform-health"] as const,
   system: ["platform-system"] as const,
+  overview: (query: OverviewQuery) => ["platform-overview", query] as const,
   submissions: (filters: Record<string, string | number | undefined>) =>
     ["platform-submissions", filters] as const,
   submission: (id: string) => ["platform-submission", id] as const,
@@ -255,12 +258,24 @@ export function useAuditLog(id: string) {
   })
 }
 
-// ─── Health + system ──────────────────────────────────────────────────
+// ─── Health + system + overview ───────────────────────────────────────
 
 export function usePlatformHealth() {
   return useQuery({
     queryKey: PLATFORM_OPS_KEYS.health,
     queryFn: () => apiFetch<PlatformHealth>("/api/v1/admin/health"),
+  })
+}
+
+export function useAdminOverview(
+  query: OverviewQuery,
+  initialData?: AdminOverview
+) {
+  return useQuery({
+    queryKey: PLATFORM_OPS_KEYS.overview(query),
+    queryFn: () =>
+      apiFetch<AdminOverview>(`/api/v1/admin/overview${toQueryString(query)}`),
+    initialData,
   })
 }
 

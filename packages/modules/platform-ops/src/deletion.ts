@@ -6,7 +6,7 @@ import {
   Prisma,
   db,
 } from "@sendcms/database"
-import { logAudit } from "@sendcms/security"
+import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type {
   ExecuteErasureInput,
@@ -175,6 +175,13 @@ export async function reviewDeletionRequest(
       409
     )
   }
+  // Step-up (Phase 9): APPROVING a deletion is high-impact — the
+  // actor re-enters their password first. REJECTING needs none: it
+  // preserves the account. Checked after the state guard, before the
+  // write.
+  if (input.decision === "APPROVED") {
+    await requireStepUp(actor)
+  }
   const now = new Date()
   const updated = await db.deletionRequest.update({
     where: { id },
@@ -265,6 +272,10 @@ export async function executeErasure(
     )
     throw new ApiError("This account has already been erased.", 409)
   }
+  // Step-up (Phase 9): the erasure itself is irreversible — the actor
+  // re-enters their password first. Checked last, after every cheap
+  // guard, immediately before the transaction.
+  await requireStepUp(actor)
 
   const now = new Date()
   const counts = await db.$transaction(async (tx) => {

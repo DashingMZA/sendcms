@@ -1,1 +1,8 @@
-{ "platform": { "emergency": false } }
+{
+  "platform": { "emergency": false },
+  "rateLimits": {
+    "adminApi": { "perMinute": 600, "perHour": 10000 },
+    "authSignIn": { "perMinutePerIp": 20, "perMinutePerEmail": 10 }
+  },
+  "stepUp": { "ttlMinutes": 10, "maxAttemptsPerHour": 5 }
+}

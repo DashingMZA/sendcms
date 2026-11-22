@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { betterAuth } from "@/lib/auth"
+import { enforceAuthSignInRateLimit } from "@/lib/rate-limit"
 import { getEffectiveOrigin, normalizeOrigin } from "@sendcms/api-client"
 import { toNextJsHandler } from "@sendcms/auth"
 
@@ -67,4 +68,14 @@ async function withCors(
 }
 
 export const GET = (req: NextRequest) => withCors(req, handlers.GET)
-export const POST = (req: NextRequest) => withCors(req, handlers.POST)
+export const POST = (req: NextRequest) =>
+  withCors(req, async (r) => {
+    // Email sign-in only: per-IP + per-email buckets, before Better
+    // Auth sees the request. GETs (OAuth callbacks, session reads)
+    // and other auth endpoints are not limited.
+    if (r.nextUrl.pathname.endsWith("/sign-in/email")) {
+      const limited = await enforceAuthSignInRateLimit(r)
+      if (limited) return limited
+    }
+    return handlers.POST(r)
+  })

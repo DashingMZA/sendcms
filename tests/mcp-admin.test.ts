@@ -73,6 +73,13 @@ const plainSession = makeSession({
 const mockLogAudit = vi.hoisted(() =>
   vi.fn(async (call: { detail?: Record<string, unknown> }) => call)
 )
+// Phase 9: the gated actions (kill-switch toggle, key revoke) call
+// requireStepUp. This file replaces @sendcms/security wholesale, so
+// the gate is stubbed to pass — the real gate is covered by
+// tests/step-up.test.ts.
+const mockRequireStepUp = vi.hoisted(() =>
+  vi.fn(async () => ({ verifiedUntil: new Date("2099-01-01T00:00:00.000Z") }))
+)
 const mockGetEffective = vi.hoisted(() => vi.fn())
 const mockRevokeApiKey = vi.hoisted(() => vi.fn(async () => undefined))
 
@@ -439,7 +446,10 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
-vi.mock("@sendcms/security", () => ({ logAudit: mockLogAudit }))
+vi.mock("@sendcms/security", () => ({
+  logAudit: mockLogAudit,
+  requireStepUp: mockRequireStepUp,
+}))
 vi.mock("@sendcms/plans", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/plans")>()
   return { ...actual, getEffectiveEntitlementsSafe: mockGetEffective }

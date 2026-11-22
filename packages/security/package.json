@@ -14,10 +14,13 @@
   },
   "dependencies": {
     "@sendcms/database": "workspace:*",
-    "@sendcms/observability": "workspace:*"
+    "@sendcms/observability": "workspace:*",
+    "@sendcms/shared": "workspace:*",
+    "better-auth": "1.7.25"
   },
   "devDependencies": {
     "@sendcms/config": "workspace:*",
+    "@types/node": "^26.6.6",
     "typescript": "6.0.3"
   }
 }

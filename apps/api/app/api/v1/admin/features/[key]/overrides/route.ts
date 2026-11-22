@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { listFlagOverrides, setFlagOverride } from "@sendcms/platform-ops"
 import { SetFlagOverrideBodySchema } from "@sendcms/platform-ops/validators"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
@@ -12,6 +13,8 @@ export async function GET(
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(_req, session.user.id)
+    if (rateLimited) return rateLimited
     const { key } = await params
     const result = await listFlagOverrides(session, key)
     return ok(result)
@@ -27,6 +30,8 @@ export async function POST(
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const { key } = await params
     const body = await req.json().catch(() => ({}))
     const parsed = SetFlagOverrideBodySchema.safeParse(body)

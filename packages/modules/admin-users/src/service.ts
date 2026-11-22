@@ -7,7 +7,7 @@ import type {
   UserStatus,
 } from "@sendcms/database"
 import { adminCan, type PlatformCapability } from "@sendcms/permissions"
-import { logAudit } from "@sendcms/security"
+import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type { AdminUserListQuery } from "./validators"
 
@@ -566,6 +566,10 @@ export async function disableUser(
   if (target.status === "DISABLED") {
     throw new ApiError("This user is already disabled.", 409)
   }
+  // Step-up (Phase 9): disabling an account is high-impact — the
+  // actor re-enters their password first. Checked last, after every
+  // cheap guard, immediately before the write.
+  await requireStepUp(actor)
   const now = new Date()
   const [updated] = await db.$transaction([
     db.user.update({
@@ -639,6 +643,10 @@ export async function setAdminRole(
   const target = await getTargetUserOrThrow(userId)
   forbidOwnerTarget(target, "assigned a staff role")
   forbidSelfTarget(actor, userId, "change the admin role of")
+  // Step-up (Phase 9): changing a staff role is high-impact — the
+  // actor re-enters their password first. Checked last, after every
+  // cheap guard, immediately before the write.
+  await requireStepUp(actor)
   const previousAdminRole = target.adminRole
   const updated = await db.user.update({
     where: { id: userId },

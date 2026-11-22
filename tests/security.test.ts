@@ -6,7 +6,16 @@
 import { readFileSync } from "node:fs"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { renderHeadersFile, securityHeaders } from "@sendcms/security"
+import {
+  buildCsp,
+  createCspNonce,
+  cspHeaderName,
+  CSP_HEADER_NAME,
+  CSP_REPORT_ONLY,
+  CSP_REPORT_ONLY_HEADER_NAME,
+  renderHeadersFile,
+  securityHeaders,
+} from "@sendcms/security"
 
 // `vi.mock` factories are hoisted above the file's top-level code, so
 // the mocks they close over must be created with `vi.hoisted` (the
@@ -86,6 +95,76 @@ describe("securityHeaders", () => {
     ]) {
       const file = readFileSync(`apps/${app}/public/_headers`, "utf8")
       expect(file, `${app}/public/_headers`).toBe(expected)
+    }
+  })
+})
+
+describe("Content-Security-Policy (Phase 9)", () => {
+  it("builds the docs-shape policy with the nonce substituted", () => {
+    const nonce = "test-nonce-123"
+    const policy = buildCsp(nonce)
+    expect(policy).toContain("default-src 'self'")
+    expect(policy).toContain(
+      `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+    )
+    expect(policy).toContain(`style-src 'self' 'nonce-${nonce}'`)
+    expect(policy).toContain("img-src 'self' blob: data:")
+    expect(policy).toContain("font-src 'self'")
+    expect(policy).toContain("object-src 'none'")
+    expect(policy).toContain("base-uri 'self'")
+    expect(policy).toContain("form-action 'self'")
+    expect(policy).toContain("frame-ancestors 'none'")
+    expect(policy).toContain("upgrade-insecure-requests")
+    expect(policy).not.toContain("unsafe-inline")
+    expect(policy).not.toContain("connect-src")
+  })
+
+  it("adds connect-src only when an api origin is given (marketing demo)", () => {
+    const policy = buildCsp("n", { apiOrigin: "https://api.sendcms.bond" })
+    expect(policy).toContain("connect-src 'self' https://api.sendcms.bond")
+  })
+
+  it("creates a fresh base64 nonce on every call", () => {
+    const a = createCspNonce()
+    const b = createCspNonce()
+    expect(a).not.toBe(b)
+    expect(a).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
+    // The nonce is the base64 of a UUID — decoding it gives the UUID back.
+    expect(Buffer.from(a, "base64").toString("utf8")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
+  })
+
+  it("names the report-only and enforcing headers", () => {
+    expect(cspHeaderName(true)).toBe("Content-Security-Policy-Report-Only")
+    expect(cspHeaderName(false)).toBe("Content-Security-Policy")
+    expect(CSP_HEADER_NAME).toBe("Content-Security-Policy")
+    expect(CSP_REPORT_ONLY_HEADER_NAME).toBe(
+      "Content-Security-Policy-Report-Only"
+    )
+  })
+
+  it("ships enforcing — the report-only run is done and the flip landed", () => {
+    expect(CSP_REPORT_ONLY).toBe(false)
+  })
+
+  it("keeps CSP out of the committed _headers files", () => {
+    // A nonce policy cannot live in a static file. The _headers files
+    // do mention CSP in a comment (explaining why it is absent) — the
+    // assertion is on header lines, not on the word itself.
+    for (const app of [
+      "marketing",
+      "api",
+      "dashboard",
+      "docs",
+      "updates",
+      "admin",
+    ]) {
+      const file = readFileSync(`apps/${app}/public/_headers`, "utf8")
+      const headerLines = file
+        .split("\n")
+        .filter((line) => line.trim().startsWith("Content-Security-Policy:"))
+      expect(headerLines, `${app}/public/_headers`).toEqual([])
     }
   })
 })

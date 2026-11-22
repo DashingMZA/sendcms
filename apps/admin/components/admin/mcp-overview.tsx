@@ -40,6 +40,7 @@ import {
 } from "@sendcms/ui"
 import { useTranslation } from "@/components/admin/translation-provider"
 import { formatErrorRate } from "./ai-format"
+import { StepUpDialog } from "./step-up-dialog"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
@@ -66,6 +67,8 @@ export function McpOverview({ actorRole }: Props) {
   // The pending switch value: null = no dialog open.
   const [pendingEnabled, setPendingEnabled] = useState<boolean | null>(null)
   const [reason, setReason] = useState("")
+  // Step-up (Phase 9): the password dialog for the kill-switch.
+  const [stepUpOpen, setStepUpOpen] = useState(false)
 
   if (!canViewMcp) {
     return (
@@ -342,7 +345,7 @@ export function McpOverview({ actorRole }: Props) {
                 </Button>
                 <Button
                   variant={pendingEnabled ? "default" : "destructive"}
-                  onClick={confirmSwitch}
+                  onClick={() => setStepUpOpen(true)}
                   disabled={setSettings.isPending || reason.trim() === ""}
                 >
                   {pendingEnabled
@@ -354,6 +357,11 @@ export function McpOverview({ actorRole }: Props) {
           )}
         </DialogContent>
       </Dialog>
+      <StepUpDialog
+        open={stepUpOpen}
+        onOpenChange={setStepUpOpen}
+        onVerified={() => void confirmSwitch()}
+      />
     </div>
   )
 }

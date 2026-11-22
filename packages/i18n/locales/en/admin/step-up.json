@@ -1,0 +1,13 @@
+{
+  "cancel": "Cancel",
+  "description": "This is a high-impact action. Re-enter your password to continue.",
+  "noPasswordSet": "No password is set on this account. Set a password in your profile first, then try again.",
+  "passwordLabel": "Password",
+  "passwordPlaceholder": "Your password",
+  "title": "Confirm with your password",
+  "tooManyAttempts": "Too many verification attempts. Please try again later.",
+  "verified": "Verified. You can continue.",
+  "verify": "Verify and continue",
+  "verifying": "Verifying…",
+  "wrongPassword": "Incorrect password. Try again."
+}

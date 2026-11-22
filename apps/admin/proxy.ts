@@ -6,6 +6,12 @@ import {
   type PlatformRole,
 } from "@sendcms/permissions"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import {
+  buildCsp,
+  createCspNonce,
+  cspHeaderName,
+  CSP_REPORT_ONLY,
+} from "@sendcms/security"
 
 /**
  * Route protection for the admin app (Better Auth, database sessions).
@@ -27,26 +33,49 @@ import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
  * Next 16 proxy default) — it is NOT edge-safe.
  */
 export default async function proxy(req: NextRequest) {
+  // CSP nonce (Admin Control Plane, Phase 9): a fresh nonce per
+  // request, set on the request headers so Next.js applies it to its
+  // own inline scripts, and on every response this proxy returns.
+  // The header rides on the redirect responses too — browsers ignore
+  // CSP on redirects, but it makes the header observable on the
+  // unauthenticated path as well. The matcher (`/admin/:path*`) is
+  // unchanged.
+  const nonce = createCspNonce()
+  const policy = buildCsp(nonce)
+  const headerName = cspHeaderName(CSP_REPORT_ONLY)
+  const withCsp = (response: NextResponse): NextResponse => {
+    response.headers.set(headerName, policy)
+    return response
+  }
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set("x-nonce", nonce)
+  requestHeaders.set(headerName, policy)
+
   const result = await betterAuth.api.getSession({
     headers: req.headers,
   })
   if (!result) {
-    return NextResponse.redirect(
-      dashboardSignInURL(`${adminBaseURL()}${req.nextUrl.pathname}`)
+    return withCsp(
+      NextResponse.redirect(
+        dashboardSignInURL(`${adminBaseURL()}${req.nextUrl.pathname}`)
+      )
     )
   }
 
   // Suspension enforcement (Phase 3): a non-ACTIVE account cannot use
   // the admin app at all.
   if ((result.user.status ?? "ACTIVE") !== "ACTIVE") {
-    return NextResponse.redirect(
-      dashboardSignInURL(`${adminBaseURL()}${req.nextUrl.pathname}`)
+    return withCsp(
+      NextResponse.redirect(
+        dashboardSignInURL(`${adminBaseURL()}${req.nextUrl.pathname}`)
+      )
     )
   }
 
   const path = req.nextUrl.pathname
   // The denial page itself: signed-in, but no capability needed to see it.
-  if (path === "/admin/unauthorized") return NextResponse.next()
+  if (path === "/admin/unauthorized")
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
 
   const matched = Object.keys(PLATFORM_ROUTE_CAPABILITY).find(
     (route) => path === route || path.startsWith(route + "/")
@@ -58,10 +87,12 @@ export default async function proxy(req: NextRequest) {
         : ((result.user.adminRole ?? "PLATFORM_USER") as
             PlatformRole | "SUPER_ADMIN" | "MANAGER" | "SUPPORT")
     if (!adminCan(role, PLATFORM_ROUTE_CAPABILITY[matched])) {
-      return NextResponse.redirect(new URL("/admin/unauthorized", req.url))
+      return withCsp(
+        NextResponse.redirect(new URL("/admin/unauthorized", req.url))
+      )
     }
   }
-  return NextResponse.next()
+  return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
 }
 
 export const config = {

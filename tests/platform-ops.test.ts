@@ -493,6 +493,14 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         }
       }),
     },
+    // Phase 9: the gated actions (deletion approve/erase) call
+    // requireStepUp, which reads the latest unexpired verification.
+    // These tests run as a verified admin.
+    stepUpVerification: {
+      findFirst: vi.fn(async () => ({
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+      })),
+    },
     submission: {
       findMany: vi.fn(async (args: Row = {}) => {
         const rows = store.submissions
