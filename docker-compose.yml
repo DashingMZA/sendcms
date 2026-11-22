@@ -15,7 +15,7 @@
 # defaults here; override them in production.
 #
 # Ports: marketing 3000, api 3001, dashboard 3002, docs 3003,
-# updates 3004, email worker 3005, Postgres 5432.
+# updates 3004, email worker 3005, admin 3006, Postgres 5432.
 
 x-next-public: &next-public
   NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
@@ -24,6 +24,7 @@ x-next-public: &next-public
   NEXT_PUBLIC_DOCS_URL: ${NEXT_PUBLIC_DOCS_URL:-http://localhost:3003}
   NEXT_PUBLIC_UPDATES_URL: ${NEXT_PUBLIC_UPDATES_URL:-http://localhost:3004}
   NEXT_PUBLIC_AUTH_URL: ${NEXT_PUBLIC_AUTH_URL:-http://localhost:3001}
+  NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-http://localhost:3006}
 
 x-app-build: &app-build
   context: .
@@ -117,6 +118,37 @@ services:
           "-O",
           "/dev/null",
           "http://localhost:3002/sign-in",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  admin:
+    build:
+      <<: *app-build
+      args:
+        APP: "@sendcms/admin"
+        <<: *next-public
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: "3006"
+      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      <<: *next-public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # /admin 307-redirects unauthenticated requests to the dashboard
+      # sign-in, so the check accepts the redirect itself as healthy.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -S -O /dev/null http://localhost:3006/admin 2>&1 | grep -q 'HTTP/.* 307'",
         ]
       interval: 10s
       timeout: 5s

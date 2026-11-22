@@ -51,6 +51,7 @@
     "NEXT_PUBLIC_ADMIN_URL": "https://admin.sendcms.bond",
     "NEXT_PUBLIC_AUTH_URL": "https://api.sendcms.bond",
     "NEXT_PUBLIC_API_URL": "https://api.sendcms.bond",
+    "NEXT_PUBLIC_DASHBOARD_URL": "https://dashboard.sendcms.bond",
   },
   // Secrets are NOT stored here. Set them in the Cloudflare
   // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET (its lib/auth creates a Better Auth instance and its layouts call auth()).

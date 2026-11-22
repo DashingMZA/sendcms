@@ -101,6 +101,7 @@ One project per app (all in the same team, all linked to
 | `sendcms-dashboard` | `pnpm --filter @sendcms/dashboard build:server` | `apps/dashboard/.next` | `dashboard.sendcms.bond` |
 | `sendcms-docs`      | `pnpm --filter @sendcms/docs build:server`      | `apps/docs/.next`      | `docs.sendcms.bond`      |
 | `sendcms-updates`   | `pnpm --filter @sendcms/updates build:server`   | `apps/updates/.next`   | `updates.sendcms.bond`   |
+| `sendcms-admin`     | `pnpm --filter @sendcms/admin build:server`     | `apps/admin/.next`     | `admin.sendcms.bond`     |
 
 (The marketing project predates `build:server` and still uses plain
 `next build` — marketing needs no Prisma generate, so the two are
@@ -109,8 +110,10 @@ equivalent there; switching it to `build:server` is a no-op.)
 Deploys are **manual only**: the Ignored Build Step ("Don't build
 anything") cancels git-triggered deploys, so pushing to `main` triggers
 nothing. Deploy from the dashboard (or via the agent) when tested and
-ready. The `feature/ai` branch is deployed to production on all five
-projects. Set the env vars in each project's dashboard before the
+ready. The `feature/ai` branch is deployed to production on the five
+original projects; the admin project is new — deploy the
+`feature/admin-control-plane` branch on it until the branches merge.
+Set the env vars in each project's dashboard before the
 first deploy — the `NEXT_PUBLIC_*_URL` vars must be that project's
 siblings' public URLs (see the env table in
 [Deployment](../deployment.md#environment-variables)), and `DATABASE_URL` /
@@ -168,7 +171,7 @@ the verification step for this path.
 ## Render
 
 `render.yaml` at the repo root is the whole stack as a Blueprint:
-5 web services + the email worker + managed Postgres. Create it from
+6 web services + the email worker + managed Postgres. Create it from
 the dashboard: New → Blueprint → this repo.
 
 - ⚠️ `branch: feature/monorepo-architecture-migration` — the
@@ -190,11 +193,11 @@ the dashboard: New → Blueprint → this repo.
   `BETTER_AUTH_SECRET` and `CRON_SECRET` are generated once by Render
   (`generateValue`). Secrets marked `sync: false` are set in the
   dashboard.
-- The dashboard service's `BETTER_AUTH_SECRET` is `sync: false`
-  deliberately: Render generates each service's value independently,
-  and the dashboard must share the api service's value — copy the api
-  service's generated value into the dashboard service after first
-  deploy.
+- The dashboard and admin services' `BETTER_AUTH_SECRET` is
+  `sync: false` deliberately: Render generates each service's value
+  independently, and both services must share the api service's
+  value — copy the api service's generated value into both services
+  after first deploy.
 - `preDeployCommand: pnpm db:migrate:deploy` on the api service runs
   migrations before traffic switches. It is a paid-plan feature — on
   a free plan, run `pnpm db:migrate:deploy` manually (with the

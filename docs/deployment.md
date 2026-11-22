@@ -42,13 +42,14 @@ push is disabled via the Ignored Build Step (owner directive
 | `DATABASE_URL`                                                                                                      | yes                    | Postgres connection string. With Prisma Postgres, use `?sslmode=verify-full`.                                                                                                               |
 | `BETTER_AUTH_SECRET`                                                                                                | yes                    | Random 32+ char secret (`openssl rand -base64 32`). No fallback — the app refuses to start auth without it.                                                                                 |
 | `BETTER_AUTH_URL`                                                                                                   | yes                    | The **api app's** public URL, e.g. `https://api.sendcms.bond` (the auth handler lives there).                                                                                               |
-| `TRUSTED_ORIGINS`                                                                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard app's URL.                                                                                                                     |
+| `TRUSTED_ORIGINS`                                                                                                   | yes, in production     | Comma-separated origins allowed to call auth — the dashboard and admin apps' URLs.                                                                                                          |
 | `NEXT_PUBLIC_APP_URL`                                                                                               | yes                    | The **marketing app's** public URL; baked into SDK snippets and email links.                                                                                                                |
 | `NEXT_PUBLIC_API_URL`                                                                                               | yes                    | The api app's public URL (SDK bundle origin + submit API).                                                                                                                                  |
 | `NEXT_PUBLIC_DASHBOARD_URL`                                                                                         | yes                    | The dashboard app's public URL (auth callback + inbox links).                                                                                                                               |
 | `NEXT_PUBLIC_DOCS_URL`                                                                                              | yes                    | The docs app's public URL.                                                                                                                                                                  |
 | `NEXT_PUBLIC_UPDATES_URL`                                                                                           | yes                    | The updates app's public URL.                                                                                                                                                               |
-| `NEXT_PUBLIC_AUTH_URL`                                                                                              | yes                    | The api app's public URL (the dashboard's auth client talks to it).                                                                                                                         |
+| `NEXT_PUBLIC_ADMIN_URL`                                                                                             | yes                    | The admin app's public URL (auth callback + admin links).                                                                                                                                   |
+| `NEXT_PUBLIC_AUTH_URL`                                                                                              | yes                    | The api app's public URL (the dashboard and admin apps' auth clients talk to it).                                                                                                           |
 | `COOKIE_DOMAIN`                                                                                                     | production only        | Session cookie domain, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                                                            |
 | `LOG_LEVEL`                                                                                                         | no                     | Structured log level: `info` / `warn` / `error` (default `info`).                                                                                                                           |
 | `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                                                                           | no                     | Standalone email worker: port (default 3005) and outbox poll interval in ms (default 30000). The worker binds `PORT` first when a platform injects it (Render/Railway), else `WORKER_PORT`. |
@@ -111,7 +112,7 @@ non-Cloudflare platform builds with (Prisma generate, then the SDK
 bundle for the api app, then `next build`):
 
 ```bash
-pnpm --filter @sendcms/<app> build:server   # marketing | api | dashboard | docs | updates
+pnpm --filter @sendcms/<app> build:server   # marketing | api | dashboard | docs | updates | admin
 ```
 
 `pnpm dev` does the same generation steps, then starts the dev
@@ -162,20 +163,32 @@ every platform — see [Email notifications](email-notifications.md).)
 - Set every variable above in each project's settings before the
   first deploy. `NEXT_PUBLIC_APP_URL` must be the production URL or
   SDK snippets and email links will point at the wrong host.
-  `BETTER_AUTH_SECRET` must be the same value on the api and
-  dashboard projects.
+  `BETTER_AUTH_SECRET` must be the same value on the api, dashboard,
+  and admin projects.
+- Sixth project `sendcms-admin`: build
+  `pnpm --filter @sendcms/admin build:server`, output
+  `apps/admin/.next`, host `admin.sendcms.bond`. Deploy the
+  `feature/admin-control-plane` branch on it (the admin code is not
+  on `feature/ai`). Set `DATABASE_URL`, `BETTER_AUTH_SECRET` (same
+  value as api + dashboard), `BETTER_AUTH_URL`, and the
+  `NEXT_PUBLIC_*_URL` vars (including
+  `NEXT_PUBLIC_ADMIN_URL=https://admin.sendcms.bond`) before the
+  first deploy — and add `https://admin.sendcms.bond` to the
+  **api** project's `TRUSTED_ORIGINS`, or the auth handler refuses
+  the admin origin.
 - `BETTER_AUTH_URL` must be `https://api.sendcms.bond` (the auth
   handler lives only on the api app). OAuth redirect URIs for Google,
   GitHub, and Facebook are set in their consoles; sign-in is verified
   working.
 
-## Cloudflare notes (Phase 10 — five Workers, one per app)
+## Cloudflare notes (Phase 10 — six Workers, one per app)
 
 - Each app deploys as its own Worker — see
   `infrastructure/cloudflare/README.md` for the table, the dashboard
   steps, and the placeholder production URLs. The api app keeps the
   worker name `sendcms`; the others are `sendcms-marketing`,
-  `sendcms-dashboard`, `sendcms-docs`, `sendcms-updates`.
+  `sendcms-dashboard`, `sendcms-docs`, `sendcms-updates`,
+  `sendcms-admin`.
 - The Worker entry is `.open-next/worker.js` (OpenNext adapter);
   each app's `wrangler.jsonc` holds the R2 cache bucket, the Images
   binding, and the self-reference service binding. The build command
@@ -192,7 +205,7 @@ build` (also in each `wrangler.jsonc`'s `build.command` and as that
   `@sendcms/security` — each app's `next.config.mjs` `headers()` plus
   that app's `public/_headers` (nosniff, referrer policy, SAMEORIGIN
   framing, no camera/mic/geolocation). ✅ On this branch (Phase 9)
-  a nonce-based Content-Security-Policy is enforcing on all five page
+  a nonce-based Content-Security-Policy is enforcing on all six page
   apps — see
   [admin-control-plane/csp.md](admin-control-plane/csp.md). It is
   **not deployed** (this branch is unmerged).
@@ -204,7 +217,7 @@ build` (also in each `wrangler.jsonc`'s `build.command` and as that
   the Cloudflare path is next deployed.
 - The R2 cache bucket is still `open-remark-opennext-cache` — it is a
   real Cloudflare resource, so renaming it needs a new bucket created
-  in the dashboard first; the cache can be recreated empty. All five
+  in the dashboard first; the cache can be recreated empty. All six
   workers share that one bucket (see the caveat in
   `infrastructure/cloudflare/README.md`). The next `wrangler deploy`
   of the api app creates a new `sendcms` worker; delete the old

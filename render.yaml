@@ -1,7 +1,7 @@
 # SendCMS on Render — one Blueprint for the whole stack.
 #
 # Create it from the Render dashboard: New → Blueprint → this repo.
-# Render provisions all 5 web services + the email worker + Postgres.
+# Render provisions all 6 web services + the email worker + Postgres.
 #
 # Branch: the monorepo code lives on the feature branch until it is
 # merged — change `branch` to `main` after the merge.
@@ -73,7 +73,7 @@ services:
       - key: BETTER_AUTH_URL
         value: https://sendcms-api.onrender.com
       - key: TRUSTED_ORIGINS
-        value: https://sendcms-dashboard.onrender.com
+        value: https://sendcms-dashboard.onrender.com,https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_AUTH_URL
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_APP_URL
@@ -148,6 +148,47 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_DOCS_URL
+        value: https://sendcms-docs.onrender.com
+      - key: NEXT_PUBLIC_UPDATES_URL
+        value: https://sendcms-updates.onrender.com
+
+  - type: web
+    name: sendcms-admin
+    runtime: node
+    region: singapore
+    plan: free
+    branch: feature/monorepo-architecture-migration
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/admin build:server
+    startCommand: pnpm --filter @sendcms/admin start -- -H 0.0.0.0 -p $PORT
+    # No healthCheckPath: /admin 307-redirects unauthenticated requests
+    # to the dashboard sign-in, so there is no 200 path to check.
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sendcms-db
+          property: connectionString
+      # Same value as the api service's BETTER_AUTH_SECRET (sessions are
+      # shared). Render generates each service's value independently, so
+      # copy the api service's generated value here after first deploy.
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: BETTER_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: TRUSTED_ORIGINS
+        value: https://sendcms-admin.onrender.com
+      - key: NEXT_PUBLIC_AUTH_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://sendcms-marketing.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        value: https://sendcms-api.onrender.com
+      - key: NEXT_PUBLIC_DASHBOARD_URL
+        value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
