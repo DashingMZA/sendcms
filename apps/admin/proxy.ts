@@ -41,7 +41,16 @@ export default async function proxy(req: NextRequest) {
   // unauthenticated path as well. The matcher (`/admin/:path*`) is
   // unchanged.
   const nonce = createCspNonce()
-  const policy = buildCsp(nonce)
+  // The admin sidebar's sign-out posts cross-origin to the api app
+  // (the Better Auth handler lives there), and there is no nonce
+  // mechanism for `fetch`. So the policy allows that origin for
+  // `connect-src`; without it, `default-src 'self'` blocks the
+  // request and sign-out silently fails — same cause as the
+  // dashboard's social buttons (found live 2026-11-23).
+  const apiOrigin = (
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
+  ).replace(/\/$/, "")
+  const policy = buildCsp(nonce, { apiOrigin })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
   const withCsp = (response: NextResponse): NextResponse => {
     response.headers.set(headerName, policy)

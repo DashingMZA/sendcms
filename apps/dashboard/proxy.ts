@@ -31,7 +31,19 @@ export default async function proxy(req: NextRequest) {
   // CSP on redirects, but it makes the header observable on the
   // unauthenticated path as well.
   const nonce = createCspNonce()
-  const policy = buildCsp(nonce)
+  // The browser auth client posts cross-origin to the api app (the
+  // Better Auth handler lives there — sign-in, sign-up, and the
+  // social OAuth flow all go through it), and there is no nonce
+  // mechanism for `fetch`. So the policy allows that origin for
+  // `connect-src`; without it, `default-src 'self'` blocks every
+  // auth request and the social buttons silently do nothing (found
+  // live 2026-11-23, the second enforcing-CSP breakage after the
+  // sidebar overlap). The `/api/v1/*` data fetches stay same-origin
+  // through the rewrite below and need no allowlist.
+  const apiOrigin = (
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
+  ).replace(/\/$/, "")
+  const policy = buildCsp(nonce, { apiOrigin })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
   const withCsp = (response: NextResponse): NextResponse => {
     response.headers.set(headerName, policy)

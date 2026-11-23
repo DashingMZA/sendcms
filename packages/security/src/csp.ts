@@ -48,13 +48,18 @@
  *   the effective framing policy is now "none". That is deliberate —
  *   nothing in SendCMS is designed to be embedded.
  * - `upgrade-insecure-requests` — http subresources upgrade to https.
- * - `connect-src 'self' <api origin>` — marketing ONLY. Its demo
- *   page's REST tab fetches the public submit API cross-origin
- *   (`${api}/api/public/v1/submit`), and there is no nonce mechanism
- *   for `fetch`, so `default-src 'self'` alone would block it. The
- *   other apps fetch same-origin (the dashboard rewrites `/api/v1/*`
- *   to the api app server-side), so they get no `connect-src` and
- *   fall back to `default-src 'self'`.
+ * - `connect-src 'self' <api origin>` — the dashboard, admin, and
+ *   marketing apps pass the api origin. There is no nonce mechanism
+ *   for `fetch`, so `default-src 'self'` alone would block a
+ *   cross-origin fetch: the dashboard's browser auth client posts
+ *   to the api app (the Better Auth handler lives there — sign-in,
+ *   sign-up, and the social OAuth flow all go through it), the
+ *   admin's sign-out posts there too, and marketing's demo REST tab
+ *   fetches the public submit API (`${api}/api/public/v1/submit`).
+ *   The dashboard's `/api/v1/*` data fetches stay same-origin (the
+ *   proxy rewrites them to the api app server-side), but the auth
+ *   client cannot go through that rewrite. Docs and updates pass no
+ *   origin and fall back to `default-src 'self'`.
  * - The marketing demo page also loads the SDK script from the api
  *   origin (`next/script`, `${api}/forms/v1.js`). It is NOT allow-
  *   listed in `script-src` up front: if Next.js applies the nonce to
@@ -87,11 +92,12 @@ export function createCspNonce(): string {
 }
 
 export interface CspOptions {
-  // Origin of the api app (the SDK bundle host + the public submit
-  // API), e.g. `https://api.sendcms.bond` in production,
-  // `http://localhost:3001` in dev. Only the marketing app passes it
-  // — see the header comment. Omit it and the policy has no
-  // `connect-src` (it falls back to `default-src 'self'`).
+  // Origin of the api app (the auth handler + the public submit API),
+  // e.g. `https://api.sendcms.bond` in production,
+  // `http://localhost:3001` in dev. The dashboard, admin, and
+  // marketing apps pass it — see the header comment. Omit it and the
+  // policy has no `connect-src` (it falls back to `default-src
+  // 'self'`).
   apiOrigin?: string
 }
 

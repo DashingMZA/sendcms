@@ -25,7 +25,8 @@ frame-ancestors 'none';
 upgrade-insecure-requests
 ```
 
-Marketing adds one directive (see "Per-app inventory" below):
+The dashboard, admin, and marketing apps add one directive (see
+"Per-app inventory" below):
 
 ```
 connect-src 'self' <api origin>
@@ -58,6 +59,19 @@ first" below).
   restores those styles; `<style>` elements still need the nonce
   and scripts stay strict. The test pins all three facts
   (`tests/security.test.ts`).
+- `connect-src 'self' <api origin>` — the dashboard, admin, and
+  marketing apps add this (the builder only emits it when an
+  `apiOrigin` is passed). There is no nonce mechanism for `fetch`:
+  the dashboard's browser auth client posts to the api app, the
+  admin's sign-out posts there too, and marketing's demo REST tab
+  fetches the submit API — all cross-origin. The first enforcing
+  deploy (2026-11-22) shipped without it on dashboard/admin: the
+  browser blocked every auth request with `TypeError: Failed to
+fetch`, and the social buttons silently did nothing (found live
+  2026-11-23). The Phase 9 inventory had claimed the dashboard has
+  no cross-origin source — wrong: it missed the auth client. The
+  fix adds the origin to the dashboard and admin proxies, same
+  pattern as marketing.
 - `img-src 'self' blob: data:` — same-origin images, plus `blob:`
   (download previews created with `URL.createObjectURL`) and `data:`
   (inline SVG / data-URI images).
@@ -163,16 +177,23 @@ necessary.
 <api origin>` for marketing only. The homepage's embed snippet is
   displayed as text, not executed. No external fonts, images,
   iframes, or analytics anywhere in the app.
-- **dashboard** — no external sources. Its fetches go through the
-  same-origin `/api/v1/*` rewrite (proxied to the api app
-  server-side), so `default-src 'self'` covers them. Turnstile is
-  only a per-form setting flag — no widget is loaded in the app.
-  Downloads use `URL.createObjectURL` (`blob:`), covered by
-  `img-src`.
+- **dashboard** — one cross-origin source: its browser auth client
+  (sign-in, sign-up, social OAuth) posts to the api app, so the
+  policy adds `connect-src 'self' <api origin>`. Its `/api/v1/*`
+  data fetches go through the same-origin rewrite (proxied to the
+  api app server-side), so `default-src 'self'` covers those.
+  Turnstile is only a per-form setting flag — no widget is loaded
+  in the app. Downloads use `URL.createObjectURL` (`blob:`),
+  covered by `img-src`. (Correction 2026-11-23: the Phase 9
+  inventory said "no external sources" — it missed the auth
+  client, which is why the social buttons broke under the first
+  enforcing deploy.)
 - **docs** — renders repo markdown via `dangerouslySetInnerHTML`; no
   `<script>` in any doc, no external images. Base policy only.
 - **updates** — static changelog. Base policy only.
-- **admin** — Recharts charts, no external sources. Base policy only.
+- **admin** — Recharts charts, plus one cross-origin source: the
+  sidebar sign-out posts to the api app, so the policy adds
+  `connect-src 'self' <api origin>` like the dashboard.
 - **api** — no HTML, no CSP. The SDK bundle (`/forms/v1.js`) and the
   JSON routes carry no CSP header.
 

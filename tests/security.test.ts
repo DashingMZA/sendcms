@@ -129,9 +129,16 @@ describe("Content-Security-Policy (Phase 9)", () => {
     expect(policy).not.toContain("connect-src")
   })
 
-  it("adds connect-src only when an api origin is given (marketing demo)", () => {
+  it("adds connect-src only when an api origin is given (dashboard, admin, marketing)", () => {
+    // Production origin. All three apps pass the api origin — the
+    // dashboard's auth client and the admin's sign-out post
+    // cross-origin to the api app, and marketing's demo REST tab
+    // fetches the submit API there.
     const policy = buildCsp("n", { apiOrigin: "https://api.sendcms.bond" })
     expect(policy).toContain("connect-src 'self' https://api.sendcms.bond")
+    // Dev origin (localhost:3001) — same shape, no special-casing.
+    const devPolicy = buildCsp("n", { apiOrigin: "http://localhost:3001" })
+    expect(devPolicy).toContain("connect-src 'self' http://localhost:3001")
   })
 
   it("creates a fresh base64 nonce on every call", () => {
