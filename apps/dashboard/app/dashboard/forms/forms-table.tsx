@@ -16,6 +16,7 @@ import {
 } from "@sendcms/ui"
 
 import { RiAddLine, RiInboxLine } from "@remixicon/react"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 function formatDate(value: string | Date | null) {
   if (!value) return "—"
@@ -31,6 +32,7 @@ export function FormsTable({
 }: {
   initialForms: FormWithCounts[]
 }) {
+  const { t } = useTranslation("forms")
   const { data: forms = initialForms } = useForms(initialForms)
 
   if (forms.length === 0) {
@@ -41,16 +43,15 @@ export function FormsTable({
           aria-hidden="true"
         />
         <h3 className="mb-1 text-lg font-semibold text-balance">
-          No forms yet
+          {t("emptyTitle")}
         </h3>
         <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-          Create your first form to start collecting submissions from your
-          sites. Every form starts with name, email and message fields.
+          {t("emptyDescription")}
         </p>
         <Button asChild size="sm">
           <Link href="/dashboard/forms/new">
             <RiAddLine className="size-4" aria-hidden="true" />
-            New form
+            {t("newForm")}
           </Link>
         </Button>
       </div>
@@ -62,12 +63,12 @@ export function FormsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Form</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Fields</TableHead>
-            <TableHead>Domains</TableHead>
-            <TableHead>Submissions</TableHead>
-            <TableHead>Created</TableHead>
+            <TableHead>{t("colForm")}</TableHead>
+            <TableHead>{t("colStatus")}</TableHead>
+            <TableHead>{t("colFields")}</TableHead>
+            <TableHead>{t("colDomains")}</TableHead>
+            <TableHead>{t("colSubmissions")}</TableHead>
+            <TableHead>{t("colCreated")}</TableHead>
             <TableHead className="w-20" />
           </TableRow>
         </TableHeader>
@@ -77,7 +78,7 @@ export function FormsTable({
               <TableCell className="font-medium">{form.name}</TableCell>
               <TableCell>
                 <Badge variant={form.active ? "default" : "secondary"}>
-                  {form.active ? "Active" : "Paused"}
+                  {form.active ? t("statusActive") : t("statusPaused")}
                 </Badge>
               </TableCell>
               <TableCell>{form._count.fields}</TableCell>
@@ -86,7 +87,7 @@ export function FormsTable({
               <TableCell>{formatDate(form.createdAt)}</TableCell>
               <TableCell>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href={`/dashboard/forms/${form.id}`}>Open</Link>
+                  <Link href={`/dashboard/forms/${form.id}`}>{t("open")}</Link>
                 </Button>
               </TableCell>
             </TableRow>

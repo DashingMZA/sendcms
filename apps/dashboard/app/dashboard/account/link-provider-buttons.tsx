@@ -4,6 +4,7 @@ import type { OAuthProviderId } from "@sendcms/auth"
 import { authClient } from "@sendcms/auth/client"
 
 import { Button } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 const PROVIDER_LABEL: Record<OAuthProviderId, string> = {
   google: "Google",
@@ -17,6 +18,7 @@ export function LinkProviderButtons({
 }: {
   providers: OAuthProviderId[]
 }) {
+  const { t } = useTranslation("account")
   if (providers.length === 0) return null
   return (
     <div className="flex flex-wrap gap-2">
@@ -32,7 +34,7 @@ export function LinkProviderButtons({
             })
           }
         >
-          Connect {PROVIDER_LABEL[provider]}
+          {t("connectProvider", { provider: PROVIDER_LABEL[provider] })}
         </Button>
       ))}
     </div>

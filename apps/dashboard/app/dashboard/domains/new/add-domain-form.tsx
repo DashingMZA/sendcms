@@ -17,8 +17,10 @@ import {
 } from "@sendcms/ui"
 
 import type { DomainVerificationMethod } from "@sendcms/database"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function AddDomainForm() {
+  const { t } = useTranslation("domains")
   const router = useRouter()
   const createDomain = useCreateDomain()
   const [domain, setDomain] = useState("")
@@ -32,18 +34,14 @@ export function AddDomainForm() {
       const created = await createDomain.mutateAsync({ domain, method })
       router.push(`/dashboard/domains/${created.id}`)
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not add this domain."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("addFailed"))
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="max-w-lg space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="domain">Domain</Label>
+        <Label htmlFor="domain">{t("domainLabel")}</Label>
         <Input
           id="domain"
           type="text"
@@ -53,14 +51,11 @@ export function AddDomainForm() {
           onChange={(e) => setDomain(e.target.value)}
           required
         />
-        <p className="text-xs text-muted-foreground">
-          A scheme, path or www prefix is stripped automatically —
-          https://www.example.com/blog becomes example.com.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("domainHint")}</p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="method">Verification method</Label>
+        <Label htmlFor="method">{t("methodLabel")}</Label>
         <Select
           value={method}
           onValueChange={(v) => setMethod(v as DomainVerificationMethod)}
@@ -70,16 +65,13 @@ export function AddDomainForm() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="DNS_TXT">
-              DNS TXT record (recommended)
+              {t("methodDnsTxtRecommended")}
             </SelectItem>
-            <SelectItem value="META_TAG">HTML meta tag</SelectItem>
-            <SelectItem value="FILE">Verification file</SelectItem>
+            <SelectItem value="META_TAG">{t("methodMetaTag")}</SelectItem>
+            <SelectItem value="FILE">{t("methodFile")}</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          DNS TXT works for any host. The meta tag and file methods need your
-          site to be reachable over HTTPS.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("methodHint")}</p>
       </div>
 
       {error && (
@@ -89,7 +81,7 @@ export function AddDomainForm() {
       )}
 
       <Button type="submit" disabled={createDomain.isPending}>
-        {createDomain.isPending ? "Adding…" : "Add domain"}
+        {createDomain.isPending ? t("adding") : t("addDomain")}
       </Button>
     </form>
   )

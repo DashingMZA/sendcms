@@ -6,8 +6,10 @@ import { useCreateForm } from "@sendcms/forms/queries"
 import { ApiClientError } from "@sendcms/shared"
 
 import { Button, Input, Label, Switch, Textarea } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function NewFormForm() {
+  const { t } = useTranslation("forms")
   const router = useRouter()
   const createForm = useCreateForm()
   const [name, setName] = useState("")
@@ -34,23 +36,19 @@ export function NewFormForm() {
       })
       router.push(`/dashboard/forms/${created.id}`)
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not create this form."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("createFailed"))
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="max-w-lg space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="name">Form name</Label>
+        <Label htmlFor="name">{t("formNameLabel")}</Label>
         <Input
           id="name"
           type="text"
           autoComplete="off"
-          placeholder="Contact us"
+          placeholder={t("formNamePlaceholder")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -58,29 +56,31 @@ export function NewFormForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Description (optional)</Label>
+        <Label htmlFor="description">{t("descriptionOptionalLabel")}</Label>
         <Textarea
           id="description"
-          placeholder="Shown in the dashboard only — visitors never see it."
+          placeholder={t("descriptionPlaceholder")}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="successMessage">Success message (optional)</Label>
+        <Label htmlFor="successMessage">
+          {t("successMessageOptionalLabel")}
+        </Label>
         <Input
           id="successMessage"
           type="text"
           autoComplete="off"
-          placeholder="Thanks! We'll get back to you soon."
+          placeholder={t("successMessagePlaceholder")}
           value={successMessage}
           onChange={(e) => setSuccessMessage(e.target.value)}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="redirectUrl">Redirect URL (optional)</Label>
+        <Label htmlFor="redirectUrl">{t("redirectUrlOptionalLabel")}</Label>
         <Input
           id="redirectUrl"
           type="url"
@@ -89,20 +89,17 @@ export function NewFormForm() {
           value={redirectUrl}
           onChange={(e) => setRedirectUrl(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
-          After a successful submission the visitor is sent here instead of
-          seeing the success message.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("redirectHint")}</p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="dailyLimit">Daily submission limit (optional)</Label>
+        <Label htmlFor="dailyLimit">{t("dailyLimitOptionalLabel")}</Label>
         <Input
           id="dailyLimit"
           type="number"
           min={1}
           max={100000}
-          placeholder="Unlimited"
+          placeholder={t("dailyLimitPlaceholder")}
           value={dailyLimit}
           onChange={(e) => setDailyLimit(e.target.value)}
         />
@@ -110,9 +107,9 @@ export function NewFormForm() {
 
       <div className="flex items-center justify-between rounded-lg border p-4">
         <div>
-          <Label htmlFor="honeypot">Honeypot spam trap</Label>
+          <Label htmlFor="honeypot">{t("honeypotLabel")}</Label>
           <p className="text-xs text-muted-foreground">
-            An invisible field bots fill in and humans never see.
+            {t("honeypotDescription")}
           </p>
         </div>
         <Switch
@@ -124,10 +121,9 @@ export function NewFormForm() {
 
       <div className="flex items-center justify-between rounded-lg border p-4">
         <div>
-          <Label htmlFor="turnstile">Cloudflare Turnstile</Label>
+          <Label htmlFor="turnstile">{t("turnstileLabel")}</Label>
           <p className="text-xs text-muted-foreground">
-            Extra bot protection on the submission form (keys configured in
-            Phase 5).
+            {t("turnstileDescription")}
           </p>
         </div>
         <Switch
@@ -144,12 +140,9 @@ export function NewFormForm() {
       )}
 
       <Button type="submit" disabled={createForm.isPending}>
-        {createForm.isPending ? "Creating…" : "Create form"}
+        {createForm.isPending ? t("creating") : t("createForm")}
       </Button>
-      <p className="text-xs text-muted-foreground">
-        The form starts with name, email and message fields — you can add, edit
-        or remove fields afterwards.
-      </p>
+      <p className="text-xs text-muted-foreground">{t("newFormNote")}</p>
     </form>
   )
 }

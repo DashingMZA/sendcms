@@ -5,19 +5,25 @@ import { toast } from "sonner"
 import { Button } from "@sendcms/ui"
 
 import { Copy, Check } from "lucide-react"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 type Props = {
   code: string
   language?: string
+  // Which page dictionary the Copy/Copied strings come from: this
+  // component is shared by the domains, forms and api pages, and each
+  // page only loads its own domain.
+  domain: string
 }
 
-export function InstallSnippet({ code, language = "html" }: Props) {
+export function InstallSnippet({ code, language = "html", domain }: Props) {
+  const { t } = useTranslation(domain)
   const [copied, setCopied] = useState(false)
 
   async function copy() {
     await navigator.clipboard.writeText(code)
     setCopied(true)
-    toast.success("Copied to clipboard")
+    toast.success(t("snippetCopiedToClipboard"))
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -38,7 +44,7 @@ export function InstallSnippet({ code, language = "html" }: Props) {
           ) : (
             <Copy className="size-3.5" />
           )}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("copied") : t("copy")}
         </Button>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">

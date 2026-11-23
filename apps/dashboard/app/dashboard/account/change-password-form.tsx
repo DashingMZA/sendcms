@@ -6,8 +6,10 @@ import { authClient } from "@sendcms/auth/client"
 import { ChangePasswordSchema } from "@sendcms/users/validators"
 
 import { Button, Input, Label } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function ChangePasswordForm() {
+  const { t } = useTranslation("account")
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +25,7 @@ export function ChangePasswordForm() {
       newPassword,
     })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Check the passwords.")
+      setError(parsed.error.issues[0]?.message ?? t("passwordsInvalid"))
       return
     }
     setLoading(true)
@@ -34,18 +36,20 @@ export function ChangePasswordForm() {
     })
     setLoading(false)
     if (error) {
-      setError(error.message ?? "Couldn't change your password.")
+      setError(error.message ?? t("passwordChangeFailed"))
       return
     }
     setCurrentPassword("")
     setNewPassword("")
-    setMessage("Password changed. Your other sessions were signed out.")
+    setMessage(t("passwordChanged"))
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor="account-current-password">Current password</Label>
+        <Label htmlFor="account-current-password">
+          {t("currentPasswordLabel")}
+        </Label>
         <Input
           id="account-current-password"
           type="password"
@@ -56,12 +60,12 @@ export function ChangePasswordForm() {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="account-new-password">New password</Label>
+        <Label htmlFor="account-new-password">{t("newPasswordLabel")}</Label>
         <Input
           id="account-new-password"
           type="password"
           autoComplete="new-password"
-          placeholder="At least 8 characters"
+          placeholder={t("newPasswordPlaceholder")}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           required
@@ -74,7 +78,7 @@ export function ChangePasswordForm() {
       )}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
       <Button type="submit" disabled={loading}>
-        {loading ? "Changing…" : "Change password"}
+        {loading ? t("changing") : t("changePassword")}
       </Button>
     </form>
   )

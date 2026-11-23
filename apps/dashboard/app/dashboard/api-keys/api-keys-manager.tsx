@@ -30,6 +30,7 @@ import {
 
 import { RiKeyLine, RiRefreshLine } from "@remixicon/react"
 import { CopyField } from "../domains/copy-field"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 function formatDate(value: string | Date | null) {
   if (!value) return "—"
@@ -45,6 +46,7 @@ export function ApiKeysManager({
 }: {
   initialKeys: ApiKeyPublic[]
 }) {
+  const { t } = useTranslation("api-keys")
   const { data: keys = initialKeys } = useApiKeys(initialKeys)
   const createKey = useCreateApiKey()
   const [name, setName] = useState("")
@@ -65,11 +67,7 @@ export function ApiKeysManager({
       setNewKeyName(created.name)
       setName("")
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not create this API key."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("createFailed"))
     }
   }
 
@@ -77,13 +75,12 @@ export function ApiKeysManager({
     <div className="flex max-w-3xl flex-col gap-8">
       {newKey && (
         <section className="flex flex-col gap-3 rounded-lg border border-amber-500/50 bg-amber-500/5 p-4">
-          <h2 className="text-sm font-semibold">
-            Copy your new key now — it won&apos;t be shown again
-          </h2>
+          <h2 className="text-sm font-semibold">{t("newKeyTitle")}</h2>
           <CopyField
-            label={newKeyName ?? "API key"}
+            label={newKeyName ?? t("apiKeyLabel")}
             value={newKey}
-            description="Anyone with this key can act as your account (within its scope). Store it in your MCP client, never in a public repo or a shared chat."
+            description={t("newKeyDescription")}
+            domain="api-keys"
           />
           <div>
             <Button
@@ -94,7 +91,7 @@ export function ApiKeysManager({
                 setNewKeyName(null)
               }}
             >
-              I&apos;ve saved it
+              {t("savedIt")}
             </Button>
           </div>
         </section>
@@ -102,11 +99,11 @@ export function ApiKeysManager({
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-          Create a key
+          {t("createTitle")}
         </h2>
         <form onSubmit={onCreate} className="max-w-lg space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="key-name">Name</Label>
+            <Label htmlFor="key-name">{t("nameLabel")}</Label>
             <Input
               id="key-name"
               type="text"
@@ -117,14 +114,11 @@ export function ApiKeysManager({
               required
               maxLength={100}
             />
-            <p className="text-xs text-muted-foreground">
-              A label so you can tell keys apart later — it is shown in the list
-              below.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("nameHint")}</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="key-scope">Scope</Label>
+            <Label htmlFor="key-scope">{t("scopeLabel")}</Label>
             <Select
               value={scope}
               onValueChange={(v) => setScope(v as "READ" | "FULL")}
@@ -133,18 +127,11 @@ export function ApiKeysManager({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="FULL">
-                  Full — all 19 MCP tools, including mutations
-                </SelectItem>
-                <SelectItem value="READ">
-                  Read-only — list, get and overview tools only
-                </SelectItem>
+                <SelectItem value="FULL">{t("scopeFull")}</SelectItem>
+                <SelectItem value="READ">{t("scopeRead")}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Read-only keys can never create, update or delete anything — give
-              those to clients you don&apos;t fully trust.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("scopeHint")}</p>
           </div>
 
           {error && (
@@ -154,14 +141,14 @@ export function ApiKeysManager({
           )}
 
           <Button type="submit" disabled={createKey.isPending}>
-            {createKey.isPending ? "Creating…" : "Create API key"}
+            {createKey.isPending ? t("creating") : t("createKey")}
           </Button>
         </form>
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-          Your keys
+          {t("keysTitle")}
         </h2>
         {keys.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
@@ -170,11 +157,10 @@ export function ApiKeysManager({
               aria-hidden="true"
             />
             <h3 className="mb-1 text-lg font-semibold text-balance">
-              No API keys yet
+              {t("emptyTitle")}
             </h3>
             <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-              Create a key above, then paste it into your MCP client as a bearer
-              token for POST /api/mcp.
+              {t("emptyDescription")}
             </p>
           </div>
         ) : (
@@ -182,12 +168,12 @@ export function ApiKeysManager({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("colName")}</TableHead>
+                  <TableHead>{t("colKey")}</TableHead>
+                  <TableHead>{t("colScope")}</TableHead>
+                  <TableHead>{t("colLastUsed")}</TableHead>
+                  <TableHead>{t("colCreated")}</TableHead>
+                  <TableHead>{t("colStatus")}</TableHead>
                   <TableHead className="w-32" />
                 </TableRow>
               </TableHeader>
@@ -218,48 +204,31 @@ function ApiKeyRow({
   apiKey: ApiKeyPublic
   onNewKey: (plaintext: string, keyName: string) => void
 }) {
+  const { t } = useTranslation("api-keys")
   const revokeKey = useRevokeApiKey(apiKey.id)
   const rotateKey = useRotateApiKey(apiKey.id)
   const [error, setError] = useState<string | null>(null)
   const revoked = apiKey.revokedAt !== null
 
   async function onRevoke() {
-    if (
-      !window.confirm(
-        `Revoke the key "${apiKey.name}"? MCP clients using it will stop working immediately.`
-      )
-    )
-      return
+    if (!window.confirm(t("confirmRevoke", { name: apiKey.name }))) return
     setError(null)
     try {
       await revokeKey.mutateAsync()
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not revoke the key."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("revokeFailed"))
     }
   }
 
   async function onRotate() {
-    if (
-      !window.confirm(
-        `Rotate the key "${apiKey.name}"? The old key stops working immediately and a new one is issued.`
-      )
-    )
-      return
+    if (!window.confirm(t("confirmRotate", { name: apiKey.name }))) return
     setError(null)
     try {
       const rotated = await rotateKey.mutateAsync()
       // The fresh key is shown once, in the box above.
       onNewKey(rotated.key, rotated.name)
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not rotate the key."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("rotateFailed"))
     }
   }
 
@@ -271,16 +240,16 @@ function ApiKeyRow({
       </TableCell>
       <TableCell>
         <Badge variant={apiKey.scope === "FULL" ? "default" : "secondary"}>
-          {apiKey.scope === "FULL" ? "Full" : "Read-only"}
+          {apiKey.scope === "FULL" ? t("scopeFullBadge") : t("scopeReadBadge")}
         </Badge>
       </TableCell>
       <TableCell>{formatDate(apiKey.lastUsedAt)}</TableCell>
       <TableCell>{formatDate(apiKey.createdAt)}</TableCell>
       <TableCell>
         {revoked ? (
-          <Badge variant="outline">Revoked</Badge>
+          <Badge variant="outline">{t("statusRevoked")}</Badge>
         ) : (
-          <Badge variant="secondary">Active</Badge>
+          <Badge variant="secondary">{t("statusActive")}</Badge>
         )}
       </TableCell>
       <TableCell>
@@ -293,7 +262,7 @@ function ApiKeyRow({
               disabled={rotateKey.isPending}
             >
               <RiRefreshLine className="size-3.5" aria-hidden="true" />
-              Rotate
+              {t("rotate")}
             </Button>
             <Button
               variant="ghost"
@@ -301,7 +270,7 @@ function ApiKeyRow({
               onClick={onRevoke}
               disabled={revokeKey.isPending}
             >
-              Revoke
+              {t("revoke")}
             </Button>
           </div>
         )}

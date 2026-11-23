@@ -4,6 +4,13 @@ import { getDomainForUser } from "@sendcms/domains"
 import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import {
+  DASHBOARD_DOMAINS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { DomainDetail } from "./domain-detail"
 
 export default async function DomainDetailPage({
@@ -22,15 +29,18 @@ export default async function DomainDetailPage({
   }
   if (!domain) notFound()
 
+  const locale = await getRequestLocale(session!.user!.id as string)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_DOMAINS_DOMAINS)
+  const t = await getTranslator(locale, "domains")
+
   return (
     <div>
-      <PageHeader
-        title={domain.domain}
-        description="Domain ownership and verification"
-      />
+      <PageHeader title={domain.domain} description={t("detailDescription")} />
 
       <div className="p-4 sm:p-6">
-        <DomainDetail initialDomain={domain} />
+        <TranslationProvider dictionaries={dictionaries}>
+          <DomainDetail initialDomain={domain} />
+        </TranslationProvider>
       </div>
     </div>
   )

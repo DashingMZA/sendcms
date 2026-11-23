@@ -6,29 +6,42 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { Button } from "@sendcms/ui"
 
 import { RiAddLine } from "@remixicon/react"
+import {
+  DASHBOARD_DOMAINS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { DomainsTable } from "./domains-table"
 
 export default async function DomainsPage() {
   const session = await auth()
   const domains = await listDomainsForUser(session!.user!.id as string)
 
+  const locale = await getRequestLocale(session!.user!.id as string)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_DOMAINS_DOMAINS)
+  const t = await getTranslator(locale, "domains")
+
   return (
     <div>
       <PageHeader
-        title="Domains"
-        description="Register and verify the domains your forms accept submissions from"
+        title={t("title")}
+        description={t("description")}
         action={
           <Button asChild size="sm">
             <Link href="/dashboard/domains/new">
               <RiAddLine className="size-4" aria-hidden="true" />
-              Add domain
+              {t("addDomain")}
             </Link>
           </Button>
         }
       />
 
       <div className="p-4 sm:p-6">
-        <DomainsTable initialDomains={domains} />
+        <TranslationProvider dictionaries={dictionaries}>
+          <DomainsTable initialDomains={domains} />
+        </TranslationProvider>
       </div>
     </div>
   )

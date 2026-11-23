@@ -16,12 +16,7 @@ import {
 } from "@sendcms/ui"
 
 import { RiAddLine, RiGlobalLine } from "@remixicon/react"
-
-const METHOD_LABEL: Record<string, string> = {
-  DNS_TXT: "DNS TXT",
-  META_TAG: "Meta tag",
-  FILE: "File",
-}
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 function formatDate(value: string | Date | null) {
   if (!value) return "—"
@@ -37,7 +32,15 @@ export function DomainsTable({
 }: {
   initialDomains: DomainWithVerification[]
 }) {
+  const { t } = useTranslation("domains")
   const { data: domains = initialDomains } = useDomains(initialDomains)
+
+  // "DNS TXT" is the technical method name and stays as-is.
+  const METHOD_LABEL: Record<string, string> = {
+    DNS_TXT: "DNS TXT",
+    META_TAG: t("methodMetaTagShort"),
+    FILE: t("methodFileShort"),
+  }
 
   if (domains.length === 0) {
     return (
@@ -47,16 +50,15 @@ export function DomainsTable({
           aria-hidden="true"
         />
         <h3 className="mb-1 text-lg font-semibold text-balance">
-          No domains yet
+          {t("emptyTitle")}
         </h3>
         <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-          Register a domain and verify ownership to start receiving form
-          submissions from your sites.
+          {t("emptyDescription")}
         </p>
         <Button asChild size="sm">
           <Link href="/dashboard/domains/new">
             <RiAddLine className="size-4" aria-hidden="true" />
-            Add domain
+            {t("addDomain")}
           </Link>
         </Button>
       </div>
@@ -68,12 +70,12 @@ export function DomainsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Domain</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Method</TableHead>
-            <TableHead>Verified</TableHead>
-            <TableHead>Forms</TableHead>
-            <TableHead>Added</TableHead>
+            <TableHead>{t("colDomain")}</TableHead>
+            <TableHead>{t("colStatus")}</TableHead>
+            <TableHead>{t("colMethod")}</TableHead>
+            <TableHead>{t("colVerified")}</TableHead>
+            <TableHead>{t("colForms")}</TableHead>
+            <TableHead>{t("colAdded")}</TableHead>
             <TableHead className="w-20" />
           </TableRow>
         </TableHeader>
@@ -94,7 +96,9 @@ export function DomainsTable({
                 <TableCell>{formatDate(domain.createdAt)}</TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="sm">
-                    <Link href={`/dashboard/domains/${domain.id}`}>View</Link>
+                    <Link href={`/dashboard/domains/${domain.id}`}>
+                      {t("view")}
+                    </Link>
                   </Button>
                 </TableCell>
               </TableRow>

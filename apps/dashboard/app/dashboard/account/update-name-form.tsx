@@ -7,12 +7,14 @@ import { authClient } from "@sendcms/auth/client"
 import { UpdateProfileSchema } from "@sendcms/users/validators"
 
 import { Button, Input, Label } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function UpdateNameForm({
   currentName,
 }: {
   currentName: string | null
 }) {
+  const { t } = useTranslation("account")
   const router = useRouter()
   const [name, setName] = useState(currentName ?? "")
   const [message, setMessage] = useState<string | null>(null)
@@ -25,24 +27,24 @@ export function UpdateNameForm({
     setMessage(null)
     const parsed = UpdateProfileSchema.safeParse({ name })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Enter a name.")
+      setError(parsed.error.issues[0]?.message ?? t("nameRequired"))
       return
     }
     setLoading(true)
     const { error } = await authClient.updateUser({ name: parsed.data.name })
     setLoading(false)
     if (error) {
-      setError(error.message ?? "Couldn't update your name.")
+      setError(error.message ?? t("nameUpdateFailed"))
       return
     }
-    setMessage("Name updated.")
+    setMessage(t("nameUpdated"))
     router.refresh()
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor="account-name">Name</Label>
+        <Label htmlFor="account-name">{t("nameLabel")}</Label>
         <Input
           id="account-name"
           type="text"
@@ -59,7 +61,7 @@ export function UpdateNameForm({
       )}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
       <Button type="submit" disabled={loading}>
-        {loading ? "Saving…" : "Save name"}
+        {loading ? t("saving") : t("saveName")}
       </Button>
     </form>
   )

@@ -4,8 +4,10 @@ import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
 import { Button } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function ResendVerificationButton({ email }: { email: string }) {
+  const { t } = useTranslation("account")
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -19,7 +21,7 @@ export function ResendVerificationButton({ email }: { email: string }) {
     })
     setLoading(false)
     if (error) {
-      setError(error.message ?? "Couldn't resend the verification email.")
+      setError(error.message ?? t("resendFailed"))
       return
     }
     setSent(true)
@@ -28,7 +30,7 @@ export function ResendVerificationButton({ email }: { email: string }) {
   if (sent) {
     return (
       <p className="text-sm text-muted-foreground">
-        Verification email sent to {email}. Check your inbox.
+        {t("verificationSent", { email })}
       </p>
     )
   }
@@ -41,7 +43,7 @@ export function ResendVerificationButton({ email }: { email: string }) {
         onClick={resend}
         disabled={loading}
       >
-        {loading ? "Sending…" : "Resend verification email"}
+        {loading ? t("sending") : t("resendVerification")}
       </Button>
       {error && (
         <p role="alert" className="text-sm text-destructive">

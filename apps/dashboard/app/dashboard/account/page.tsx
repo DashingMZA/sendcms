@@ -17,19 +17,19 @@ import {
   Separator,
 } from "@sendcms/ui"
 
+import {
+  DASHBOARD_ACCOUNT_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { SignOutButton } from "./sign-out-button"
 import { ResendVerificationButton } from "./resend-verification-button"
 import { UpdateNameForm } from "./update-name-form"
 import { ChangeEmailForm } from "./change-email-form"
 import { ChangePasswordForm } from "./change-password-form"
 import { LinkProviderButtons } from "./link-provider-buttons"
-
-const PROVIDER_LABEL: Record<string, string> = {
-  google: "Google",
-  github: "GitHub",
-  facebook: "Facebook",
-  credential: "Email & password",
-}
 
 export default async function AccountPage() {
   const session = await auth()
@@ -38,113 +38,121 @@ export default async function AccountPage() {
   const configured = getConfiguredOAuthProviders()
   const unlinked = configured.filter((p) => !providers.includes(p))
 
+  const locale = await getRequestLocale(id)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_ACCOUNT_DOMAINS)
+  const t = await getTranslator(locale, "account")
+
+  const PROVIDER_LABEL: Record<string, string> = {
+    google: "Google",
+    github: "GitHub",
+    facebook: "Facebook",
+    credential: t("providerEmailPassword"),
+  }
+  const providerNames = providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")
+
   const initials = (name ?? email ?? "U").slice(0, 2).toUpperCase()
 
   return (
     <div>
-      <PageHeader
-        title="Account"
-        description="Your profile and sign-in methods"
-      />
-      <div className="flex max-w-md flex-col gap-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Profile</CardTitle>
-            <CardDescription>
-              Signed in via{" "}
-              {providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-4">
-              <Avatar className="size-14">
-                <AvatarImage src={image ?? ""} alt={name ?? ""} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-semibold">{name}</p>
-                <p className="text-sm text-muted-foreground">{email}</p>
-                <div className="mt-1">
-                  {emailVerified ? (
-                    <Badge variant="secondary">Email verified</Badge>
-                  ) : (
-                    <Badge variant="destructive">Email not verified</Badge>
-                  )}
-                </div>
-              </div>
-            </div>
-            {!emailVerified && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Verify your email to register domains and receive submissions.
-                  Until then your account works, but domain registration stays
-                  locked.
-                </p>
-                <ResendVerificationButton email={email} />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Name</CardTitle>
-            <CardDescription>Shown on your profile.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <UpdateNameForm currentName={name} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Email address</CardTitle>
-            <CardDescription>
-              The verification link goes to the new address first.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChangeEmailForm currentEmail={email} />
-          </CardContent>
-        </Card>
-
-        {hasPassword && (
+      <PageHeader title={t("title")} description={t("description")} />
+      <TranslationProvider dictionaries={dictionaries}>
+        <div className="flex max-w-md flex-col gap-6 p-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Password</CardTitle>
+              <CardTitle className="text-base">{t("profileTitle")}</CardTitle>
               <CardDescription>
-                Changing it signs out your other sessions.
+                {t("signedInVia", { providers: providerNames })}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-4">
+                <Avatar className="size-14">
+                  <AvatarImage src={image ?? ""} alt={name ?? ""} />
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-semibold">{name}</p>
+                  <p className="text-sm text-muted-foreground">{email}</p>
+                  <div className="mt-1">
+                    {emailVerified ? (
+                      <Badge variant="secondary">{t("emailVerified")}</Badge>
+                    ) : (
+                      <Badge variant="destructive">
+                        {t("emailNotVerified")}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {!emailVerified && (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {t("verifyEmailHint")}
+                  </p>
+                  <ResendVerificationButton email={email} />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t("nameTitle")}</CardTitle>
+              <CardDescription>{t("nameDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UpdateNameForm currentName={name} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t("emailTitle")}</CardTitle>
+              <CardDescription>{t("emailDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChangeEmailForm currentEmail={email} />
+            </CardContent>
+          </Card>
+
+          {hasPassword && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {t("passwordTitle")}
+                </CardTitle>
+                <CardDescription>{t("passwordDescription")}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChangePasswordForm />
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t("connectedTitle")}</CardTitle>
+              <CardDescription>
+                {providers.length > 0
+                  ? t("connectedDescription", { providers: providerNames })
+                  : t("noAccounts")}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ChangePasswordForm />
+              <LinkProviderButtons providers={unlinked} />
+              {unlinked.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t("allConnected")}
+                </p>
+              )}
             </CardContent>
           </Card>
-        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Connected accounts</CardTitle>
-            <CardDescription>
-              {providers.length > 0
-                ? `Connected: ${providers.map((p) => PROVIDER_LABEL[p] ?? p).join(", ")}`
-                : "No accounts connected."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LinkProviderButtons providers={unlinked} />
-            {unlinked.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                All configured providers are connected.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          <Separator />
 
-        <Separator />
-
-        <SignOutButton />
-      </div>
+          <SignOutButton />
+        </div>
+      </TranslationProvider>
     </div>
   )
 }

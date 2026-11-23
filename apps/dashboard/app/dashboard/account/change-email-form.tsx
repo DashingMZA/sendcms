@@ -6,8 +6,10 @@ import { authClient } from "@sendcms/auth/client"
 import { ChangeEmailSchema } from "@sendcms/users/validators"
 
 import { Button, Input, Label } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
+  const { t } = useTranslation("account")
   const [email, setEmail] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [sentTo, setSentTo] = useState<string | null>(null)
@@ -18,13 +20,11 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
     setError(null)
     const parsed = ChangeEmailSchema.safeParse({ email })
     if (!parsed.success) {
-      setError(
-        parsed.error.issues[0]?.message ?? "Enter a valid email address."
-      )
+      setError(parsed.error.issues[0]?.message ?? t("emailInvalid"))
       return
     }
     if (parsed.data.email.toLowerCase() === currentEmail.toLowerCase()) {
-      setError("That's already your email address.")
+      setError(t("emailSame"))
       return
     }
     setLoading(true)
@@ -36,7 +36,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
     })
     setLoading(false)
     if (error) {
-      setError(error.message ?? "Couldn't change your email.")
+      setError(error.message ?? t("emailChangeFailed"))
       return
     }
     setSentTo(parsed.data.email)
@@ -45,9 +45,9 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   if (sentTo) {
     return (
       <p className="text-sm text-muted-foreground">
-        We sent a verification link to{" "}
-        <span className="font-medium text-foreground">{sentTo}</span>. Your
-        email changes once you click it.
+        {t("verificationLinkSentPrefix")}{" "}
+        <span className="font-medium text-foreground">{sentTo}</span>
+        {t("verificationLinkSentSuffix")}
       </p>
     )
   }
@@ -55,7 +55,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor="account-new-email">New email</Label>
+        <Label htmlFor="account-new-email">{t("newEmailLabel")}</Label>
         <Input
           id="account-new-email"
           type="email"
@@ -65,9 +65,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
           onChange={(e) => setEmail(e.target.value)}
           required
         />
-        <p className="text-xs text-muted-foreground">
-          A verification link goes to the new address first.
-        </p>
+        <p className="text-xs text-muted-foreground">{t("newEmailHint")}</p>
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -75,7 +73,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
         </p>
       )}
       <Button type="submit" disabled={loading}>
-        {loading ? "Sending…" : "Change email"}
+        {loading ? t("sending") : t("changeEmail")}
       </Button>
     </form>
   )

@@ -27,6 +27,9 @@ import {
 } from "@sendcms/ui"
 
 import type { FormField, FormFieldType } from "@sendcms/database"
+import { useTranslation } from "@/components/dashboard/translation-provider"
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string
 
 const FIELD_TYPES: FormFieldType[] = [
   "TEXT",
@@ -43,17 +46,19 @@ const FIELD_TYPES: FormFieldType[] = [
 
 const OPTION_TYPES: FormFieldType[] = ["SELECT", "CHECKBOX", "RADIO"]
 
-const TYPE_LABEL: Record<FormFieldType, string> = {
-  TEXT: "Text",
-  EMAIL: "Email",
-  TEXTAREA: "Long text",
-  NUMBER: "Number",
-  SELECT: "Dropdown",
-  CHECKBOX: "Checkboxes",
-  RADIO: "Radio buttons",
-  URL: "URL",
-  TEL: "Phone",
-  DATE: "Date",
+function typeLabels(t: Translate): Record<FormFieldType, string> {
+  return {
+    TEXT: t("typeText"),
+    EMAIL: t("typeEmail"),
+    TEXTAREA: t("typeTextarea"),
+    NUMBER: t("typeNumber"),
+    SELECT: t("typeSelect"),
+    CHECKBOX: t("typeCheckbox"),
+    RADIO: t("typeRadio"),
+    URL: t("typeUrl"),
+    TEL: t("typeTel"),
+    DATE: t("typeDate"),
+  }
 }
 
 function optionsFromText(text: string): string[] {
@@ -72,6 +77,8 @@ function FieldForm({
   field?: FormField
   onDone: () => void
 }) {
+  const { t } = useTranslation("forms")
+  const TYPE_LABEL = typeLabels(t)
   const addField = useAddField(formId)
   const updateField = useUpdateField(formId, field?.id ?? "")
   const [name, setName] = useState(field?.name ?? "")
@@ -124,9 +131,7 @@ function FieldForm({
       onDone()
     } catch (err) {
       setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not save this field."
+        err instanceof ApiClientError ? err.message : t("saveFieldFailed")
       )
     }
   }
@@ -138,7 +143,9 @@ function FieldForm({
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor={field ? `key-${field.id}` : "key"}>Field key</Label>
+          <Label htmlFor={field ? `key-${field.id}` : "key"}>
+            {t("fieldKeyLabel")}
+          </Label>
           <Input
             id={field ? `key-${field.id}` : "key"}
             autoComplete="off"
@@ -148,23 +155,25 @@ function FieldForm({
             disabled={!!field}
             required
           />
-          <p className="text-xs text-muted-foreground">
-            The key in the submission payload. It cannot be changed later.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("fieldKeyHint")}</p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor={field ? `label-${field.id}` : "label"}>Label</Label>
+          <Label htmlFor={field ? `label-${field.id}` : "label"}>
+            {t("fieldLabelLabel")}
+          </Label>
           <Input
             id={field ? `label-${field.id}` : "label"}
             autoComplete="off"
-            placeholder="Your email"
+            placeholder={t("fieldLabelPlaceholder")}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             required
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor={field ? `type-${field.id}` : "type"}>Type</Label>
+          <Label htmlFor={field ? `type-${field.id}` : "type"}>
+            {t("fieldTypeLabel")}
+          </Label>
           <Select
             value={type}
             onValueChange={(v) => setType(v as FormFieldType)}
@@ -173,9 +182,9 @@ function FieldForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {FIELD_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {TYPE_LABEL[t]}
+              {FIELD_TYPES.map((ft) => (
+                <SelectItem key={ft} value={ft}>
+                  {TYPE_LABEL[ft]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -183,7 +192,7 @@ function FieldForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor={field ? `placeholder-${field.id}` : "placeholder"}>
-            Placeholder (optional)
+            {t("placeholderLabel")}
           </Label>
           <Input
             id={field ? `placeholder-${field.id}` : "placeholder"}
@@ -193,7 +202,9 @@ function FieldForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor={field ? `min-${field.id}` : "min"}>Min length</Label>
+          <Label htmlFor={field ? `min-${field.id}` : "min"}>
+            {t("minLengthLabel")}
+          </Label>
           <Input
             id={field ? `min-${field.id}` : "min"}
             type="number"
@@ -204,7 +215,9 @@ function FieldForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor={field ? `max-${field.id}` : "max"}>Max length</Label>
+          <Label htmlFor={field ? `max-${field.id}` : "max"}>
+            {t("maxLengthLabel")}
+          </Label>
           <Input
             id={field ? `max-${field.id}` : "max"}
             type="number"
@@ -218,12 +231,12 @@ function FieldForm({
       {OPTION_TYPES.includes(type) && (
         <div className="space-y-2">
           <Label htmlFor={field ? `options-${field.id}` : "options"}>
-            Options (one per line)
+            {t("optionsLabel")}
           </Label>
           <Textarea
             id={field ? `options-${field.id}` : "options"}
             rows={3}
-            placeholder={"General\nSupport\nSales"}
+            placeholder={t("optionsPlaceholder")}
             value={optionsText}
             onChange={(e) => setOptionsText(e.target.value)}
           />
@@ -236,7 +249,7 @@ function FieldForm({
           onCheckedChange={(v) => setRequired(v === true)}
         />
         <Label htmlFor={field ? `required-${field.id}` : "required"}>
-          Required
+          {t("requiredLabel")}
         </Label>
       </div>
       {error && (
@@ -246,10 +259,10 @@ function FieldForm({
       )}
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : field ? "Save field" : "Add field"}
+          {pending ? t("saving") : field ? t("saveField") : t("addField")}
         </Button>
         <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
+          {t("cancel")}
         </Button>
       </div>
     </form>
@@ -257,6 +270,8 @@ function FieldForm({
 }
 
 export function FieldsSection({ form }: { form: FormDetail }) {
+  const { t } = useTranslation("forms")
+  const TYPE_LABEL = typeLabels(t)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -265,9 +280,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
     <div className="flex flex-col gap-4">
       {form.aiEnabled && <AiFieldsPanel form={form} />}
       {form.fields.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No fields yet — add one below.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("noFields")}</p>
       )}
       {form.fields.map((field) => (
         <div key={field.id} className="rounded-lg border">
@@ -277,7 +290,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
               {field.name}
             </code>
             <Badge variant="secondary">{TYPE_LABEL[field.type]}</Badge>
-            {field.required && <Badge>Required</Badge>}
+            {field.required && <Badge>{t("requiredLabel")}</Badge>}
             {Array.isArray(field.options) && (
               <span className="text-xs text-muted-foreground">
                 {(field.options as string[]).join(", ")}
@@ -291,7 +304,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
                   setEditingId(editingId === field.id ? null : field.id)
                 }
               >
-                {editingId === field.id ? "Close" : "Edit"}
+                {editingId === field.id ? t("close") : t("edit")}
               </Button>
               <DeleteFieldButton
                 formId={form.id}
@@ -321,7 +334,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
       ) : (
         <div>
           <Button variant="outline" onClick={() => setAdding(true)}>
-            Add field
+            {t("addField")}
           </Button>
         </div>
       )}
@@ -338,6 +351,7 @@ function DeleteFieldButton({
   field: FormField
   onError: (msg: string | null) => void
 }) {
+  const { t } = useTranslation("forms")
   const remove = useDeleteField(formId, field.id)
   return (
     <Button
@@ -345,20 +359,18 @@ function DeleteFieldButton({
       size="sm"
       disabled={remove.isPending}
       onClick={async () => {
-        if (!confirm(`Delete the "${field.label}" field?`)) return
+        if (!confirm(t("confirmDeleteField", { label: field.label }))) return
         onError(null)
         try {
           await remove.mutateAsync()
         } catch (err) {
           onError(
-            err instanceof ApiClientError
-              ? err.message
-              : "Could not delete this field."
+            err instanceof ApiClientError ? err.message : t("deleteFieldFailed")
           )
         }
       }}
     >
-      Delete
+      {t("delete")}
     </Button>
   )
 }
@@ -368,6 +380,8 @@ function DeleteFieldButton({
     here before any field is created — nothing is added until the owner
     picks fields and clicks "Add selected fields". */
 function AiFieldsPanel({ form }: { form: FormDetail }) {
+  const { t } = useTranslation("forms")
+  const TYPE_LABEL = typeLabels(t)
   const [prompt, setPrompt] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -392,11 +406,7 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
       const result = await suggest.mutateAsync(prompt)
       setSelected(new Set(result.fields.map((f) => f.name)))
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not suggest fields."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("suggestFailed"))
     }
   }
 
@@ -420,7 +430,7 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
         setError(
           err instanceof ApiClientError
             ? err.message
-            : `Could not add field "${field.label}".`
+            : t("addSelectedFailed", { label: field.label })
         )
         break
       }
@@ -435,16 +445,13 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
 
   return (
     <div className="rounded-lg border p-4">
-      <p className="font-medium">Build with AI</p>
-      <p className="text-sm text-muted-foreground">
-        Describe the form in plain language and the AI will suggest fields.
-        Nothing is added until you review and pick them.
-      </p>
+      <p className="font-medium">{t("aiBuildTitle")}</p>
+      <p className="text-sm text-muted-foreground">{t("aiBuildDescription")}</p>
       <div className="mt-3 flex flex-col gap-2">
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. A contact form with name, email, and a message, plus a dropdown for the reason they are writing"
+          placeholder={t("aiPromptPlaceholder")}
           rows={2}
         />
         <div>
@@ -453,7 +460,7 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
             onClick={onSuggest}
             disabled={!prompt.trim() || suggest.isPending}
           >
-            {suggest.isPending ? "Suggesting…" : "Suggest fields"}
+            {suggest.isPending ? t("suggesting") : t("suggestFields")}
           </Button>
         </div>
       </div>
@@ -464,7 +471,9 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
       )}
       {added > 0 && (
         <p className="mt-2 text-sm text-muted-foreground">
-          Added {added} field{added === 1 ? "" : "s"}.
+          {added === 1
+            ? t("addedFieldOne", { count: added })
+            : t("addedFieldsOther", { count: added })}
         </p>
       )}
       {suggestions.length > 0 && (
@@ -484,7 +493,7 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
                   {field.name}
                 </code>{" "}
                 <Badge variant="secondary">{TYPE_LABEL[field.type]}</Badge>{" "}
-                {field.required && <Badge>Required</Badge>}
+                {field.required && <Badge>{t("requiredLabel")}</Badge>}
                 {field.options && (
                   <span className="text-xs text-muted-foreground">
                     {field.options.join(", ")}
@@ -499,8 +508,10 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
               disabled={selected.size === 0 || addField.isPending}
             >
               {addField.isPending
-                ? "Adding…"
-                : `Add selected field${selected.size === 1 ? "" : "s"} (${selected.size})`}
+                ? t("adding")
+                : selected.size === 1
+                  ? t("addSelectedField", { count: selected.size })
+                  : t("addSelectedFields", { count: selected.size })}
             </Button>
           </div>
         </div>

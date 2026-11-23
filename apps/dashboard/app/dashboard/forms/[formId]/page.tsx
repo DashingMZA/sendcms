@@ -4,6 +4,13 @@ import { getFormForUser } from "@sendcms/forms"
 import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import {
+  DASHBOARD_FORMS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { FormDetail } from "./form-detail"
 
 type Params = { params: Promise<{ formId: string }> }
@@ -19,18 +26,21 @@ export default async function FormDetailPage({ params }: Params) {
     throw err
   }
 
+  const locale = await getRequestLocale(session!.user!.id as string)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
+  const t = await getTranslator(locale, "forms")
+
   return (
     <div>
-      <PageHeader
-        title={form.name}
-        description="Form settings, fields, allowed domains and notifications"
-      />
+      <PageHeader title={form.name} description={t("detailDescription")} />
 
       <div className="p-4 sm:p-6">
-        <FormDetail
-          initialForm={form}
-          appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
-        />
+        <TranslationProvider dictionaries={dictionaries}>
+          <FormDetail
+            initialForm={form}
+            appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+          />
+        </TranslationProvider>
       </div>
     </div>
   )

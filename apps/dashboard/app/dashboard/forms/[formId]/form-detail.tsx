@@ -36,6 +36,7 @@ import { CopyField } from "../../domains/copy-field"
 import { DomainStatusBadge } from "../../domains/domain-status-badge"
 import { FieldsSection } from "./fields-section"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
@@ -142,6 +143,7 @@ export function FormDetail({
   initialForm: FormDetail
   appUrl: string
 }) {
+  const { t } = useTranslation("forms")
   const router = useRouter()
   const { data } = useForm(initialForm.id, initialForm)
   const form = data ?? initialForm
@@ -181,9 +183,7 @@ export function FormDetail({
       })
     } catch (err) {
       setSettingsError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not save these settings."
+        err instanceof ApiClientError ? err.message : t("saveFailed")
       )
     }
   }
@@ -194,30 +194,21 @@ export function FormDetail({
       await updateForm.mutateAsync({ active })
     } catch (err) {
       setSettingsError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not change the form status."
+        err instanceof ApiClientError ? err.message : t("statusFailed")
       )
     }
   }
 
   async function onDelete() {
     const submissions = form._count.submissions
-    if (
-      !confirm(
-        `Delete "${form.name}"? This also deletes its ${submissions} submission(s). This cannot be undone.`
-      )
-    )
-      return
+    if (!confirm(t("confirmDelete", { name: form.name, submissions }))) return
     setDeleteError(null)
     try {
       await deleteForm.mutateAsync()
       router.push("/dashboard/forms")
     } catch (err) {
       setDeleteError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not delete this form."
+        err instanceof ApiClientError ? err.message : t("deleteFailed")
       )
     }
   }
@@ -228,10 +219,10 @@ export function FormDetail({
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-semibold">{form.name}</h2>
           <Badge variant={form.active ? "default" : "secondary"}>
-            {form.active ? "Active" : "Paused"}
+            {form.active ? t("statusActive") : t("statusPaused")}
           </Badge>
           <span className="ml-auto flex items-center gap-2">
-            <Label htmlFor="active-toggle">Accepting submissions</Label>
+            <Label htmlFor="active-toggle">{t("acceptingSubmissions")}</Label>
             <Switch
               id="active-toggle"
               checked={form.active}
@@ -242,30 +233,35 @@ export function FormDetail({
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <CopyField
-            label="Public user ID"
+            label={t("publicUserId")}
             value={form.ownerId}
-            description="Your public identifier — used with the form ID by the SDK and REST API."
+            description={t("publicUserIdDescription")}
+            domain="forms"
           />
           <CopyField
-            label="Public form ID"
+            label={t("publicFormId")}
             value={form.id}
-            description="This form's public identifier."
+            description={t("publicFormIdDescription")}
+            domain="forms"
           />
         </div>
         <p className="mt-4 text-sm text-muted-foreground">
-          {form._count.submissions} submission(s) · {form.fields.length}{" "}
-          field(s) · {form.domainLinks.length} linked domain(s)
+          {t("countsLine", {
+            submissions: form._count.submissions,
+            fields: form.fields.length,
+            domains: form.domainLinks.length,
+          })}
         </p>
       </section>
 
       <Section
-        title="Settings"
-        description="Name, messages, redirect and spam protection for this form"
+        title={t("settingsTitle")}
+        description={t("settingsDescription")}
       >
         <form onSubmit={onSaveSettings} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="settings-name">Form name</Label>
+              <Label htmlFor="settings-name">{t("formNameLabel")}</Label>
               <Input
                 id="settings-name"
                 value={name}
@@ -275,21 +271,23 @@ export function FormDetail({
             </div>
             <div className="space-y-2">
               <Label htmlFor="settings-daily-limit">
-                Daily submission limit
+                {t("dailyLimitLabel")}
               </Label>
               <Input
                 id="settings-daily-limit"
                 type="number"
                 min={1}
                 max={100000}
-                placeholder="Unlimited"
+                placeholder={t("dailyLimitPlaceholder")}
                 value={dailyLimit}
                 onChange={(e) => setDailyLimit(e.target.value)}
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="settings-description">Description</Label>
+            <Label htmlFor="settings-description">
+              {t("descriptionLabel")}
+            </Label>
             <Textarea
               id="settings-description"
               value={description}
@@ -297,17 +295,17 @@ export function FormDetail({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="settings-success">Success message</Label>
+            <Label htmlFor="settings-success">{t("successMessageLabel")}</Label>
             <Input
               id="settings-success"
               autoComplete="off"
-              placeholder="Thanks! We'll get back to you soon."
+              placeholder={t("successMessagePlaceholder")}
               value={successMessage}
               onChange={(e) => setSuccessMessage(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="settings-redirect">Redirect URL</Label>
+            <Label htmlFor="settings-redirect">{t("redirectUrlLabel")}</Label>
             <Input
               id="settings-redirect"
               type="url"
@@ -319,9 +317,9 @@ export function FormDetail({
           </div>
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div>
-              <Label htmlFor="settings-honeypot">Honeypot spam trap</Label>
+              <Label htmlFor="settings-honeypot">{t("honeypotLabel")}</Label>
               <p className="text-xs text-muted-foreground">
-                An invisible field bots fill in and humans never see.
+                {t("honeypotDescription")}
               </p>
             </div>
             <Switch
@@ -332,10 +330,9 @@ export function FormDetail({
           </div>
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div>
-              <Label htmlFor="settings-turnstile">Cloudflare Turnstile</Label>
+              <Label htmlFor="settings-turnstile">{t("turnstileLabel")}</Label>
               <p className="text-xs text-muted-foreground">
-                Extra bot protection on the submission form (keys configured in
-                Phase 5).
+                {t("turnstileDescription")}
               </p>
             </div>
             <Switch
@@ -346,11 +343,9 @@ export function FormDetail({
           </div>
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div>
-              <Label htmlFor="settings-ai">AI features</Label>
+              <Label htmlFor="settings-ai">{t("aiLabel")}</Label>
               <p className="text-xs text-muted-foreground">
-                Lets AI work on this form&apos;s submissions (spam re-scoring,
-                digest, form help, reply drafts). Off by default — nothing is
-                sent to any model provider while it is off.
+                {t("aiDescription")}
               </p>
             </div>
             <Switch
@@ -366,29 +361,24 @@ export function FormDetail({
           )}
           <div>
             <Button type="submit" disabled={updateForm.isPending}>
-              {updateForm.isPending ? "Saving…" : "Save settings"}
+              {updateForm.isPending ? t("saving") : t("saveSettings")}
             </Button>
           </div>
         </form>
       </Section>
 
-      <Section
-        title="Fields"
-        description="The fields visitors fill in. The key is what arrives in the submission payload."
-      >
+      <Section title={t("fieldsTitle")} description={t("fieldsDescription")}>
         <FieldsSection form={form} />
       </Section>
 
-      <Section
-        title="Embed on your site"
-        description="Paste this where the form should appear. The SDK enhances the form automatically — no JavaScript of your own is needed. Submissions are only accepted from your linked verified domains."
-      >
-        <InstallSnippet code={buildEmbedSnippet(appUrl, form)} />
+      <Section title={t("embedTitle")} description={t("embedDescription")}>
+        <InstallSnippet code={buildEmbedSnippet(appUrl, form)} domain="forms" />
         <p className="mt-3 text-sm text-muted-foreground">
-          No JavaScript? A plain{" "}
-          <code className="font-mono text-xs">{"<form>"}</code> posting to{" "}
+          {t("embedPlainIntro")}{" "}
+          <code className="font-mono text-xs">{"<form>"}</code>{" "}
+          {t("embedPlainPosting")}{" "}
           <code className="font-mono text-xs">{`${appUrl}/api/public/v1/submit`}</code>{" "}
-          works too — see the SDK docs.
+          {t("embedPlainSuffix")}
         </p>
       </Section>
 
@@ -397,11 +387,12 @@ export function FormDetail({
 
       <section className="rounded-lg border border-destructive/50 p-4 sm:p-6">
         <h2 className="text-base font-semibold text-destructive">
-          Delete form
+          {t("deleteFormTitle")}
         </h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Permanently deletes this form, its fields, domain links and{" "}
-          {form._count.submissions} submission(s). This cannot be undone.
+          {t("deleteFormDescription", {
+            submissions: form._count.submissions,
+          })}
         </p>
         {deleteError && (
           <p role="alert" className="mb-4 text-sm text-destructive">
@@ -413,7 +404,7 @@ export function FormDetail({
           onClick={onDelete}
           disabled={deleteForm.isPending}
         >
-          {deleteForm.isPending ? "Deleting…" : "Delete form"}
+          {deleteForm.isPending ? t("deleting") : t("deleteForm")}
         </Button>
       </section>
     </div>
@@ -421,6 +412,7 @@ export function FormDetail({
 }
 
 function DomainsSection({ form }: { form: FormDetail }) {
+  const { t } = useTranslation("forms")
   const { data: domains = [] } = useDomains()
   const linkDomain = useLinkDomain(form.id)
   const [selected, setSelected] = useState("")
@@ -439,24 +431,14 @@ function DomainsSection({ form }: { form: FormDetail }) {
       await linkDomain.mutateAsync({ domainId: selected })
       setSelected("")
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not link this domain."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("linkFailed"))
     }
   }
 
   return (
-    <Section
-      title="Allowed domains"
-      description="This form only accepts submissions from the verified domains linked here. One form can serve many domains; one domain can serve many forms."
-    >
+    <Section title={t("domainsTitle")} description={t("domainsDescription")}>
       {form.domainLinks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No domains linked yet. Link a verified domain below — until then this
-          form accepts submissions from nowhere.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("noDomainsLinked")}</p>
       ) : (
         <ul className="mb-4 flex flex-col gap-2">
           {form.domainLinks.map((link) => (
@@ -465,7 +447,7 @@ function DomainsSection({ form }: { form: FormDetail }) {
               className="flex items-center gap-3 rounded-lg border px-4 py-3"
             >
               <span className="font-medium">{link.domain.domain}</span>
-              <DomainStatusBadge status={link.domain.status} />
+              <DomainStatusBadge status={link.domain.status} domain="forms" />
               <span className="ml-auto">
                 <UnlinkButton
                   formId={form.id}
@@ -486,10 +468,10 @@ function DomainsSection({ form }: { form: FormDetail }) {
       {linkable.length > 0 ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-2">
-            <Label htmlFor="link-domain">Link a verified domain</Label>
+            <Label htmlFor="link-domain">{t("linkDomainLabel")}</Label>
             <Select value={selected} onValueChange={setSelected}>
               <SelectTrigger id="link-domain" className="w-64">
-                <SelectValue placeholder="Choose a domain" />
+                <SelectValue placeholder={t("linkDomainPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {linkable.map((d) => (
@@ -501,16 +483,16 @@ function DomainsSection({ form }: { form: FormDetail }) {
             </Select>
           </div>
           <Button onClick={onLink} disabled={!selected || linkDomain.isPending}>
-            {linkDomain.isPending ? "Linking…" : "Link domain"}
+            {linkDomain.isPending ? t("linking") : t("linkDomain")}
           </Button>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No verified domains available to link. Verify a domain first from{" "}
+          {t("noLinkablePrefix")}{" "}
           <Link href="/dashboard/domains" className="underline">
-            Domains
+            {t("domainsLink")}
           </Link>
-          .
+          {t("noLinkableSuffix")}
         </p>
       )}
       {error && (
@@ -533,6 +515,7 @@ function UnlinkButton({
   domainName: string
   onError: (msg: string | null) => void
 }) {
+  const { t } = useTranslation("forms")
   const unlink = useUnlinkDomain(formId, domainId)
   return (
     <Button
@@ -540,30 +523,24 @@ function UnlinkButton({
       size="sm"
       disabled={unlink.isPending}
       onClick={async () => {
-        if (
-          !confirm(
-            `Unlink ${domainName}? Submissions from it will be rejected.`
-          )
-        )
-          return
+        if (!confirm(t("confirmUnlink", { domain: domainName }))) return
         onError(null)
         try {
           await unlink.mutateAsync()
         } catch (err) {
           onError(
-            err instanceof ApiClientError
-              ? err.message
-              : "Could not unlink this domain."
+            err instanceof ApiClientError ? err.message : t("unlinkFailed")
           )
         }
       }}
     >
-      Unlink
+      {t("unlink")}
     </Button>
   )
 }
 
 function NotificationsSection({ form }: { form: FormDetail }) {
+  const { t } = useTranslation("forms")
   const addEmail = useAddNotificationEmail(form.id)
   const [email, setEmail] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -576,20 +553,20 @@ function NotificationsSection({ form }: { form: FormDetail }) {
       setEmail("")
     } catch (err) {
       setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not add this recipient."
+        err instanceof ApiClientError ? err.message : t("addRecipientFailed")
       )
     }
   }
 
   return (
     <Section
-      title="Notification recipients"
-      description="Each new submission is emailed to these addresses (Phase 8). One row per recipient — toggling one never touches the others."
+      title={t("notificationsTitle")}
+      description={t("notificationsDescription")}
     >
       {form.notificationSettings.length === 0 ? (
-        <p className="mb-4 text-sm text-muted-foreground">No recipients yet.</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          {t("noRecipients")}
+        </p>
       ) : (
         <ul className="mb-4 flex flex-col gap-2">
           {form.notificationSettings.map((row) => (
@@ -599,7 +576,7 @@ function NotificationsSection({ form }: { form: FormDetail }) {
             >
               <span className="font-medium">{row.email}</span>
               <Badge variant={row.enabled ? "default" : "secondary"}>
-                {row.enabled ? "On" : "Off"}
+                {row.enabled ? t("recipientOn") : t("recipientOff")}
               </Badge>
               <span className="ml-auto flex items-center gap-2">
                 <NotificationToggle
@@ -620,7 +597,7 @@ function NotificationsSection({ form }: { form: FormDetail }) {
       )}
       <form onSubmit={onAdd} className="flex flex-wrap items-end gap-2">
         <div className="space-y-2">
-          <Label htmlFor="notification-email">Add recipient</Label>
+          <Label htmlFor="notification-email">{t("addRecipientLabel")}</Label>
           <Input
             id="notification-email"
             type="email"
@@ -632,7 +609,7 @@ function NotificationsSection({ form }: { form: FormDetail }) {
           />
         </div>
         <Button type="submit" disabled={addEmail.isPending}>
-          {addEmail.isPending ? "Adding…" : "Add recipient"}
+          {addEmail.isPending ? t("adding") : t("addRecipient")}
         </Button>
       </form>
       <TestEmailForm formId={form.id} />
@@ -646,6 +623,7 @@ function NotificationsSection({ form }: { form: FormDetail }) {
 }
 
 function TestEmailForm({ formId }: { formId: string }) {
+  const { t } = useTranslation("forms")
   const sendTest = useSendTestEmail(formId)
   const [to, setTo] = useState("")
   const [message, setMessage] = useState<string | null>(null)
@@ -658,13 +636,14 @@ function TestEmailForm({ formId }: { formId: string }) {
     try {
       const result = await sendTest.mutateAsync(to)
       setMessage(
-        `Test email sent via ${result.provider} (message ${result.messageId}).`
+        t("testEmailSent", {
+          provider: result.provider,
+          messageId: result.messageId,
+        })
       )
     } catch (err) {
       setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not send the test email."
+        err instanceof ApiClientError ? err.message : t("testEmailFailed")
       )
     }
   }
@@ -675,7 +654,7 @@ function TestEmailForm({ formId }: { formId: string }) {
       className="mt-6 flex flex-wrap items-end gap-2 border-t pt-4"
     >
       <div className="space-y-2">
-        <Label htmlFor="test-email">Send a test notification</Label>
+        <Label htmlFor="test-email">{t("testEmailLabel")}</Label>
         <Input
           id="test-email"
           type="email"
@@ -687,7 +666,7 @@ function TestEmailForm({ formId }: { formId: string }) {
         />
       </div>
       <Button type="submit" variant="outline" disabled={sendTest.isPending}>
-        {sendTest.isPending ? "Sending…" : "Send test email"}
+        {sendTest.isPending ? t("sending") : t("sendTestEmail")}
       </Button>
       {message && (
         <p role="status" className="w-full text-sm text-green-700">
@@ -712,13 +691,14 @@ function NotificationToggle({
   rowId: string
   enabled: boolean
 }) {
+  const { t } = useTranslation("forms")
   const update = useUpdateNotificationEmail(formId, rowId)
   return (
     <Switch
       checked={enabled}
       onCheckedChange={(v) => update.mutate({ enabled: v })}
       disabled={update.isPending}
-      aria-label="Toggle notifications for this recipient"
+      aria-label={t("toggleNotifications")}
     />
   )
 }
@@ -734,6 +714,7 @@ function NotificationDeleteButton({
   email: string
   onError: (msg: string | null) => void
 }) {
+  const { t } = useTranslation("forms")
   const remove = useDeleteNotificationEmail(formId, rowId)
   return (
     <Button
@@ -741,7 +722,7 @@ function NotificationDeleteButton({
       size="sm"
       disabled={remove.isPending}
       onClick={async () => {
-        if (!confirm(`Remove ${email} from notifications?`)) return
+        if (!confirm(t("confirmRemoveRecipient", { email }))) return
         onError(null)
         try {
           await remove.mutateAsync()
@@ -749,12 +730,12 @@ function NotificationDeleteButton({
           onError(
             err instanceof ApiClientError
               ? err.message
-              : "Could not remove this recipient."
+              : t("removeRecipientFailed")
           )
         }
       }}
     >
-      Remove
+      {t("removeRecipient")}
     </Button>
   )
 }

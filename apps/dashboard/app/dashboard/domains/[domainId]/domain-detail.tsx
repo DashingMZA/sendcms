@@ -30,12 +30,9 @@ import {
 
 import { Download } from "lucide-react"
 import type { DomainVerificationMethod } from "@sendcms/database"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
-const METHOD_LABEL: Record<DomainVerificationMethod, string> = {
-  DNS_TXT: "DNS TXT record",
-  META_TAG: "HTML meta tag",
-  FILE: "Verification file",
-}
+type Translate = (key: string, vars?: Record<string, string | number>) => string
 
 type DnsInstructions = {
   kind: "dns"
@@ -67,34 +64,44 @@ type VerificationInstructions =
 function verificationInstructions(
   domain: string,
   method: DomainVerificationMethod,
-  challenge: string
+  challenge: string,
+  t: Translate
 ): VerificationInstructions {
   switch (method) {
     case "DNS_TXT":
       return {
         kind: "dns",
-        title: "Add this TXT record",
-        body: `Add a TXT record to ${domain} at your DNS provider. It usually propagates within a few minutes.`,
+        title: t("dnsTitle"),
+        body: t("dnsBody", { domain }),
         name: `sendcms._domainkey.${domain}`,
         value: challenge,
       }
     case "META_TAG":
       return {
         kind: "snippet",
-        title: "Add this meta tag",
-        body: `Add this tag inside the <head> of https://${domain}/.`,
+        title: t("metaTitle"),
+        body: t("metaBody", { domain }),
         code: `<meta name="sendcms-verification" content="${challenge}">`,
         language: "html",
       }
     case "FILE":
       return {
         kind: "file",
-        title: "Publish this file",
-        body: `Upload a file named sendcms-verification.txt to your site's public folder — the same place ads.txt goes — so it is reachable at the URL below. Its entire content must be the code shown.`,
+        title: t("fileTitle"),
+        body: t("fileBody"),
         url: `https://${domain}/sendcms-verification.txt`,
         value: challenge,
       }
   }
+}
+
+function formatDate(value: string | Date | null) {
+  if (!value) return null
+  return new Date(value).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
 }
 
 export function DomainDetail({
@@ -102,6 +109,7 @@ export function DomainDetail({
 }: {
   initialDomain: DomainDetail
 }) {
+  const { t } = useTranslation("domains")
   const router = useRouter()
   const domain = initialDomain
   const verification = domain.verifications.find((v) => v.status === "PENDING")
@@ -130,6 +138,12 @@ export function DomainDetail({
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const METHOD_LABEL: Record<DomainVerificationMethod, string> = {
+    DNS_TXT: t("methodDnsTxtRecord"),
+    META_TAG: t("methodMetaTag"),
+    FILE: t("methodFile"),
+  }
+
   async function onVerify() {
     setError(null)
     setCheck(null)
@@ -138,9 +152,7 @@ export function DomainDetail({
       setCheck(result)
       if (result.verified) router.refresh()
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Verification failed."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("verifyFailed"))
     }
   }
 
@@ -151,11 +163,7 @@ export function DomainDetail({
       await reverify.mutateAsync({ method })
       router.refresh()
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not switch the verification method."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("switchFailed"))
     }
   }
 
@@ -175,17 +183,12 @@ export function DomainDetail({
   }
 
   async function onSuspend() {
-    if (
-      !confirm(`Suspend ${domain.domain}? It will stop accepting submissions.`)
-    )
-      return
+    if (!confirm(t("confirmSuspend", { domain: domain.domain }))) return
     try {
       await setStatus.mutateAsync({ action: "suspend" })
       router.refresh()
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Could not suspend."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("suspendFailed"))
     }
   }
 
@@ -195,25 +198,18 @@ export function DomainDetail({
       router.refresh()
     } catch (err) {
       setError(
-        err instanceof ApiClientError ? err.message : "Could not reactivate."
+        err instanceof ApiClientError ? err.message : t("reactivateFailed")
       )
     }
   }
 
   async function onDelete() {
-    if (
-      !confirm(
-        `Delete ${domain.domain}? Its verification history is removed too. Forms linked to it must be unlinked first.`
-      )
-    )
-      return
+    if (!confirm(t("confirmDelete", { domain: domain.domain }))) return
     try {
       await remove.mutateAsync()
       router.push("/dashboard/domains")
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Could not delete."
-      )
+      setError(err instanceof ApiClientError ? err.message : t("deleteFailed"))
     }
   }
 
@@ -221,9 +217,13 @@ export function DomainDetail({
     ? verificationInstructions(
         domain.domain,
         verification.method,
-        verification.challenge
+        verification.challenge,
+        t
       )
     : null
+
+  const addedDate = formatDate(domain.createdAt)
+  const verifiedDate = formatDate(domain.verifiedAt)
 
   return (
     <div className="flex flex-col gap-6">
@@ -234,16 +234,11 @@ export function DomainDetail({
             <DomainStatusBadge status={domain.status} />
           </div>
           <CardDescription>
-            Added{" "}
-            {new Date(domain.createdAt).toLocaleDateString(undefined, {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            })}
-            {domain.verifiedAt
-              ? ` · Verified ${new Date(domain.verifiedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`
+            {addedDate ? t("addedOn", { date: addedDate }) : ""}
+            {verifiedDate
+              ? ` · ${t("verifiedOn", { date: verifiedDate })}`
               : ""}
-            {` · ${domain._count.formLinks} linked form(s)`}
+            {` · ${t("linkedForms", { count: domain._count.formLinks })}`}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -257,14 +252,23 @@ export function DomainDetail({
           <CardContent className="flex flex-col gap-4">
             {instructions.kind === "dns" && (
               <>
-                <CopyField label="Record name" value={instructions.name} />
-                <CopyField label="Record value" value={instructions.value} />
+                <CopyField
+                  label={t("recordName")}
+                  value={instructions.name}
+                  domain="domains"
+                />
+                <CopyField
+                  label={t("recordValue")}
+                  value={instructions.value}
+                  domain="domains"
+                />
               </>
             )}
             {instructions.kind === "snippet" && (
               <InstallSnippet
                 code={instructions.code}
                 language={instructions.language}
+                domain="domains"
               />
             )}
             {instructions.kind === "file" && (
@@ -272,26 +276,33 @@ export function DomainDetail({
                 <p className="rounded-lg border bg-muted/50 px-4 py-3 font-mono text-sm break-all">
                   {instructions.url}
                 </p>
-                <CopyField label="File content" value={instructions.value} />
+                <CopyField
+                  label={t("fileContent")}
+                  value={instructions.value}
+                  domain="domains"
+                />
                 <div>
                   <Button variant="outline" onClick={downloadVerificationFile}>
                     <Download className="size-4" aria-hidden="true" />
-                    Download sendcms-verification.txt
+                    {t("downloadFile")}
                   </Button>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Download the file and upload it as-is — no editing needed.
+                    {t("downloadHint")}
                   </p>
                 </div>
               </>
             )}
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={onVerify} disabled={verify.isPending}>
-                {verify.isPending ? "Checking…" : "Check verification"}
+                {verify.isPending ? t("checking") : t("checkVerification")}
               </Button>
               <span className="text-sm text-muted-foreground">
                 {verification.attempts > 0
-                  ? `${verification.attempts} failed check(s) — ${10 - verification.attempts} remaining before a new challenge is needed.`
-                  : "Challenge expires 7 days after it was issued."}
+                  ? t("attemptsRemaining", {
+                      failed: verification.attempts,
+                      remaining: 10 - verification.attempts,
+                    })
+                  : t("challengeExpiry")}
               </span>
             </div>
             {check && !check.verified && (
@@ -300,9 +311,7 @@ export function DomainDetail({
               </p>
             )}
             {check && check.verified && (
-              <p className="text-success text-sm">
-                Verified — this domain can now receive submissions.
-              </p>
+              <p className="text-success text-sm">{t("verifiedMessage")}</p>
             )}
             {error && (
               <p role="alert" className="text-sm text-destructive">
@@ -318,9 +327,13 @@ export function DomainDetail({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="DNS_TXT">DNS TXT record</SelectItem>
-                  <SelectItem value="META_TAG">HTML meta tag</SelectItem>
-                  <SelectItem value="FILE">Verification file</SelectItem>
+                  <SelectItem value="DNS_TXT">
+                    {METHOD_LABEL.DNS_TXT}
+                  </SelectItem>
+                  <SelectItem value="META_TAG">
+                    {METHOD_LABEL.META_TAG}
+                  </SelectItem>
+                  <SelectItem value="FILE">{METHOD_LABEL.FILE}</SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -328,11 +341,10 @@ export function DomainDetail({
                 onClick={onReverify}
                 disabled={reverify.isPending || method === verification.method}
               >
-                {reverify.isPending ? "Switching…" : "Switch method"}
+                {reverify.isPending ? t("switching") : t("switchMethod")}
               </Button>
               <span className="text-xs text-muted-foreground">
-                Switches to the selected method — the verification value stays
-                the same.
+                {t("switchHint")}
               </span>
             </div>
           </CardContent>
@@ -342,11 +354,8 @@ export function DomainDetail({
       {domain.status === "VERIFIED" && (
         <Card>
           <CardHeader>
-            <CardTitle>Verified</CardTitle>
-            <CardDescription>
-              This domain can receive form submissions. Only verified domains
-              are accepted by the submission API.
-            </CardDescription>
+            <CardTitle>{t("verifiedTitle")}</CardTitle>
+            <CardDescription>{t("verifiedDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button
@@ -354,7 +363,7 @@ export function DomainDetail({
               onClick={onSuspend}
               disabled={setStatus.isPending}
             >
-              Suspend domain
+              {t("suspendDomain")}
             </Button>
           </CardContent>
         </Card>
@@ -363,15 +372,12 @@ export function DomainDetail({
       {domain.status === "SUSPENDED" && (
         <Card>
           <CardHeader>
-            <CardTitle>Suspended</CardTitle>
-            <CardDescription>
-              This domain is not accepting submissions. Reactivate it to resume
-              — it keeps its verified status.
-            </CardDescription>
+            <CardTitle>{t("suspendedTitle")}</CardTitle>
+            <CardDescription>{t("suspendedDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={onReactivate} disabled={setStatus.isPending}>
-              Reactivate domain
+              {t("reactivateDomain")}
             </Button>
           </CardContent>
         </Card>
@@ -379,11 +385,13 @@ export function DomainDetail({
 
       <Card>
         <CardHeader>
-          <CardTitle>Method</CardTitle>
+          <CardTitle>{t("methodTitle")}</CardTitle>
           <CardDescription>
             {verification
-              ? `Current method: ${METHOD_LABEL[verification.method]}.`
-              : "No pending verification."}
+              ? t("methodCurrent", {
+                  method: METHOD_LABEL[verification.method],
+                })
+              : t("methodNone")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -398,11 +406,10 @@ export function DomainDetail({
               onClick={onDelete}
               disabled={remove.isPending}
             >
-              Delete domain
+              {t("deleteDomain")}
             </Button>
             <p className="mt-2 text-xs text-muted-foreground">
-              Deleting removes the domain and its verification history. A domain
-              linked to forms cannot be deleted until it is unlinked.
+              {t("deleteDescription")}
             </p>
           </div>
         </CardContent>

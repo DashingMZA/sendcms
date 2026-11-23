@@ -5,24 +5,31 @@ import { toast } from "sonner"
 import { Button } from "@sendcms/ui"
 
 import { Copy, Check } from "lucide-react"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 // One labelled value with its own copy button — DNS records have two
-// values (name + value) and each must be copied separately.
+// values (name + value) and each must be copied separately. The
+// `domain` prop selects which page dictionary the Copy/Copied strings
+// come from: this component is shared by the domains, forms, api and
+// api-keys pages, and each page only loads its own domain.
 export function CopyField({
   label,
   value,
   description,
+  domain,
 }: {
   label: string
   value: string
   description?: string
+  domain: string
 }) {
+  const { t } = useTranslation(domain)
   const [copied, setCopied] = useState(false)
 
   async function copy() {
     await navigator.clipboard.writeText(value)
     setCopied(true)
-    toast.success(`${label} copied to clipboard`)
+    toast.success(t("copiedToClipboard", { label }))
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -41,7 +48,7 @@ export function CopyField({
           ) : (
             <Copy className="size-3.5" />
           )}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("copied") : t("copy")}
         </Button>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">

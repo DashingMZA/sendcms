@@ -1,17 +1,37 @@
+"use client"
+
 import { Badge } from "@sendcms/ui"
+
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 import type { DomainStatus } from "@sendcms/database"
 
-const STATUS_BADGE: Record<
-  DomainStatus,
-  { variant: "default" | "secondary" | "destructive"; label: string }
-> = {
-  PENDING: { variant: "secondary", label: "Pending" },
-  VERIFIED: { variant: "default", label: "Verified" },
-  SUSPENDED: { variant: "destructive", label: "Suspended" },
+const STATUS_KEY: Record<DomainStatus, string> = {
+  PENDING: "statusPending",
+  VERIFIED: "statusVerified",
+  SUSPENDED: "statusSuspended",
 }
 
-export function DomainStatusBadge({ status }: { status: DomainStatus }) {
-  const { variant, label } = STATUS_BADGE[status]
-  return <Badge variant={variant}>{label}</Badge>
+const STATUS_BADGE: Record<
+  DomainStatus,
+  { variant: "default" | "secondary" | "destructive" }
+> = {
+  PENDING: { variant: "secondary" },
+  VERIFIED: { variant: "default" },
+  SUSPENDED: { variant: "destructive" },
+}
+
+// The badge is shared by the domains pages and the form detail, and
+// each page only loads its own domain — the `domain` prop selects
+// which dictionary the status label comes from.
+export function DomainStatusBadge({
+  status,
+  domain = "domains",
+}: {
+  status: DomainStatus
+  domain?: string
+}) {
+  const { t } = useTranslation(domain)
+  const { variant } = STATUS_BADGE[status]
+  return <Badge variant={variant}>{t(STATUS_KEY[status])}</Badge>
 }

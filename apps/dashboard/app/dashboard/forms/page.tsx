@@ -6,29 +6,42 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { Button } from "@sendcms/ui"
 
 import { RiAddLine } from "@remixicon/react"
+import {
+  DASHBOARD_FORMS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { FormsTable } from "./forms-table"
 
 export default async function FormsPage() {
   const session = await auth()
   const forms = await listFormsForUser(session!.user!.id as string)
 
+  const locale = await getRequestLocale(session!.user!.id as string)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
+  const t = await getTranslator(locale, "forms")
+
   return (
     <div>
       <PageHeader
-        title="Forms"
-        description="Contact forms that collect submissions from your verified domains"
+        title={t("title")}
+        description={t("description")}
         action={
           <Button asChild size="sm">
             <Link href="/dashboard/forms/new">
               <RiAddLine className="size-4" aria-hidden="true" />
-              New form
+              {t("newForm")}
             </Link>
           </Button>
         }
       />
 
       <div className="p-4 sm:p-6">
-        <FormsTable initialForms={forms} />
+        <TranslationProvider dictionaries={dictionaries}>
+          <FormsTable initialForms={forms} />
+        </TranslationProvider>
       </div>
     </div>
   )

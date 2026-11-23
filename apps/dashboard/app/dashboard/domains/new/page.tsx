@@ -3,34 +3,43 @@ import { auth } from "@/lib/auth"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { Button } from "@sendcms/ui"
 
+import {
+  DASHBOARD_DOMAINS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { AddDomainForm } from "./add-domain-form"
 
 export default async function NewDomainPage() {
   const session = await auth()
   const emailVerified = session?.user?.emailVerified ?? false
 
+  const locale = await getRequestLocale(session?.user?.id)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_DOMAINS_DOMAINS)
+  const t = await getTranslator(locale, "domains")
+
   return (
     <div>
-      <PageHeader
-        title="Add domain"
-        description="Register a domain, then prove you own it"
-      />
+      <PageHeader title={t("newTitle")} description={t("newDescription")} />
 
       <div className="p-4 sm:p-6">
         {emailVerified ? (
-          <AddDomainForm />
+          <TranslationProvider dictionaries={dictionaries}>
+            <AddDomainForm />
+          </TranslationProvider>
         ) : (
           <div className="flex max-w-lg flex-col gap-4 rounded-lg border border-dashed p-6">
             <h3 className="text-lg font-semibold">
-              Email verification required
+              {t("emailVerificationRequired")}
             </h3>
             <p className="text-sm text-muted-foreground">
-              Verify your email before registering a domain. Until then your
-              account works, but domain registration stays locked.
+              {t("emailVerificationDescription")}
             </p>
             <div>
               <Button asChild size="sm">
-                <Link href="/dashboard/account">Go to account settings</Link>
+                <Link href="/dashboard/account">{t("goToAccount")}</Link>
               </Button>
             </div>
           </div>
