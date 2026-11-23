@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Button, Logo } from "@sendcms/ui"
 import config from "@/config/config.json"
 import { auth } from "@/lib/auth"
+import { getRequestLocale, getTranslator } from "@/lib/i18n"
 
 export const metadata: Metadata = {
   title: "SendCMS Dashboard",
@@ -15,6 +16,8 @@ export const metadata: Metadata = {
 // sign-in button; signed-in users get a button to the overview.
 export default async function HomePage() {
   const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "landing")
   return (
     <main
       id="main-content"
@@ -22,19 +25,18 @@ export default async function HomePage() {
     >
       <Logo brand={config.site} className="mb-6" />
       <h1 className="mb-3 text-2xl font-bold tracking-tight">
-        SendCMS Dashboard
+        {t("landingTitle")}
       </h1>
       <p className="mb-8 max-w-md leading-relaxed text-muted-foreground">
-        Manage your domains, forms, and submissions — view the inbox, check
-        analytics, and get the embed snippet.
+        {t("landingDescription")}
       </p>
       {session ? (
         <Button asChild>
-          <Link href="/dashboard">Go to dashboard</Link>
+          <Link href="/dashboard">{t("goToDashboard")}</Link>
         </Button>
       ) : (
         <Button asChild>
-          <Link href="/sign-in">Sign in</Link>
+          <Link href="/sign-in">{t("signIn")}</Link>
         </Button>
       )}
     </main>

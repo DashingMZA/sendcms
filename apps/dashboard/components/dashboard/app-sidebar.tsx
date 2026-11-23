@@ -7,6 +7,7 @@ import { authClient } from "@sendcms/auth/client"
 import { useTheme } from "next-themes"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 import { LanguageSelector } from "@/components/dashboard/language-selector"
 import {
   RiDashboardLine,
@@ -79,67 +80,68 @@ export function AppSidebar({
   side,
 }: Props) {
   const router = useRouter()
+  const { t } = useTranslation("navigation")
   const navGroups: NavGroup[] = [
     {
-      label: "Application",
+      label: t("groupApplication"),
       items: [
-        { label: "Overview", href: "/dashboard", icon: RiDashboardLine },
+        { label: t("overview"), href: "/dashboard", icon: RiDashboardLine },
         {
-          label: "Domains",
+          label: t("domains"),
           href: "/dashboard/domains",
           icon: RiLinksLine,
           badge: domainCount,
         },
         {
-          label: "Forms",
+          label: t("forms"),
           href: "/dashboard/forms",
           icon: RiFileListLine,
           badge: formCount,
         },
         {
-          label: "Inbox",
+          label: t("inbox"),
           href: "/dashboard/inbox",
           icon: RiInboxLine,
           badge: inboxCount,
         },
         {
-          label: "Notifications",
+          label: t("notifications"),
           href: "/dashboard/notifications",
           icon: RiNotificationLine,
         },
         {
-          label: "Analytics",
+          label: t("analytics"),
           href: "/dashboard/analytics",
           icon: RiBarChartLine,
         },
         {
-          label: "API & SDK",
+          label: t("apiSdk"),
           href: "/dashboard/api",
           icon: RiCodeSSlashLine,
         },
         {
-          label: "API Keys",
+          label: t("apiKeys"),
           href: "/dashboard/api-keys",
           icon: RiKeyLine,
         },
         {
-          label: "AI",
+          label: t("ai"),
           href: "/dashboard/ai",
           icon: RiRobotLine,
         },
         {
-          label: "Support",
+          label: t("support"),
           href: "/dashboard/support",
           icon: RiCustomerServiceLine,
         },
       ],
     },
     {
-      label: "My Account",
+      label: t("groupMyAccount"),
       items: [
-        { label: "Profile", href: "/dashboard/account", icon: RiUserLine },
+        { label: t("profile"), href: "/dashboard/account", icon: RiUserLine },
         {
-          label: "Billing",
+          label: t("billing"),
           href: "/dashboard/billing",
           icon: RiWalletLine,
         },
@@ -149,6 +151,7 @@ export function AppSidebar({
 
   const pathname = usePathname()
   const { resolvedTheme, setTheme } = useTheme()
+  const themeLabel = resolvedTheme === "dark" ? t("darkMode") : t("lightMode")
   // Collapsed-icon tooltips sit on the sidebar's OUTER side: right
   // when the sidebar is on the left, left when it is on the right.
   const tooltipSide = side === "right" ? "left" : "right"
@@ -186,13 +189,13 @@ export function AppSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  tooltip="New form"
+                  tooltip={t("newForm")}
                   className="border-2 border-dashed border-primary/40 bg-primary/5 py-5 text-primary/70 transition-colors duration-200 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:text-sidebar-foreground hover:bg-primary/10 hover:text-primary group-data-[collapsible=icon]:hover:bg-primary/10 group-data-[collapsible=icon]:hover:text-primary"
                 >
                   <Link href="/dashboard/forms/new">
                     <RiAddLine className="size-4 shrink-0" aria-hidden="true" />
                     <span className="text-sm font-medium group-data-[collapsible=icon]:hidden">
-                      New form
+                      {t("newForm")}
                     </span>
                   </Link>
                 </SidebarMenuButton>
@@ -244,7 +247,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={{
-                children: resolvedTheme === "dark" ? "Dark mode" : "Light mode",
+                children: themeLabel,
                 side: tooltipSide,
               }}
               onClick={() =>
@@ -257,7 +260,7 @@ export function AppSidebar({
                 <RiSunLine className="size-4 shrink-0" aria-hidden="true" />
               )}
               <span className="group-data-[collapsible=icon]:hidden">
-                {resolvedTheme === "dark" ? "Dark mode" : "Light mode"}
+                {themeLabel}
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -320,7 +323,7 @@ export function AppSidebar({
                   className="cursor-pointer"
                 >
                   <RiLogoutBoxLine className="size-4" aria-hidden="true" />
-                  Sign out
+                  {t("signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

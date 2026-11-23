@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useActiveAnnouncements } from "@sendcms/platform-ops/queries"
 import { Button } from "@sendcms/ui"
 import { RiCloseLine, RiMegaphoneLine } from "@remixicon/react"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 const DISMISSED_KEY = "sendcms-dismissed-announcements"
 
@@ -26,11 +27,12 @@ function readDismissed(): string[] {
  * announcements for the customer audience (the route decides the
  * audience from the actor — customers see audience ALL only). The
  * title and body come from the API (admin-authored, not translated);
- * the chrome is plain English, like the rest of the dashboard shell.
- * Dismissals are stored in this browser only.
+ * only the dismiss label is translated (navigation domain, loaded by
+ * the shell). Dismissals are stored in this browser only.
  */
 export function AnnouncementBanner() {
   const { data, isLoading } = useActiveAnnouncements()
+  const { t } = useTranslation("navigation")
   // null until the first client render has read the dismissals — the
   // server renders nothing, so the first render matches it.
   const [dismissed, setDismissed] = useState<string[] | null>(null)
@@ -78,7 +80,7 @@ export function AnnouncementBanner() {
             variant="ghost"
             size="icon"
             onClick={() => dismiss(row.id)}
-            aria-label="Dismiss announcement"
+            aria-label={t("dismissAnnouncement")}
           >
             <RiCloseLine className="size-4" aria-hidden="true" />
           </Button>

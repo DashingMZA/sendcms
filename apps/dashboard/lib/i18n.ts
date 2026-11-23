@@ -50,8 +50,42 @@ export const DASHBOARD_BILLING_DOMAINS = ["billing"] as const
 /** Dashboard-app domains loaded for the support pages. */
 export const DASHBOARD_SUPPORT_DOMAINS = ["support"] as const
 
-/** Shared domains the dashboard shell loads for every page. */
-export const DASHBOARD_SHELL_DOMAINS = ["language"] as const
+/** Dashboard-app domains loaded for the root landing page. */
+export const DASHBOARD_LANDING_DOMAINS = ["landing"] as const
+
+/** Dashboard-app domains loaded for the overview page. */
+export const DASHBOARD_OVERVIEW_DOMAINS = ["overview"] as const
+
+/** Dashboard-app domains loaded for the inbox pages. */
+export const DASHBOARD_INBOX_DOMAINS = ["inbox"] as const
+
+/** Dashboard-app domains loaded for the notifications page. */
+export const DASHBOARD_NOTIFICATIONS_DOMAINS = ["notifications"] as const
+
+/** Dashboard-app domains loaded for the analytics page. */
+export const DASHBOARD_ANALYTICS_DOMAINS = ["analytics"] as const
+
+/** Dashboard-app domains loaded for the domains pages. */
+export const DASHBOARD_DOMAINS_DOMAINS = ["domains"] as const
+
+/** Dashboard-app domains loaded for the forms pages. */
+export const DASHBOARD_FORMS_DOMAINS = ["forms"] as const
+
+/** Dashboard-app domains loaded for the API & SDK page. */
+export const DASHBOARD_API_DOMAINS = ["api"] as const
+
+/** Dashboard-app domains loaded for the API keys page. */
+export const DASHBOARD_API_KEYS_DOMAINS = ["api-keys"] as const
+
+/** Dashboard-app domains loaded for the account page. */
+export const DASHBOARD_ACCOUNT_DOMAINS = ["account"] as const
+
+/**
+ * Domains the dashboard shell loads for every page: the shared
+ * `language` domain (language selector) + the sidebar's `navigation`
+ * domain.
+ */
+export const DASHBOARD_SHELL_DOMAINS = ["language", "navigation"] as const
 
 function isDashboardDomain(domain: string): boolean {
   return (DASHBOARD_DOMAINS as readonly string[]).includes(domain)

@@ -70,7 +70,22 @@ export const ADMIN_DOMAINS = [
 ] as const
 
 /** Dashboard-app domains that live at `locales/{locale}/dashboard/{domain}.json`. */
-export const DASHBOARD_DOMAINS = ["ai", "billing", "support"] as const
+export const DASHBOARD_DOMAINS = [
+  "account",
+  "ai",
+  "analytics",
+  "api",
+  "api-keys",
+  "billing",
+  "domains",
+  "forms",
+  "inbox",
+  "landing",
+  "navigation",
+  "notifications",
+  "overview",
+  "support",
+] as const
 
 export type SharedDomain = (typeof SHARED_DOMAINS)[number]
 export type AdminDomain = (typeof ADMIN_DOMAINS)[number]

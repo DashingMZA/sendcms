@@ -6,6 +6,7 @@ import { getConfiguredOAuthProviders } from "@sendcms/auth"
 import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
 import { EmailSignInForm } from "./email-sign-in-form"
+import { marketingTermsURL } from "@/lib/app-links"
 
 export default async function SignInPage() {
   const session = await auth()
@@ -42,7 +43,7 @@ export default async function SignInPage() {
       <p className="text-center text-xs text-muted-foreground">
         By signing in you agree to our{" "}
         <a
-          href="/terms"
+          href={marketingTermsURL()}
           className="underline underline-offset-4 transition-colors hover:text-foreground"
         >
           Terms of Service

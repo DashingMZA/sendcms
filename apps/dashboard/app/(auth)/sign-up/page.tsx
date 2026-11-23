@@ -6,6 +6,7 @@ import { getConfiguredOAuthProviders } from "@sendcms/auth"
 import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
 import { SignUpForm } from "./sign-up-form"
+import { marketingTermsURL } from "@/lib/app-links"
 
 export default async function SignUpPage() {
   const session = await auth()
@@ -42,7 +43,7 @@ export default async function SignUpPage() {
       <p className="text-center text-xs text-muted-foreground">
         By signing up you agree to our{" "}
         <a
-          href="/terms"
+          href={marketingTermsURL()}
           className="underline underline-offset-4 transition-colors hover:text-foreground"
         >
           Terms of Service
