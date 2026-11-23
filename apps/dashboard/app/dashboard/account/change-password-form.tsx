@@ -25,7 +25,20 @@ export function ChangePasswordForm() {
       newPassword,
     })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? t("passwordsInvalid"))
+      // The schema's messages are English-only — translate by field and
+      // issue code instead of showing them. Anything unmapped (e.g. a
+      // 129-character password) falls back to the generic key.
+      const issue = parsed.error.issues[0]
+      const field = issue?.path[0]
+      if (field === "currentPassword") {
+        setError(t("currentPasswordRequired"))
+      } else if (field === "newPassword" && issue?.code === "custom") {
+        setError(t("passwordsDifferent"))
+      } else if (field === "newPassword" && issue?.code === "too_small") {
+        setError(t("newPasswordMin"))
+      } else {
+        setError(t("passwordsInvalid"))
+      }
       return
     }
     setLoading(true)

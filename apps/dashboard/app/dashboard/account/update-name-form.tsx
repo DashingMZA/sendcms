@@ -27,7 +27,11 @@ export function UpdateNameForm({
     setMessage(null)
     const parsed = UpdateProfileSchema.safeParse({ name })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? t("nameRequired"))
+      // The schema's messages are English-only — translate by issue
+      // instead of showing them: too long gets its own key, anything
+      // else (empty) is the required key.
+      const issue = parsed.error.issues[0]
+      setError(issue?.code === "too_big" ? t("nameTooLong") : t("nameRequired"))
       return
     }
     setLoading(true)

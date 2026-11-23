@@ -20,7 +20,9 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
     setError(null)
     const parsed = ChangeEmailSchema.safeParse({ email })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? t("emailInvalid"))
+      // The schema's message is English-only; the account domain already
+      // carries its translated twin, so show that instead.
+      setError(t("emailInvalid"))
       return
     }
     if (parsed.data.email.toLowerCase() === currentEmail.toLowerCase()) {
