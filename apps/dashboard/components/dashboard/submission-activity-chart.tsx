@@ -11,14 +11,22 @@ import {
 
 import type { DayCount } from "@sendcms/analytics"
 
-const chartConfig: ChartConfig = {
-  count: {
-    label: "Submissions",
-    color: "var(--chart-1)",
-  },
-}
-
-export function SubmissionActivityChart({ data }: { data: DayCount[] }) {
+/** The chart series label is passed in already translated by the
+    calling page (overview / analytics) — the chart itself owns no
+    dictionary, so it stays usable from either domain. */
+export function SubmissionActivityChart({
+  data,
+  seriesLabel,
+}: {
+  data: DayCount[]
+  seriesLabel: string
+}) {
+  const chartConfig: ChartConfig = {
+    count: {
+      label: seriesLabel,
+      color: "var(--chart-1)",
+    },
+  }
   const formatted = data.map((d) => ({
     ...d,
     label: format(new Date(`${d.date}T00:00:00Z`), "MMM d"),

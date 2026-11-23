@@ -24,25 +24,37 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
-const TABS: { key: "all" | "PENDING" | "SENT" | "FAILED"; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "PENDING", label: "Pending" },
-  { key: "SENT", label: "Sent" },
-  { key: "FAILED", label: "Failed" },
+const TABS: {
+  key: "all" | "PENDING" | "SENT" | "FAILED"
+  labelKey: string
+}[] = [
+  { key: "all", labelKey: "tabAll" },
+  { key: "PENDING", labelKey: "tabPending" },
+  { key: "SENT", labelKey: "tabSent" },
+  { key: "FAILED", labelKey: "tabFailed" },
 ]
+
+/** Translation key (notifications domain) for each email-job status
+    label. A status with no key here renders its raw status value. */
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  PENDING: "statusPending",
+  SENDING: "statusSending",
+  SENT: "statusSent",
+  FAILED: "statusFailed",
+}
 
 const STATUS_BADGE: Record<
   string,
   {
-    label: string
     variant: "default" | "secondary" | "destructive" | "outline"
   }
 > = {
-  PENDING: { label: "Pending", variant: "secondary" },
-  SENDING: { label: "Sending", variant: "secondary" },
-  SENT: { label: "Sent", variant: "default" },
-  FAILED: { label: "Failed", variant: "destructive" },
+  PENDING: { variant: "secondary" },
+  SENDING: { variant: "secondary" },
+  SENT: { variant: "default" },
+  FAILED: { variant: "destructive" },
 }
 
 type Props = {
@@ -55,6 +67,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { t } = useTranslation("notifications")
 
   const { data } = useEmailJobs(params, initialData)
   const list = data ?? initialData
@@ -89,7 +102,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-1">
-        {TABS.map(({ key, label }) => {
+        {TABS.map(({ key, labelKey }) => {
           const count =
             key === "all"
               ? list.counts.all
@@ -101,7 +114,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
               size="sm"
               onClick={() => setParam("status", key === "all" ? null : key)}
             >
-              {label}
+              {t(labelKey)}
               <Badge
                 variant={tab === key ? "secondary" : "outline"}
                 className="ml-1"
@@ -115,7 +128,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <Label htmlFor="jobs-form-filter">Form</Label>
+          <Label htmlFor="jobs-form-filter">{t("formLabel")}</Label>
           <Select
             value={params.formId ?? "all"}
             onValueChange={(value) =>
@@ -123,10 +136,10 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
             }
           >
             <SelectTrigger id="jobs-form-filter" className="h-9 w-48">
-              <SelectValue placeholder="All forms" />
+              <SelectValue placeholder={t("allForms")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All forms</SelectItem>
+              <SelectItem value="all">{t("allForms")}</SelectItem>
               {forms.map((form) => (
                 <SelectItem key={form.id} value={form.id}>
                   {form.name}
@@ -141,33 +154,31 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>To</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Form</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Attempts</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Last error</TableHead>
+              <TableHead>{t("colTo")}</TableHead>
+              <TableHead>{t("colSubject")}</TableHead>
+              <TableHead>{t("colForm")}</TableHead>
+              <TableHead>{t("colStatus")}</TableHead>
+              <TableHead>{t("colAttempts")}</TableHead>
+              <TableHead>{t("colCreated")}</TableHead>
+              <TableHead>{t("colLastError")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.items.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-12 text-center">
-                  <p className="font-medium">No notification emails yet</p>
+                  <p className="font-medium">{t("emptyTitle")}</p>
                   <p className="text-sm text-muted-foreground">
-                    {tab !== "all"
-                      ? "Try a different tab."
-                      : "Emails sent for new submissions will show up here."}
+                    {tab !== "all" ? t("emptyFiltered") : t("emptyDescription")}
                   </p>
                 </TableCell>
               </TableRow>
             )}
             {list.items.map((job) => {
               const badge = STATUS_BADGE[job.status] ?? {
-                label: job.status,
                 variant: "outline" as const,
               }
+              const labelKey = STATUS_LABEL_KEYS[job.status]
               return (
                 <TableRow key={job.id}>
                   <TableCell className="font-medium">{job.to}</TableCell>
@@ -176,7 +187,9 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                   </TableCell>
                   <TableCell>{job.formName ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    <Badge variant={badge.variant}>
+                      {labelKey ? t(labelKey) : job.status}
+                    </Badge>
                   </TableCell>
                   <TableCell>{job.attempts}</TableCell>
                   <TableCell>
@@ -201,7 +214,9 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
-          Showing {from}–{to} of {list.total} email(s)
+          {list.total === 1
+            ? t("showingEmailsOne", { from, to, total: list.total })
+            : t("showingEmailsOther", { from, to, total: list.total })}
         </span>
         <div className="flex gap-2">
           <Button
@@ -210,10 +225,10 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
             disabled={list.page <= 1}
             onClick={() => setPage(list.page - 1)}
           >
-            Previous
+            {t("previous")}
           </Button>
           <span className="self-center">
-            Page {list.page} of {pageCount}
+            {t("pageOf", { page: list.page, totalPages: pageCount })}
           </span>
           <Button
             variant="outline"
@@ -221,7 +236,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
             disabled={list.page >= pageCount}
             onClick={() => setPage(list.page + 1)}
           >
-            Next
+            {t("next")}
           </Button>
         </div>
       </div>

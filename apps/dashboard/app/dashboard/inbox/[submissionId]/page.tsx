@@ -5,6 +5,13 @@ import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
 import { SubmissionDetail } from "../submission-detail"
+import {
+  DASHBOARD_INBOX_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
 type Params = { params: Promise<{ submissionId: string }> }
 
@@ -22,14 +29,23 @@ export default async function SubmissionDetailPage({ params }: Params) {
     throw err
   }
 
+  const locale = await getRequestLocale(session!.user!.id as string)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_INBOX_DOMAINS)
+  const t = await getTranslator(locale, "inbox")
+
   return (
     <div>
       <PageHeader
-        title="Submission"
-        description={`From ${submission.form.name} · ${submission.originDomain}`}
+        title={t("detailTitle")}
+        description={t("submissionDescription", {
+          form: submission.form.name,
+          origin: submission.originDomain,
+        })}
       />
       <div className="p-4 sm:p-6">
-        <SubmissionDetail initialData={submission} />
+        <TranslationProvider dictionaries={dictionaries}>
+          <SubmissionDetail initialData={submission} />
+        </TranslationProvider>
       </div>
     </div>
   )

@@ -4,6 +4,13 @@ import { listDomainsForUser } from "@sendcms/domains"
 import { listFormsForUser } from "@sendcms/forms"
 import { listSubmissionsForUser } from "@sendcms/inbox"
 import { InboxListQuerySchema } from "@sendcms/inbox/validators"
+import {
+  DASHBOARD_INBOX_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
 import { InboxTable } from "./inbox-table"
 
@@ -29,19 +36,22 @@ export default async function InboxPage({ searchParams }: Props) {
     listDomainsForUser(userId),
   ])
 
+  const locale = await getRequestLocale(userId)
+  const dictionaries = await getDictionaries(locale, DASHBOARD_INBOX_DOMAINS)
+  const t = await getTranslator(locale, "inbox")
+
   return (
     <div>
-      <PageHeader
-        title="Inbox"
-        description="Submissions from your forms — read, star, archive or mark spam"
-      />
+      <PageHeader title={t("title")} description={t("description")} />
       <div className="p-4 sm:p-6">
-        <InboxTable
-          initialData={list}
-          params={params}
-          forms={forms.map((form) => ({ id: form.id, name: form.name }))}
-          domains={domains.map((domain) => ({ domain: domain.domain }))}
-        />
+        <TranslationProvider dictionaries={dictionaries}>
+          <InboxTable
+            initialData={list}
+            params={params}
+            forms={forms.map((form) => ({ id: form.id, name: form.name }))}
+            domains={domains.map((domain) => ({ domain: domain.domain }))}
+          />
+        </TranslationProvider>
       </div>
     </div>
   )

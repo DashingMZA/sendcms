@@ -7,8 +7,12 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
-import { SubmissionStatusBadge } from "./inbox/submission-status-badge"
+import {
+  SUBMISSION_STATUS_LABEL_KEYS,
+  SubmissionStatusBadge,
+} from "./inbox/submission-status-badge"
 import { Avatar, AvatarFallback, Badge, Button, Separator } from "@sendcms/ui"
+import { getRequestLocale, getTranslator } from "@/lib/i18n"
 
 import { formatDistanceToNow } from "date-fns"
 import {
@@ -27,49 +31,53 @@ export default async function OverviewPage() {
     listFormsForUser(userId),
   ])
 
+  const locale = await getRequestLocale(userId)
+  const t = await getTranslator(locale, "overview")
+
   return (
     <div>
       <AnnouncementBanner />
-      <PageHeader
-        title="Overview"
-        description="Summary of your domains, forms and submissions"
-      />
+      <PageHeader title={t("title")} description={t("description")} />
 
       <div className="flex flex-col gap-8 p-8">
         {/* Stat cards */}
         <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Domains"
+            title={t("statDomains")}
             value={overview.domainCount}
             icon={RiLinksLine}
             description={
               overview.domainCount > 0
-                ? `${overview.verifiedDomainCount} verified`
-                : "Add your first domain"
+                ? t("domainsVerified", {
+                    count: overview.verifiedDomainCount,
+                  })
+                : t("addFirstDomain")
             }
           />
           <StatCard
-            title="Forms"
+            title={t("statForms")}
             value={overview.formCount}
             icon={RiFileListLine}
             description={
               overview.formCount > 0
-                ? `${overview.activeFormCount} active`
-                : "Create your first form"
+                ? t("formsActive", { count: overview.activeFormCount })
+                : t("createFirstForm")
             }
           />
           <StatCard
-            title="Submissions"
+            title={t("statSubmissions")}
             value={overview.submissionCount}
             icon={RiInboxLine}
           />
           <StatCard
-            title="Unread"
+            title={t("statUnread")}
             value={overview.unreadCount}
             icon={RiTimeLine}
             variant="warning"
             description={
-              overview.unreadCount > 0 ? "Needs attention" : "All caught up"
+              overview.unreadCount > 0
+                ? t("unreadNeedsAttention")
+                : t("unreadAllCaughtUp")
             }
           />
         </div>
@@ -79,35 +87,38 @@ export default async function OverviewPage() {
           <div className="flex w-full max-w-[750px] flex-col gap-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                Submission Activity
+                {t("activityTitle")}
               </h2>
               <span className="text-xs text-muted-foreground">
-                Last 14 days
+                {t("activityRange")}
               </span>
             </div>
             <Separator />
-            <SubmissionActivityChart data={overview.activity} />
+            <SubmissionActivityChart
+              data={overview.activity}
+              seriesLabel={t("chartSeriesLabel")}
+            />
           </div>
 
           <div className="flex flex-col gap-3">
             <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              Status Breakdown
+              {t("statusTitle")}
             </h2>
             <Separator />
             <div className="flex flex-1 flex-col justify-center gap-2 py-2">
               {overview.submissionCount === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No submissions yet.
+                  {t("noSubmissions")}
                 </p>
               ) : (
                 <>
                   <p className="text-sm">
                     <span className="font-medium">{overview.unreadCount}</span>{" "}
-                    unread
+                    {t("unreadLabel")}
                   </p>
                   <p className="text-sm">
                     <span className="font-medium">{overview.spamCount}</span>{" "}
-                    marked as spam
+                    {t("spamLabel")}
                   </p>
                   <p className="text-sm">
                     <span className="font-medium">
@@ -115,7 +126,7 @@ export default async function OverviewPage() {
                         overview.unreadCount -
                         overview.spamCount}
                     </span>{" "}
-                    read or handled
+                    {t("readLabel")}
                   </p>
                   <Button
                     asChild
@@ -124,7 +135,7 @@ export default async function OverviewPage() {
                     className="mt-2 w-fit"
                   >
                     <Link href="/dashboard/inbox">
-                      Open inbox <RiArrowRightLine className="size-3.5" />
+                      {t("openInbox")} <RiArrowRightLine className="size-3.5" />
                     </Link>
                   </Button>
                 </>
@@ -138,14 +149,14 @@ export default async function OverviewPage() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                Your Forms
+                {t("formsTitle")}
               </h2>
               <Button asChild variant="ghost" size="sm">
                 <Link
                   href="/dashboard/forms"
                   className="flex items-center gap-1"
                 >
-                  View all <RiArrowRightLine className="size-3.5" />
+                  {t("viewAll")} <RiArrowRightLine className="size-3.5" />
                 </Link>
               </Button>
             </div>
@@ -153,12 +164,12 @@ export default async function OverviewPage() {
             <div className="flex flex-col">
               {forms.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  No forms yet.{" "}
+                  {t("noFormsYet")}{" "}
                   <Link
                     href="/dashboard/forms/new"
                     className="font-medium text-primary underline-offset-4 hover:underline"
                   >
-                    Create your first form
+                    {t("createFirstForm")}
                   </Link>
                 </p>
               ) : (
@@ -173,17 +184,27 @@ export default async function OverviewPage() {
                         {form.name}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {form._count.domainLinks} domain
-                        {form._count.domainLinks !== 1 ? "s" : ""} linked
+                        {form._count.domainLinks === 1
+                          ? t("domainsLinkedOne", {
+                              count: form._count.domainLinks,
+                            })
+                          : t("domainsLinkedOther", {
+                              count: form._count.domainLinks,
+                            })}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <Badge variant={form.active ? "default" : "secondary"}>
-                        {form.active ? "Active" : "Paused"}
+                        {form.active ? t("formActive") : t("formPaused")}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {form._count.submissions} submission
-                        {form._count.submissions !== 1 ? "s" : ""}
+                        {form._count.submissions === 1
+                          ? t("formSubmissionsOne", {
+                              count: form._count.submissions,
+                            })
+                          : t("formSubmissionsOther", {
+                              count: form._count.submissions,
+                            })}
                       </span>
                     </div>
                   </Link>
@@ -195,14 +216,14 @@ export default async function OverviewPage() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                Recent Submissions
+                {t("recentTitle")}
               </h2>
               <Button asChild variant="ghost" size="sm">
                 <Link
                   href="/dashboard/inbox"
                   className="flex items-center gap-1"
                 >
-                  View all <RiArrowRightLine className="size-3.5" />
+                  {t("viewAll")} <RiArrowRightLine className="size-3.5" />
                 </Link>
               </Button>
             </div>
@@ -210,7 +231,7 @@ export default async function OverviewPage() {
             <div className="flex flex-col">
               {overview.recentSubmissions.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  No submissions yet.
+                  {t("noSubmissions")}
                 </p>
               ) : (
                 overview.recentSubmissions.map((submission) => (
@@ -229,9 +250,14 @@ export default async function OverviewPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">
-                          {submission.senderName ?? "Unknown"}
+                          {submission.senderName ?? t("unknownSender")}
                         </p>
-                        <SubmissionStatusBadge status={submission.status} />
+                        <SubmissionStatusBadge
+                          status={submission.status}
+                          label={t(
+                            SUBMISSION_STATUS_LABEL_KEYS[submission.status]
+                          )}
+                        />
                       </div>
                       <p className="truncate text-xs text-muted-foreground">
                         {submission.preview} · {submission.formName}

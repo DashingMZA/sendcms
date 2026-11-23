@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@sendcms/ui"
 
 import { AlertTriangle } from "lucide-react"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 export default function DashboardError({
   error,
@@ -14,6 +15,7 @@ export default function DashboardError({
   reset: () => void
 }) {
   const router = useRouter()
+  const { t } = useTranslation("navigation")
 
   useEffect(() => {
     // Log error to monitoring service
@@ -26,17 +28,16 @@ export default function DashboardError({
         className="mb-4 size-12 text-destructive"
         aria-hidden="true"
       />
-      <h2 className="mb-2 text-lg font-semibold">Something went wrong</h2>
+      <h2 className="mb-2 text-lg font-semibold">{t("errorTitle")}</h2>
       <p className="mb-6 max-w-sm text-sm text-muted-foreground">
-        An error occurred while loading this page. You can try again or go back
-        to the dashboard.
+        {t("errorDescription")}
       </p>
       <div className="flex gap-3">
         <Button onClick={reset} variant="default">
-          Try again
+          {t("errorTryAgain")}
         </Button>
         <Button onClick={() => router.push("/dashboard")} variant="outline">
-          Go to dashboard
+          {t("errorGoToDashboard")}
         </Button>
       </div>
     </div>

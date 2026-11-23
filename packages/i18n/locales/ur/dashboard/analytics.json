@@ -1,0 +1,22 @@
+{
+  "byDomainTitle": "اصل ڈومین کے لحاظ سے",
+  "byFormTitle": "فارم کے لحاظ سے",
+  "byStatusTitle": "حالت کے لحاظ سے",
+  "chartRange": "پچھلے 30 دن",
+  "chartSeriesLabel": "سبمشنز",
+  "chartTitle": "یومیہ سبمشنز",
+  "description": "پچھلے 30 دنوں کی سبمشنز، فارم، ڈومین اور حالت کے لحاظ سے",
+  "noSubmissions": "پچھلے 30 دنوں میں کوئی سبمشن نہیں ہے۔",
+  "statDomains": "اصل ڈومینز",
+  "statForms": "سبمشنز وصول کرنے والے فارمز",
+  "statSpam": "اسپام (30 دن)",
+  "statTotal": "سبمشنز (30 دن)",
+  "statusArchived": "محفوظ شدہ",
+  "statusNew": "نہ پڑھی گئی",
+  "statusRead": "پڑھی گئی",
+  "statusSpam": "اسپام",
+  "statusStarred": "ستارہ دار",
+  "submissionsCountOne": "{count} سبمشن",
+  "submissionsCountOther": "{count} سبمشنز",
+  "title": "تجزیات"
+}

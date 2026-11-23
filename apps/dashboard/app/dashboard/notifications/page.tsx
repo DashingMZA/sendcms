@@ -3,6 +3,13 @@ import { PageHeader } from "@/components/dashboard/page-header"
 import { listFormsForUser } from "@sendcms/forms"
 import { listEmailJobsForUser } from "@sendcms/notifications"
 import { EmailJobListQuerySchema } from "@sendcms/notifications/validators"
+import {
+  DASHBOARD_NOTIFICATIONS_DOMAINS,
+  getDictionaries,
+  getRequestLocale,
+  getTranslator,
+} from "@/lib/i18n"
+import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
 import { EmailJobsTable } from "./email-jobs-table"
 
@@ -27,18 +34,24 @@ export default async function NotificationsPage({ searchParams }: Props) {
     listFormsForUser(userId),
   ])
 
+  const locale = await getRequestLocale(userId)
+  const dictionaries = await getDictionaries(
+    locale,
+    DASHBOARD_NOTIFICATIONS_DOMAINS
+  )
+  const t = await getTranslator(locale, "notifications")
+
   return (
     <div>
-      <PageHeader
-        title="Notifications"
-        description="Delivery log for submission notification emails — sent, pending and failed"
-      />
+      <PageHeader title={t("title")} description={t("description")} />
       <div className="p-4 sm:p-6">
-        <EmailJobsTable
-          initialData={list}
-          params={params}
-          forms={forms.map((form) => ({ id: form.id, name: form.name }))}
-        />
+        <TranslationProvider dictionaries={dictionaries}>
+          <EmailJobsTable
+            initialData={list}
+            params={params}
+            forms={forms.map((form) => ({ id: form.id, name: form.name }))}
+          />
+        </TranslationProvider>
       </div>
     </div>
   )

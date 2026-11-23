@@ -1,0 +1,22 @@
+{
+  "byDomainTitle": "By origin domain",
+  "byFormTitle": "By form",
+  "byStatusTitle": "By status",
+  "chartRange": "Last 30 days",
+  "chartSeriesLabel": "Submissions",
+  "chartTitle": "Submissions per day",
+  "description": "Submissions over the last 30 days, by form, domain and status",
+  "noSubmissions": "No submissions in the last 30 days.",
+  "statDomains": "Origin domains",
+  "statForms": "Forms receiving",
+  "statSpam": "Spam (30 days)",
+  "statTotal": "Submissions (30 days)",
+  "statusArchived": "Archived",
+  "statusNew": "Unread",
+  "statusRead": "Read",
+  "statusSpam": "Spam",
+  "statusStarred": "Starred",
+  "submissionsCountOne": "{count} submission",
+  "submissionsCountOther": "{count} submissions",
+  "title": "Analytics"
+}

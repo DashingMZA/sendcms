@@ -46,17 +46,21 @@ import {
 } from "@sendcms/ui"
 
 import { InboxSearchInput } from "./inbox-search-input"
-import { SubmissionStatusBadge } from "./submission-status-badge"
+import {
+  SUBMISSION_STATUS_LABEL_KEYS,
+  SubmissionStatusBadge,
+} from "./submission-status-badge"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 import { MoreHorizontal, Trash2 } from "lucide-react"
 
-const TABS: { key: InboxTabInput; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "unread", label: "Unread" },
-  { key: "read", label: "Read" },
-  { key: "starred", label: "Starred" },
-  { key: "archived", label: "Archived" },
-  { key: "spam", label: "Spam" },
+const TABS: { key: InboxTabInput; labelKey: string }[] = [
+  { key: "all", labelKey: "tabAll" },
+  { key: "unread", labelKey: "tabUnread" },
+  { key: "read", labelKey: "tabRead" },
+  { key: "starred", labelKey: "tabStarred" },
+  { key: "archived", labelKey: "tabArchived" },
+  { key: "spam", labelKey: "tabSpam" },
 ]
 
 type Props = {
@@ -70,6 +74,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { t } = useTranslation("inbox")
 
   const { data } = useInbox(params, initialData)
   const list = data ?? initialData
@@ -125,7 +130,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
     try {
       await updateStatus.mutateAsync({ id, action })
     } catch {
-      toast.error("Could not update the submission.")
+      toast.error(t("updateFailed"))
     }
   }
 
@@ -136,12 +141,28 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
         ids: [...selectedIds],
         action,
       })
-      toast.success(
-        `${result.updated} submission(s) updated${result.skipped ? `, ${result.skipped} skipped` : ""}.`
-      )
+      if (result.skipped) {
+        toast.success(
+          result.updated === 1
+            ? t("bulkUpdatedSkippedOne", {
+                updated: result.updated,
+                skipped: result.skipped,
+              })
+            : t("bulkUpdatedSkippedOther", {
+                updated: result.updated,
+                skipped: result.skipped,
+              })
+        )
+      } else {
+        toast.success(
+          result.updated === 1
+            ? t("bulkUpdatedOne", { updated: result.updated })
+            : t("bulkUpdatedOther", { updated: result.updated })
+        )
+      }
       setSelectedIds(new Set())
     } catch {
-      toast.error("Could not update the submissions.")
+      toast.error(t("updateFailedMultiple"))
     }
   }
 
@@ -149,14 +170,14 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
     if (!deleteTarget) return
     try {
       await deleteSubmission.mutateAsync(deleteTarget)
-      toast.success("Submission deleted.")
+      toast.success(t("deleteSuccess"))
       setSelectedIds((prev) => {
         const next = new Set(prev)
         next.delete(deleteTarget)
         return next
       })
     } catch {
-      toast.error("Could not delete the submission.")
+      toast.error(t("deleteFailed"))
     } finally {
       setDeleteTarget(null)
     }
@@ -169,10 +190,14 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
       for (const id of ids) {
         await deleteSubmission.mutateAsync(id)
       }
-      toast.success(`${ids.length} submission(s) deleted.`)
+      toast.success(
+        ids.length === 1
+          ? t("bulkDeletedOne", { count: ids.length })
+          : t("bulkDeletedOther", { count: ids.length })
+      )
       setSelectedIds(new Set())
     } catch {
-      toast.error("Could not delete the submissions.")
+      toast.error(t("deleteFailedMultiple"))
     }
   }
 
@@ -194,14 +219,14 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-1">
-        {TABS.map(({ key, label }) => (
+        {TABS.map(({ key, labelKey }) => (
           <Button
             key={key}
             variant={tab === key ? "default" : "ghost"}
             size="sm"
             onClick={() => setParam("tab", key === "all" ? null : key)}
           >
-            {label}
+            {t(labelKey)}
             <Badge
               variant={tab === key ? "secondary" : "outline"}
               className="ml-1"
@@ -215,7 +240,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
       <div className="flex flex-wrap items-end gap-3">
         <InboxSearchInput defaultValue={params.search ?? ""} />
         <div className="space-y-1">
-          <Label htmlFor="inbox-form-filter">Form</Label>
+          <Label htmlFor="inbox-form-filter">{t("formLabel")}</Label>
           <Select
             value={params.formId ?? "all"}
             onValueChange={(value) =>
@@ -223,10 +248,10 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             }
           >
             <SelectTrigger id="inbox-form-filter" className="h-9 w-48">
-              <SelectValue placeholder="All forms" />
+              <SelectValue placeholder={t("allForms")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All forms</SelectItem>
+              <SelectItem value="all">{t("allForms")}</SelectItem>
               {forms.map((form) => (
                 <SelectItem key={form.id} value={form.id}>
                   {form.name}
@@ -236,7 +261,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="inbox-domain-filter">Domain</Label>
+          <Label htmlFor="inbox-domain-filter">{t("domainLabel")}</Label>
           <Select
             value={params.originDomain ?? "all"}
             onValueChange={(value) =>
@@ -244,10 +269,10 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             }
           >
             <SelectTrigger id="inbox-domain-filter" className="h-9 w-48">
-              <SelectValue placeholder="All domains" />
+              <SelectValue placeholder={t("allDomains")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All domains</SelectItem>
+              <SelectItem value="all">{t("allDomains")}</SelectItem>
               {domains.map((domain) => (
                 <SelectItem key={domain.domain} value={domain.domain}>
                   {domain.domain}
@@ -257,7 +282,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="inbox-from">From</Label>
+          <Label htmlFor="inbox-from">{t("fromLabel")}</Label>
           <Input
             id="inbox-from"
             type="date"
@@ -267,7 +292,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="inbox-to">To</Label>
+          <Label htmlFor="inbox-to">{t("toLabel")}</Label>
           <Input
             id="inbox-to"
             type="date"
@@ -278,7 +303,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
         </div>
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
+            {t("clearFilters")}
           </Button>
         )}
       </div>
@@ -286,7 +311,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
           <span className="text-sm font-medium">
-            {selectedIds.size} selected
+            {t("selectedCount", { count: selectedIds.size })}
           </span>
           <Button
             variant="outline"
@@ -294,7 +319,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             onClick={() => runBulk("read")}
             disabled={bulkUpdate.isPending}
           >
-            Mark read
+            {t("markRead")}
           </Button>
           <Button
             variant="outline"
@@ -302,7 +327,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             onClick={() => runBulk("archive")}
             disabled={bulkUpdate.isPending}
           >
-            Archive
+            {t("archive")}
           </Button>
           <Button
             variant="outline"
@@ -310,7 +335,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             onClick={() => runBulk("spam")}
             disabled={bulkUpdate.isPending}
           >
-            Mark spam
+            {t("markAsSpam")}
           </Button>
           <Button
             variant="outline"
@@ -318,14 +343,14 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             onClick={bulkDelete}
             disabled={deleteSubmission.isPending}
           >
-            <Trash2 className="size-3.5" /> Delete
+            <Trash2 className="size-3.5" /> {t("delete")}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setSelectedIds(new Set())}
           >
-            Clear
+            {t("clear")}
           </Button>
         </div>
       )}
@@ -341,15 +366,15 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                     selectedIds.size === list.items.length
                   }
                   onCheckedChange={(checked) => toggleAll(checked === true)}
-                  aria-label="Select all on this page"
+                  aria-label={t("selectAllOnPage")}
                 />
               </TableHead>
-              <TableHead>Sender</TableHead>
-              <TableHead>Message</TableHead>
-              <TableHead>Form</TableHead>
-              <TableHead>Origin</TableHead>
-              <TableHead>Received</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>{t("colSender")}</TableHead>
+              <TableHead>{t("colMessage")}</TableHead>
+              <TableHead>{t("colForm")}</TableHead>
+              <TableHead>{t("colOrigin")}</TableHead>
+              <TableHead>{t("colReceived")}</TableHead>
+              <TableHead>{t("colStatus")}</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -357,11 +382,11 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             {list.items.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="py-12 text-center">
-                  <p className="font-medium">No submissions yet</p>
+                  <p className="font-medium">{t("emptyTitle")}</p>
                   <p className="text-sm text-muted-foreground">
                     {hasFilters || tab !== "all"
-                      ? "Try a different tab or clear the filters."
-                      : "Submissions from your forms will show up here."}
+                      ? t("emptyFiltered")
+                      : t("emptyDescription")}
                   </p>
                 </TableCell>
               </TableRow>
@@ -378,12 +403,15 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                     onCheckedChange={(checked) =>
                       toggleOne(item.id, checked === true)
                     }
-                    aria-label={`Select submission from ${item.sender.name ?? item.sender.email ?? "unknown sender"}`}
+                    aria-label={t("selectSubmission", {
+                      sender:
+                        item.sender.name ?? item.sender.email ?? t("unknown"),
+                    })}
                   />
                 </TableCell>
                 <TableCell>
                   <p className="font-medium">
-                    {item.sender.name ?? item.sender.email ?? "Unknown"}
+                    {item.sender.name ?? item.sender.email ?? t("unknown")}
                   </p>
                   {item.sender.name && item.sender.email && (
                     <p className="text-sm text-muted-foreground">
@@ -402,14 +430,17 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                   })}
                 </TableCell>
                 <TableCell>
-                  <SubmissionStatusBadge status={item.status} />
+                  <SubmissionStatusBadge
+                    status={item.status}
+                    label={t(SUBMISSION_STATUS_LABEL_KEYS[item.status])}
+                  />
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="size-8 p-0">
                         <MoreHorizontal className="size-4" />
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("actions")}</span>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -418,14 +449,14 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                           router.push(`/dashboard/inbox/${item.id}`)
                         }
                       >
-                        View
+                        {t("view")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {item.status === "NEW" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "read")}
                         >
-                          Mark as read
+                          {t("markAsRead")}
                         </DropdownMenuItem>
                       )}
                       {(item.status === "READ" ||
@@ -433,7 +464,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "unread")}
                         >
-                          Mark as unread
+                          {t("markAsUnread")}
                         </DropdownMenuItem>
                       )}
                       {item.status !== "STARRED" &&
@@ -442,42 +473,42 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                           <DropdownMenuItem
                             onClick={() => runAction(item.id, "star")}
                           >
-                            Star
+                            {t("star")}
                           </DropdownMenuItem>
                         )}
                       {item.status === "STARRED" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "unstar")}
                         >
-                          Unstar
+                          {t("unstar")}
                         </DropdownMenuItem>
                       )}
                       {item.status !== "ARCHIVED" && item.status !== "SPAM" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "archive")}
                         >
-                          Archive
+                          {t("archive")}
                         </DropdownMenuItem>
                       )}
                       {item.status === "ARCHIVED" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "restore")}
                         >
-                          Restore
+                          {t("restore")}
                         </DropdownMenuItem>
                       )}
                       {item.status !== "SPAM" && item.status !== "ARCHIVED" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "spam")}
                         >
-                          Mark as spam
+                          {t("markAsSpam")}
                         </DropdownMenuItem>
                       )}
                       {item.status === "SPAM" && (
                         <DropdownMenuItem
                           onClick={() => runAction(item.id, "not-spam")}
                         >
-                          Not spam
+                          {t("notSpam")}
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
@@ -485,7 +516,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                         className="text-destructive"
                         onClick={() => setDeleteTarget(item.id)}
                       >
-                        Delete
+                        {t("delete")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -498,7 +529,9 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
-          Showing {from}–{to} of {list.total} submission(s)
+          {list.total === 1
+            ? t("showingResultsOne", { from, to, total: list.total })
+            : t("showingResultsOther", { from, to, total: list.total })}
         </span>
         <div className="flex gap-2">
           <Button
@@ -507,10 +540,10 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             disabled={list.page <= 1}
             onClick={() => setPage(list.page - 1)}
           >
-            Previous
+            {t("previous")}
           </Button>
           <span className="self-center">
-            Page {list.page} of {pageCount}
+            {t("pageOf", { page: list.page, totalPages: pageCount })}
           </span>
           <Button
             variant="outline"
@@ -518,7 +551,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             disabled={list.page >= pageCount}
             onClick={() => setPage(list.page + 1)}
           >
-            Next
+            {t("next")}
           </Button>
         </div>
       </div>
@@ -531,18 +564,15 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete this submission?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes the submission and its history. This
-              cannot be undone.
-            </DialogDescription>
+            <DialogTitle>{t("deleteTitle")}</DialogTitle>
+            <DialogDescription>{t("deleteDescription")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+              {t("delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

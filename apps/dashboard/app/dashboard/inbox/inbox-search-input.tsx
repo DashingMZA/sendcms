@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Input } from "@sendcms/ui"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 
 import { Search, X } from "lucide-react"
 
@@ -18,6 +19,7 @@ export function InboxSearchInput({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { t } = useTranslation("inbox")
 
   const [value, setValue] = useState(defaultValue)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -61,7 +63,7 @@ export function InboxSearchInput({
       <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
-        placeholder="Search submissions..."
+        placeholder={t("searchPlaceholder")}
         value={value}
         onChange={handleChange}
         className="h-9 w-64 pr-9 pl-9 text-sm"
@@ -71,7 +73,7 @@ export function InboxSearchInput({
           type="button"
           onClick={handleClear}
           className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Clear search"
+          aria-label={t("clearSearch")}
         >
           <X className="size-4" />
         </button>
