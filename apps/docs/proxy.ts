@@ -24,7 +24,16 @@ import {
 // Move the import to the barrel (`@sendcms/security`) at integration.
 export function proxy(req: NextRequest) {
   const nonce = createCspNonce()
-  const policy = buildCsp(nonce)
+  // Violations report to the api app's report route (Phase 16,
+  // SRC-318) so enforcing-mode breakage is logged, not silently
+  // dropped. The docs app makes no cross-origin browser fetches, so
+  // it passes no `connect-src` origin — only the report endpoint.
+  const apiOrigin = (
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
+  ).replace(/\/$/, "")
+  const policy = buildCsp(nonce, {
+    reportUri: `${apiOrigin}/api/csp-report`,
+  })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
 
   const requestHeaders = new Headers(req.headers)

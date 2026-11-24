@@ -7,6 +7,22 @@ import type { CheckoutArgs, CheckoutResult, VerifiedWebhook } from "./types"
 
 const log = createLogger("billing:freemius")
 
+// BIL-088: Freemius signs HMAC-SHA256 over the body only — no
+// timestamp, nonce, or expiry — so a captured payload can be replayed
+// indefinitely. The compensating check is first-seen time: the
+// BillingEvent row the handler writes for the first delivery records
+// when the event id was first seen. A redelivery of an ALREADY
+// APPLIED event (processedAt set) older than this window is rejected
+// outright; a redelivery inside the window is still deduped by
+// `handleWebhook` (duplicate ack, never re-applied), and a delivery
+// that was never applied (processedAt null, e.g. the first attempt
+// crashed mid-apply) is always allowed through so it can still apply.
+// Residual risk: an event id Freemius never sends (the Date.now()
+// fallback) cannot be identified across deliveries, and a replay
+// inside the window depends on the BillingEvent dedupe — see the
+// handler's unique (provider, providerEventId) guard.
+export const FREEMIUS_REPLAY_WINDOW_MS = 10 * 60 * 1000
+
 // Freemius checkout. Freemius plans are created in the Freemius
 // dashboard, not through the API, so the SendCMS plan version ->
 // Freemius plan id mapping lives in the FREEMIUS_PLAN_MAP env var
@@ -105,6 +121,35 @@ export async function verifyFreemiusWebhook(
   const eventId =
     typeof event.id === "string" ? event.id : `freemius:${Date.now()}`
   const eventType = typeof event.type === "string" ? event.type : "unknown"
+  // BIL-088: reject a replay of an already-applied event once it is
+  // older than the window. Events without a stable id cannot be
+  // tracked, so they skip this check (and are logged).
+  if (typeof event.id === "string") {
+    const firstSeen = await db.billingEvent.findUnique({
+      where: {
+        provider_providerEventId: {
+          provider: "FREEMIUS",
+          providerEventId: eventId,
+        },
+      },
+      select: { createdAt: true, processedAt: true },
+    })
+    if (
+      firstSeen?.processedAt &&
+      Date.now() - firstSeen.createdAt.getTime() > FREEMIUS_REPLAY_WINDOW_MS
+    ) {
+      log.warn("Freemius webhook replay rejected", {
+        eventId,
+        eventType,
+        firstSeenAt: firstSeen.createdAt.toISOString(),
+      })
+      throw new ApiError("Replayed Freemius webhook event", 409)
+    }
+  } else {
+    log.warn("Freemius webhook without an event id; replay check skipped", {
+      eventType,
+    })
+  }
   const ignored: VerifiedWebhook = {
     eventId,
     eventType,

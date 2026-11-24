@@ -2,6 +2,7 @@ import {
   EmailJobStatus,
   EmailJobType,
   Prisma,
+  SubmissionEventType,
   SubmissionStatus,
   db,
   type EmailJob,
@@ -14,7 +15,9 @@ import {
   type SubmissionNotificationField,
   type SubmissionNotificationProps,
 } from "@sendcms/email"
+import { createLogger } from "@sendcms/observability"
 import {
+  MAX_EMAIL_ATTEMPTS,
   claimDueEmailJobs,
   claimEmailJob,
   enqueueEmailJobs,
@@ -50,6 +53,8 @@ export type {
 } from "@sendcms/email"
 
 export const EMAIL_JOB_PAGE_SIZE = 20
+
+const logger = createLogger("notifications")
 
 export function buildSubmissionNotificationSubject(
   formName: string,
@@ -278,6 +283,26 @@ async function renderNotification(
   return { subject, html, text }
 }
 
+/** Timeline event for a reply job, written from the send path only
+    (EML-007): EMAIL_SENT once the provider accepts the reply,
+    EMAIL_FAILED once it terminally fails. Best-effort and silent —
+    the job outcome is already recorded, and a timeline write must
+    never flip a sent job to failed. This package owns no logger. */
+async function writeReplyEvent(
+  job: EmailJob,
+  type: SubmissionEventType,
+  detail: Prisma.InputJsonValue
+): Promise<void> {
+  if (!job.submissionId) return
+  try {
+    await db.submissionEvent.create({
+      data: { submissionId: job.submissionId, type, detail },
+    })
+  } catch {
+    // The timeline is secondary to the recorded job outcome.
+  }
+}
+
 /** Sends one due job. Returns "sent" | "failed" | "skipped" (claimed
     by another processor, or its submission is gone). */
 async function processOneJob(
@@ -321,6 +346,9 @@ async function processOneJob(
         text,
       })
       await markEmailJobSent(job.id, messageId)
+      await writeReplyEvent(job, SubmissionEventType.EMAIL_SENT, {
+        reply: true,
+      })
       return "sent"
     }
     const full: EmailJobWithRelations | null = await loadEmailJob(job.id)
@@ -344,14 +372,25 @@ async function processOneJob(
     // Retriable failures stay PENDING with a backoff — the next drain
     // picks them up again. Only terminal failures (out of attempts, or
     // the submission is gone) become FAILED.
+    const terminal =
+      message === "Submission or form no longer exists." ||
+      message === "Digest payload is missing or malformed." ||
+      message === "Reply payload is missing or malformed." ||
+      attempts >= MAX_EMAIL_ATTEMPTS
     await markEmailJobFailed(job.id, {
       error: message,
       attempts,
-      terminal:
-        message === "Submission or form no longer exists." ||
-        message === "Digest payload is missing or malformed." ||
-        message === "Reply payload is missing or malformed.",
+      terminal,
     })
+    // EML-007: a reply job that will never be retried gets an
+    // EMAIL_FAILED timeline event; a retriable failure gets none —
+    // the job is still in flight.
+    if (job.type === EmailJobType.SUBMISSION_REPLY && terminal) {
+      await writeReplyEvent(job, SubmissionEventType.EMAIL_FAILED, {
+        reply: true,
+        error: message.slice(0, 500),
+      })
+    }
     return "failed"
   }
 }
@@ -490,12 +529,15 @@ export async function sendTestSubmissionEmail(
     })
     return { messageId, provider }
   } catch (err) {
-    // A provider failure is a downstream (502) failure, and the
-    // provider's message is the useful part — surface it instead of
-    // the generic 500 handleApiError gives unknown errors.
-    throw new ApiError(
-      err instanceof Error ? err.message : "Could not send the test email.",
-      502
-    )
+    // AIM-010: the provider's message names the platform's email
+    // configuration (e.g. which env vars are unset) — that detail
+    // stays server-side in the log; the caller (any FULL-key holder
+    // via send_test_email) gets a generic downstream failure.
+    logger.error("test submission email failed", {
+      error: err,
+      formId,
+      to,
+    })
+    throw new ApiError("Could not send the test email.", 502)
   }
 }

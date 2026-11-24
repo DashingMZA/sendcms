@@ -18,6 +18,7 @@
     "@sendcms/auth": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/i18n": "workspace:*",
+    "@sendcms/inbox": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",

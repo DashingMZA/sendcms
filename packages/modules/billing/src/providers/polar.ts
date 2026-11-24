@@ -88,36 +88,52 @@ export async function createPolarCheckoutSession(
 // the checkout metadata (user + plan version) and the subscription
 // id. `subscription.created` is intentionally ignored — it carries
 // no SendCMS metadata of its own.
-export function verifyPolarWebhook(
+//
+// BIL-040: `webhooks.validateEvent` is ASYNC (SDK 1.3.2 returns
+// `Promise<WebhookPayload>` — WebCrypto). This function is async and
+// awaits it; the old sync call + `as unknown as` cast silently turned
+// every payload into `undefined` fields (all webhooks ignored) and let
+// a bad signature float as an unhandled rejection.
+// BIL-041: Polar payloads carry NO top-level `id` — the stable event
+// id lives only in the `webhook-id` header (Standard Webhooks), so
+// that header is the event id. The `Date.now()` fallback fires only
+// for malformed deliveries (no header, no payload id) and is logged.
+export async function verifyPolarWebhook(
   rawBody: string,
   headers: Record<string, string>
-): VerifiedWebhook {
+): Promise<VerifiedWebhook> {
   const secret = process.env.POLAR_WEBHOOK_SECRET
   if (!secret) throw new ApiError("Polar is not configured", 422)
-  let payload: { type: string; data: Record<string, unknown>; id?: string }
+  let payload: Awaited<ReturnType<typeof webhooks.validateEvent>>
   try {
-    const verified = webhooks.validateEvent(rawBody, headers, secret)
-    payload = verified as unknown as {
-      type: string
-      data: Record<string, unknown>
-      id?: string
-    }
+    payload = await webhooks.validateEvent(rawBody, headers, secret)
   } catch (error) {
     log.warn("Polar webhook signature verification failed", {
       error: error instanceof Error ? error.message : String(error),
     })
     throw new ApiError("Invalid Polar webhook signature", 401)
   }
-  const eventId =
-    typeof payload.id === "string"
-      ? payload.id
-      : `${payload.type}:${Date.now()}`
+  const headerId = headers["webhook-id"]?.trim() || null
+  const payloadId =
+    "id" in payload && typeof payload.id === "string" ? payload.id : null
+  const eventId = headerId ?? payloadId ?? `${payload.type}:${Date.now()}`
+  if (!headerId && !payloadId) {
+    log.warn(
+      "Polar webhook without a webhook-id header; event id is unstable",
+      {
+        eventType: payload.type,
+      }
+    )
+  }
   const ignored: VerifiedWebhook = {
     eventId,
     eventType: payload.type,
     event: { kind: "ignored" },
   }
-  const data = payload.data ?? {}
+  // The SDK types `data` per event type; the translator below reads
+  // it generically (every access guards with typeof), so narrow the
+  // union to a record here.
+  const data = (payload.data ?? {}) as unknown as Record<string, unknown>
 
   if (payload.type === "checkout.updated") {
     const status = typeof data.status === "string" ? data.status : null
@@ -167,6 +183,25 @@ export function verifyPolarWebhook(
         periodEnd: null,
       },
     }
+  }
+
+  // BIL-080: a past-due subscription update is a payment failure,
+  // not an ignore — the service flips the subscription to PAST_DUE
+  // with a grace window.
+  if (payload.type === "subscription.updated") {
+    const status = typeof data.status === "string" ? data.status : null
+    const subscriptionId = typeof data.id === "string" ? data.id : null
+    if (status === "past_due" && subscriptionId) {
+      return {
+        eventId,
+        eventType: payload.type,
+        event: {
+          kind: "payment-failed",
+          providerSubscriptionId: subscriptionId,
+        },
+      }
+    }
+    return ignored
   }
 
   if (

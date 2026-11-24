@@ -1,3 +1,5 @@
+import https from "node:https"
+import type { IncomingMessage } from "node:http"
 import { ApiError } from "@sendcms/shared"
 import type { DomainVerificationMethod } from "@sendcms/database"
 
@@ -5,7 +7,11 @@ import type { DomainVerificationMethod } from "@sendcms/database"
 // DNS lookups go through DNS-over-HTTPS (portable on Workers, no raw DNS
 // socket needed): Cloudflare first, Google as fallback. The HTTP methods
 // (meta tag / verification file) fetch the owner's own site over HTTPS
-// with an SSRF guard: the host must resolve to public IPs only.
+// with an SSRF guard: the host must resolve to public IPs only, and the
+// fetch connects to the exact IP that was checked (pinned via
+// node:https with SNI + Host header) so a DNS answer that flips between
+// the check and the fetch cannot rebind the request to a private
+// address (SEC-201 / SRC-232 / SEC-211).
 
 const DOH_TIMEOUT_MS = 5000
 const HTTP_TIMEOUT_MS = 5000
@@ -14,18 +20,37 @@ const HTTP_MAX_BYTES = 1024 * 1024
 export type VerificationCheckResult =
   { ok: true } | { ok: false; reason: string }
 
+/** Test seam for the SSRF-guarded fetch: `resolveIps` replaces the
+    DNS-over-HTTPS lookup and `pinnedGet` replaces the pinned HTTPS
+    request. Production callers omit `deps` and get the real ones. */
+export type DnsVerificationDeps = {
+  resolveIps?: (hostname: string) => Promise<string[]>
+  pinnedGet?: (args: {
+    hostname: string
+    ip: string
+    path: string
+  }) => Promise<PinnedFetchResult>
+}
+
+export type PinnedFetchResult = {
+  status: number
+  location: string | null
+  body: string
+}
+
 export async function checkVerification(
   domain: string,
   method: DomainVerificationMethod,
-  challenge: string
+  challenge: string,
+  deps?: DnsVerificationDeps
 ): Promise<VerificationCheckResult> {
   switch (method) {
     case "DNS_TXT":
       return checkDnsTxt(domain, challenge)
     case "META_TAG":
-      return checkMetaTag(domain, challenge)
+      return checkMetaTag(domain, challenge, deps)
     case "FILE":
-      return checkVerificationFile(domain, challenge)
+      return checkVerificationFile(domain, challenge, deps)
   }
 }
 
@@ -109,21 +134,50 @@ async function checkDnsTxt(
 // HTTP methods (meta tag / verification file) — SSRF-guarded fetch
 // ---------------------------------------------------------------------------
 
-function isPrivateIp(ip: string): boolean {
-  const lower = ip.toLowerCase()
-  if (
-    lower === "::1" ||
-    lower.startsWith("fe80:") ||
-    lower.startsWith("fc") ||
-    lower.startsWith("fd")
-  )
+// IPv4-mapped IPv6 (`::ffff:127.0.0.1`, compressed or fully expanded,
+// dotted-quad or hex tail) is normalised to the embedded IPv4 address
+// before the range checks — without this the dotted-quad split below
+// yields NaN and the address is wrongly classified as public.
+export function isPrivateIp(ip: string): boolean {
+  const lower = ip.toLowerCase().trim()
+  const mapped = lower.match(/^(?:::ffff:|0:0:0:0:0:ffff:)(.+)$/)
+  if (mapped) {
+    const rest = mapped[1]
+    if (rest.includes(".")) return isPrivateIp(rest)
+    // Hex tail, e.g. ::ffff:7f00:1 — the last 32 bits are the IPv4 address.
+    const groups = rest.split(":").filter(Boolean)
+    if (groups.length >= 2) {
+      const hi = parseInt(groups[groups.length - 2], 16)
+      const lo = parseInt(groups[groups.length - 1], 16)
+      if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+        return isPrivateIp(
+          `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`
+        )
+      }
+    }
+    // A ::ffff: address we cannot parse is refused, not trusted.
     return true
-  const [first, second] = lower.split(".").map(Number)
+  }
+  if (lower.includes(":")) {
+    // IPv6 (not a mapped v4): loopback, unspecified, link-local
+    // (fe80::/10), unique-local (fc00::/7).
+    if (lower === "::1" || lower === "::") return true
+    const firstGroup = parseInt(lower.split(":")[0], 16)
+    if (!Number.isNaN(firstGroup)) {
+      if (firstGroup >= 0xfe80 && firstGroup <= 0xfebf) return true
+      if (firstGroup >= 0xfc00 && firstGroup <= 0xfdff) return true
+    }
+    return false
+  }
+  const [first, second, third] = lower.split(".").map(Number)
   if (Number.isNaN(first)) return false
   if (first === 10 || first === 127 || first === 0) return true
   if (first === 172 && second >= 16 && second <= 31) return true
   if (first === 192 && second === 168) return true
   if (first === 169 && second === 254) return true
+  if (first === 100 && second >= 64 && second <= 127) return true
+  if (first === 192 && second === 0 && third === 0) return true
+  if (first === 198 && (second === 18 || second === 19)) return true
   return false
 }
 
@@ -152,40 +206,106 @@ async function lookupIpAddresses(hostname: string): Promise<string[]> {
   return ips
 }
 
+// HTTPS GET to a pinned IP: the TCP/TLS connection goes to `ip`
+// (never a fresh DNS resolution), SNI and the Host header carry the
+// real hostname, and the certificate must match it
+// (`rejectUnauthorized`). This is what closes the DNS-rebinding
+// TOCTOU: the address the guard checked is the address fetched.
+export async function pinnedHttpsGet(args: {
+  hostname: string
+  ip: string
+  path: string
+}): Promise<PinnedFetchResult> {
+  const { hostname, ip, path } = args
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: ip,
+        port: 443,
+        path,
+        method: "GET",
+        servername: hostname,
+        rejectUnauthorized: true,
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+        headers: {
+          Host: hostname,
+          "User-Agent": "SendCMS-verification/1.0",
+        },
+      },
+      (res: IncomingMessage) => {
+        const location = res.headers.location ?? null
+        if (
+          res.statusCode !== undefined &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400
+        ) {
+          // Redirect: the body is irrelevant — drain nothing, just close.
+          res.destroy()
+          resolve({ status: res.statusCode, location, body: "" })
+          return
+        }
+        readCappedStream(res)
+          .then((body) =>
+            resolve({ status: res.statusCode ?? 0, location, body })
+          )
+          .catch(reject)
+      }
+    )
+    req.on("error", reject)
+    req.end()
+  })
+}
+
 // Fetch a URL on the owner's own domain only: resolve the host first and
-// refuse when it points at a private/loopback address (DNS-rebinding guard).
+// refuse when it points at a private/loopback address, then fetch the
+// exact IP that was checked. Every redirect hop re-resolves and
+// re-checks, so a hop that newly resolves privately is refused too.
 // Follows same-host redirects (e.g. apex → www) up to 3 hops.
 async function fetchOwnSite(
   domain: string,
-  path: string
+  path: string,
+  deps?: DnsVerificationDeps
 ): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
-  const ips = await lookupIpAddresses(domain)
-  if (ips.length === 0) {
-    return { ok: false, reason: `Could not resolve ${domain}.` }
-  }
-  if (ips.some(isPrivateIp)) {
-    return {
-      ok: false,
-      reason: `${domain} resolves to a private address — refusing to fetch it.`,
+  const resolveIps = deps?.resolveIps ?? lookupIpAddresses
+  const pinnedGet = deps?.pinnedGet ?? pinnedHttpsGet
+  // Resolve + pin one public IP for this hostname. Any private address
+  // in the answer refuses the whole fetch.
+  async function resolvePublicIp(
+    hostname: string
+  ): Promise<{ ok: true; ip: string } | { ok: false; reason: string }> {
+    const ips = await resolveIps(hostname)
+    if (ips.length === 0) {
+      return { ok: false, reason: `Could not resolve ${hostname}.` }
     }
+    if (ips.some(isPrivateIp)) {
+      return {
+        ok: false,
+        reason: `${hostname} resolves to a private address — refusing to fetch it.`,
+      }
+    }
+    return { ok: true, ip: ips[0] }
   }
   let url = `https://${domain}${path}`
   for (let hop = 0; hop <= 3; hop++) {
-    let res: Response
+    const current = new URL(url)
+    const hostname = current.hostname.toLowerCase()
+    const pinned = await resolvePublicIp(hostname)
+    if (!pinned.ok) return pinned
+    let res: PinnedFetchResult
     try {
-      res = await fetch(url, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-        headers: { "User-Agent": "SendCMS-verification/1.0" },
+      res = await pinnedGet({
+        hostname,
+        ip: pinned.ip,
+        path: `${current.pathname}${current.search}`,
       })
     } catch {
       return { ok: false, reason: `Could not reach https://${domain}${path}.` }
     }
     if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location")
-      if (!location)
+      if (!res.location) {
         return { ok: false, reason: `Redirect without a location from ${url}.` }
-      const next = new URL(location, url)
+      }
+      const next = new URL(res.location, url)
       if (next.protocol !== "https:") {
         return {
           ok: false,
@@ -202,32 +322,30 @@ async function fetchOwnSite(
       url = next.toString()
       continue
     }
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
       return {
         ok: false,
         reason: `https://${domain}${path} returned HTTP ${res.status}.`,
       }
     }
-    const body = await readCapped(res)
-    return { ok: true, body }
+    return { ok: true, body: res.body }
   }
   return { ok: false, reason: "Too many redirects." }
 }
 
-async function readCapped(res: Response): Promise<string> {
-  const reader = res.body?.getReader()
-  if (!reader) return ""
+// Reads at most `maxBytes` from a byte stream. The merged buffer is
+// sized from the chunks actually kept, so an over-cap chunk leaves no
+// trailing NUL padding in the body.
+export async function readCappedStream(
+  stream: AsyncIterable<Uint8Array>,
+  maxBytes: number = HTTP_MAX_BYTES
+): Promise<string> {
   const chunks: Uint8Array[] = []
   let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.length
-    if (total > HTTP_MAX_BYTES) {
-      await reader.cancel()
-      break
-    }
+  for await (const value of stream) {
+    if (total + value.length > maxBytes) break
     chunks.push(value)
+    total += value.length
   }
   const merged = new Uint8Array(total)
   let offset = 0
@@ -253,9 +371,10 @@ export function extractMetaTagToken(html: string): string | null {
 
 async function checkMetaTag(
   domain: string,
-  challenge: string
+  challenge: string,
+  deps?: DnsVerificationDeps
 ): Promise<VerificationCheckResult> {
-  const fetched = await fetchOwnSite(domain, "/")
+  const fetched = await fetchOwnSite(domain, "/", deps)
   if (!fetched.ok) return fetched
   const token = extractMetaTagToken(fetched.body)
   if (token === null) {
@@ -274,10 +393,11 @@ async function checkMetaTag(
 
 async function checkVerificationFile(
   domain: string,
-  challenge: string
+  challenge: string,
+  deps?: DnsVerificationDeps
 ): Promise<VerificationCheckResult> {
   const path = "/sendcms-verification.txt"
-  const fetched = await fetchOwnSite(domain, path)
+  const fetched = await fetchOwnSite(domain, path, deps)
   if (!fetched.ok) return fetched
   if (fetched.body.trim() === challenge) return { ok: true }
   return {

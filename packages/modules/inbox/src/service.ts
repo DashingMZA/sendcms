@@ -15,6 +15,7 @@ import {
 import {
   draftReply,
   type AiCallUsage,
+  type AiEnvConfig,
   type AiProviderName,
   type ReplyDraft,
 } from "@sendcms/ai"
@@ -469,11 +470,12 @@ function requireAiForForm(form: { aiEnabled: boolean }): void {
     sent. Throws 403 when AI is off for the form, 503 when no provider
     is configured. The model is resolved for the submission's OWNER;
     `opts` carries an optional per-request browser-only key, which is
-    never stored. */
+    never stored. `aiEnv` is the explicit AI config built from the
+    route (SRC-123) — never the whole process.env. */
 export async function draftReplyForSubmission(
   userId: string,
   submissionId: string,
-  env: NodeJS.ProcessEnv = process.env,
+  aiEnv: AiEnvConfig,
   opts: {
     provider?: AiProviderName
     browserKey?: string
@@ -493,7 +495,7 @@ export async function draftReplyForSubmission(
       provider: opts.provider,
       browserKey: opts.browserKey,
       browserModel: opts.browserModel,
-      env,
+      env: aiEnv,
     })
   } catch (err) {
     if (err instanceof ApiError) throw err
@@ -575,13 +577,9 @@ export async function sendReplyToSubmission(
     body,
     formName: submission.form.name,
   })
-  await db.submissionEvent.create({
-    data: {
-      submissionId: submission.id,
-      type: SubmissionEventType.EMAIL_SENT,
-      detail: { reply: true },
-      actorId: userId,
-    },
-  })
+  // EML-007: no timeline event here — the reply is only QUEUED at
+  // this point. processOneJob writes EMAIL_SENT when the provider
+  // accepts it (and EMAIL_FAILED on terminal failure), so the
+  // timeline never claims a delivery that never happened.
   return { enqueued }
 }

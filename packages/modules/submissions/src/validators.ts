@@ -23,8 +23,26 @@ export const SubmitBodySchema = z.object({
   // the original submission instead of creating a second one.
   idempotencyKey: z.string().min(1).max(100).optional(),
   // Page the visitor submitted from (informational; the Origin header is
-  // what authorizes the submission, never this value).
-  pageUrl: z.string().max(2048).optional(),
+  // what authorizes the submission, never this value). Only http(s) and
+  // relative URLs are stored — a `javascript:`/`data:` pageUrl must never
+  // reach the inbox, where it is rendered as a link.
+  pageUrl: z
+    .string()
+    .max(2048)
+    .refine(
+      (v) => {
+        const value = v.trim()
+        if (value.startsWith("/")) return true
+        try {
+          const scheme = new URL(value).protocol
+          return scheme === "http:" || scheme === "https:"
+        } catch {
+          return false
+        }
+      },
+      { message: "pageUrl must be an http(s) URL or a relative path" }
+    )
+    .optional(),
   // Cloudflare Turnstile token, only when the form has Turnstile on.
   turnstileToken: z.string().min(1).optional(),
 })

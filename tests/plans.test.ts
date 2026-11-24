@@ -33,7 +33,12 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
   },
   subscriptionEvent: { create: vi.fn(), findMany: vi.fn() },
-  usageLedger: { create: vi.fn(), findUnique: vi.fn(), aggregate: vi.fn() },
+  usageLedger: {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    aggregate: vi.fn(),
+  },
   entitlementOverride: {
     findMany: vi.fn(),
     findUnique: vi.fn(),
@@ -44,9 +49,13 @@ const mockDb = vi.hoisted(() => ({
   form: { count: vi.fn(), findMany: vi.fn() },
   domain: { count: vi.fn() },
   apiKey: { count: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
-  submission: { count: vi.fn() },
+  submission: { count: vi.fn(), findMany: vi.fn() },
   aiDailyUsage: { aggregate: vi.fn() },
   apiKeyRateLimit: { aggregate: vi.fn() },
+  $executeRaw: vi.fn(async (...args: unknown[]) => {
+    void args
+    return 0
+  }),
   // Array form: the array already holds the mock calls' promises.
   // Callback form: run it against mockDb (tx IS mockDb).
   $transaction: vi.fn(async (arg: unknown) => {
@@ -68,10 +77,14 @@ vi.mock("@sendcms/security", async (importOriginal) => {
 
 import type { AdminSession } from "@sendcms/auth"
 import {
+  activateSubscriptionFromCheckout,
   archivePlan,
   assignSubscription,
   cancelSubscription,
+  cancelSubscriptionFromProvider,
   checkLimit,
+  checkLimitSafe,
+  checkLimitStrict,
   comparePlanVersions,
   consumeQuota,
   createPlan,
@@ -79,6 +92,8 @@ import {
   duplicatePlan,
   ensureDefaultFreePlan,
   executeMigration,
+  expireSubscriptions,
+  extendSubscriptionPeriod,
   getEffectiveEntitlements,
   getMigrationPreview,
   getPlan,
@@ -86,13 +101,18 @@ import {
   getSubscription,
   getUsage,
   getUserSubscription,
+  isSubscriptionPeriodLive,
+  LimitCheckError,
   listPlans,
   listSubscriptions,
+  markSubscriptionPastDue,
   publishPlanVersion,
+  reconcileUsageLedger,
   recordUsage,
   removeEntitlementOverride,
   requireAdmin,
   setEntitlementOverride,
+  startOfUtcMonth,
 } from "@sendcms/plans"
 import {
   FREE_PLAN_V1_ENTITLEMENTS,
@@ -1133,5 +1153,477 @@ describe("listPlans + listSubscriptions", () => {
     })
     expect(result.total).toBe(1)
     expect(result.subscriptions[0].userId).toBe(userId)
+  })
+})
+
+describe("subscription expiry — expireSubscriptions (BIL-080)", () => {
+  const now = new Date("2026-11-24T12:00:00Z")
+  const yesterday = new Date("2026-11-23T12:00:00Z")
+  const tenDaysAgo = new Date("2026-11-14T12:00:00Z")
+
+  function dueRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "sub-1",
+      userId,
+      planVersionId: "version-1",
+      status: "ACTIVE",
+      currentPeriodEnd: yesterday,
+      cancelAtPeriodEnd: false,
+      updatedAt: new Date("2026-11-01T00:00:00Z"),
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    mockDb.subscription.update.mockResolvedValue({})
+    mockDb.subscriptionEvent.create.mockResolvedValue({})
+  })
+
+  it("flips a period-ended ACTIVE subscription to EXPIRED with an event", async () => {
+    mockDb.subscription.findMany.mockResolvedValue([dueRow()])
+    const results = await expireSubscriptions(now)
+    expect(results).toEqual([
+      {
+        subscriptionId: "sub-1",
+        userId,
+        fromStatus: "ACTIVE",
+        toStatus: "EXPIRED",
+        dryRun: false,
+      },
+    ])
+    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "sub-1" },
+        data: { status: "EXPIRED", cancelAtPeriodEnd: false },
+      })
+    )
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          subscriptionId: "sub-1",
+          type: "EXPIRED",
+        }),
+      })
+    )
+  })
+
+  it("flips cancelAtPeriodEnd + period ended to CANCELED", async () => {
+    mockDb.subscription.findMany.mockResolvedValue([
+      dueRow({ cancelAtPeriodEnd: true }),
+    ])
+    const results = await expireSubscriptions(now)
+    expect(results[0].toStatus).toBe("CANCELED")
+    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: "CANCELED", cancelAtPeriodEnd: false },
+      })
+    )
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "CANCELED" }),
+      })
+    )
+  })
+
+  it("leaves a PAST_DUE subscription inside its grace window alone", async () => {
+    mockDb.subscription.findMany.mockResolvedValue([
+      dueRow({ status: "PAST_DUE" }),
+    ])
+    const results = await expireSubscriptions(now)
+    expect(results).toEqual([])
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+  })
+
+  it("expires a PAST_DUE subscription once the grace window ends", async () => {
+    mockDb.subscription.findMany.mockResolvedValue([
+      dueRow({ status: "PAST_DUE", currentPeriodEnd: tenDaysAgo }),
+    ])
+    const results = await expireSubscriptions(now)
+    expect(results[0]).toMatchObject({
+      fromStatus: "PAST_DUE",
+      toStatus: "EXPIRED",
+    })
+  })
+
+  it("dryRun reports without writing", async () => {
+    mockDb.subscription.findMany.mockResolvedValue([dueRow()])
+    const results = await expireSubscriptions(now, { dryRun: true })
+    expect(results[0]).toMatchObject({ toStatus: "EXPIRED", dryRun: true })
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+    expect(mockDb.subscriptionEvent.create).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+  })
+})
+
+describe("subscription period liveness (BIL-080 belt-and-braces)", () => {
+  it("treats an ACTIVE row past its period end as expired", () => {
+    expect(
+      isSubscriptionPeriodLive({
+        status: "ACTIVE",
+        currentPeriodEnd: new Date("2026-11-23T00:00:00Z"),
+        updatedAt: new Date("2026-11-01T00:00:00Z"),
+      })
+    ).toBe(false)
+  })
+
+  it("keeps a PAST_DUE row live inside the grace window", () => {
+    expect(
+      isSubscriptionPeriodLive(
+        {
+          status: "PAST_DUE",
+          currentPeriodEnd: new Date("2026-11-23T00:00:00Z"),
+          updatedAt: new Date("2026-11-01T00:00:00Z"),
+        },
+        new Date("2026-11-24T00:00:00Z")
+      )
+    ).toBe(true)
+  })
+
+  it("expires a PAST_DUE row past the grace window", () => {
+    expect(
+      isSubscriptionPeriodLive(
+        {
+          status: "PAST_DUE",
+          currentPeriodEnd: new Date("2026-11-14T00:00:00Z"),
+          updatedAt: new Date("2026-11-01T00:00:00Z"),
+        },
+        new Date("2026-11-24T00:00:00Z")
+      )
+    ).toBe(false)
+  })
+
+  it("getEffectiveEntitlements falls back to Free for an expired row", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(
+      makeSubscription({
+        status: "ACTIVE",
+        currentPeriodEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      })
+    )
+    const effective = await getEffectiveEntitlements(userId)
+    expect(effective.source).toBe("free")
+  })
+
+  it("getEffectiveEntitlements keeps a PAST_DUE row inside grace", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(
+      makeSubscription({
+        status: "PAST_DUE",
+        currentPeriodEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      })
+    )
+    const effective = await getEffectiveEntitlements(userId)
+    expect(effective.source).toBe("subscription")
+  })
+})
+
+describe("markSubscriptionPastDue (BIL-080)", () => {
+  it("flips ACTIVE to PAST_DUE and audits the failure", async () => {
+    const row = makeSubscription({ status: "ACTIVE" })
+    mockDb.subscription.findFirst.mockResolvedValue(row)
+    mockDb.subscription.update.mockResolvedValue({
+      ...row,
+      status: "PAST_DUE",
+    })
+    const result = await markSubscriptionPastDue("STRIPE", "sub_1")
+    expect(result?.status).toBe("PAST_DUE")
+    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "sub-1" },
+        data: { status: "PAST_DUE" },
+      })
+    )
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          event: "subscription-payment-failed",
+          graceDays: 7,
+        }),
+      })
+    )
+  })
+
+  it("returns null when no subscription matches", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(null)
+    expect(await markSubscriptionPastDue("STRIPE", "sub_nope")).toBeNull()
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+  })
+})
+
+describe("provider-scoped lookups + monotonic extension (BIL-085 / BIL-090)", () => {
+  function extendRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "sub-1",
+      userId,
+      planVersionId: "version-1",
+      planVersion: { billingInterval: "MONTHLY" },
+      status: "ACTIVE",
+      currentPeriodEnd: new Date("2026-12-01T00:00:00Z"),
+      cancelAtPeriodEnd: false,
+      createdAt: new Date("2026-11-01T00:00:00Z"),
+      updatedAt: new Date("2026-11-01T00:00:00Z"),
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    mockDb.subscription.findUniqueOrThrow.mockResolvedValue(
+      makeSubscription({ currentPeriodEnd: new Date("2026-12-01T00:00:00Z") })
+    )
+    mockDb.subscription.update.mockImplementation(
+      async (args: { data: Record<string, unknown> }) =>
+        makeSubscription({ ...(args.data as Record<string, unknown>) })
+    )
+    mockDb.subscriptionEvent.create.mockResolvedValue({})
+  })
+
+  it("extend with an older period end is a no-op: no update, no event", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(extendRow())
+    const result = await extendSubscriptionPeriod(
+      "STRIPE",
+      "sub_1",
+      new Date("2026-11-15T00:00:00Z")
+    )
+    expect(result?.currentPeriodEnd).toEqual(new Date("2026-12-01T00:00:00Z"))
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+    expect(mockDb.subscriptionEvent.create).not.toHaveBeenCalled()
+  })
+
+  it("extend with a later period end updates, revives PAST_DUE, and writes one RENEWED event", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(
+      extendRow({ status: "PAST_DUE" })
+    )
+    const result = await extendSubscriptionPeriod(
+      "STRIPE",
+      "sub_1",
+      new Date("2027-01-01T00:00:00Z")
+    )
+    expect(result?.currentPeriodEnd).toEqual(new Date("2027-01-01T00:00:00Z"))
+    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "sub-1" },
+        data: {
+          currentPeriodEnd: new Date("2027-01-01T00:00:00Z"),
+          status: "ACTIVE",
+        },
+      })
+    )
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledTimes(1)
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          subscriptionId: "sub-1",
+          type: "RENEWED",
+        }),
+      })
+    )
+  })
+
+  it("extend with a null derived end (ONE_TIME) is a no-op", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(
+      extendRow({ planVersion: { billingInterval: "ONE_TIME" } })
+    )
+    const result = await extendSubscriptionPeriod("STRIPE", "sub_1", null)
+    expect(result?.currentPeriodEnd).toEqual(new Date("2026-12-01T00:00:00Z"))
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+  })
+
+  it("extend with a matching id but the wrong provider is a no-op", async () => {
+    mockDb.subscription.findFirst.mockImplementation(
+      async ({ where }: { where: { provider?: string } }) =>
+        where.provider === "STRIPE" ? extendRow() : null
+    )
+    expect(
+      await extendSubscriptionPeriod(
+        "PAYPAL",
+        "sub_1",
+        new Date("2027-01-01T00:00:00Z")
+      )
+    ).toBeNull()
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+  })
+
+  it("cancel with a matching id but the wrong provider is a no-op", async () => {
+    mockDb.subscription.findFirst.mockImplementation(
+      async ({ where }: { where: { provider?: string } }) =>
+        where.provider === "STRIPE" ? extendRow() : null
+    )
+    expect(
+      await cancelSubscriptionFromProvider("PAYPAL", "sub_1", "test")
+    ).toBeNull()
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
+  })
+})
+
+describe("activateSubscriptionFromCheckout — atomic duplicate guard (BIL-090)", () => {
+  it("takes the advisory lock for the provider subscription id before the guard read", async () => {
+    mockDb.planVersion.findUnique.mockResolvedValue(makeVersion())
+    mockDb.user.findUnique.mockResolvedValue({ id: userId })
+    mockDb.subscription.findFirst.mockResolvedValue(null)
+    mockDb.subscription.create.mockResolvedValue({ id: "sub-1" })
+    mockDb.subscription.findUniqueOrThrow.mockResolvedValue(
+      makeSubscription({ provider: "STRIPE", providerSubscriptionId: "sub_9" })
+    )
+    mockDb.subscriptionEvent.create.mockResolvedValue({})
+
+    await activateSubscriptionFromCheckout({
+      userId,
+      planVersionId: "version-1",
+      provider: "STRIPE",
+      providerSubscriptionId: "sub_9",
+    })
+
+    expect(mockDb.$executeRaw).toHaveBeenCalledTimes(1)
+    const sqlArg = mockDb.$executeRaw.mock.calls[0][0] as {
+      values: unknown[]
+    }
+    expect(sqlArg.values).toEqual(["STRIPE:sub_9"])
+    expect(mockDb.subscription.create).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("checkLimit tri-state (SRC-216)", () => {
+  it("checkLimitStrict throws a 503 LimitCheckError when the lookup fails", async () => {
+    mockDb.user.findUnique.mockRejectedValue(new Error("db down"))
+    await expect(checkLimitStrict(userId, "FORMS")).rejects.toBeInstanceOf(
+      LimitCheckError
+    )
+    await expect(checkLimitStrict(userId, "FORMS")).rejects.toMatchObject({
+      status: 503,
+    })
+  })
+
+  it("checkLimitSafe still returns null (fail-open, loud) for read paths", async () => {
+    mockDb.user.findUnique.mockRejectedValue(new Error("db down"))
+    expect(await checkLimitSafe(userId, "FORMS")).toBeNull()
+  })
+})
+
+describe("getUsage live counts + divergence (ADM-033)", () => {
+  it("reports the live count next to the ledger total and flags divergence", async () => {
+    mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 0 } })
+    mockDb.form.count.mockResolvedValue(5)
+    mockDb.usageLedger.findMany.mockResolvedValue([])
+    const usage = await getUsage(
+      userId,
+      "FORMS",
+      new Date("2026-11-01T00:00:00Z")
+    )
+    expect(usage.total).toBe(0)
+    expect(usage.liveTotal).toBe(5)
+    expect(usage.divergent).toBe(true)
+  })
+
+  it("agrees when ledger and live counts match (current month)", async () => {
+    mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 4 } })
+    mockDb.submission.count.mockResolvedValue(4)
+    mockDb.usageLedger.findMany.mockResolvedValue([])
+    const usage = await getUsage(userId, "SUBMISSIONS", startOfUtcMonth())
+    expect(usage.total).toBe(4)
+    expect(usage.liveTotal).toBe(4)
+    expect(usage.divergent).toBe(false)
+    expect(usage.orphanLedgerRows).toBe(0)
+  })
+
+  it("reports liveTotal null for a past SUBMISSIONS bucket", async () => {
+    mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 3 } })
+    mockDb.usageLedger.findMany.mockResolvedValue([])
+    const usage = await getUsage(
+      userId,
+      "SUBMISSIONS",
+      new Date("2026-10-01T00:00:00Z")
+    )
+    expect(usage.total).toBe(3)
+    expect(usage.liveTotal).toBeNull()
+    expect(usage.divergent).toBe(false)
+  })
+
+  it("counts orphan ledger rows for SUBMISSIONS", async () => {
+    mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 2 } })
+    mockDb.submission.count.mockResolvedValue(2)
+    mockDb.usageLedger.findMany.mockImplementation(
+      async ({ where }: { where?: { resourceId?: unknown } }) => {
+        if (!where?.resourceId) return []
+        return [
+          {
+            id: "u-orphan",
+            resourceId: "gone-1",
+            createdAt: new Date(),
+          },
+        ]
+      }
+    )
+    mockDb.submission.findMany.mockResolvedValue([])
+    const usage = await getUsage(userId, "SUBMISSIONS", startOfUtcMonth())
+    expect(usage.orphanLedgerRows).toBe(1)
+    expect(usage.divergent).toBe(false)
+  })
+})
+
+describe("recordUsage bounded retry + reconcileUsageLedger (DB-050)", () => {
+  it("retries a transient ledger failure instead of losing the row", async () => {
+    const row = {
+      id: "usage-1",
+      userId,
+      meter: "SUBMISSIONS",
+      quantity: 1,
+      unit: "submission",
+      period: new Date("2026-11-01T00:00:00Z"),
+      sourceEvent: "submission:created",
+      idempotencyKey: "sub-1",
+      resourceId: "sub-1",
+      createdAt: new Date(),
+    }
+    mockDb.usageLedger.create
+      .mockRejectedValueOnce(new Error("transient db blip"))
+      .mockResolvedValueOnce(row)
+    const result = await recordUsage({
+      userId,
+      meter: "SUBMISSIONS",
+      unit: "submission",
+      period: "2026-11-01T00:00:00.000Z",
+      sourceEvent: "submission:created",
+      idempotencyKey: "sub-1",
+      resourceId: "sub-1",
+    })
+    expect(result.id).toBe("usage-1")
+    expect(mockDb.usageLedger.create).toHaveBeenCalledTimes(2)
+  })
+
+  it("backfills submissions missing a ledger row, without double-counting", async () => {
+    const subs = [
+      { id: "s1", createdAt: new Date("2026-11-10T00:00:00Z") },
+      { id: "s2", createdAt: new Date("2026-11-12T00:00:00Z") },
+    ]
+    mockDb.submission.findMany.mockImplementation(
+      async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        if (where?.id?.in) {
+          return subs.filter((sub) => where.id!.in!.includes(sub.id))
+        }
+        return subs
+      }
+    )
+    mockDb.usageLedger.findMany.mockImplementation(
+      async ({ where }: { where?: { resourceId?: unknown } }) => {
+        if (where?.resourceId) {
+          return [
+            { id: "u-orphan", resourceId: "gone-1", createdAt: new Date() },
+          ]
+        }
+        return [{ idempotencyKey: "s1" }]
+      }
+    )
+    mockDb.usageLedger.create.mockResolvedValue({ id: "u-new" })
+
+    const result = await reconcileUsageLedger(
+      userId,
+      new Date("2026-11-15T00:00:00Z")
+    )
+    expect(result).toEqual({ checked: 2, backfilled: 1, orphans: 1 })
+    expect(mockDb.usageLedger.create).toHaveBeenCalledTimes(1)
+    expect(mockDb.usageLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ idempotencyKey: "s2" }),
+      })
+    )
   })
 })

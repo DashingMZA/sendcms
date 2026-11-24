@@ -91,6 +91,71 @@ export const PROVIDER_ENV_VARS: Record<AiProviderName, string> = {
   openrouter: "OPENROUTER_API_KEY",
 }
 
+/**
+ * The explicit AI environment a service needs — only the provider
+ * keys that are set, the explicit provider choice, and the model
+ * override. Routes build this from the ambient environment with
+ * pickAiEnvConfig; services receive it instead of the whole
+ * process.env (SRC-123), so a service can never read an unrelated
+ * secret (DATABASE_URL, BETTER_AUTH_SECRET, …) from its env arg.
+ */
+export type AiEnvConfig = {
+  apiKeys: Partial<Record<AiProviderName, string>>
+  provider?: string
+  modelId?: string
+}
+
+/** Picks exactly the vars the AI resolver reads out of an environment. */
+export function pickAiEnvConfig(env: NodeJS.ProcessEnv): AiEnvConfig {
+  const apiKeys: Partial<Record<AiProviderName, string>> = {}
+  for (const provider of AI_PROVIDERS) {
+    const key = env[PROVIDER_ENV_VARS[provider]]
+    if (key) apiKeys[provider] = key
+  }
+  return {
+    apiKeys,
+    ...(env.AI_PROVIDER?.trim() ? { provider: env.AI_PROVIDER.trim() } : {}),
+    ...(env.AI_MODEL?.trim() ? { modelId: env.AI_MODEL.trim() } : {}),
+  }
+}
+
+/** Expands an AiEnvConfig back into the minimal env record the
+    resolver's env-based helpers read (resolveAiProvider,
+    getAiModelId, isAiConfigured). Only the picked vars are present —
+    nothing else from the ambient environment leaks in. */
+export function aiEnvConfigToEnv(config: AiEnvConfig): NodeJS.ProcessEnv {
+  // ProcessEnv requires NODE_ENV, so the record is built as a plain
+  // object and cast — every key written below is an AI var.
+  const env = {} as NodeJS.ProcessEnv
+  for (const [provider, key] of Object.entries(config.apiKeys)) {
+    env[PROVIDER_ENV_VARS[provider as AiProviderName]] = key
+  }
+  if (config.provider) env.AI_PROVIDER = config.provider
+  if (config.modelId) env.AI_MODEL = config.modelId
+  return env
+}
+
+/** An AiEnvConfig carries its keys as an object; a whole environment
+    carries them as individual string vars. (A plain `"apiKeys" in env`
+    check cannot narrow the union — ProcessEnv's index signature
+    claims every key — so the guard reads the property's type.) */
+function isAiEnvConfig(
+  env: NodeJS.ProcessEnv | AiEnvConfig
+): env is AiEnvConfig {
+  return (
+    typeof (env as AiEnvConfig).apiKeys === "object" &&
+    (env as AiEnvConfig).apiKeys !== null
+  )
+}
+
+/** Accepts either a whole environment (legacy callers) or an explicit
+    config (SRC-123) and returns the env record the resolver reads. */
+export function normalizeAiEnv(
+  env: NodeJS.ProcessEnv | AiEnvConfig
+): NodeJS.ProcessEnv {
+  return isAiEnvConfig(env) ? aiEnvConfigToEnv(env) : env
+}
+
 /** Default model per provider. `AI_MODEL` overrides the default for
     whichever provider is selected.
     Google default (2026-11-20): `gemini-3.5-flash-lite`. Google retired

@@ -21,7 +21,13 @@ const mockAi = vi.hoisted(() => ({
     body: "Hi Ali, thanks for writing.",
   })),
 }))
-vi.mock("@sendcms/ai", () => mockAi)
+vi.mock("@sendcms/ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/ai")>()
+  // The real normalizeAiEnv stays live: the resolver normalizes the
+  // explicit AiEnvConfig the tests pass (SRC-123) back to the env
+  // record its legacy path reads.
+  return { ...actual, ...mockAi }
+})
 const mockEnqueueReply = vi.hoisted(() => vi.fn(async () => 1))
 vi.mock("@sendcms/notifications", () => ({
   enqueueReply: mockEnqueueReply,
@@ -30,7 +36,7 @@ vi.mock("@sendcms/security", () => ({ logAudit: vi.fn(async () => {}) }))
 
 import { draftReplyForSubmission, sendReplyToSubmission } from "@sendcms/inbox"
 
-const ENV = { OPENAI_API_KEY: "sk-test" }
+const AI_ENV = { apiKeys: { openai: "sk-test" } }
 
 function makeSubmission(overrides: Record<string, unknown> = {}) {
   return {
@@ -62,7 +68,7 @@ beforeEach(() => {
 
 describe("draftReplyForSubmission", () => {
   it("returns the model's draft", async () => {
-    const draft = await draftReplyForSubmission("user-1", "sub-1", ENV)
+    const draft = await draftReplyForSubmission("user-1", "sub-1", AI_ENV)
     expect(draft).toEqual({
       subject: "Re: your order question",
       body: "Hi Ali, thanks for writing.",
@@ -79,7 +85,7 @@ describe("draftReplyForSubmission", () => {
       })
     )
     await expect(
-      draftReplyForSubmission("user-1", "sub-1", ENV)
+      draftReplyForSubmission("user-1", "sub-1", AI_ENV)
     ).rejects.toMatchObject({
       status: 403,
     })
@@ -89,7 +95,7 @@ describe("draftReplyForSubmission", () => {
   it("refuses with 503 when no provider is configured", async () => {
     mockAi.isAiConfigured.mockReturnValue(false)
     await expect(
-      draftReplyForSubmission("user-1", "sub-1", ENV)
+      draftReplyForSubmission("user-1", "sub-1", AI_ENV)
     ).rejects.toMatchObject({
       status: 503,
     })
@@ -99,7 +105,7 @@ describe("draftReplyForSubmission", () => {
   it("throws 404 for a submission the user does not own", async () => {
     mockDb.submission.findFirst.mockResolvedValue(null)
     await expect(
-      draftReplyForSubmission("user-1", "sub-1", ENV)
+      draftReplyForSubmission("user-1", "sub-1", AI_ENV)
     ).rejects.toMatchObject({
       status: 404,
     })
@@ -107,7 +113,7 @@ describe("draftReplyForSubmission", () => {
 })
 
 describe("sendReplyToSubmission", () => {
-  it("enqueues the owner's words to the sender and records the event", async () => {
+  it("enqueues the owner's words to the sender without claiming delivery (EML-007)", async () => {
     const result = await sendReplyToSubmission("user-1", "sub-1", {
       subject: "Re: your order",
       body: "Hi Ali, your order is on its way.",
@@ -122,14 +128,11 @@ describe("sendReplyToSubmission", () => {
         body: "Hi Ali, your order is on its way.",
       })
     )
-    expect(mockDb.submissionEvent.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          submissionId: "sub-1",
-          detail: { reply: true },
-        }),
-      })
-    )
+    // EML-007: no timeline event here — the reply is only QUEUED at
+    // this point. processOneJob writes EMAIL_SENT when the provider
+    // accepts it (and EMAIL_FAILED on terminal failure), so the
+    // timeline never claims a delivery that never happened.
+    expect(mockDb.submissionEvent.create).not.toHaveBeenCalled()
     // The model is never involved in the send.
     expect(mockAi.draftReply).not.toHaveBeenCalled()
   })

@@ -17,6 +17,24 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
+vi.mock("@sendcms/plans", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/plans")>()
+  return {
+    ...actual,
+    // SRC-216: creation paths fail CLOSED. The real checkLimitStrict is
+    // covered by plans.test.ts; here it is stubbed to "allowed" so the
+    // submit-path tests exercise the service logic, not the plans
+    // module (whose real lookup needs models this mock db does not
+    // have). A dedicated test below asserts the strict function is the
+    // one the service calls.
+    checkLimitStrict: vi.fn(async () => ({
+      allowed: true,
+      limit: null,
+      used: 0,
+      remaining: null,
+    })),
+  }
+})
 vi.mock("@sendcms/notifications", () => ({
   enqueueSubmissionNotifications: vi.fn(async () => 1),
 }))
@@ -83,12 +101,20 @@ beforeEach(() => {
   mockDb.submission.findUnique.mockResolvedValue(null)
   mockDb.submission.findFirst.mockResolvedValue(null)
   mockDb.submission.count.mockResolvedValue(0)
+  // SRC-204: the submit transaction takes advisory locks and
+  // re-checks dedupe/limits under them — the fake tx delegates those
+  // reads to the top-level mocks so per-test overrides still apply.
   mockDb.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
     cb({
+      $executeRaw: vi.fn(async () => 0),
       submission: {
         create: vi.fn(async () => ({ id: "sub-1" })),
+        findFirst: mockDb.submission.findFirst,
+        count: mockDb.submission.count,
       },
       submissionEvent: { create: vi.fn(async () => ({})) },
+      // DB-050: the ledger row is written inside the transaction.
+      usageLedger: { create: vi.fn(async () => ({ id: "usage-1" })) },
     })
   )
 })
@@ -126,19 +152,30 @@ describe("submitForm", () => {
   it("saves the submission with status NEW and a CREATED event", async () => {
     let createdData: Record<string, unknown> | undefined
     let eventData: Record<string, unknown> | undefined
+    let ledgerData: Record<string, unknown> | undefined
     mockDb.$transaction.mockImplementation(
       async (cb: (tx: unknown) => unknown) =>
         cb({
+          $executeRaw: vi.fn(async () => 0),
           submission: {
             create: vi.fn(async (args: { data: Record<string, unknown> }) => {
               createdData = args.data
               return { id: "sub-1" }
             }),
+            findFirst: mockDb.submission.findFirst,
+            count: mockDb.submission.count,
           },
           submissionEvent: {
             create: vi.fn(async (args: { data: Record<string, unknown> }) => {
               eventData = args.data
               return {}
+            }),
+          },
+          // DB-050: the ledger row is written inside the transaction.
+          usageLedger: {
+            create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+              ledgerData = args.data
+              return { id: "usage-1" }
             }),
           },
         })
@@ -152,6 +189,21 @@ describe("submitForm", () => {
       message: "Hello",
     })
     expect(eventData?.type).toBe("CREATED")
+    // DB-050: the ledger row is written inside the same transaction,
+    // keyed by the submission id.
+    expect(ledgerData?.meter).toBe("SUBMISSIONS")
+    expect(ledgerData?.idempotencyKey).toBe("sub-1")
+    expect(ledgerData?.resourceId).toBe("sub-1")
+  })
+
+  it("fails closed when the quota check errors (SRC-216)", async () => {
+    const plans = await import("@sendcms/plans")
+    vi.mocked(plans.checkLimitStrict).mockRejectedValueOnce(
+      new Error("plans down")
+    )
+    await expect(submitForm(BODY, META)).rejects.toThrow("plans down")
+    // If the service still used the fail-open check, the submit would
+    // have succeeded instead of throwing.
   })
 
   it("throws 404 for an unknown form", async () => {
@@ -224,6 +276,56 @@ describe("submitForm", () => {
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
+  it("returns the original when a concurrent identical submission lands inside the transaction", async () => {
+    // SRC-204/DB-017: the fast path saw nothing, but a concurrent
+    // insert landed before this transaction's locked re-check — the
+    // re-check returns the original instead of inserting a duplicate.
+    const create = vi.fn(async () => ({ id: "sub-1" }))
+    const executeRaw = vi.fn(async (...args: unknown[]) => {
+      void args
+      return 0
+    })
+    mockDb.$transaction.mockImplementation(
+      async (cb: (tx: unknown) => unknown) =>
+        cb({
+          $executeRaw: executeRaw,
+          submission: {
+            create,
+            findFirst: mockDb.submission.findFirst,
+            count: mockDb.submission.count,
+          },
+          submissionEvent: { create: vi.fn(async () => ({})) },
+          usageLedger: { create: vi.fn(async () => ({ id: "usage-1" })) },
+        })
+    )
+    mockDb.submission.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "sub-tx" })
+    const result = await submitForm(BODY, META)
+    expect(result.kind).toBe("duplicate")
+    expect(submissionId(result)).toBe("sub-tx")
+    expect(create).not.toHaveBeenCalled()
+    // Owner + form + IP advisory locks, in that order.
+    expect(executeRaw).toHaveBeenCalledTimes(3)
+    for (const call of executeRaw.mock.calls) {
+      expect((call[0] as string[]).join("")).toContain("pg_advisory_xact_lock")
+    }
+  })
+
+  it("enforces the daily limit inside the transaction when the fast path passed", async () => {
+    // SRC-204: the fast-path counts passed, but the limit was reached
+    // before the locked re-check — the transaction refuses (429) and
+    // inserts nothing.
+    mockDb.form.findFirst.mockResolvedValue(makeForm({ dailyLimit: 2 }))
+    mockDb.submission.count
+      .mockResolvedValueOnce(0) // fast path: daily
+      .mockResolvedValueOnce(0) // fast path: IP minute
+      .mockResolvedValueOnce(0) // fast path: IP hour
+      .mockResolvedValueOnce(2) // locked re-check: daily — at the limit
+    await expectApiError(submitForm(BODY, META), 429)
+    expect(mockDb.$transaction).toHaveBeenCalledTimes(1)
+  })
+
   it("throws 429 when the form daily limit is reached", async () => {
     mockDb.form.findFirst.mockResolvedValue(makeForm({ dailyLimit: 2 }))
     mockDb.submission.count.mockResolvedValue(2)
@@ -240,13 +342,17 @@ describe("submitForm", () => {
     mockDb.$transaction.mockImplementation(
       async (cb: (tx: unknown) => unknown) =>
         cb({
+          $executeRaw: vi.fn(async () => 0),
           submission: {
             create: vi.fn(async (args: { data: Record<string, unknown> }) => {
               createdData = args.data
               return { id: "sub-1" }
             }),
+            findFirst: mockDb.submission.findFirst,
+            count: mockDb.submission.count,
           },
           submissionEvent: { create: vi.fn(async () => ({})) },
+          usageLedger: { create: vi.fn(async () => ({ id: "usage-1" })) },
         })
     )
     const spamBody = {

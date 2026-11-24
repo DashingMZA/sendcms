@@ -41,6 +41,26 @@ describe("CreateFormSchema", () => {
     ).toBe(true)
   })
 
+  it("accepts a relative redirect URL", () => {
+    expect(
+      CreateFormSchema.safeParse({
+        name: "Contact",
+        redirectUrl: "/thanks",
+      }).success
+    ).toBe(true)
+  })
+
+  it("rejects protocol-relative and javascript: redirect URLs", () => {
+    for (const redirectUrl of [
+      "//evil.example/thanks",
+      "javascript:alert(1)",
+    ]) {
+      expect(
+        CreateFormSchema.safeParse({ name: "Contact", redirectUrl }).success
+      ).toBe(false)
+    }
+  })
+
   it("rejects a daily limit below 1", () => {
     expect(
       CreateFormSchema.safeParse({ name: "Contact", dailyLimit: 0 }).success

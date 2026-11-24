@@ -10,6 +10,7 @@ import {
   useDeleteNotificationEmail,
   useForm,
   useLinkDomain,
+  useResendNotificationConfirmation,
   useUnlinkDomain,
   useUpdateForm,
   useUpdateNotificationEmail,
@@ -204,7 +205,7 @@ export function FormDetail({
     if (!confirm(t("confirmDelete", { name: form.name, submissions }))) return
     setDeleteError(null)
     try {
-      await deleteForm.mutateAsync()
+      await deleteForm.mutateAsync(form.name)
       router.push("/dashboard/forms")
     } catch (err) {
       setDeleteError(
@@ -578,7 +579,13 @@ function NotificationsSection({ form }: { form: FormDetail }) {
               <Badge variant={row.enabled ? "default" : "secondary"}>
                 {row.enabled ? t("recipientOn") : t("recipientOff")}
               </Badge>
+              {row.confirmed === false && (
+                <Badge variant="outline">{t("recipientUnconfirmed")}</Badge>
+              )}
               <span className="ml-auto flex items-center gap-2">
+                {row.confirmed === false && (
+                  <NotificationResendButton formId={form.id} rowId={row.id} />
+                )}
                 <NotificationToggle
                   formId={form.id}
                   rowId={row.id}
@@ -679,6 +686,49 @@ function TestEmailForm({ formId }: { formId: string }) {
         </p>
       )}
     </form>
+  )
+}
+
+function NotificationResendButton({
+  formId,
+  rowId,
+}: {
+  formId: string
+  rowId: string
+}) {
+  const { t } = useTranslation("forms")
+  const resend = useResendNotificationConfirmation(formId, rowId)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <span className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={resend.isPending}
+        onClick={async () => {
+          setError(null)
+          setSent(false)
+          try {
+            await resend.mutateAsync()
+            setSent(true)
+          } catch (err) {
+            setError(
+              err instanceof ApiClientError
+                ? err.message
+                : t("resendConfirmationFailed")
+            )
+          }
+        }}
+      >
+        {resend.isPending
+          ? t("sending")
+          : sent
+            ? t("resendConfirmationSent")
+            : t("resendConfirmation")}
+      </Button>
+      {error && <span className="text-sm text-destructive">{error}</span>}
+    </span>
   )
 }
 

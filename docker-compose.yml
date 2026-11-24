@@ -11,11 +11,19 @@
 # For a public host, set them (build args AND runtime env) to the public
 # origins before building, e.g. in a .env file next to this one — the
 # browser bundle inlines the build-time values, and the server reads the
-# runtime ones. BETTER_AUTH_SECRET and the Postgres password are dev-only
-# defaults here; override them in production.
+# runtime ones.
+#
+# Secrets are REQUIRED (Phase 16, LVE-016): DATABASE_URL,
+# BETTER_AUTH_SECRET, CRON_SECRET and POSTGRES_PASSWORD have no defaults
+# — compose refuses to start without them in a .env file next to this
+# one, so a public host can never run on well-known dev values.
+# Generate secrets with `openssl rand -base64 32`. Postgres is bound
+# to localhost only (Phase 16, LVE-023) — it is never exposed on the
+# host network.
 #
 # Ports: marketing 3000, api 3001, dashboard 3002, docs 3003,
-# updates 3004, email worker 3005, admin 3006, Postgres 5432.
+# updates 3004, email worker 3005, admin 3006, Postgres 5432
+# (localhost-only).
 
 x-next-public: &next-public
   NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
@@ -60,11 +68,11 @@ services:
       - "3001:3001"
     environment:
       PORT: "3001"
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
-      CRON_SECRET: ${CRON_SECRET:-dev-only-cron-secret-change-me}
+      CRON_SECRET: ${CRON_SECRET:?CRON_SECRET must be set in .env - generate with openssl rand -base64 32}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -101,8 +109,8 @@ services:
       - "3002:3002"
     environment:
       PORT: "3002"
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
       <<: *next-public
@@ -134,8 +142,8 @@ services:
       - "3006:3006"
     environment:
       PORT: "3006"
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
       <<: *next-public
@@ -209,7 +217,7 @@ services:
       - "3005:3005"
     environment:
       PORT: "3005"
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -233,10 +241,10 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: sendcms
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sendcms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: sendcms
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -259,7 +267,7 @@ services:
       args:
         APP: "@sendcms/api"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
     command: ["pnpm", "db:migrate:deploy"]
     depends_on:
       postgres:
@@ -274,7 +282,7 @@ services:
       args:
         APP: "@sendcms/api"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://sendcms:sendcms@postgres:5432/sendcms?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
     command: ["pnpm", "db:seed"]
     depends_on:
       postgres:

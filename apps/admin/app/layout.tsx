@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   title: "SendCMS Admin",
   description:
     "SendCMS Admin Control Plane — manage users, plans, subscriptions, AI and MCP access, and platform operations.",
+  // Authenticated app — nothing here is for crawlers (Phase 16,
+  // PRF-034). Defence in depth alongside robots.ts and the
+  // `X-Robots-Tag` header in next.config.mjs.
+  robots: { index: false, follow: false },
 }
 
 const fontSans = Geist({

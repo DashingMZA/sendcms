@@ -12,7 +12,7 @@ import { ApiError } from "@sendcms/shared"
 
 import { logAudit } from "@sendcms/security"
 
-import { checkLimitSafe } from "@sendcms/plans"
+import { checkLimitStrict } from "@sendcms/plans"
 
 import { checkVerification } from "./dns-verification"
 import type {
@@ -58,6 +58,29 @@ export function assertValidDomain(raw: string): string {
     )
   }
   return domain
+}
+
+// SDK-021 / SEC-207: the submit preflight carries no form context, so
+// the only check it can do is a global one — is the origin's host a
+// VERIFIED domain at all? Non-verified origins get no CORS headers, so
+// the browser blocks the request. (The POST check is stricter still:
+// the origin must be a VERIFIED domain linked to that form.)
+export async function isVerifiedOrigin(
+  origin: string | null
+): Promise<boolean> {
+  if (!origin) return false
+  let host: string
+  try {
+    host = normalizeDomain(new URL(origin).hostname)
+  } catch {
+    return false
+  }
+  if (!host) return false
+  const domain = await db.domain.findFirst({
+    where: { domain: host, status: DomainStatus.VERIFIED },
+    select: { id: true },
+  })
+  return domain !== null
 }
 
 // 36 random bytes = 48 base64url chars (288 bits): long enough that the
@@ -118,10 +141,11 @@ export async function createDomainForUser(
     throw new ApiError("Verify your email before registering a domain.", 403)
   }
   // Entitlement guard (Phase 4): the DOMAINS limit from the user's
-  // effective plan. Fail-open — a plans-module error must never block
-  // domain registration.
-  const limit = await checkLimitSafe(userId, "DOMAINS")
-  if (limit && !limit.allowed) {
+  // effective plan. SRC-216: fail CLOSED — a plans-module error
+  // refuses the creation (503) instead of silently granting
+  // unlimited domains.
+  const limit = await checkLimitStrict(userId, "DOMAINS")
+  if (!limit.allowed) {
     throw new ApiError(
       `Your plan allows at most ${limit.limit} domains. Upgrade your plan or ask an admin to raise your limit.`,
       409
@@ -331,8 +355,21 @@ export async function setDomainStatusForUser(
   return updated
 }
 
-export async function deleteDomainForUser(userId: string, domainId: string) {
+/** Deletes a domain (Phase 16, SRC-208): the caller must pass the
+    domain string as an explicit confirmation token, so a stray click
+    or a replayed request cannot delete a domain the owner did not
+    name. The delete itself stays physical: it is refused while any
+    form is linked, so nothing cascades (the FormDomain links are the
+    only dependents, and the guard above already requires zero). */
+export async function deleteDomainForUser(
+  userId: string,
+  domainId: string,
+  confirmation: string
+) {
   const domain = await getOwnedDomainOrThrow(userId, domainId)
+  if (confirmation !== domain.domain) {
+    throw new ApiError("Confirmation does not match the domain name.", 422)
+  }
   if (domain._count.formLinks > 0) {
     throw new ApiError(
       "This domain is linked to forms. Unlink it from all forms first.",

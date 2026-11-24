@@ -30,13 +30,18 @@ async function paypalFetch(
   path: string,
   method: "GET" | "POST",
   accessToken: string | null,
-  body?: unknown
+  body?: unknown,
+  // BIL-014: per-call idempotency key, sent as PayPal-Request-Id so a
+  // retried checkout replays the same provider object instead of
+  // creating a duplicate.
+  requestId?: string
 ): Promise<unknown> {
   const res = await fetch(`${baseUrl()}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -45,13 +50,26 @@ async function paypalFetch(
     unknown
   > | null
   if (!res.ok) {
+    // BIL-024: the provider's raw error text is logged server-side
+    // only — the customer gets a generic 502, never PayPal internals.
     const detail =
       (json?.message as string | undefined) ??
       (json?.error_description as string | undefined) ??
       `PayPal request failed (${res.status})`
-    throw new ApiError(detail, 502)
+    log.warn("PayPal request failed", { path, status: res.status, detail })
+    throw new ApiError(
+      "The payment provider is unavailable. Please try again.",
+      502
+    )
   }
   return json
+}
+
+// BIL-014: one request id per provider call, derived from the checkout
+// attempt id so a retried checkout replays the same objects.
+function attemptRequestId(args: CheckoutArgs, suffix: string): string {
+  const attempt = args.idempotencyKey?.trim() || "no-attempt"
+  return `${attempt}:${suffix}`
 }
 
 async function getAccessToken(): Promise<string> {
@@ -84,7 +102,8 @@ function approveLink(links: unknown): string | null {
 
 async function createProduct(
   accessToken: string,
-  name: string
+  name: string,
+  requestId: string
 ): Promise<string> {
   const created = (await paypalFetch(
     "/v1/catalogs/products",
@@ -95,7 +114,8 @@ async function createProduct(
       description: `${name} — SendCMS plan`,
       type: "SERVICE",
       category: "SOFTWARE",
-    }
+    },
+    requestId
   )) as { id?: string }
   if (!created.id) throw new ApiError("PayPal did not return a product id", 502)
   return created.id
@@ -136,17 +156,23 @@ async function createPlan(
           regularCycle,
         ]
       : [regularCycle]
-  const created = (await paypalFetch("/v1/billing/plans", "POST", accessToken, {
-    product_id: productId,
-    name: `${version.planName} plan`,
-    status: "ACTIVE",
-    billing_cycles: cycles,
-    payment_preferences: {
-      auto_bill_outstanding: true,
-      setup_fee_failure_action: "CONTINUE",
-      payment_failure_threshold: 3,
+  const created = (await paypalFetch(
+    "/v1/billing/plans",
+    "POST",
+    accessToken,
+    {
+      product_id: productId,
+      name: `${version.planName} plan`,
+      status: "ACTIVE",
+      billing_cycles: cycles,
+      payment_preferences: {
+        auto_bill_outstanding: true,
+        setup_fee_failure_action: "CONTINUE",
+        payment_failure_threshold: 3,
+      },
     },
-  })) as { id?: string }
+    attemptRequestId(args, "plan")
+  )) as { id?: string }
   if (!created.id) throw new ApiError("PayPal did not return a plan id", 502)
   return created.id
 }
@@ -186,7 +212,8 @@ export async function createPayPalCheckoutSession(
           cancel_url: args.cancelUrl,
           user_action: "PAY_NOW",
         },
-      }
+      },
+      attemptRequestId(args, "order")
     )) as { id?: string; links?: PayPalLink[] }
     const url = approveLink(order.links)
     if (!order.id || !url) {
@@ -195,7 +222,11 @@ export async function createPayPalCheckoutSession(
     return { checkoutUrl: url, providerCheckoutId: order.id }
   }
 
-  const productId = await createProduct(accessToken, `${version.planName} plan`)
+  const productId = await createProduct(
+    accessToken,
+    `${version.planName} plan`,
+    attemptRequestId(args, "product")
+  )
   const planId = await createPlan(accessToken, productId, args)
   const subscription = (await paypalFetch(
     "/v1/billing/subscriptions",
@@ -213,7 +244,8 @@ export async function createPayPalCheckoutSession(
         return_url: args.successUrl,
         cancel_url: args.cancelUrl,
       },
-    }
+    },
+    attemptRequestId(args, "subscription")
   )) as { id?: string; links?: PayPalLink[] }
   const url = approveLink(subscription.links)
   if (!subscription.id || !url) {
@@ -345,6 +377,21 @@ export async function verifyPayPalWebhook(
         planVersionId,
         providerSubscriptionId: orderId,
         periodEnd: null,
+      },
+    }
+  }
+
+  if (event.event_type === "BILLING.SUBSCRIPTION.PAYMENT.FAILED") {
+    // BIL-080: a failed renewal payment flips the subscription to
+    // PAST_DUE (grace window) instead of being ignored.
+    const subscriptionId = typeof resource.id === "string" ? resource.id : null
+    if (!subscriptionId) return ignored
+    return {
+      eventId: event.id,
+      eventType: event.event_type,
+      event: {
+        kind: "payment-failed",
+        providerSubscriptionId: subscriptionId,
       },
     }
   }

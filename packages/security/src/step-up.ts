@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { verifyPassword } from "better-auth/crypto"
 import {
   AuditAction,
@@ -8,8 +9,11 @@ import {
   db,
 } from "@sendcms/database"
 import { ApiError } from "@sendcms/shared"
+import { createLogger } from "@sendcms/observability"
 import { logAudit } from "./audit"
 import { checkRateLimit } from "./rate-limit"
+
+const logger = createLogger("step-up")
 
 // Step-up re-authentication (Admin Control Plane, Phase 9): a
 // password re-entry that must precede the high-impact admin actions
@@ -96,20 +100,72 @@ function findWorkspaceRoot(startDir: string): string | null {
   return null
 }
 
+// Directory of this module file. The workspace root is resolved from
+// here as well as from process.cwd() (DOC-018): in a deployed server
+// the working directory is the app directory, not the workspace root,
+// so the pnpm-workspace.yaml marker is not discoverable from cwd and
+// the old reader silently fell back to defaults — with no error or
+// log. Resolving from the module file keeps the configured step-up
+// values in effect wherever the process starts.
+const moduleDir = dirname(fileURLToPath(import.meta.url))
+
+// Resolves config/config.json, preferring the workspace root found
+// from the working directory and falling back to the root found from
+// this module file's location. Returns the resolved path and whether
+// the module-file fallback was used, or null when neither walk finds
+// the workspace marker or the config file.
+function resolveConfigPath(): {
+  path: string
+  viaModuleFile: boolean
+} | null {
+  for (const [startDir, viaModuleFile] of [
+    [process.cwd(), false],
+    [moduleDir, true],
+  ] as const) {
+    const root = findWorkspaceRoot(startDir)
+    if (!root) continue
+    const path = join(root, "config", "config.json")
+    if (existsSync(path)) return { path, viaModuleFile }
+  }
+  return null
+}
+
 // Reads config/config.json once per process (same pattern as the
 // rate limiter's readRateLimitConfig). A missing file, bad JSON, or
-// missing key all mean "use the defaults".
+// missing key all mean "use the defaults". The fallback is LOUD, not
+// silent (DOC-018): when the file cannot be found from the working
+// directory, or cannot be read at all, a warning names the values
+// that fell back to defaults, so an operator can see the platform is
+// running on defaults.
 export function readStepUpConfig(): StepUpConfig {
   if (stepUpConfigCache) return stepUpConfigCache
   let config = DEFAULT_STEP_UP_CONFIG
-  try {
-    const root = findWorkspaceRoot(process.cwd())
-    if (root) {
-      const raw = readFileSync(join(root, "config", "config.json"), "utf8")
-      config = parseStepUpConfig(JSON.parse(raw) as unknown)
+  const resolved = resolveConfigPath()
+  if (!resolved) {
+    logger.warn("config/config.json not found; using default step-up values", {
+      cwd: process.cwd(),
+      defaults: DEFAULT_STEP_UP_CONFIG,
+    })
+  } else {
+    if (resolved.viaModuleFile) {
+      logger.warn(
+        "config/config.json not found from working directory; resolved relative to package file",
+        { cwd: process.cwd(), configPath: resolved.path }
+      )
     }
-  } catch {
-    config = DEFAULT_STEP_UP_CONFIG
+    try {
+      const raw = readFileSync(resolved.path, "utf8")
+      config = parseStepUpConfig(JSON.parse(raw) as unknown)
+    } catch {
+      logger.warn(
+        "config/config.json unreadable; using default step-up values",
+        {
+          configPath: resolved.path,
+          defaults: DEFAULT_STEP_UP_CONFIG,
+        }
+      )
+      config = DEFAULT_STEP_UP_CONFIG
+    }
   }
   stepUpConfigCache = config
   return stepUpConfigCache

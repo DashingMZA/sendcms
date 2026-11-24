@@ -11,6 +11,9 @@ const workspaceRoot = path.resolve(__dirname, "../..")
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // X-Powered-By (Phase 16, SEC-302): suppress the `X-Powered-By:
+  // Next.js` header on every document response.
+  poweredByHeader: false,
   transpilePackages: [
     "@sendcms/shared",
     "@sendcms/api-client",
@@ -37,7 +40,25 @@ const nextConfig = {
   // TypeScript. The matching `public/_headers` file covers static
   // assets on Cloudflare's asset layer.
   async headers() {
-    return securityHeaders()
+    return [
+      ...securityHeaders(),
+      {
+        source: "/api/:path*",
+        headers: [
+          // Cache-Control (Phase 16, PRF-009): API responses are
+          // never public/cacheable — a shared cache must not serve a
+          // stale "ok" after the database dies.
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+      {
+        // X-Robots-Tag (Phase 16, PRF-034): the api app is not for
+        // crawlers either — every path, not just /api/*, so the 404
+        // page and robots.txt carry it too.
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ]
   },
 }
 

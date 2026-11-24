@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockDb = vi.hoisted(() => ({
   submission: { findUnique: vi.fn() },
+  submissionEvent: { create: vi.fn() },
   notificationSettings: { findMany: vi.fn() },
   emailJob: {
     createMany: vi.fn(),
@@ -93,6 +94,7 @@ beforeEach(() => {
   })
   mockDb.emailJob.updateMany.mockResolvedValue({ count: 1 })
   mockDb.emailJob.update.mockResolvedValue({})
+  mockDb.submissionEvent.create.mockResolvedValue({})
   mockSendEmail.mockResolvedValue({
     messageId: "msg-1",
     provider: "resend",
@@ -155,6 +157,8 @@ describe("processEmailOutbox", () => {
         }),
       })
     )
+    // EML-007: a plain notification job writes no timeline event.
+    expect(mockDb.submissionEvent.create).not.toHaveBeenCalled()
   })
 
   it("keeps a failed job PENDING with a backoff retry time", async () => {
@@ -277,6 +281,15 @@ describe("processEmailOutbox", () => {
     expect(mockSendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "ali@example.com" })
     )
+    // EML-007: EMAIL_SENT is written from the send path, on delivery —
+    // not at enqueue time.
+    expect(mockDb.submissionEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        submissionId: "sub-1",
+        type: "EMAIL_SENT",
+        detail: { reply: true },
+      }),
+    })
   })
 
   it("fails a SUBMISSION_REPLY job terminally when its payload is malformed", async () => {
@@ -292,5 +305,36 @@ describe("processEmailOutbox", () => {
       data: { status: string }
     }
     expect(updateArg.data.status).toBe("FAILED")
+    // EML-007: a terminal reply failure gets an EMAIL_FAILED event.
+    expect(mockDb.submissionEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        submissionId: "sub-1",
+        type: "EMAIL_FAILED",
+        detail: expect.objectContaining({ reply: true }),
+      }),
+    })
+  })
+
+  it("writes no timeline event for a retriable reply failure (EML-007)", async () => {
+    const replyJob = makeJob({
+      type: "SUBMISSION_REPLY",
+      to: "ali@example.com",
+      subject: "Re: your order",
+      payload: {
+        formName: "Contact us",
+        body: "Hi Ali, your order is on its way.",
+        accentColor: "#0891b2",
+        footerText: "Reply footer.",
+      },
+    })
+    mockDb.emailJob.findMany.mockResolvedValue([replyJob])
+    mockSendEmail.mockRejectedValue(new Error("provider down"))
+    const result = await processEmailOutbox()
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
+      data: { status: string }
+    }
+    expect(updateArg.data.status).toBe("PENDING")
+    expect(mockDb.submissionEvent.create).not.toHaveBeenCalled()
   })
 })

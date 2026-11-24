@@ -13,6 +13,7 @@ import {
   CSP_HEADER_NAME,
   CSP_REPORT_ONLY,
   CSP_REPORT_ONLY_HEADER_NAME,
+  isValidBearerToken,
   renderHeadersFile,
   securityHeaders,
 } from "@sendcms/security"
@@ -48,7 +49,7 @@ import { AuditAction, AuditResource } from "@sendcms/database"
 import { logAudit } from "@sendcms/security"
 
 describe("securityHeaders", () => {
-  it("covers every route with the four security headers", () => {
+  it("covers every route with the five security headers", () => {
     const entries = securityHeaders()
     const all = entries.find((e) => e.source === "/:path*")
     expect(all).toBeDefined()
@@ -58,6 +59,11 @@ describe("securityHeaders", () => {
     expect(byKey["X-Frame-Options"]).toBe("SAMEORIGIN")
     expect(byKey["Permissions-Policy"]).toBe(
       "camera=(), microphone=(), geolocation=()"
+    )
+    // HSTS (Phase 16, SRC-301): no `preload` — preloading commits
+    // every subdomain to HTTPS, and that was not confirmed.
+    expect(byKey["Strict-Transport-Security"]).toBe(
+      "max-age=31536000; includeSubDomains"
     )
   })
 
@@ -96,6 +102,50 @@ describe("securityHeaders", () => {
       const file = readFileSync(`apps/${app}/public/_headers`, "utf8")
       expect(file, `${app}/public/_headers`).toBe(expected)
     }
+  })
+
+  it("includes HSTS in the rendered _headers file", () => {
+    const file = renderHeadersFile()
+    expect(file).toContain(
+      "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+    )
+    expect(file).not.toContain("preload")
+  })
+
+  it("suppresses X-Powered-By in every app config (Phase 16, SEC-302)", () => {
+    for (const app of [
+      "marketing",
+      "api",
+      "dashboard",
+      "docs",
+      "updates",
+      "admin",
+    ]) {
+      const config = readFileSync(`apps/${app}/next.config.mjs`, "utf8")
+      expect(config, `${app}/next.config.mjs`).toContain(
+        "poweredByHeader: false"
+      )
+    }
+  })
+
+  it("emits X-Robots-Tag from the authenticated apps' configs (Phase 16, PRF-034)", () => {
+    for (const app of ["dashboard", "admin", "api"]) {
+      const config = readFileSync(`apps/${app}/next.config.mjs`, "utf8")
+      expect(config, `${app}/next.config.mjs`).toContain("X-Robots-Tag")
+      expect(config, `${app}/next.config.mjs`).toContain("noindex, nofollow")
+    }
+    // The public apps stay indexable — no X-Robots-Tag there.
+    for (const app of ["marketing", "docs", "updates"]) {
+      const config = readFileSync(`apps/${app}/next.config.mjs`, "utf8")
+      expect(config, `${app}/next.config.mjs`).not.toContain("X-Robots-Tag")
+    }
+  })
+
+  it("marks API responses no-store in the api config (Phase 16, PRF-009)", () => {
+    const config = readFileSync("apps/api/next.config.mjs", "utf8")
+    expect(config).toContain('"/api/:path*"')
+    expect(config).toContain('{ key: "Cache-Control", value: "no-store" }')
+    expect(config).not.toContain("public, max-age=0")
   })
 })
 
@@ -139,6 +189,44 @@ describe("Content-Security-Policy (Phase 9)", () => {
     // Dev origin (localhost:3001) — same shape, no special-casing.
     const devPolicy = buildCsp("n", { apiOrigin: "http://localhost:3001" })
     expect(devPolicy).toContain("connect-src 'self' http://localhost:3001")
+  })
+
+  it("emits report-uri when a report endpoint is given (Phase 16, SRC-318)", () => {
+    const policy = buildCsp("n", {
+      apiOrigin: "https://api.sendcms.bond",
+      reportUri: "https://api.sendcms.bond/api/csp-report",
+    })
+    expect(policy).toContain(
+      "report-uri https://api.sendcms.bond/api/csp-report"
+    )
+    // No report endpoint → no reporting directive.
+    expect(buildCsp("n")).not.toContain("report-uri")
+  })
+
+  it("allow-lists extra script origins only when asked (Phase 16, SRC-318)", () => {
+    const policy = buildCsp("n", {
+      scriptSrcOrigins: ["https://api.sendcms.bond"],
+    })
+    const scriptSrc =
+      policy.split("; ").find((d) => d.startsWith("script-src")) ?? ""
+    expect(scriptSrc).toContain("https://api.sendcms.bond")
+    expect(scriptSrc).toContain("'nonce-n'")
+    expect(scriptSrc).toContain("'strict-dynamic'")
+    // Default: no extra script origin.
+    expect(buildCsp("n")).not.toContain("https://api.sendcms.bond")
+  })
+
+  it("swaps the style nonce for unsafe-inline only for the api app (Phase 16, SEC-303)", () => {
+    // The api app's branded 404 page renders an authored <style>
+    // block that Next does not nonce — the standard nonce-gated
+    // style-src would strip its styling.
+    const apiPolicy = buildCsp("n", { allowInlineStyles: true })
+    expect(apiPolicy).toContain("style-src 'self' 'unsafe-inline'")
+    expect(apiPolicy).not.toContain("style-src 'self' 'nonce-n'")
+    // Script-src stays nonce-gated and strict for the api app too.
+    expect(apiPolicy).toContain("script-src 'self' 'nonce-n' 'strict-dynamic'")
+    // Every other app keeps the nonce on style-src.
+    expect(buildCsp("n")).toContain("style-src 'self' 'nonce-n'")
   })
 
   it("creates a fresh base64 nonce on every call", () => {
@@ -223,5 +311,57 @@ describe("logAudit", () => {
       })
     ).resolves.toBeUndefined()
     expect(mockLoggerError).toHaveBeenCalledTimes(1)
+  })
+
+  it("treats a unique-violation as already logged (DB-004/SRC-331)", async () => {
+    // The partial unique index on (correlationId, action, resourceType,
+    // resourceId) fires when a concurrent retry already inserted the
+    // row — that is the idempotent outcome, not a failure.
+    mockCreate.mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), {
+        code: "P2002",
+      })
+    )
+    await expect(
+      logAudit({
+        action: AuditAction.CREATE,
+        resourceType: AuditResource.DOMAIN,
+        resourceId: "domain-1",
+        correlationId: "corr-1",
+      })
+    ).resolves.toBeUndefined()
+    expect(mockLoggerError).not.toHaveBeenCalled()
+  })
+})
+
+describe("isValidBearerToken (SRC-115 / EML-067)", () => {
+  const SECRET = "test-cron-secret"
+
+  it("accepts the canonical Bearer scheme", () => {
+    expect(isValidBearerToken(`Bearer ${SECRET}`, SECRET)).toBe(true)
+  })
+
+  it("accepts a lowercase bearer scheme (RFC 9110 / RFC 6750)", () => {
+    expect(isValidBearerToken(`bearer ${SECRET}`, SECRET)).toBe(true)
+    expect(isValidBearerToken(`BeArEr ${SECRET}`, SECRET)).toBe(true)
+  })
+
+  it("rejects a wrong token, including one of a different length", () => {
+    expect(isValidBearerToken("Bearer wrong-secret", SECRET)).toBe(false)
+    expect(isValidBearerToken("Bearer short", SECRET)).toBe(false)
+    expect(isValidBearerToken(`Bearer ${SECRET}-with-extra`, SECRET)).toBe(
+      false
+    )
+  })
+
+  it("rejects a missing/empty header, a missing secret, and a non-Bearer scheme", () => {
+    expect(isValidBearerToken(null, SECRET)).toBe(false)
+    expect(isValidBearerToken(undefined, SECRET)).toBe(false)
+    expect(isValidBearerToken("", SECRET)).toBe(false)
+    expect(isValidBearerToken(`Bearer ${SECRET}`, "")).toBe(false)
+    expect(isValidBearerToken(`Bearer ${SECRET}`, null)).toBe(false)
+    expect(isValidBearerToken(`Basic ${SECRET}`, SECRET)).toBe(false)
+    expect(isValidBearerToken(SECRET, SECRET)).toBe(false)
+    expect(isValidBearerToken("Bearer ", SECRET)).toBe(false)
   })
 })

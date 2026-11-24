@@ -1,3 +1,4 @@
+import { ApiError } from "@sendcms/shared"
 import type { BillingProvider } from "@sendcms/database"
 
 // Billing provider registry (Admin Control Plane, Phase 8).
@@ -108,4 +109,67 @@ export function isProviderConfigured(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
   return missingEnvVars(provider, env).length === 0
+}
+
+// ─── Stripe test/live key separation (BIL-010) ────────────────────────
+// A `sk_test_…` key in production silently creates test-mode Checkout
+// Sessions and Prices — customers "pay" in test mode while the webhook
+// activates real subscriptions. The expected mode comes from an
+// explicit `STRIPE_MODE` flag (`test` | `live`) when set, else from
+// `NODE_ENV` (`production` → live, anything else → test). A webhook
+// secret (`whsec_…`) carries no test/live marker in its prefix, so its
+// mode cannot be checked this way — only its format is validated.
+
+export type StripeKeyMode = "test" | "live"
+
+export function expectedStripeMode(
+  env: NodeJS.ProcessEnv = process.env
+): StripeKeyMode {
+  if (env.STRIPE_MODE === "live") return "live"
+  if (env.STRIPE_MODE === "test") return "test"
+  return env.NODE_ENV === "production" ? "live" : "test"
+}
+
+export function stripeSecretKeyMode(secretKey: string): StripeKeyMode | null {
+  if (secretKey.startsWith("sk_test_")) return "test"
+  if (secretKey.startsWith("sk_live_")) return "live"
+  return null
+}
+
+/**
+ * The mode mismatch, if the Stripe secret key's mode disagrees with
+ * the deployment environment — null when they agree or the key's mode
+ * cannot be determined from its prefix (an unrecognised prefix is
+ * left to Stripe to reject; it is not silently treated as either
+ * mode). Callers fail loudly on a non-null result.
+ */
+export function stripeKeyModeMismatch(env: NodeJS.ProcessEnv = process.env): {
+  expected: StripeKeyMode
+  actual: StripeKeyMode
+  secretKeyPrefix: string
+} | null {
+  const secretKey = env.STRIPE_SECRET_KEY?.trim() ?? ""
+  if (!secretKey) return null
+  const actual = stripeSecretKeyMode(secretKey)
+  if (!actual) return null
+  const expected = expectedStripeMode(env)
+  if (actual === expected) return null
+  return {
+    expected,
+    actual,
+    secretKeyPrefix: actual === "test" ? "sk_test_" : "sk_live_",
+  }
+}
+
+/** Throws 422 when the Stripe secret key's mode mismatches the env. */
+export function assertStripeKeyMode(
+  env: NodeJS.ProcessEnv = process.env
+): void {
+  const mismatch = stripeKeyModeMismatch(env)
+  if (!mismatch) return
+  throw new ApiError(
+    `Stripe secret key mode (${mismatch.actual}) does not match the deployment environment (${mismatch.expected}). ` +
+      `A ${mismatch.secretKeyPrefix} key must not be used in a ${mismatch.expected} environment.`,
+    422
+  )
 }

@@ -140,11 +140,31 @@ export async function setFlag(
   opts: AuditOpts = {}
 ): Promise<FeatureFlagRow> {
   requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
-  const flag = await getFlagOrThrow(key)
-  const updated = await db.featureFlag.update({
-    where: { key },
-    data: { isEnabled: input.isEnabled },
-  })
+  await getFlagOrThrow(key)
+  // DB-051: the "before" value is read under a row lock in the same
+  // transaction as the write, so a concurrent toggle cannot make the
+  // audit's old value stale (the read-then-write it replaced could
+  // record a transition that never happened).
+  const { oldIsEnabled, updated } = await db.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRaw<{ isEnabled: boolean }[]>`
+      SELECT "isEnabled" FROM "FeatureFlag" WHERE "key" = ${key} FOR UPDATE
+    `
+      if (locked.length === 0) {
+        throw new ApiError(`Feature flag "${key}" not found.`, 404)
+      }
+      const updated = await tx.featureFlag.update({
+        where: { key },
+        data: { isEnabled: input.isEnabled },
+      })
+      return { oldIsEnabled: locked[0].isEnabled, updated }
+    },
+    // Prisma's interactive-transaction defaults (maxWait 2s) are too
+    // tight when two toggles race: the loser waits on the row lock
+    // AND on a pool connection (max 5), so the 2s start window can
+    // expire before it gets its turn (seen live against the dev DB).
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -153,7 +173,7 @@ export async function setFlag(
     detail: {
       event: "flag-toggled",
       reason: input.reason,
-      oldIsEnabled: flag.isEnabled,
+      oldIsEnabled,
       newIsEnabled: updated.isEnabled,
     },
     reason: input.reason,
@@ -207,25 +227,43 @@ export async function setFlagOverride(
   requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
   const flag = await getFlagOrThrow(key)
   await getTargetUserOrThrow(userId)
-  const before = await db.featureFlagOverride.findUnique({
-    where: { flagId_userId: { flagId: flag.id, userId } },
-  })
-  const updated = await db.featureFlagOverride.upsert({
-    where: { flagId_userId: { flagId: flag.id, userId } },
-    update: {
-      isEnabled: input.isEnabled,
-      reason: input.reason,
-      adminId: actor.user.id,
+  // DB-051: the override's "before" value is read in the same
+  // transaction as the upsert, while the parent flag row is locked —
+  // overrides for one flag serialize on that lock, so a concurrent
+  // override write cannot make the audit's old value stale.
+  const { before, updated } = await db.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "FeatureFlag" WHERE "key" = ${key} FOR UPDATE
+    `
+      if (locked.length === 0) {
+        throw new ApiError(`Feature flag "${key}" not found.`, 404)
+      }
+      const before = await tx.featureFlagOverride.findUnique({
+        where: { flagId_userId: { flagId: flag.id, userId } },
+      })
+      const updated = await tx.featureFlagOverride.upsert({
+        where: { flagId_userId: { flagId: flag.id, userId } },
+        update: {
+          isEnabled: input.isEnabled,
+          reason: input.reason,
+          adminId: actor.user.id,
+        },
+        create: {
+          flagId: flag.id,
+          userId,
+          isEnabled: input.isEnabled,
+          reason: input.reason,
+          adminId: actor.user.id,
+        },
+        include: { user: { select: { id: true, name: true, email: true } } },
+      })
+      return { before, updated }
     },
-    create: {
-      flagId: flag.id,
-      userId,
-      isEnabled: input.isEnabled,
-      reason: input.reason,
-      adminId: actor.user.id,
-    },
-    include: { user: { select: { id: true, name: true, email: true } } },
-  })
+    // Same headroom as setFlag (see above): the loser of a race on
+    // one flag's lock needs more than Prisma's 2s default start window.
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,

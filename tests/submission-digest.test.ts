@@ -24,7 +24,12 @@ const mockAi = vi.hoisted(() => ({
     highlights: ["Ali needs help with an order."],
   })),
 }))
-vi.mock("@sendcms/ai", () => mockAi)
+vi.mock("@sendcms/ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/ai")>()
+  // The real normalizeAiEnv stays live: the resolver normalizes the
+  // env it is passed (SRC-123) before its legacy path reads it.
+  return { ...actual, ...mockAi }
+})
 const mockIsFeatureEnabled = vi.hoisted(() => vi.fn(async () => true))
 vi.mock("@sendcms/platform-ops", () => ({
   isFeatureEnabled: mockIsFeatureEnabled,
@@ -37,7 +42,10 @@ vi.mock("@sendcms/notifications", () => ({
 vi.mock("@sendcms/submissions/turnstile", () => ({
   verifyTurnstileToken: vi.fn(async () => true),
 }))
+const mockLogAudit = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock("@sendcms/security", () => ({ logAudit: mockLogAudit }))
 
+import { AuditResource } from "@sendcms/database"
 import { sendDueDigests } from "@sendcms/submissions"
 
 const ENV = { OPENAI_API_KEY: "sk-test" }
@@ -158,5 +166,27 @@ describe("sendDueDigests", () => {
         }),
       })
     )
+  })
+
+  it("writes one audit row per digest sent (AIM-029)", async () => {
+    await sendDueDigests({ env: ENV })
+    expect(mockLogAudit).toHaveBeenCalledTimes(1)
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "CREATE",
+        resourceType: AuditResource.FORM,
+        resourceId: "form-1",
+        detail: expect.objectContaining({
+          event: "ai-digest-sent",
+          submissionCount: 1,
+        }),
+      })
+    )
+  })
+
+  it("writes no audit row when no digest is sent (AIM-029)", async () => {
+    mockDb.submission.findMany.mockResolvedValue([])
+    await sendDueDigests({ env: ENV })
+    expect(mockLogAudit).not.toHaveBeenCalled()
   })
 })

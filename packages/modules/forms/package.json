@@ -17,6 +17,7 @@
     "@sendcms/ai": "workspace:*",
     "@sendcms/ai-settings": "workspace:*",
     "@sendcms/database": "workspace:*",
+    "@sendcms/email": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",

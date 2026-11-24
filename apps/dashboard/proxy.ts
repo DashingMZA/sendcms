@@ -43,7 +43,13 @@ export default async function proxy(req: NextRequest) {
   const apiOrigin = (
     process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
   ).replace(/\/$/, "")
-  const policy = buildCsp(nonce, { apiOrigin })
+  // CSP violation reports (Phase 16, SRC-318): the policy's
+  // `report-uri` points at the api app's report route so enforcing
+  // violations are logged instead of silently dropped.
+  const policy = buildCsp(nonce, {
+    apiOrigin,
+    reportUri: `${apiOrigin}/api/csp-report`,
+  })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
   const withCsp = (response: NextResponse): NextResponse => {
     response.headers.set(headerName, policy)
@@ -65,6 +71,17 @@ export default async function proxy(req: NextRequest) {
     "/verify-email",
   ]
   if (AUTH_PAGES.includes(req.nextUrl.pathname)) {
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
+  }
+
+  // Landing root + unmatched (404) paths (Phase 16, LVE-002): public,
+  // no session needed — attach the CSP and pass through so the page
+  // (or the not-found page) renders. Only /dashboard/* routes go
+  // through the session lookup below.
+  if (
+    req.nextUrl.pathname === "/" ||
+    !req.nextUrl.pathname.startsWith("/dashboard")
+  ) {
     return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
   }
 
@@ -99,11 +116,20 @@ export default async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/dashboard/:path*",
     "/sign-in",
     "/sign-up",
     "/forgot-password",
     "/reset-password",
     "/verify-email",
+    // Catch-all for extensionless paths (Phase 16, LVE-002): the
+    // landing root and the not-found responses. Static assets
+    // (`/_next/static`, `/_next/image`, `favicon.ico`, any path with
+    // a file extension) and the `/api/v1/*` rewrites (proxied to the
+    // api app — they must not hit the session gate here) are excluded.
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|api/|.*\\..*).*)",
+    },
   ],
 }

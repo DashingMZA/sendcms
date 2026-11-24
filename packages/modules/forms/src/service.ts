@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import {
   AuditAction,
   AuditResource,
@@ -5,19 +6,22 @@ import {
   FormFieldType,
   Prisma,
   db,
+  type NotificationSettings,
 } from "@sendcms/database"
 
 import { ApiError } from "@sendcms/shared"
 
+import { redactAuthEmailUrl, sendPlatformEmail } from "@sendcms/email"
 import { logAudit } from "@sendcms/security"
 import {
   suggestFields,
   type AiCallUsage,
+  type AiEnvConfig,
   type AiProviderName,
   type FieldSuggestions,
 } from "@sendcms/ai"
 import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
-import { checkLimitSafe } from "@sendcms/plans"
+import { checkLimitStrict } from "@sendcms/plans"
 
 import type {
   AddNotificationEmailInput,
@@ -62,7 +66,9 @@ export function defaultFormFields(): CreateFieldInput[] {
 
 async function getOwnedFormOrThrow(userId: string, formId: string) {
   const form = await db.form.findFirst({
-    where: { id: formId, ownerId: userId },
+    // Archived (soft-deleted) forms are invisible: they accept no
+    // submissions and cannot be edited, linked, or deleted again.
+    where: { id: formId, ownerId: userId, deletedAt: null },
     include: {
       fields: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
       domainLinks: {
@@ -77,13 +83,52 @@ async function getOwnedFormOrThrow(userId: string, formId: string) {
   return form
 }
 
+// SEC-210: a relative redirect is same-site and always allowed; an
+// absolute redirect must land on one of `allowedHosts` (stored domains
+// are normalized: lowercase, no leading www.).
+export function assertRedirectHostAllowed(
+  redirectUrl: string,
+  allowedHosts: string[]
+): void {
+  const value = redirectUrl.trim()
+  if (value.startsWith("/")) return
+  let host: string
+  try {
+    host = new URL(value).hostname.toLowerCase().replace(/^www\./, "")
+  } catch {
+    throw new ApiError("Redirect URL must be a valid http(s) URL.", 400)
+  }
+  if (!allowedHosts.map((h) => h.toLowerCase()).includes(host)) {
+    throw new ApiError(
+      "Redirect URL must point to one of this form's verified domains or be a relative URL.",
+      400
+    )
+  }
+}
+
+// DSH-105: field `order` values are kept dense and unique (0..n-1) in
+// display order. `resequenceFields` takes the fields in their current
+// display order (order asc, createdAt asc) and writes back 0..n-1, so
+// any insert/move/delete that reorders the list ends duplicate-free.
+async function resequenceFields(
+  tx: Prisma.TransactionClient,
+  fields: { id: string }[]
+): Promise<void> {
+  for (const [index, field] of fields.entries()) {
+    await tx.formField.update({
+      where: { id: field.id },
+      data: { order: index },
+    })
+  }
+}
+
 export async function getFormCountForUser(userId: string) {
-  return db.form.count({ where: { ownerId: userId } })
+  return db.form.count({ where: { ownerId: userId, deletedAt: null } })
 }
 
 export async function listFormsForUser(userId: string) {
   return db.form.findMany({
-    where: { ownerId: userId },
+    where: { ownerId: userId, deletedAt: null },
     include: {
       _count: {
         select: { fields: true, domainLinks: true, submissions: true },
@@ -98,23 +143,69 @@ export type FormWithCounts = Awaited<
 >[number]
 
 export async function getFormForUser(userId: string, formId: string) {
-  return getOwnedFormOrThrow(userId, formId)
+  const form = await getOwnedFormOrThrow(userId, formId)
+  // EML-004: the dashboard must show which recipients are unconfirmed.
+  // A pending confirmation token means "not yet confirmed" — see the
+  // recipient-verification section below for the invariant. One return
+  // shape (never the raw form) so `confirmed` exists on every row.
+  const pendingIds = new Set<string>()
+  if (form.notificationSettings.length > 0) {
+    const pending = await db.verification.findMany({
+      where: {
+        identifier: {
+          in: form.notificationSettings.map((n) =>
+            recipientConfirmIdentifier(n.id)
+          ),
+        },
+      },
+      select: { identifier: true },
+    })
+    for (const row of pending) pendingIds.add(row.identifier)
+  }
+  return {
+    ...form,
+    notificationSettings: form.notificationSettings.map((row) => ({
+      ...row,
+      confirmed: !pendingIds.has(recipientConfirmIdentifier(row.id)),
+    })),
+  }
 }
 
 export type FormDetail = Awaited<ReturnType<typeof getFormForUser>>
+
+/** A notification recipient as the dashboard sees it: the Prisma row
+    plus whether its address has been confirmed (EML-004). */
+export type NotificationRecipientWithConfirmation = NotificationSettings & {
+  confirmed: boolean
+}
 
 export async function createFormForUser(
   userId: string,
   input: CreateFormInput
 ) {
   // Entitlement guard (Phase 4): the FORMS limit from the user's
-  // effective plan. Fail-open — a plans-module error must never block
-  // form creation; a null check means "no limit applies".
-  const limit = await checkLimitSafe(userId, "FORMS")
-  if (limit && !limit.allowed) {
+  // effective plan. SRC-216: fail CLOSED — a plans-module error
+  // refuses the creation (503) instead of silently granting
+  // unlimited forms.
+  const limit = await checkLimitStrict(userId, "FORMS")
+  if (!limit.allowed) {
     throw new ApiError(
       `Your plan allows at most ${limit.limit} forms. Upgrade your plan or ask an admin to raise your limit.`,
       409
+    )
+  }
+  // SEC-210: an absolute redirect may only point at a VERIFIED domain
+  // the owner controls (the form has no linked domains yet at creation,
+  // so the owner's verified domains are the allowlist). Relative
+  // redirects are same-site and need no lookup.
+  if (input.redirectUrl && !input.redirectUrl.trim().startsWith("/")) {
+    const verified = await db.domain.findMany({
+      where: { ownerId: userId, status: DomainStatus.VERIFIED },
+      select: { domain: true },
+    })
+    assertRedirectHostAllowed(
+      input.redirectUrl,
+      verified.map((d) => d.domain)
     )
   }
   const created = await db.form.create({
@@ -154,6 +245,14 @@ export async function updateFormForUser(
   input: UpdateFormInput
 ) {
   const form = await getOwnedFormOrThrow(userId, formId)
+  // SEC-210: an absolute redirect may only point at one of the form's
+  // linked (hence VERIFIED) domains.
+  if (input.redirectUrl) {
+    assertRedirectHostAllowed(
+      input.redirectUrl,
+      form.domainLinks.map((l) => l.domain.domain)
+    )
+  }
   const updated = await db.form.update({
     where: { id: form.id },
     data: {
@@ -201,15 +300,35 @@ export async function updateFormForUser(
   return updated
 }
 
-export async function deleteFormForUser(userId: string, formId: string) {
+/** Archives a form (Phase 16, SRC-208): the row is soft-deleted
+    (`deletedAt`) instead of physically deleted, so its submissions,
+    events, notification settings and email jobs survive — deleting a
+    form no longer cascade-destroys its submission history. The
+    caller must pass the form's name as an explicit confirmation
+    token, so a stray click or a replayed request cannot archive a
+    form the owner did not name. No step-up here yet: the step-up
+    verify route is admin-only, and dashboard users have no way to
+    satisfy it — that is a follow-up, not a silent 403. */
+export async function deleteFormForUser(
+  userId: string,
+  formId: string,
+  confirmation: string
+) {
   const form = await getOwnedFormOrThrow(userId, formId)
-  await db.form.delete({ where: { id: form.id } })
+  if (confirmation !== form.name) {
+    throw new ApiError("Confirmation does not match the form name.", 422)
+  }
+  await db.form.update({
+    where: { id: form.id },
+    data: { deletedAt: new Date() },
+  })
   await logAudit({
     userId,
     action: AuditAction.DELETE,
     resourceType: AuditResource.FORM,
     resourceId: form.id,
     detail: {
+      event: "form-archived",
       name: form.name,
       submissions: form._count.submissions,
     },
@@ -240,20 +359,48 @@ export async function addFieldToForm(
     (form.fields.length > 0
       ? Math.max(...form.fields.map((f) => f.order)) + 1
       : 0)
-  const field = await db.formField.create({
-    data: {
-      formId: form.id,
-      name: input.name,
-      label: input.label,
-      type: input.type,
-      required: input.required ?? false,
-      placeholder: input.placeholder,
-      options: input.options ?? undefined,
-      minLength: input.minLength,
-      maxLength: input.maxLength,
-      order,
-    },
-  })
+  // An explicit order inserts at that position and shifts the siblings
+  // (DSH-105): a verbatim write would duplicate the order value.
+  const field =
+    input.order === undefined
+      ? await db.formField.create({
+          data: {
+            formId: form.id,
+            name: input.name,
+            label: input.label,
+            type: input.type,
+            required: input.required ?? false,
+            placeholder: input.placeholder,
+            options: input.options ?? undefined,
+            minLength: input.minLength,
+            maxLength: input.maxLength,
+            order,
+          },
+        })
+      : await db.$transaction(async (tx) => {
+          const created = await tx.formField.create({
+            data: {
+              formId: form.id,
+              name: input.name,
+              label: input.label,
+              type: input.type,
+              required: input.required ?? false,
+              placeholder: input.placeholder,
+              options: input.options ?? undefined,
+              minLength: input.minLength,
+              maxLength: input.maxLength,
+              order,
+            },
+          })
+          const next = [...form.fields]
+          next.splice(
+            Math.max(0, Math.min(input.order!, form.fields.length)),
+            0,
+            created
+          )
+          await resequenceFields(tx, next)
+          return created
+        })
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -280,28 +427,44 @@ export async function updateFieldForUser(
   // an option type without options is rejected by the validator.
   const nextType = input.type ?? field.type
   const isOptionType = ["SELECT", "CHECKBOX", "RADIO"].includes(nextType)
-  const updated = await db.formField.update({
-    where: { id: field.id },
-    data: {
-      ...(input.label !== undefined ? { label: input.label } : {}),
-      ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.required !== undefined ? { required: input.required } : {}),
-      ...(input.placeholder !== undefined
-        ? { placeholder: input.placeholder }
+  const data = {
+    ...(input.label !== undefined ? { label: input.label } : {}),
+    ...(input.type !== undefined ? { type: input.type } : {}),
+    ...(input.required !== undefined ? { required: input.required } : {}),
+    ...(input.placeholder !== undefined
+      ? { placeholder: input.placeholder }
+      : {}),
+    // Explicit options replace; omitted options stay, except a move to a
+    // non-option type clears them. (Prisma wants DbNull, not plain null,
+    // to clear a nullable Json column.)
+    ...(input.options !== undefined
+      ? { options: input.options ?? Prisma.DbNull }
+      : !isOptionType
+        ? { options: Prisma.DbNull }
         : {}),
-      // Explicit options replace; omitted options stay, except a move to a
-      // non-option type clears them. (Prisma wants DbNull, not plain null,
-      // to clear a nullable Json column.)
-      ...(input.options !== undefined
-        ? { options: input.options ?? Prisma.DbNull }
-        : !isOptionType
-          ? { options: Prisma.DbNull }
-          : {}),
-      ...(input.minLength !== undefined ? { minLength: input.minLength } : {}),
-      ...(input.maxLength !== undefined ? { maxLength: input.maxLength } : {}),
-      ...(input.order !== undefined ? { order: input.order } : {}),
-    },
-  })
+    ...(input.minLength !== undefined ? { minLength: input.minLength } : {}),
+    ...(input.maxLength !== undefined ? { maxLength: input.maxLength } : {}),
+  }
+  // DSH-105: an order change moves the field to that position and
+  // re-sequences the siblings (0..n-1) in the same transaction — a
+  // verbatim write would duplicate the order value and the moved field
+  // would sort behind the field it was meant to pass.
+  const updated =
+    input.order === undefined
+      ? await db.formField.update({ where: { id: field.id }, data })
+      : await db.$transaction(async (tx) => {
+          const moved = await tx.formField.update({
+            where: { id: field.id },
+            data,
+          })
+          const others = form.fields.filter((f) => f.id !== field.id)
+          const target = Math.max(0, Math.min(input.order!, others.length))
+          const next = [...others]
+          next.splice(target, 0, field)
+          await resequenceFields(tx, next)
+          // The resequence sets this field's order to its new position.
+          return { ...moved, order: target }
+        })
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -323,7 +486,15 @@ export async function deleteFieldForUser(
   const form = await getOwnedFormOrThrow(userId, formId)
   const field = form.fields.find((f) => f.id === fieldId)
   if (!field) throw new ApiError("Field not found", 404)
-  await db.formField.delete({ where: { id: field.id } })
+  // DSH-105: deleting a field re-sequences the survivors so orders stay
+  // dense (0..n-1) instead of leaving a gap.
+  await db.$transaction(async (tx) => {
+    await tx.formField.delete({ where: { id: field.id } })
+    await resequenceFields(
+      tx,
+      form.fields.filter((f) => f.id !== field.id)
+    )
+  })
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -403,8 +574,108 @@ export async function unlinkDomainFromForm(
 }
 
 // ---------------------------------------------------------------------------
-// Notification recipients
+// Notification recipients — verification (EML-004)
 // ---------------------------------------------------------------------------
+// A recipient address is only mailed after its owner clicks a confirmation
+// link. No schema change was needed for this:
+//   - the row stays disabled (`enabled: false`) until confirmed, and the
+//     submission notifier already only enqueues for `enabled: true` rows,
+//     so an unconfirmed recipient receives no notification jobs;
+//   - the one-time token lives in Better Auth's generic `Verification`
+//     table (identifier / value / expiresAt), namespaced so it can never
+//     collide with auth tokens.
+// The token row IS the unconfirmed state: confirming deletes it and
+// enables the row, so a row with a pending token is unconfirmed and a
+// row without one was confirmed (or was switched off by its owner
+// afterwards). The dashboard toggle therefore cannot re-enable an
+// unconfirmed recipient — enabling a row with a pending token is
+// refused with 409. There is no address-change endpoint (only
+// `enabled` can be updated), so changing an address means delete +
+// re-add, which issues a fresh token and re-confirms by construction.
+
+const RECIPIENT_CONFIRM_TTL_MS = 24 * 60 * 60 * 1000
+
+function recipientConfirmIdentifier(notificationId: string): string {
+  return `notification-confirm:${notificationId}`
+}
+
+function recipientConfirmUrl(formId: string, token: string): string {
+  const apiUrl =
+    process.env.BETTER_AUTH_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://localhost:3001"
+  return `${apiUrl}/api/v1/forms/${formId}/notifications/confirm?token=${token}`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+async function createRecipientConfirmation(
+  notificationId: string
+): Promise<string> {
+  const token = randomBytes(32).toString("base64url")
+  await db.verification.create({
+    data: {
+      identifier: recipientConfirmIdentifier(notificationId),
+      value: token,
+      expiresAt: new Date(Date.now() + RECIPIENT_CONFIRM_TTL_MS),
+    },
+  })
+  return token
+}
+
+// Sends the confirmation link for a recipient. The token is never logged
+// in the clear (EML-002): without a provider, dev logs the redacted link
+// shape only, with the same explicit opt-in as the auth mailer.
+// A production failure is loud (502) — the row stays saved as
+// unconfirmed and the owner can resend from the form settings.
+async function sendRecipientConfirmation({
+  formId,
+  formName,
+  email,
+  token,
+}: {
+  formId: string
+  formName: string
+  email: string
+  token: string
+}): Promise<void> {
+  const url = recipientConfirmUrl(formId, token)
+  const subject = `Confirm notifications for ${formName}`
+  const html =
+    `<p>You're receiving this because ${escapeHtml(email)} was added as a notification recipient ` +
+    `for the SendCMS form "${escapeHtml(formName)}".</p>` +
+    `<p><a href="${escapeHtml(url)}">Confirm this email address</a></p>` +
+    `<p>This link expires in 24 hours. If you didn't expect this email, you can safely ignore it.</p>`
+  const text =
+    `Confirm ${email} as a notification recipient for the SendCMS form "${formName}": ${url}\n\n` +
+    `This link expires in 24 hours. If you didn't expect this email, you can safely ignore it.`
+  try {
+    await sendPlatformEmail({ to: email, subject, html, text })
+    return
+  } catch {
+    if (process.env.NODE_ENV === "production") {
+      throw new ApiError(
+        "Could not send the confirmation email. The recipient was saved as unconfirmed — resend the confirmation link from the form settings.",
+        502
+      )
+    }
+    // Dev fallback, mirroring the auth mailer: log the link shape, never
+    // the token (EML-002). Same explicit opt-in prints the full link.
+    console.log(
+      `[recipient-confirm] No email provider — confirmation link for ${email}: ${
+        process.env.SENDCMS_DEV_LOG_EMAIL_TOKENS === "1"
+          ? url
+          : redactAuthEmailUrl(url)
+      }`
+    )
+  }
+}
 
 export async function addNotificationEmailToForm(
   userId: string,
@@ -422,8 +693,17 @@ export async function addNotificationEmailToForm(
       409
     )
   }
+  // Disabled until confirmed (EML-004): no notification job is created
+  // for this address until the recipient clicks the confirmation link.
   const created = await db.notificationSettings.create({
-    data: { formId: form.id, email },
+    data: { formId: form.id, email, enabled: false },
+  })
+  const token = await createRecipientConfirmation(created.id)
+  await sendRecipientConfirmation({
+    formId: form.id,
+    formName: form.name,
+    email,
+    token,
   })
   await logAudit({
     userId,
@@ -438,6 +718,88 @@ export async function addNotificationEmailToForm(
   return created
 }
 
+/** Confirms a notification recipient from the link in its confirmation
+    email. Public — the recipient clicking the link is not signed in, so
+    the token is the only credential; it is single-use (deleted on
+    confirm) and expires after 24 hours. An expired token is left in
+    place so the row keeps reading as unconfirmed until the owner
+    resends a fresh link. */
+export async function confirmNotificationEmail(
+  formId: string,
+  token: string
+): Promise<{ formId: string; notificationId: string; email: string }> {
+  const stored = await db.verification.findFirst({
+    where: { value: token },
+  })
+  if (!stored || !stored.identifier.startsWith("notification-confirm:")) {
+    throw new ApiError("This confirmation link is invalid.", 404)
+  }
+  const notificationId = stored.identifier.slice("notification-confirm:".length)
+  if (stored.expiresAt.getTime() < Date.now()) {
+    throw new ApiError(
+      "This confirmation link has expired. Ask the form owner to resend it.",
+      410
+    )
+  }
+  const row = await db.notificationSettings.findUnique({
+    where: { id: notificationId },
+  })
+  if (!row || row.formId !== formId) {
+    throw new ApiError("This confirmation link is invalid.", 404)
+  }
+  const form = await db.form.findUnique({
+    where: { id: formId },
+    select: { id: true, ownerId: true },
+  })
+  await db.$transaction([
+    db.notificationSettings.update({
+      where: { id: row.id },
+      data: { enabled: true },
+    }),
+    db.verification.delete({ where: { id: stored.id } }),
+  ])
+  if (form) {
+    await logAudit({
+      userId: form.ownerId,
+      action: AuditAction.UPDATE,
+      resourceType: AuditResource.FORM,
+      resourceId: form.id,
+      detail: {
+        event: "notification-confirmed",
+        email: row.email,
+      },
+    })
+  }
+  return { formId: row.formId, notificationId: row.id, email: row.email }
+}
+
+/** Re-sends the confirmation email for an unconfirmed recipient
+    (expired link, lost email). Deletes the previous token so only the
+    newest link works. */
+export async function resendNotificationConfirmation(
+  userId: string,
+  formId: string,
+  notificationId: string
+) {
+  const form = await getOwnedFormOrThrow(userId, formId)
+  const row = form.notificationSettings.find((n) => n.id === notificationId)
+  if (!row) throw new ApiError("Notification recipient not found", 404)
+  if (row.enabled) {
+    throw new ApiError(`${row.email} is already confirmed.`, 409)
+  }
+  await db.verification.deleteMany({
+    where: { identifier: recipientConfirmIdentifier(row.id) },
+  })
+  const token = await createRecipientConfirmation(row.id)
+  await sendRecipientConfirmation({
+    formId: form.id,
+    formName: form.name,
+    email: row.email,
+    token,
+  })
+  return row
+}
+
 export async function updateNotificationEmailForUser(
   userId: string,
   formId: string,
@@ -447,6 +809,22 @@ export async function updateNotificationEmailForUser(
   const form = await getOwnedFormOrThrow(userId, formId)
   const row = form.notificationSettings.find((n) => n.id === notificationId)
   if (!row) throw new ApiError("Notification recipient not found", 404)
+  // EML-004: an unconfirmed recipient (a pending confirmation token
+  // exists) cannot be switched on from the dashboard — only the
+  // confirmation link enables it. A row with no pending token was
+  // confirmed before and only switched off, so re-enabling it is fine.
+  if (input.enabled && !row.enabled) {
+    const pending = await db.verification.findFirst({
+      where: { identifier: recipientConfirmIdentifier(row.id) },
+      select: { id: true },
+    })
+    if (pending) {
+      throw new ApiError(
+        `${row.email} has not confirmed yet. Resend the confirmation link from the form settings first.`,
+        409
+      )
+    }
+  }
   return db.notificationSettings.update({
     where: { id: row.id },
     data: { enabled: input.enabled },
@@ -462,6 +840,9 @@ export async function deleteNotificationEmailForUser(
   const row = form.notificationSettings.find((n) => n.id === notificationId)
   if (!row) throw new ApiError("Notification recipient not found", 404)
   await db.notificationSettings.delete({ where: { id: row.id } })
+  await db.verification.deleteMany({
+    where: { identifier: recipientConfirmIdentifier(row.id) },
+  })
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -487,12 +868,14 @@ export async function deleteNotificationEmailForUser(
     provider is configured. The model is resolved for the FORM OWNER
     (BYOK key, browser-only key, or platform key — see
     resolveAiModelForUser); `opts` carries an optional per-request
-    browser-only key, which is never stored. */
+    browser-only key, which is never stored. `aiEnv` is the explicit
+    AI config built from the route (SRC-123) — never the whole
+    process.env. */
 export async function suggestFieldsForForm(
   userId: string,
   formId: string,
   prompt: string,
-  env: NodeJS.ProcessEnv = process.env,
+  aiEnv: AiEnvConfig,
   opts: {
     provider?: AiProviderName
     browserKey?: string
@@ -514,7 +897,7 @@ export async function suggestFieldsForForm(
       provider: opts.provider,
       browserKey: opts.browserKey,
       browserModel: opts.browserModel,
-      env,
+      env: aiEnv,
     })
   } catch (err) {
     if (err instanceof ApiError) throw err

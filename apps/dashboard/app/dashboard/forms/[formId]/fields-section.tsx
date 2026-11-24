@@ -282,7 +282,7 @@ export function FieldsSection({ form }: { form: FormDetail }) {
       {form.fields.length === 0 && (
         <p className="text-sm text-muted-foreground">{t("noFields")}</p>
       )}
-      {form.fields.map((field) => (
+      {form.fields.map((field, index) => (
         <div key={field.id} className="rounded-lg border">
           <div className="flex flex-wrap items-center gap-3 px-4 py-3">
             <span className="font-medium">{field.label}</span>
@@ -297,6 +297,18 @@ export function FieldsSection({ form }: { form: FormDetail }) {
               </span>
             )}
             <span className="ml-auto flex gap-2">
+              <MoveFieldButton
+                formId={form.id}
+                field={field}
+                direction="up"
+                disabled={index === 0}
+              />
+              <MoveFieldButton
+                formId={form.id}
+                field={field}
+                direction="down"
+                disabled={index === form.fields.length - 1}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -339,6 +351,37 @@ export function FieldsSection({ form }: { form: FormDetail }) {
         </div>
       )}
     </div>
+  )
+}
+
+function MoveFieldButton({
+  formId,
+  field,
+  direction,
+  disabled,
+}: {
+  formId: string
+  field: FormField
+  direction: "up" | "down"
+  disabled: boolean
+}) {
+  const { t } = useTranslation("forms")
+  const updateField = useUpdateField(formId, field.id)
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-label={direction === "up" ? t("moveFieldUp") : t("moveFieldDown")}
+      title={direction === "up" ? t("moveFieldUp") : t("moveFieldDown")}
+      disabled={disabled || updateField.isPending}
+      onClick={() =>
+        updateField.mutate({
+          order: field.order + (direction === "up" ? -1 : 1),
+        })
+      }
+    >
+      {direction === "up" ? "↑" : "↓"}
+    </Button>
   )
 }
 

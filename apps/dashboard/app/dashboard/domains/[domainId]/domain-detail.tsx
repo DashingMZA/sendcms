@@ -206,7 +206,7 @@ export function DomainDetail({
   async function onDelete() {
     if (!confirm(t("confirmDelete", { domain: domain.domain }))) return
     try {
-      await remove.mutateAsync()
+      await remove.mutateAsync(domain.domain)
       router.push("/dashboard/domains")
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : t("deleteFailed"))

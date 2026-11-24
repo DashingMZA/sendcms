@@ -647,12 +647,33 @@ export async function setAdminRole(
   // actor re-enters their password first. Checked last, after every
   // cheap guard, immediately before the write.
   await requireStepUp(actor)
-  const previousAdminRole = target.adminRole
-  const updated = await db.user.update({
-    where: { id: userId },
-    data: { adminRole: input.adminRole },
-    select: { id: true, adminRole: true },
-  })
+  // DB-051: the previous role is read under a row lock in the same
+  // transaction as the write, so a concurrent role change cannot make
+  // the audit's "from" value stale.
+  const { previousAdminRole, updated } = await db.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRaw<
+        {
+          adminRole: AdminRole | null
+        }[]
+      >`
+        SELECT "adminRole" FROM "User" WHERE "id" = ${userId} FOR UPDATE
+      `
+      if (locked.length === 0) {
+        throw new ApiError("User not found.", 404)
+      }
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: { adminRole: input.adminRole },
+        select: { id: true, adminRole: true },
+      })
+      return { previousAdminRole: locked[0].adminRole, updated }
+    },
+    // Same headroom as the flag toggles (platform-ops/src/flags.ts):
+    // the loser of a race on one user's row lock needs more than
+    // Prisma's 2s default start window.
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,

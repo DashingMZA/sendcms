@@ -10,9 +10,12 @@ const mockDb = vi.hoisted(() => ({
     findMany: vi.fn(),
     count: vi.fn(),
     update: vi.fn(),
+    // DB-005: erasure must never hard-delete the user row — the spy
+    // in the erasure test below proves executeErasure never calls this.
+    delete: vi.fn(),
   },
-  form: { findMany: vi.fn() },
-  domain: { findMany: vi.fn() },
+  form: { findMany: vi.fn(), deleteMany: vi.fn() },
+  domain: { findMany: vi.fn(), deleteMany: vi.fn() },
   submission: {
     groupBy: vi.fn(),
     count: vi.fn(),
@@ -21,11 +24,31 @@ const mockDb = vi.hoisted(() => ({
   },
   apiKey: { findMany: vi.fn(), updateMany: vi.fn() },
   session: { deleteMany: vi.fn() },
-  adminNote: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+  account: { deleteMany: vi.fn() },
+  userAiKey: { deleteMany: vi.fn() },
+  userAiSettings: { deleteMany: vi.fn() },
+  mcpUserSettings: { deleteMany: vi.fn() },
+  featureFlagOverride: { deleteMany: vi.fn() },
+  entitlementOverride: { deleteMany: vi.fn() },
+  // SRC-213: erasure deletes the outbox rows for the user and the
+  // auth verification rows for the old email.
+  emailJob: { deleteMany: vi.fn() },
+  verification: { deleteMany: vi.fn() },
+  adminNote: {
+    create: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    deleteMany: vi.fn(),
+  },
   auditLog: { findMany: vi.fn(), create: vi.fn() },
   // Phase 7: requestDeletion checks for an open request, then creates
   // the DeletionRequest row inside the same transaction.
-  deletionRequest: { findFirst: vi.fn(), create: vi.fn() },
+  deletionRequest: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
   // Phase 9: the gated actions (disable, role change) call
   // requireStepUp, which reads the latest unexpired verification.
   // These tests run as a verified admin.
@@ -34,6 +57,10 @@ const mockDb = vi.hoisted(() => ({
       expiresAt: new Date("2099-01-01T00:00:00.000Z"),
     })),
   },
+  // DB-051: setAdminRole reads the previous role under a row lock.
+  $queryRaw: vi.fn(async (): Promise<{ adminRole: string | null }[]> => [
+    { adminRole: null },
+  ]),
   // Array form (suspend/disable run update + session wipe together):
   // the array already holds the mock calls' promises, so await them all.
   // Callback form (like rotateApiKeyForUser): run it against mockDb.
@@ -54,6 +81,7 @@ vi.mock("@sendcms/security", async (importOriginal) => {
   return { ...actual, logAudit: mockLogAudit }
 })
 
+import { executeErasure } from "@sendcms/platform-ops"
 import type { AdminSession } from "@sendcms/auth"
 import {
   addAdminNote,
@@ -596,10 +624,22 @@ describe("setAdminRole", () => {
       makeTargetUser({ adminRole: "MANAGER" })
     )
     mockDb.user.update.mockResolvedValue({ id: userId, adminRole: null })
+    // DB-051: the locked before-read returns the current role.
+    mockDb.$queryRaw.mockResolvedValue([{ adminRole: "MANAGER" }])
     const removed = await setAdminRole(ownerActor(), userId, {
       adminRole: null,
     })
     expect(removed.adminRole).toBeNull()
+    expect(removed.previousAdminRole).toBe("MANAGER")
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          event: "admin-role-changed",
+          from: "MANAGER",
+          to: null,
+        }),
+      })
+    )
   })
 })
 
@@ -821,5 +861,83 @@ describe("requestDeletion", () => {
     await expect(
       requestDeletion(ownerActor(), userId, { reason: "  " })
     ).rejects.toThrowError("Reason is required")
+  })
+})
+
+// ─── Erasure (DB-005 / SRC-213) ─────────────────────────────────────────
+// Erasure is anonymization, never a hard user delete: the usage/AI/MCP/
+// subscription rows survive ONLY because the user row stays (they are
+// Cascade off User — owner decision 2026-11-24, DB-005). This test pins
+// the service side of that decision, plus the SRC-213 outbox cleanup.
+describe("executeErasure", () => {
+  it("never calls db.user.delete, and removes outbox + verification rows", async () => {
+    const oldEmail = "customer@example.com"
+    mockDb.deletionRequest.findUnique.mockResolvedValue({
+      id: "dr-1",
+      userId,
+      status: "APPROVED",
+      reason: "GDPR erasure",
+      user: {
+        id: userId,
+        name: "Customer",
+        email: oldEmail,
+        platformRole: "PLATFORM_USER",
+        status: "ACTIVE",
+        deletionCompletedAt: null,
+      },
+    })
+    mockDb.user.update.mockResolvedValue({ id: userId })
+    mockDb.form.findMany.mockResolvedValue([{ id: "form-1" }])
+    for (const del of [
+      mockDb.account.deleteMany,
+      mockDb.session.deleteMany,
+      mockDb.userAiKey.deleteMany,
+      mockDb.userAiSettings.deleteMany,
+      mockDb.mcpUserSettings.deleteMany,
+      mockDb.featureFlagOverride.deleteMany,
+      mockDb.entitlementOverride.deleteMany,
+      mockDb.adminNote.deleteMany,
+      mockDb.domain.deleteMany,
+      mockDb.form.deleteMany,
+      mockDb.emailJob.deleteMany,
+      mockDb.verification.deleteMany,
+    ]) {
+      del.mockResolvedValue({ count: 0 })
+    }
+    mockDb.apiKey.updateMany.mockResolvedValue({ count: 0 })
+    mockDb.deletionRequest.update.mockResolvedValue({
+      id: "dr-1",
+      status: "COMPLETED",
+    })
+
+    await executeErasure(ownerActor(), "dr-1", { reason: "GDPR erasure" })
+
+    // DB-005: the user row is anonymized, never hard-deleted.
+    expect(mockDb.user.delete).not.toHaveBeenCalled()
+    expect(mockDb.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userId },
+        data: expect.objectContaining({
+          email: expect.stringMatching(/^deleted-.*@deleted\.local$/),
+          name: "Deleted user",
+          status: "DISABLED",
+        }),
+      })
+    )
+    // SRC-213: outbox rows addressed to the user (or on their forms)
+    // and auth verification rows for the old email are deleted.
+    expect(mockDb.emailJob.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [{ to: oldEmail }, { formId: { in: ["form-1"] } }],
+      },
+    })
+    expect(mockDb.verification.deleteMany).toHaveBeenCalledWith({
+      where: { identifier: oldEmail },
+    })
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({ event: "account-erased" }),
+      })
+    )
   })
 })

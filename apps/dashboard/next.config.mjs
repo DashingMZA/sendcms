@@ -11,6 +11,9 @@ const workspaceRoot = path.resolve(__dirname, "../..")
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // X-Powered-By (Phase 16, SEC-302): suppress the `X-Powered-By:
+  // Next.js` header on every document response.
+  poweredByHeader: false,
   transpilePackages: [
     "@sendcms/shared",
     "@sendcms/ui",
@@ -39,7 +42,16 @@ const nextConfig = {
   // TypeScript. The matching `public/_headers` file covers static
   // assets on Cloudflare's asset layer.
   async headers() {
-    return securityHeaders()
+    return [
+      ...securityHeaders(),
+      {
+        // X-Robots-Tag (Phase 16, PRF-034): this is an authenticated
+        // app — defence in depth alongside robots.txt + metadata
+        // noindex, so a crawler that ignores one still sees this.
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ]
   },
   // Admin API proxy (monorepo split): the dashboard's client-side
   // fetches (apiFetch, relative /api/v1/* paths) assume the API lives

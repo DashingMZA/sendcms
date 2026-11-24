@@ -55,6 +55,30 @@ describe("suggestFields", () => {
     expect(call.prompt).toContain("name (TEXT")
   })
 
+  // AIM-022: the owner's description is delimited, never pasted bare
+  // into the prompt.
+  it("delimits the form description instead of pasting it bare", async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        fields: [
+          { name: "company", label: "Company", type: "TEXT", required: false },
+        ],
+      },
+    })
+    await suggestFields({
+      model: fakeModel,
+      prompt: "A contact form that also asks for the company",
+      existingFields: [],
+    })
+    const call = mockGenerateObject.mock.calls[0][0] as {
+      prompt: string
+    }
+    expect(call.prompt).toContain("--- BEGIN UNTRUSTED SUBMISSION DATA ---")
+    expect(call.prompt).toContain("--- END UNTRUSTED SUBMISSION DATA ---")
+    expect(call.prompt).toContain("asks for the company")
+    expect(call.prompt).not.toContain('Description: "A contact form')
+  })
+
   it("rejects a field name that is not lowercase snake_case", async () => {
     mockGenerateObject.mockResolvedValue({
       object: {

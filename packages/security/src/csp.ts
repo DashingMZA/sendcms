@@ -64,8 +64,13 @@
  *   origin (`next/script`, `${api}/forms/v1.js`). It is NOT allow-
  *   listed in `script-src` up front: if Next.js applies the nonce to
  *   that script tag, the nonce covers it. The dev verification checks
- *   exactly that — if the tag carries no nonce, the api origin is
- *   added to `script-src` for marketing before enforcing.
+ *   exactly that — if the tag carries no nonce, pass the api origin
+ *   as `scriptSrcOrigins` (Phase 16, SRC-318) so the builder can
+ *   express it. Dev-verified 2026-11-24: the rendered demo page
+ *   carries the nonce on the `v1.js` preload link, and Next's script
+ *   loader applies the context nonce to injected scripts, so the
+ *   option stays unset. A live-browser confirmation is still the
+ *   final check.
  * - The static HTML demo page (`public/demo/contact-us.html`) is NOT
  *   covered at all: it is a static file with inline `<style>` and
  *   `<script>`, so no nonce can be injected into it, and any CSP
@@ -99,13 +104,46 @@ export interface CspOptions {
   // policy has no `connect-src` (it falls back to `default-src
   // 'self'`).
   apiOrigin?: string
+  // CSP violation report endpoint (Phase 16, SRC-318): enforcing-mode
+  // violations are otherwise silently dropped by browsers, so the
+  // policy reports them to the api app's `/api/csp-report` route,
+  // which logs them. Pass the absolute URL of that route
+  // (`${apiOrigin}/api/csp-report`); the api app itself passes the
+  // same-origin path `/api/csp-report`.
+  reportUri?: string
+  // Extra origins allow-listed in `script-src` (Phase 16, SRC-318).
+  // The marketing demo page loads the SDK bundle (`${apiOrigin}/
+  // forms/v1.js`) via `next/script`: if Next.js applies the nonce to
+  // that tag the nonce covers it and nothing is passed here; if the
+  // tag carries no nonce, the api origin is passed so the script
+  // still loads under the enforcing policy.
+  scriptSrcOrigins?: string[]
+  // Allow inline `<style>` elements without a nonce (Phase 16,
+  // SEC-303): the api app's branded 404 page renders an authored
+  // `<style>` block that Next does not nonce, so the standard
+  // nonce-gated `style-src` would strip its styling. Only the api
+  // app passes this — every other app keeps the nonce. Note a nonce
+  // and `unsafe-inline` cannot combine in one directive (the nonce
+  // wins and the keyword is ignored), so this swaps the nonce out
+  // for `unsafe-inline` on `style-src` only; `script-src` stays
+  // nonce-gated and strict.
+  allowInlineStyles?: boolean
 }
 
 export function buildCsp(nonce: string, options: CspOptions = {}): string {
+  const scriptSrc = [
+    "script-src 'self'",
+    `'nonce-${nonce}'`,
+    "'strict-dynamic'",
+    ...(options.scriptSrcOrigins ?? []),
+  ].join(" ")
+  const styleSrc = options.allowInlineStyles
+    ? "style-src 'self' 'unsafe-inline'"
+    : `style-src 'self' 'nonce-${nonce}'`
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    scriptSrc,
+    styleSrc,
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self'",
@@ -117,6 +155,9 @@ export function buildCsp(nonce: string, options: CspOptions = {}): string {
   ]
   if (options.apiOrigin) {
     directives.push(`connect-src 'self' ${options.apiOrigin}`)
+  }
+  if (options.reportUri) {
+    directives.push(`report-uri ${options.reportUri}`)
   }
   return directives.join("; ")
 }

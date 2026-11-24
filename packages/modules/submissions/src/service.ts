@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import {
+  AuditAction,
+  AuditResource,
   Prisma,
   SubmissionEventType,
   SubmissionStatus,
@@ -29,12 +31,13 @@ import {
 } from "@sendcms/ai-settings"
 import { normalizeDomain } from "@sendcms/domains"
 import {
-  checkLimitSafe,
+  checkLimitStrict,
   getEffectiveEntitlementsSafe,
-  recordUsage,
+  recordUsageInTransaction,
   startOfUtcMonth,
 } from "@sendcms/plans"
 import { isFeatureEnabled } from "@sendcms/platform-ops"
+import { logAudit } from "@sendcms/security"
 import {
   enqueueDigest,
   enqueueSubmissionNotifications,
@@ -296,7 +299,7 @@ export async function submitForm(
   meta: SubmitMeta
 ): Promise<SubmitResult> {
   const form = await db.form.findFirst({
-    where: { id: body.formId, ownerId: body.userId },
+    where: { id: body.formId, ownerId: body.userId, deletedAt: null },
     include: {
       fields: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
       domainLinks: { include: { domain: true } },
@@ -412,12 +415,13 @@ export async function submitForm(
     }
   }
   // Plan quota (Phase 4): the form owner's monthly submission quota
-  // from their effective plan. Fail-open — any error in the check must
-  // NOT fail the submission (the core path stays independent of the
-  // plans module). Reject ONLY when the submission quota itself is
-  // exhausted — never because an unrelated AI/billing limit was hit.
-  const quota = await checkLimitSafe(form.ownerId, "SUBMISSIONS")
-  if (quota && !quota.allowed) {
+  // from their effective plan. Fail-CLOSED (Phase 16, SRC-216) — a
+  // plans-module error refuses the submission with 503 instead of
+  // silently lifting the quota. Reject ONLY when the submission quota
+  // itself is exhausted — never because an unrelated AI/billing limit
+  // was hit.
+  const quota = await checkLimitStrict(form.ownerId, "SUBMISSIONS")
+  if (!quota.allowed) {
     throw fail("This form's monthly submission quota is exhausted.", 402)
   }
   if (meta.ip) {
@@ -450,33 +454,139 @@ export async function submitForm(
   // Durable save BEFORE the success response: submission + CREATED event
   // in one transaction. A concurrent duplicate idempotency key surfaces
   // as P2002 — re-read and return the original instead of erroring.
+  //
+  // Atomicity (Phase 16, SRC-204/DB-017): the checks above are fast
+  // paths only — the ENFORCING checks run inside this transaction,
+  // under transaction-scoped advisory locks, so two concurrent
+  // identical submissions cannot both insert. Lock order is fixed
+  // (owner → form → IP) so concurrent submits never deadlock each
+  // other; the locks are released when the transaction ends. The
+  // per-owner lock also serializes the monthly-quota re-check across
+  // the owner's forms, and the per-IP lock serializes the IP limits
+  // across forms.
   try {
-    const created = await db.$transaction(async (tx) => {
-      const submission = await tx.submission.create({
-        data: {
-          formId: form.id,
-          data,
-          status,
-          originDomain: getOriginHost(meta.origin) ?? "unknown",
-          ipAddress: meta.ip,
-          userAgent: meta.userAgent,
-          pageUrl: body.pageUrl,
-          idempotencyKey: body.idempotencyKey,
-          contentHash,
-        },
-      })
-      await tx.submissionEvent.create({
-        data: {
-          submissionId: submission.id,
-          type: SubmissionEventType.CREATED,
-          detail:
-            spamReasons.length > 0
-              ? { spamReasons }
-              : { origin: getOriginHost(meta.origin) },
-        },
-      })
-      return submission
-    })
+    const outcome:
+      | { kind: "duplicate"; duplicateOf: string }
+      | { kind: "created"; submission: { id: string } } = await db.$transaction(
+      async (tx) => {
+        // pg_advisory_xact_lock returns void, which Prisma cannot
+        // deserialize through $queryRaw ("Failed to deserialize column
+        // of type 'void'") — $executeRaw takes the lock without
+        // reading any result column.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:submit:owner:" + form.ownerId}))`
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:submit:form:" + form.id}))`
+        if (meta.ip) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:submit:ip:" + meta.ip}))`
+        }
+        // Dedupe, re-checked under the lock: a concurrent identical
+        // submission that passed the fast path now sees this row.
+        const lockedRecentSame = await tx.submission.findFirst({
+          where: {
+            formId: form.id,
+            contentHash,
+            createdAt: { gte: dedupeSince },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+        if (lockedRecentSame) {
+          return { kind: "duplicate", duplicateOf: lockedRecentSame.id }
+        }
+        if (form.dailyLimit != null) {
+          const dayStart = new Date()
+          dayStart.setUTCHours(0, 0, 0, 0)
+          const today = await tx.submission.count({
+            where: { formId: form.id, createdAt: { gte: dayStart } },
+          })
+          if (today >= form.dailyLimit) {
+            throw fail("This form has reached its daily submission limit.", 429)
+          }
+        }
+        const lockedQuota = await checkLimitStrict(form.ownerId, "SUBMISSIONS")
+        if (!lockedQuota.allowed) {
+          throw fail("This form's monthly submission quota is exhausted.", 402)
+        }
+        if (meta.ip) {
+          const minuteAgo = new Date(Date.now() - 60_000)
+          const recent = await tx.submission.count({
+            where: { ipAddress: meta.ip, createdAt: { gte: minuteAgo } },
+          })
+          if (recent >= IP_MINUTE_LIMIT) {
+            throw fail(
+              "Too many submissions. Please wait a minute and try again.",
+              429
+            )
+          }
+          const hourAgo = new Date(Date.now() - 3_600_000)
+          const hourly = await tx.submission.count({
+            where: { ipAddress: meta.ip, createdAt: { gte: hourAgo } },
+          })
+          if (hourly >= IP_HOUR_LIMIT) {
+            throw fail(
+              "Too many submissions from this address. Try again later.",
+              429
+            )
+          }
+        }
+        const submission = await tx.submission.create({
+          data: {
+            formId: form.id,
+            data,
+            status,
+            originDomain: getOriginHost(meta.origin) ?? "unknown",
+            ipAddress: meta.ip,
+            userAgent: meta.userAgent,
+            pageUrl: body.pageUrl,
+            idempotencyKey: body.idempotencyKey,
+            contentHash,
+          },
+        })
+        await tx.submissionEvent.create({
+          data: {
+            submissionId: submission.id,
+            type: SubmissionEventType.CREATED,
+            detail:
+              spamReasons.length > 0
+                ? { spamReasons }
+                : { origin: getOriginHost(meta.origin) },
+          },
+        })
+        // DB-050: the ledger row is written inside this transaction, so
+        // a crash cannot lose the attribution row (idempotencyKey is the
+        // submission id — a retry can never double-count).
+        await recordUsageInTransaction(tx, {
+          userId: form.ownerId,
+          meter: "SUBMISSIONS",
+          quantity: 1,
+          unit: "submission",
+          period: startOfUtcMonth().toISOString(),
+          sourceEvent: "submission:created",
+          idempotencyKey: submission.id,
+          resourceId: submission.id,
+        })
+        return { kind: "created", submission }
+      },
+      // Prisma's interactive-transaction defaults (maxWait 2s, timeout
+      // 5s) are too tight here on purpose: concurrent submits serialize
+      // on the advisory locks above, so the Nth waiter legitimately
+      // spends seconds queued behind the earlier transactions' indexed
+      // queries — with the defaults it dies with P2028 instead of
+      // getting its turn (proven live: a 12-way burst against the
+      // remote dev DB hit "Unable to start a transaction in the given
+      // time" at the 5s default). The transaction itself is a bounded
+      // handful of indexed reads + two inserts, so the headroom covers
+      // burst queuing, not long work.
+      { maxWait: 60000, timeout: 120000 }
+    )
+    if (outcome.kind === "duplicate") {
+      return {
+        kind: "duplicate",
+        submission: { id: outcome.duplicateOf },
+        originAllowed: true,
+        message,
+        redirectUrl,
+      }
+    }
+    const created = outcome.submission
     // Notifications are queued AFTER the durable save — a dead mail
     // Notifications are queued AFTER the durable save — a dead mail
     // provider must never lose or block a submission. This is AWAITED
@@ -495,27 +605,9 @@ export async function submitForm(
         })
       }
     }
-    // Usage ledger (Phase 4, reporting): one row per accepted
-    // submission, idempotencyKey = the submission id so a retry can
-    // never double-count. Best-effort — a ledger failure must never
-    // fail the submission.
-    try {
-      await recordUsage({
-        userId: form.ownerId,
-        meter: "SUBMISSIONS",
-        quantity: 1,
-        unit: "submission",
-        period: startOfUtcMonth().toISOString(),
-        sourceEvent: "submission:created",
-        idempotencyKey: created.id,
-        resourceId: created.id,
-      })
-    } catch (err) {
-      logger.error("failed to record submission usage", {
-        submissionId: created.id,
-        error: err,
-      })
-    }
+    // Usage ledger (Phase 4, reporting): the row is written inside
+    // the submission transaction above (DB-050), so it commits with
+    // the submission — no best-effort write is needed here.
     return {
       kind: "created",
       submission: { id: created.id },
@@ -579,6 +671,53 @@ export function startOfUtcDay(at: Date = new Date()): Date {
   return day
 }
 
+// AIM-021: claim one unit of an owner's daily AI budget BEFORE the
+// model call, atomically. The cap is per OWNER (aiRequestsPerDay),
+// but the counter rows stay per form (AiDailyUsage is keyed
+// form + day — no schema change), so the claim sums today's calls
+// across ALL of the owner's forms and increments this form's row.
+// The whole check + increment runs inside one transaction serialized
+// by a Postgres advisory lock on (owner, day): without it, two
+// concurrent polls (worker + cron) both read usage < cap and both
+// spend calls. A claimed unit is consumed even when the model call
+// then fails — a down provider cannot retry the same rows
+// unboundedly on every poll. Returns false when the owner's budget
+// is exhausted (or the cap is 0).
+async function claimOwnerAiCall(
+  ownerId: string | undefined,
+  formId: string,
+  cap: number,
+  today: Date
+): Promise<boolean> {
+  if (cap <= 0) return false
+  const lockKey = `ai-daily:${ownerId ?? `form:${formId}`}:${today.toISOString().slice(0, 10)}`
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(727001, hashtext(${lockKey}))`
+    )
+    const formIds = ownerId
+      ? (
+          await tx.form.findMany({
+            where: { ownerId },
+            select: { id: true },
+          })
+        ).map((f) => f.id)
+      : [formId]
+    const rows = await tx.aiDailyUsage.findMany({
+      where: { formId: { in: formIds }, date: today },
+      select: { calls: true },
+    })
+    const used = rows.reduce((sum, r) => sum + r.calls, 0)
+    if (used >= cap) return false
+    await tx.aiDailyUsage.upsert({
+      where: { formId_date: { formId, date: today } },
+      create: { formId, date: today, calls: 1 },
+      update: { calls: { increment: 1 } },
+    })
+    return true
+  })
+}
+
 export type RescoreResult = {
   checked: number
   markedSpam: number
@@ -619,7 +758,7 @@ export async function rescoreNewSubmissions({
     where: {
       status: SubmissionStatus.NEW,
       aiScoredAt: null,
-      form: { aiEnabled: true },
+      form: { aiEnabled: true, deletedAt: null },
     },
     include: { form: { select: { id: true, name: true, ownerId: true } } },
     orderBy: { createdAt: "asc" },
@@ -628,11 +767,13 @@ export async function rescoreNewSubmissions({
 
   // The daily cap is the form OWNER's aiRequestsPerDay from their
   // effective plan (Phase 4) — previously it was the global env default
-  // for every form. The usage counter stays per form (AiDailyUsage is
-  // keyed by form + day); the cap VALUE is what is now per-owner.
-  // A suspended owner has null entitlements → cap 0 (skipped). A failed
-  // lookup (null) → the env default, so a plans-module error never
-  // stops the rescore loop.
+  // for every form. The usage counter is keyed per form (AiDailyUsage
+  // is form + day), but the CAP is enforced per owner: the claim sums
+  // today's calls across all of the owner's forms (AIM-021), so an
+  // owner with N AI-enabled forms gets the plan allowance once, not
+  // N times. A suspended owner has null entitlements → cap 0
+  // (skipped). A failed lookup (null) → the env default, so a
+  // plans-module error never stops the rescore loop.
   const ownerCap = new Map<string, number>()
   async function getOwnerCap(ownerId: string | undefined): Promise<number> {
     if (!ownerId) return getAiDailyCallCap(env)
@@ -669,25 +810,54 @@ export async function rescoreNewSubmissions({
   let checked = 0
   let markedSpam = 0
   let skipped = 0
-  const cappedForms = new Set<string>()
+  const cappedOwners = new Set<string>()
+  // AIM-029: one audit row per form the run touched (counts, outcome)
+  // so a run that scores everything genuine still leaves a trace.
+  const perForm = new Map<
+    string,
+    { ownerId: string; checked: number; markedSpam: number; skipped: number }
+  >()
+  function tally(
+    formId: string,
+    ownerId: string,
+    field: "checked" | "markedSpam" | "skipped"
+  ): void {
+    const row = perForm.get(formId) ?? {
+      ownerId,
+      checked: 0,
+      markedSpam: 0,
+      skipped: 0,
+    }
+    row[field]++
+    perForm.set(formId, row)
+  }
   for (const submission of candidates) {
     const formId = submission.formId
-    if (cappedForms.has(formId)) {
+    const ownerId = submission.form.ownerId
+    const ownerKey = ownerId ?? `form:${formId}`
+    if (cappedOwners.has(ownerKey)) {
       skipped++
+      tally(formId, ownerId, "skipped")
       continue
     }
-    const cap = await getOwnerCap(submission.form.ownerId)
-    const usage = await db.aiDailyUsage.findUnique({
-      where: { formId_date: { formId, date: today } },
-    })
-    if ((usage?.calls ?? 0) >= cap) {
-      cappedForms.add(formId)
-      skipped++
-      continue
-    }
-    const resolved = await getOwnerModel(submission.form.ownerId)
+    const cap = await getOwnerCap(ownerId)
+    const resolved = await getOwnerModel(ownerId)
     if (!resolved) {
       skipped++
+      tally(formId, ownerId, "skipped")
+      continue
+    }
+    // AIM-021: claim the owner's budget unit BEFORE the model call.
+    // The claim sums today's calls across all of the owner's forms
+    // and is atomic — two concurrent polls cannot both spend the
+    // last unit. A failed model call still consumes its unit (the
+    // catch below no longer increments), so a down provider cannot
+    // retry the same rows unboundedly on every poll.
+    const claimed = await claimOwnerAiCall(ownerId, formId, cap, today)
+    if (!claimed) {
+      cappedOwners.add(ownerKey)
+      skipped++
+      tally(formId, ownerId, "skipped")
       continue
     }
     let verdict
@@ -704,6 +874,7 @@ export async function rescoreNewSubmissions({
     } catch (err) {
       // A failed model call is retried on a later poll (the row stays
       // unscored) — it must not fail the batch or lose the submission.
+      // The claimed budget unit stays consumed (AIM-021).
       logger.error("ai rescore failed", { error: err, formId })
       await recordAiUsage({
         userId: submission.form.ownerId,
@@ -715,13 +886,11 @@ export async function rescoreNewSubmissions({
         resourceId: submission.id,
       })
       skipped++
+      tally(formId, submission.form.ownerId, "skipped")
       continue
     }
-    await db.aiDailyUsage.upsert({
-      where: { formId_date: { formId, date: today } },
-      create: { formId, date: today, calls: 1 },
-      update: { calls: { increment: 1 } },
-    })
+    // AIM-021: the budget unit was already claimed before the model
+    // call (claimOwnerAiCall above) — no post-call increment here.
     await recordAiUsage({
       userId: submission.form.ownerId,
       provider: resolved.provider,
@@ -759,7 +928,25 @@ export async function rescoreNewSubmissions({
       }
     })
     checked++
-    if (isSpam) markedSpam++
+    tally(formId, submission.form.ownerId, "checked")
+    if (isSpam) {
+      markedSpam++
+      tally(formId, submission.form.ownerId, "markedSpam")
+    }
+  }
+  for (const [formId, counts] of perForm) {
+    await logAudit({
+      userId: counts.ownerId,
+      action: AuditAction.CREATE,
+      resourceType: AuditResource.FORM,
+      resourceId: formId,
+      detail: {
+        event: "ai-rescore-run",
+        checked: counts.checked,
+        markedSpam: counts.markedSpam,
+        skipped: counts.skipped,
+      },
+    })
   }
   return { checked, markedSpam, skipped }
 }
@@ -815,6 +1002,7 @@ export async function sendDueDigests({
   const forms = await db.form.findMany({
     where: {
       aiEnabled: true,
+      deletedAt: null,
       OR: [{ lastDigestAt: null }, { lastDigestAt: { lte: dueAt } }],
     },
     include: { owner: { select: { email: true } } },
@@ -936,6 +1124,19 @@ export async function sendDueDigests({
     await db.form.update({
       where: { id: form.id },
       data: { lastDigestAt: now },
+    })
+    // AIM-029: one audit row per digest sent (form, submission count)
+    // so a sent digest is visible in the audit log, not only in the
+    // outbox EmailJob row.
+    await logAudit({
+      userId: form.ownerId,
+      action: AuditAction.CREATE,
+      resourceType: AuditResource.FORM,
+      resourceId: form.id,
+      detail: {
+        event: "ai-digest-sent",
+        submissionCount: submissions.length,
+      },
     })
     sent++
   }

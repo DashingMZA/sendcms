@@ -4,6 +4,7 @@ import { z } from "zod"
 import type { LanguageModel } from "ai"
 
 import { toAiCallUsage, type AiCallUsage } from "./provider"
+import { wrapUntrustedData } from "./untrusted"
 
 // AI inbox digest (Phase 12, Step 3). The model call only — the
 // orchestration (which forms are due, the window, the enqueue) lives
@@ -82,8 +83,12 @@ export async function generateDigest({
       "Summarize what the new submissions are about in two or three sentences, then list up to 5 short highlights (a notable sender, a recurring theme, an urgent request).",
       "Write for the site owner, in plain language. Do not invent submissions that are not listed.",
       `Form: "${formName}"`,
-      `New submissions (${submissions.length}):`,
-      ...lines,
+      // AIM-022: the snippets are untrusted visitor content —
+      // delimited as data, never pasted bare into the prompt.
+      wrapUntrustedData(
+        `New submissions (${submissions.length})`,
+        lines.join("\n")
+      ),
     ].join("\n"),
   })
   onUsage?.(toAiCallUsage(usage))

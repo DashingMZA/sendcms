@@ -3,6 +3,8 @@ import type { Metadata } from "next"
 export const metadata: Metadata = {
   title: "Page not found — SendCMS API",
   description: "The page you're looking for doesn't exist or was moved.",
+  // Error page — never indexed (Phase 16, PRF-034).
+  robots: { index: false, follow: false },
 }
 
 // Branded 404 for the api app. The api app serves route handlers only —

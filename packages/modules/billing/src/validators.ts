@@ -30,6 +30,11 @@ export const checkoutSessionSchema = z.object({
   // or customer-selected code. Optional — without it the country filter
   // is skipped.
   countryCode: isoCountryCode.optional(),
+  // BIL-014: client-generated checkout-attempt id (UUID). A retried
+  // double-submit reuses the same id, so the provider calls replay
+  // the same objects instead of creating duplicates. Omitted → the
+  // service generates one and returns it.
+  attemptId: z.string().uuid("attemptId must be a UUID").optional(),
 })
 
 export type SetProviderConfigInput = z.infer<typeof setProviderConfigSchema>

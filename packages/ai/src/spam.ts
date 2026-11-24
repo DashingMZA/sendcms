@@ -4,6 +4,7 @@ import { z } from "zod"
 import type { LanguageModel } from "ai"
 
 import { toAiCallUsage, type AiCallUsage } from "./provider"
+import { neutraliseUntrustedJson, wrapUntrustedData } from "./untrusted"
 
 // AI spam re-scoring (Phase 12, Step 2). The model call only — the
 // orchestration (which submissions to score, the daily cap, the
@@ -68,7 +69,14 @@ export async function rescoreSpam({
       "Spam means: unsolicited advertising, SEO or link-building schemes, phishing, bulk or irrelevant content, or gibberish meant to test the form.",
       "A genuine message is relevant to the site, written for the site owner, and asks or says something a real visitor would.",
       `Form: "${formName}"`,
-      `Submission: ${JSON.stringify(data)}`,
+      // AIM-022: the submission is untrusted visitor input — it is
+      // delimited as data, and instruction-like lines are stripped
+      // before scoring, so a payload cannot steer the classifier
+      // that keeps spam out of the inbox.
+      wrapUntrustedData(
+        "Submission",
+        JSON.stringify(neutraliseUntrustedJson(data))
+      ),
       "Reply with a spam score and a one-sentence reason.",
     ].join("\n"),
   })

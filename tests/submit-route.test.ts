@@ -6,8 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockSubmitForm = vi.hoisted(() => vi.fn())
 const mockProcessOutbox = vi.hoisted(() => vi.fn(async () => ({})))
 const mockAfter = vi.hoisted(() => vi.fn())
+const mockIsVerifiedOrigin = vi.hoisted(() => vi.fn(async () => true))
 vi.mock("@sendcms/submissions", () => ({
   submitForm: mockSubmitForm,
+}))
+vi.mock("@sendcms/domains", () => ({
+  isVerifiedOrigin: mockIsVerifiedOrigin,
 }))
 vi.mock("@sendcms/notifications", () => ({
   processEmailOutbox: mockProcessOutbox,
@@ -157,13 +161,35 @@ describe("POST /api/public/v1/submit", () => {
     expect(mockSubmitForm).not.toHaveBeenCalled()
   })
 
-  it("answers OPTIONS preflight with 204 and CORS headers", async () => {
+  it("answers OPTIONS preflight with 204 and CORS headers for a verified origin", async () => {
     const res = await OPTIONS(
       new NextRequest(URL, { method: "OPTIONS", headers: { Origin: ORIGIN } })
     )
     expect(res.status).toBe(204)
     expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
     expect(res.headers.get("access-control-allow-methods")).toContain("POST")
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull()
+  })
+
+  it("answers OPTIONS with a bare 204 and no CORS headers for an unverified origin (SDK-021 / SEC-207)", async () => {
+    mockIsVerifiedOrigin.mockResolvedValueOnce(false)
+    const res = await OPTIONS(
+      new NextRequest(URL, {
+        method: "OPTIONS",
+        headers: { Origin: "https://evil.example" },
+      })
+    )
+    expect(res.status).toBe(204)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+    expect(res.headers.get("access-control-allow-methods")).toBeNull()
+  })
+
+  it("answers OPTIONS with a bare 204 and no CORS headers when no origin is sent", async () => {
+    mockIsVerifiedOrigin.mockClear()
+    const res = await OPTIONS(new NextRequest(URL, { method: "OPTIONS" }))
+    expect(res.status).toBe(204)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+    expect(mockIsVerifiedOrigin).not.toHaveBeenCalled()
   })
 
   it("redirects a form post to the referer with cms_submitted=1", async () => {

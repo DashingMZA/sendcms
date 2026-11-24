@@ -8,6 +8,45 @@ import {
   sanitizeString,
   validateSubmissionFields,
 } from "@sendcms/submissions"
+import { SubmitBodySchema } from "@sendcms/submissions/validators"
+
+const VALID_SUBMIT_BODY = {
+  userId: "user-1",
+  formId: "form-1",
+  fields: { name: "Ali" },
+}
+
+describe("SubmitBodySchema pageUrl (SEC-206)", () => {
+  it("accepts http(s) and relative page URLs", () => {
+    for (const pageUrl of [
+      "https://example.com/contact",
+      "http://example.com/contact",
+      "/contact",
+    ]) {
+      expect(
+        SubmitBodySchema.safeParse({ ...VALID_SUBMIT_BODY, pageUrl }).success
+      ).toBe(true)
+    }
+  })
+
+  it("rejects javascript:, data:, ftp: and bare-host page URLs", () => {
+    for (const pageUrl of [
+      "javascript:alert(1)",
+      "JaVaScRiPt:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "ftp://example.com/contact",
+      "example.com/contact",
+    ]) {
+      expect(
+        SubmitBodySchema.safeParse({ ...VALID_SUBMIT_BODY, pageUrl }).success
+      ).toBe(false)
+    }
+  })
+
+  it("accepts a missing pageUrl", () => {
+    expect(SubmitBodySchema.safeParse(VALID_SUBMIT_BODY).success).toBe(true)
+  })
+})
 
 import type { FormField } from "@sendcms/database"
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { AdminSession } from "@sendcms/auth"
 import {
   AuditAction,
@@ -15,6 +16,7 @@ import {
   activateSubscriptionFromCheckout,
   cancelSubscriptionFromProvider,
   extendSubscriptionPeriod,
+  markSubscriptionPastDue,
 } from "@sendcms/plans"
 import {
   BILLING_PROVIDERS,
@@ -174,12 +176,6 @@ export async function setProviderConfig(
   if (!reason) throw new ApiError("A reason is required", 422)
   const definition = getBillingProviderDefinition(provider)
 
-  const existing = await db.billingProviderConfig.findUnique({
-    where: { provider },
-    include: { countries: { select: { countryCode: true } } },
-  })
-  const oldRow = existing ? toConfigRow(existing) : null
-
   if (input.isEnabled === true && !isProviderConfigured(provider)) {
     const missing = missingEnvVars(provider)
     throw new ApiError(
@@ -200,7 +196,22 @@ export async function setProviderConfig(
     countries = [...new Set(input.countries)]
   }
 
-  const updated = await db.$transaction(async (tx) => {
+  const { oldRow, updated } = await db.$transaction(async (tx) => {
+    // DB-051: the config row is locked before it is read, so the
+    // audit's old value is the value this write actually replaces —
+    // a concurrent change between the read and the write cannot make
+    // it stale.
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "BillingProviderConfig" WHERE "provider" = ${provider} FOR UPDATE
+    `
+    const existing =
+      locked.length > 0
+        ? await tx.billingProviderConfig.findUnique({
+            where: { provider },
+            include: { countries: { select: { countryCode: true } } },
+          })
+        : null
+    const oldRow = existing ? toConfigRow(existing) : null
     const config = await tx.billingProviderConfig.upsert({
       where: { provider },
       update: {
@@ -223,10 +234,11 @@ export async function setProviderConfig(
         })
       }
     }
-    return tx.billingProviderConfig.findUniqueOrThrow({
+    const updated = await tx.billingProviderConfig.findUniqueOrThrow({
       where: { provider },
       include: { countries: { select: { countryCode: true } } },
     })
+    return { oldRow, updated }
   })
 
   const newRow = toConfigRow(updated)
@@ -326,7 +338,13 @@ async function requireProviderAvailable(
 export async function createCheckoutSession(
   actor: AdminSession,
   input: CheckoutSessionInput
-): Promise<{ checkoutUrl: string; provider: BillingProvider }> {
+): Promise<{
+  checkoutUrl: string
+  provider: BillingProvider
+  // BIL-014: the attempt id the provider calls were keyed on — the
+  // client reuses it when retrying a double-submit.
+  attemptId: string
+}> {
   const version = await db.planVersion.findUnique({
     where: { id: input.planVersionId },
     include: { plan: { select: { name: true } } },
@@ -357,6 +375,7 @@ export async function createCheckoutSession(
     billingInterval: version.billingInterval,
     trialDays: version.trialDays,
   }
+  const attemptId = input.attemptId ?? randomUUID()
   const result = await createCheckoutForProvider(input.provider, {
     version: checkoutVersion,
     customer: {
@@ -366,8 +385,15 @@ export async function createCheckoutSession(
     },
     successUrl,
     cancelUrl,
+    // BIL-014: one id per checkout attempt — the client's on a retry,
+    // else a fresh UUID — so the provider calls are idempotent.
+    idempotencyKey: attemptId,
   })
-  return { checkoutUrl: result.checkoutUrl, provider: input.provider }
+  return {
+    checkoutUrl: result.checkoutUrl,
+    provider: input.provider,
+    attemptId,
+  }
 }
 
 // ─── Webhooks ─────────────────────────────────────────────────────────
@@ -425,12 +451,22 @@ export async function handleWebhook(
         break
       case "payment-succeeded":
         await extendSubscriptionPeriod(
+          provider,
           verified.event.providerSubscriptionId,
           verified.event.periodEnd
         )
         break
+      case "payment-failed":
+        // BIL-080: a failed renewal flips the subscription to PAST_DUE
+        // with a grace window instead of being ignored.
+        await markSubscriptionPastDue(
+          provider,
+          verified.event.providerSubscriptionId
+        )
+        break
       case "subscription-canceled":
         await cancelSubscriptionFromProvider(
+          provider,
           verified.event.providerSubscriptionId,
           `Canceled by ${getBillingProviderDefinition(provider).label}`
         )

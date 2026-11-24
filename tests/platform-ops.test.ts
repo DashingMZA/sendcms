@@ -187,6 +187,7 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
     mcpUsageRecords: [] as Row[],
     aiDailyUsage: [] as Row[],
     emailJobs: [] as Row[],
+    verifications: [] as Row[],
     aiProviderConfigs: [] as Row[],
     mcpSettings: null as Row | null,
   }
@@ -415,6 +416,27 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
           .length
       }),
       create: vi.fn(async (args: Row) => {
+        const data = args.data as Row
+        // DB-004: mirror the real partial unique index on
+        // (correlationId, action, resourceType, resourceId) — a
+        // second row with the same non-null tuple throws P2002, which
+        // logAudit (SRC-331) swallows as "already logged".
+        if (data.correlationId != null) {
+          const clash = store.auditLogs.find(
+            (l) =>
+              l.correlationId === data.correlationId &&
+              l.action === data.action &&
+              l.resourceType === data.resourceType &&
+              l.resourceId === data.resourceId
+          )
+          if (clash) {
+            const err = new Error(
+              "Unique constraint failed on the fields: (`correlationId`,`action`,`resourceType`,`resourceId`)"
+            ) as Error & { code: string }
+            err.code = "P2002"
+            throw err
+          }
+        }
         const row = {
           id: nextId(),
           createdAt: new Date(),
@@ -651,6 +673,26 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         )
         return pageOf(rows, args)[0] ?? null
       }),
+      // SRC-213: erasure deletes the outbox rows addressed to the
+      // user or belonging to their forms.
+      deleteMany: vi.fn(async (args: Row = {}) => {
+        const before = store.emailJobs.length
+        store.emailJobs = store.emailJobs.filter(
+          (j) => !matchesWhere(j, args.where as Row)
+        )
+        return { count: before - store.emailJobs.length }
+      }),
+    },
+    verification: {
+      // SRC-213: erasure deletes the auth verification rows for the
+      // old email (their tokens would otherwise stay live).
+      deleteMany: vi.fn(async (args: Row = {}) => {
+        const before = store.verifications.length
+        store.verifications = store.verifications.filter(
+          (v) => !matchesWhere(v, args.where as Row)
+        )
+        return { count: before - store.verifications.length }
+      }),
     },
     aiDailyUsage: {
       aggregate: vi.fn(async (args: Row = {}) => {
@@ -783,11 +825,12 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
       if (Array.isArray(arg)) return Promise.all(arg)
       return arg
     }),
-    $queryRaw: vi.fn(async (arg: unknown) => {
+    $queryRaw: vi.fn(async (...args: unknown[]) => {
       // Called two ways: as a template tag (pingDatabase:
       // $queryRaw`SELECT 1` — first arg is a TemplateStringsArray)
       // and with a Prisma.sql object (getSystemSummary: the Sql
       // instance carries the query in its `.sql` string).
+      const arg = args[0]
       let sql = ""
       if (typeof arg === "string") sql = arg
       else if (Array.isArray(arg)) sql = arg.join("")
@@ -800,6 +843,19 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
       else sql = String(arg)
       if (sql.includes("version()"))
         return [{ version: "PostgreSQL 16.1 on x86_64-pc-linux-gnu" }]
+      // DB-051: the locked before-reads (SELECT ... FOR UPDATE) serve
+      // the row from the store — the template values arrive as the
+      // extra args (args[1] is the key/id).
+      if (sql.includes("FOR UPDATE")) {
+        if (sql.includes('"FeatureFlag"')) {
+          const row = store.flags.get(String(args[1]))
+          return row ? [{ ...row }] : []
+        }
+        if (sql.includes('"User"')) {
+          const row = store.users.get(String(args[1]))
+          return row ? [{ ...row }] : []
+        }
+      }
       return [{ "?column?": 1 }]
     }),
   }
@@ -945,6 +1001,7 @@ beforeEach(() => {
     store.mcpUsageRecords,
     store.aiDailyUsage,
     store.emailJobs,
+    store.verifications,
     store.aiProviderConfigs,
   ])
     arr.length = 0
@@ -1204,7 +1261,40 @@ beforeEach(() => {
   store.emailJobs.push(
     { id: "job-1", status: "PENDING", createdAt: hoursAgo(3) },
     { id: "job-2", status: "PENDING", createdAt: hoursAgo(0.5) },
-    { id: "job-3", status: "SENT", createdAt: daysAgo(1) }
+    { id: "job-3", status: "SENT", createdAt: daysAgo(1) },
+    // SRC-213: a sent job addressed to user-2, and a sent job on
+    // user-2's form addressed to someone else — both must go on
+    // erasure; job-1..3 (no owner) must stay. (SENT, not PENDING:
+    // the health test counts exactly 2 pending outbox jobs.)
+    {
+      id: "job-u2",
+      to: "customer2@example.com",
+      formId: "form-2",
+      status: "SENT",
+      createdAt: hoursAgo(1),
+    },
+    {
+      id: "job-u2b",
+      to: "someone-else@example.com",
+      formId: "form-2",
+      status: "SENT",
+      createdAt: hoursAgo(2),
+    }
+  )
+  store.verifications.push(
+    // SRC-213: user-2's verification row must go; user-1's stays.
+    {
+      id: "ver-u2",
+      identifier: "customer2@example.com",
+      value: "token-u2",
+      expiresAt: new Date(),
+    },
+    {
+      id: "ver-u1",
+      identifier: "customer1@example.com",
+      value: "token-u1",
+      expiresAt: new Date(),
+    }
   )
   store.aiProviderConfigs.push(
     { id: "apc-1", isEnabled: true },
@@ -1683,6 +1773,24 @@ describe("deletion workflow", () => {
     )
     expect(store.forms.has("form-2")).toBe(false)
     expect(store.domains.has("domain-2")).toBe(false)
+    // SRC-213: no EmailJob still holds user-2's email or belongs to
+    // their form, and no Verification row remains for the old email.
+    // Other users' rows are untouched.
+    expect(
+      store.emailJobs.filter((j) => j.to === "customer2@example.com")
+    ).toHaveLength(0)
+    expect(store.emailJobs.filter((j) => j.formId === "form-2")).toHaveLength(0)
+    expect(
+      store.verifications.filter(
+        (v) => v.identifier === "customer2@example.com"
+      )
+    ).toHaveLength(0)
+    expect(
+      store.verifications.filter(
+        (v) => v.identifier === "customer1@example.com"
+      )
+    ).toHaveLength(1)
+    expect(store.emailJobs.filter((j) => j.id === "job-1")).toHaveLength(1)
     // Billing/audit history survives erasure.
     expect(store.auditLogs.length).toBeGreaterThan(beforeAudit)
     expect(store.subscriptions.length).toBe(beforeSubs)
@@ -1698,6 +1806,8 @@ describe("deletion workflow", () => {
     expect((audit?.detail as Record<string, unknown>)?.counts).toMatchObject({
       formsDeleted: 1,
       domainsDeleted: 1,
+      emailJobsDeleted: 2,
+      verificationsDeleted: 1,
     })
     expect(JSON.stringify(audit?.detail)).not.toMatch(/customer2@example\.com/)
   })

@@ -53,11 +53,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const userId = await userIdOrThrow()
     const { formId } = await params
-    await deleteFormForUser(userId, formId)
+    const body = await req.json().catch(() => ({}))
+    const confirmation =
+      typeof (body as { confirmation?: unknown }).confirmation === "string"
+        ? (body as { confirmation: string }).confirmation
+        : ""
+    await deleteFormForUser(userId, formId, confirmation)
     revalidatePath("/dashboard", "layout")
     return noContent()
   } catch (err) {

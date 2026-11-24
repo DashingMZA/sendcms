@@ -81,14 +81,17 @@ export function registerFormTools(server: McpServer, auth: McpAuthContext) {
       {
         title: "Delete a form",
         description:
-          "Delete a form and all its submissions. This cannot be undone.",
+          "Archive a form and hide it from the dashboard. Its submissions are kept. Pass the form name as confirmation.",
         inputSchema: {
           formId: z.string().min(1, "Enter a form id"),
+          confirmation: z
+            .string()
+            .min(1, "Enter the form name to confirm deletion"),
         },
       },
-      ({ formId }) =>
+      ({ formId, confirmation }) =>
         runTool(async () => {
-          await deleteFormForUser(auth.userId, formId)
+          await deleteFormForUser(auth.userId, formId, confirmation)
           return { deleted: true, formId }
         })
     )

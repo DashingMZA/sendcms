@@ -4,6 +4,7 @@ import { z } from "zod"
 import type { LanguageModel } from "ai"
 
 import { toAiCallUsage, type AiCallUsage } from "./provider"
+import { wrapUntrustedData } from "./untrusted"
 
 // Auto-reply drafts (Phase 12, Step 4). The model call only — the
 // orchestration (ownership, the aiEnabled opt-in, the send) lives in
@@ -65,7 +66,9 @@ export async function draftReply({
       "Keep it short — a few sentences. Do not invent facts about the business, prices, or dates.",
       `Form: "${formName}"`,
       `From: ${from} (${submission.receivedAt.toISOString()})`,
-      `Message: ${submission.content}`,
+      // AIM-022: the visitor's message is untrusted data — delimited,
+      // never pasted bare into the prompt.
+      wrapUntrustedData("Message", submission.content),
       "Reply with a subject line and a plain-text body.",
     ].join("\n"),
   })

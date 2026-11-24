@@ -32,11 +32,12 @@ export type AuditLogInput = {
  * that triggered it, so a failure is logged (structured, via the
  * observability logger) and the call resolves.
  *
- * Idempotency (Phase 7): the same correlationId + action + resource
- * must never produce two rows (a retried request, or a route that
- * audits twice). The check is best-effort and race-tolerant — it is
- * not a uniqueness guarantee, but it collapses the ordinary retry
- * case to one row.
+ * Idempotency (Phase 7, backstopped by the DB in Phase 16, DB-004):
+ * the same correlationId + action + resource must never produce two
+ * rows (a retried request, or a route that audits twice). The write
+ * inserts directly and treats the partial unique index's P2002 as
+ * "already logged" — the check-then-create pre-check this replaced
+ * was race-prone (SRC-331: two concurrent retries both passed it).
  *
  * Layered-flow note: this is the audit writer's documented exception
  * to "only services import `@sendcms/database`" (like `packages/auth`
@@ -45,18 +46,6 @@ export type AuditLogInput = {
  */
 export async function logAudit(input: AuditLogInput): Promise<void> {
   try {
-    if (input.correlationId) {
-      const existing = await db.auditLog.findFirst({
-        where: {
-          correlationId: input.correlationId,
-          action: input.action,
-          resourceType: input.resourceType,
-          resourceId: input.resourceId,
-        },
-        select: { id: true },
-      })
-      if (existing) return
-    }
     await db.auditLog.create({
       data: {
         action: input.action,
@@ -75,10 +64,24 @@ export async function logAudit(input: AuditLogInput): Promise<void> {
       },
     })
   } catch (err) {
+    // A unique-violation on the correlation tuple means a concurrent
+    // retry already logged this row — that IS the idempotent outcome,
+    // not a failure.
+    if (isUniqueViolation(err)) return
     logger.error("audit log failed", {
       error: err,
       action: input.action,
       resourceType: input.resourceType,
     })
   }
+}
+
+/** Prisma unique-constraint violation (P2002). Code-checked (not
+    instanceof) so hand-built fakes in tests can exercise the path. */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "P2002"
+  )
 }

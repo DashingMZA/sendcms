@@ -500,6 +500,12 @@ model Form {
   lastDigestAt     DateTime?
   // Max submissions accepted per calendar day; null = unlimited.
   dailyLimit       Int?
+  // Soft delete (Phase 16, SRC-208): deleting a form ARCHIVES it
+  // instead of physically deleting the row, so its submission history
+  // survives. NULL = live. Archived forms accept no submissions and
+  // are hidden from every list/read path; the row stays recoverable
+  // in the database. There is no restore path yet.
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -515,6 +521,7 @@ model Form {
 
   @@index([ownerId])
   @@index([ownerId, active])
+  @@index([ownerId, deletedAt])
 }
 
 model FormDomain {
@@ -689,6 +696,13 @@ model AuditLog {
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  // Idempotency (Phase 16, DB-004/SRC-331): one row per
+  // (correlationId, action, resourceType, resourceId). Prisma cannot
+  // express a partial unique index (correlationId is nullable — most
+  // rows have none), so the constraint lives in a raw migration as
+  // "AuditLog_correlation_idempotency_idx" (partial, WHERE
+  // "correlationId" IS NOT NULL). logAudit inserts and treats the
+  // unique-violation as "already logged".
   @@index([userId, createdAt])
   @@index([resourceType, resourceId, createdAt])
   @@index([createdAt])
@@ -1211,11 +1225,17 @@ model Announcement {
 // unique). Erasure ANONYMIZES the user row (email → deleted-<id>@
 // deleted.local, name → "Deleted user", image → null, status →
 // DISABLED, deletionCompletedAt set) and deletes keys, sessions,
-// BYOK keys, MCP settings, flag/plan overrides and admin notes, and
-// the user's domains/forms (cascade removes submissions, fields,
-// email jobs, notification settings). AuditLog, Subscription,
-// SubscriptionEvent, UsageLedger, AiUsageRecord and McpUsageRecord
-// rows are KEPT — billing/audit history must survive erasure.
+// BYOK keys, MCP settings, flag/plan overrides, admin notes, the
+// user's domains/forms (cascade removes submissions, fields and
+// notification settings), EmailJob rows addressed to the user or
+// belonging to their forms, and Verification rows for the old email.
+// AuditLog and SubscriptionEvent rows are KEPT (SetNull actor/user
+// links — the audit trail survives erasure). Subscription,
+// UsageLedger, AiUsageRecord and McpUsageRecord are Cascade off User
+// (owner decision 2026-11-24, DB-005: keep Cascade): they survive
+// erasure ONLY because erasure anonymizes the user row and never
+// calls db.user.delete — a hard user delete WOULD delete them with
+// the user.
 model DeletionRequest {
   id           String                @id @default(cuid())
   userId       String

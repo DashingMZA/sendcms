@@ -10,6 +10,10 @@ export const metadata: Metadata = {
   title: "SendCMS Dashboard",
   description:
     "Manage your SendCMS domains, forms, and submissions — view the inbox, check analytics, and get the embed snippet.",
+  // Authenticated app — nothing here is for crawlers (Phase 16,
+  // PRF-034). Defence in depth alongside robots.ts and the
+  // `X-Robots-Tag` header in next.config.mjs.
+  robots: { index: false, follow: false },
 }
 
 const fontSans = Geist({

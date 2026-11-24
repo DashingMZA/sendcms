@@ -91,6 +91,9 @@ export type UsageResponse = {
   meter: string | null
   period: string
   total: number
+  liveTotal: number | null
+  divergent: boolean
+  orphanLedgerRows: number
 }
 
 export const planKeys = {

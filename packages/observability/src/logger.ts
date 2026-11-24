@@ -28,6 +28,35 @@ function levelFromEnv(): LogLevel {
   return "info"
 }
 
+// Circular-safe serialization (Phase 16, SRC-315): a log field can
+// hold a circular structure (a Prisma error `meta`, a request object,
+// any caller-passed field) and plain `JSON.stringify` throws on it.
+// First retry with a replacer that marks repeats; if even that fails,
+// emit a minimal line — the logger never throws.
+function safeStringify(entry: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(entry)
+  } catch {
+    try {
+      const seen = new WeakSet<object>()
+      return JSON.stringify(entry, (_key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) return "[Circular]"
+          seen.add(value)
+        }
+        return value
+      })
+    } catch {
+      return JSON.stringify({
+        timestamp: entry.timestamp,
+        level: entry.level,
+        scope: entry.scope,
+        message: "log serialization failed",
+      })
+    }
+  }
+}
+
 export type Logger = {
   info: (message: string, fields?: LogFields) => void
   warn: (message: string, fields?: LogFields) => void
@@ -61,9 +90,20 @@ export function createLogger(scope: string): Logger {
         ...(err.meta !== undefined ? { meta: err.meta } : {}),
       }
     }
-    const line = JSON.stringify(entry)
-    if (level === "error") process.stderr.write(line + "\n")
-    else process.stdout.write(line + "\n")
+    // Logging must never throw (Phase 16, SRC-315): `logAudit`'s
+    // never-throws contract runs through here — its catch block's
+    // only action is `logger.error(...)`, so a throw in `write`
+    // (e.g. `JSON.stringify` on a circular field) would propagate
+    // out of the audit writer itself. Serialize circular-safe, and
+    // swallow even a failing stdout/stderr write (EPIPE on a closed
+    // pipe) — a log line is never worth failing the request.
+    const line = safeStringify(entry)
+    try {
+      if (level === "error") process.stderr.write(line + "\n")
+      else process.stdout.write(line + "\n")
+    } catch {
+      // Ignore: the log line is lost, the request is not.
+    }
   }
 
   return {

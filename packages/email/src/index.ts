@@ -14,7 +14,11 @@ export {
   type SendEmailInput,
   type SendEmailResult,
 } from "./provider"
-export { sendPasswordResetEmail, sendVerificationEmail } from "./auth-mailer"
+export {
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+  redactAuthEmailUrl,
+} from "./auth-mailer"
 export { notificationDeps } from "./notification-deps"
 export type {
   DigestItem,

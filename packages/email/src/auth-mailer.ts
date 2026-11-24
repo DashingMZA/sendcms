@@ -8,6 +8,32 @@ import { ResetPasswordEmail } from "./templates/reset-password"
 const ACCENT_COLOR = "#0891b2"
 const FOOTER_TEXT = "You're receiving this because you have a SendCMS account."
 
+// EML-002: reset/verification tokens are bearer-equivalent — the dev log
+// is a shared, persistent file, so the token must never land in it by
+// default. Only an explicit opt-in prints the full link (local journey
+// debugging); anything else logs the redacted shape. (Read at call time
+// so tests can stub the env var per case.)
+function logFullEmailLink(): boolean {
+  return process.env.SENDCMS_DEV_LOG_EMAIL_TOKENS === "1"
+}
+
+/** Redacts the bearer token out of an auth-mail URL, keeping the rest of
+    the link shape so the dev log still shows where the link points:
+    `/reset-password/<token>` → `/reset-password/<redacted>`,
+    `?token=<token>` → `?token=<redacted>`. A URL in no known shape is
+    reduced to its origin — never logged whole, since an unknown shape
+    may still carry a token. */
+export function redactAuthEmailUrl(url: string): string {
+  let redacted = url.replace(/(\/reset-password\/)[^/?#]+/, "$1<redacted>")
+  redacted = redacted.replace(/([?&]token=)[^&#]*/, "$1<redacted>")
+  if (redacted !== url) return redacted
+  try {
+    return `${new URL(url).origin}/<redacted>`
+  } catch {
+    return "<redacted>"
+  }
+}
+
 type AuthEmailUser = {
   name: string
   email: string
@@ -43,9 +69,13 @@ async function deliverOrLog({
     }
     // Dev fallback: the link is only visible in the server log, never to the
     // browser, so the register → verify → login journey stays testable
-    // without an SMTP server.
+    // without an SMTP server. EML-002: the token itself is redacted —
+    // only the link shape is logged, unless the operator explicitly
+    // opted into full links (SENDCMS_DEV_LOG_EMAIL_TOKENS=1).
     console.log(
-      `[auth-email] No email provider — ${kind} link for ${to}: ${url}`
+      `[auth-email] No email provider — ${kind} link for ${to}: ${
+        logFullEmailLink() ? url : redactAuthEmailUrl(url)
+      }`
     )
   }
 }

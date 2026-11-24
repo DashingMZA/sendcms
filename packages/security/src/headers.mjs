@@ -36,6 +36,16 @@ const SECURITY_HEADERS = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=()",
   },
+  // HSTS (Phase 16, SRC-301): HTTPS-only production subdomains send
+  // this so browsers never downgrade to HTTP. `preload` is deliberately
+  // NOT included: preloading commits every subdomain to HTTPS, and
+  // that was not confirmed for all subdomains — add it only after that
+  // confirmation. Browsers ignore this header on plain-HTTP (dev)
+  // responses, so it is safe to send from every app.
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000; includeSubDomains",
+  },
 ]
 
 const STATIC_CACHE_HEADER = {

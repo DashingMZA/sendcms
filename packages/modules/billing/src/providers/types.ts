@@ -25,6 +25,11 @@ export type CheckoutArgs = {
   customer: CheckoutCustomer
   successUrl: string
   cancelUrl: string
+  // Per-checkout-attempt id (BIL-014): the service generates one per
+  // attempt (or reuses the client's on retry) and each provider passes
+  // a derived per-call key to its create calls, so a retried checkout
+  // cannot create duplicate provider objects/sessions.
+  idempotencyKey?: string
 }
 
 export type CheckoutResult = {
@@ -48,6 +53,9 @@ export type NormalizedBillingEvent =
       providerSubscriptionId: string
       periodEnd: Date | null
     }
+  // BIL-080: a renewal payment failed — the service flips the
+  // subscription to PAST_DUE (grace window) instead of ignoring it.
+  | { kind: "payment-failed"; providerSubscriptionId: string }
   | { kind: "subscription-canceled"; providerSubscriptionId: string }
   | { kind: "ignored" }
 

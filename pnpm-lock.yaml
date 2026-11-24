@@ -453,6 +453,9 @@ importers:
       '@sendcms/admin-users':
         specifier: workspace:*
         version: link:../../packages/modules/admin-users
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@sendcms/ai-settings':
         specifier: workspace:*
         version: link:../../packages/modules/ai-settings
@@ -1284,6 +1287,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/email':
+        specifier: workspace:*
+        version: link:../../email
       '@sendcms/plans':
         specifier: workspace:*
         version: link:../plans
@@ -1413,6 +1419,9 @@ importers:
       '@sendcms/email':
         specifier: workspace:*
         version: link:../../email
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
       '@sendcms/queue':
         specifier: workspace:*
         version: link:../../queue
@@ -1496,6 +1505,9 @@ importers:
       '@sendcms/i18n':
         specifier: workspace:*
         version: link:../../i18n
+      '@sendcms/inbox':
+        specifier: workspace:*
+        version: link:../inbox
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../observability

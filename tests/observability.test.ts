@@ -86,4 +86,36 @@ describe("createLogger", () => {
     expect(stderrLines).toHaveLength(1)
     expect(JSON.parse(stderrLines[0]).message).toBe("shown")
   })
+
+  it("never throws on circular fields — writes one line with [Circular] (Phase 16, SRC-315)", () => {
+    const logger = createLogger("api")
+    const circular: Record<string, unknown> = { name: "circular" }
+    circular.self = circular
+    expect(() =>
+      logger.error("circular field", { data: circular })
+    ).not.toThrow()
+    expect(stderrLines).toHaveLength(1)
+    const entry = JSON.parse(stderrLines[0])
+    expect(entry.message).toBe("circular field")
+    expect(entry.data.self).toBe("[Circular]")
+  })
+
+  it("never throws when the error's meta is circular (Phase 16, SRC-315)", () => {
+    const logger = createLogger("api")
+    const meta: Record<string, unknown> = {}
+    meta.self = meta
+    const err = Object.assign(new Error("db down"), { meta })
+    expect(() => logger.error("audit log failed", { error: err })).not.toThrow()
+    expect(stderrLines).toHaveLength(1)
+    const entry = JSON.parse(stderrLines[0])
+    expect(entry.error.meta.self).toBe("[Circular]")
+  })
+
+  it("never throws when the stream write itself fails (Phase 16, SRC-315)", () => {
+    stdoutWrite.mockImplementation((() => {
+      throw new Error("EPIPE")
+    }) as typeof process.stdout.write)
+    const logger = createLogger("api")
+    expect(() => logger.info("lost line")).not.toThrow()
+  })
 })

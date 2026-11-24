@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { pickAiEnvConfig } from "@sendcms/ai"
 import { draftReplyForSubmission } from "@sendcms/inbox"
 import { AiProviderNameSchema } from "@sendcms/ai-settings/validators"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
@@ -43,7 +44,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const draft = await draftReplyForSubmission(
       session.user.id,
       submissionId,
-      process.env,
+      // SRC-123: only the AI vars reach the service, never the
+      // whole process.env.
+      pickAiEnvConfig(process.env),
       {
         provider: browserProviderParsed.success
           ? browserProviderParsed.data

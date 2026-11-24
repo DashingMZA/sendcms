@@ -1,5 +1,23 @@
 {
-  "exclude": ["apps", "node_modules", "packages"],
+  "compilerOptions": {
+    "paths": {
+      "@/lib/*": [
+        "./apps/api/lib/*"
+      ],
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "exclude": [
+    "apps",
+    "node_modules",
+    "packages"
+  ],
   "extends": "@sendcms/config/tsconfig/base.json",
-  "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.d.ts"
+  ]
 }

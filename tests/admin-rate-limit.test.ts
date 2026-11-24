@@ -9,12 +9,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { RateLimitScope } from "@sendcms/database"
 import {
   checkAdminApiRateLimit,
+  checkAuthEmailRateLimit,
   checkAuthSignInRateLimit,
+  checkAuthSignUpRateLimit,
   checkRateLimit,
+  checkSendReplyRateLimit,
+  checkTestEmailRateLimit,
   DEFAULT_RATE_LIMIT_CONFIG,
+  ipMatchesCidr,
   parseRateLimitConfig,
   readRateLimitConfig,
   resetRateLimitConfigCache,
+  resolveClientIp,
 } from "@sendcms/security"
 
 type StoredBucket = {
@@ -39,11 +45,12 @@ const { store, mockDb, mockQueryRaw } = vi.hoisted(() => {
       Array.isArray((first as { values: unknown[] }).values)
         ? (first as { values: unknown[] }).values
         : rest
-    const [scope, subject, minuteStart, hourStart] = values as [
+    const [scope, subject, minuteStart, hourStart, carryWeight] = values as [
       string,
       string,
       Date,
       Date,
+      number,
     ]
     const key = `${scope}|${subject}`
     const existing = store.buckets.get(key)
@@ -66,10 +73,21 @@ const { store, mockDb, mockQueryRaw } = vi.hoisted(() => {
         },
       ]
     }
-    const minuteCount =
-      existing.minuteWindowStart.getTime() === minuteStart.getTime()
-        ? existing.minuteCount + 1
-        : 1
+    // Mirrors the real upsert's sliding-window minute (SEC-205): same
+    // window → +1; roll to the adjacent minute → 1 + the decayed
+    // carry of the previous minute's count; a roll after a gap of
+    // two minutes or more → 1.
+    let minuteCount: number
+    if (existing.minuteWindowStart.getTime() === minuteStart.getTime()) {
+      minuteCount = existing.minuteCount + 1
+    } else if (
+      minuteStart.getTime() - existing.minuteWindowStart.getTime() ===
+      60_000
+    ) {
+      minuteCount = 1 + Math.floor(existing.minuteCount * (carryWeight ?? 0))
+    } else {
+      minuteCount = 1
+    }
     const hourCount =
       existing.hourWindowStart.getTime() === hourStart.getTime()
         ? existing.hourCount + 1
@@ -394,5 +412,336 @@ describe("checkAuthSignInRateLimit (per-IP + per-email)", () => {
       now: T,
     })
     expect(result.allowed).toBe(true)
+  })
+})
+
+describe("checkRateLimit sliding-window minute (SEC-205)", () => {
+  it("denies a burst split across a minute boundary", async () => {
+    // 10 requests at :59 of one minute (limit 10), then 2 more at
+    // :01 of the next: the previous minute is still almost fully
+    // inside a rolling 60-second window, so the carried count plus
+    // the new requests exceeds the limit.
+    const before = new Date("2026-11-22T06:00:59.000Z")
+    const after = new Date("2026-11-22T06:01:01.000Z")
+    const args = {
+      scope: RateLimitScope.ADMIN_API,
+      subject: "user:boundary",
+      minuteLimit: 10,
+      hourLimit: 100,
+      now: before,
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await checkRateLimit(args)).allowed).toBe(true)
+    }
+    expect((await checkRateLimit({ ...args, now: after })).allowed).toBe(true)
+    const denied = await checkRateLimit({ ...args, now: after })
+    expect(denied.allowed).toBe(false)
+    expect(denied.retryAfterSeconds).toBeGreaterThan(0)
+    expect(denied.retryAfterSeconds).toBeLessThanOrEqual(60)
+  })
+
+  it("carries nothing after a gap of two minutes or more", async () => {
+    const args = {
+      scope: RateLimitScope.ADMIN_API,
+      subject: "user:gap",
+      minuteLimit: 10,
+      hourLimit: 100,
+      now: T,
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await checkRateLimit(args)).allowed).toBe(true)
+    }
+    const later = new Date(T.getTime() + 3 * 60_000)
+    const result = await checkRateLimit({ ...args, now: later })
+    expect(result.allowed).toBe(true)
+    expect(result.minuteCount).toBe(1)
+  })
+
+  it("decays the carry late in the new minute", async () => {
+    // 10 requests at :59, then one request at :59 of the next
+    // minute: the previous minute is ~2 seconds inside the rolling
+    // window, so the carry is ~0 and the request is allowed.
+    const before = new Date("2026-11-22T06:00:59.000Z")
+    const late = new Date("2026-11-22T06:01:59.000Z")
+    const args = {
+      scope: RateLimitScope.ADMIN_API,
+      subject: "user:decay",
+      minuteLimit: 10,
+      hourLimit: 100,
+      now: before,
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await checkRateLimit(args)).allowed).toBe(true)
+    }
+    const result = await checkRateLimit({ ...args, now: late })
+    expect(result.allowed).toBe(true)
+    expect(result.minuteCount).toBe(1)
+  })
+})
+
+describe("checkAuthSignUpRateLimit (SEC-008 / SEC-203)", () => {
+  it("checks signup-namespaced IP then email buckets", async () => {
+    const result = await checkAuthSignUpRateLimit({
+      ip: "203.0.113.7",
+      email: "new@example.com",
+      now: T,
+    })
+    expect(result.allowed).toBe(true)
+    expect(subjectsSeen()).toEqual([
+      "signup-ip:203.0.113.7",
+      "signup-email:new@example.com",
+    ])
+  })
+
+  it("does not consume the sign-in buckets", async () => {
+    await checkAuthSignUpRateLimit({
+      ip: "203.0.113.7",
+      email: "new@example.com",
+      now: T,
+    })
+    expect(subjectsSeen()).not.toContain("ip:203.0.113.7")
+    expect(subjectsSeen()).not.toContain("email:new@example.com")
+  })
+
+  it("denies after 10 sign-ups for one email from fresh IPs", async () => {
+    for (let i = 0; i < 10; i++) {
+      const result = await checkAuthSignUpRateLimit({
+        ip: `203.0.113.${i + 1}`,
+        email: "victim@example.com",
+        now: T,
+      })
+      expect(result.allowed).toBe(true)
+    }
+    const denied = await checkAuthSignUpRateLimit({
+      ip: "203.0.113.99",
+      email: "victim@example.com",
+      now: T,
+    })
+    expect(denied.allowed).toBe(false)
+  })
+})
+
+describe("checkAuthEmailRateLimit (SEC-008 / EML-003)", () => {
+  it("namespaces buckets per kind", async () => {
+    await checkAuthEmailRateLimit({
+      ip: "203.0.113.7",
+      email: "a@example.com",
+      kind: "reset",
+      now: T,
+    })
+    await checkAuthEmailRateLimit({
+      ip: "203.0.113.7",
+      email: "a@example.com",
+      kind: "verify",
+      now: T,
+    })
+    expect(subjectsSeen()).toEqual([
+      "reset-ip:203.0.113.7",
+      "reset-email:a@example.com",
+      "verify-ip:203.0.113.7",
+      "verify-email:a@example.com",
+    ])
+  })
+
+  it("denies the 11th reset for one email, other kinds unaffected", async () => {
+    for (let i = 0; i < 10; i++) {
+      expect(
+        (
+          await checkAuthEmailRateLimit({
+            ip: `203.0.113.${i + 1}`,
+            email: "victim@example.com",
+            kind: "reset",
+            now: T,
+          })
+        ).allowed
+      ).toBe(true)
+    }
+    const denied = await checkAuthEmailRateLimit({
+      ip: "203.0.113.99",
+      email: "victim@example.com",
+      kind: "reset",
+      now: T,
+    })
+    expect(denied.allowed).toBe(false)
+    const otherKind = await checkAuthEmailRateLimit({
+      ip: "203.0.113.99",
+      email: "victim@example.com",
+      kind: "verify",
+      now: T,
+    })
+    expect(otherKind.allowed).toBe(true)
+  })
+
+  it("checks only the IP bucket when no email is supplied", async () => {
+    const result = await checkAuthEmailRateLimit({
+      ip: "203.0.113.7",
+      kind: "social",
+      now: T,
+    })
+    expect(result.allowed).toBe(true)
+    expect(mockQueryRaw).toHaveBeenCalledTimes(1)
+    expect(subjectsSeen()).toEqual(["social-ip:203.0.113.7"])
+  })
+})
+
+describe("checkTestEmailRateLimit / checkSendReplyRateLimit (EML-003)", () => {
+  it("keys test-email per user then per form", async () => {
+    const result = await checkTestEmailRateLimit({
+      userId: "u1",
+      formId: "f1",
+      now: T,
+    })
+    expect(result.allowed).toBe(true)
+    expect(subjectsSeen()).toEqual(["test-email-user:u1", "test-email-form:f1"])
+  })
+
+  it("denies the 11th test-email for one user", async () => {
+    for (let i = 0; i < 10; i++) {
+      expect(
+        (
+          await checkTestEmailRateLimit({
+            userId: "u1",
+            formId: `f${i}`,
+            now: T,
+          })
+        ).allowed
+      ).toBe(true)
+    }
+    const denied = await checkTestEmailRateLimit({
+      userId: "u1",
+      formId: "f99",
+      now: T,
+    })
+    expect(denied.allowed).toBe(false)
+  })
+
+  it("keys send-reply per user then per submission", async () => {
+    const result = await checkSendReplyRateLimit({
+      userId: "u1",
+      submissionId: "s1",
+      now: T,
+    })
+    expect(result.allowed).toBe(true)
+    expect(subjectsSeen()).toEqual([
+      "send-reply-user:u1",
+      "send-reply-submission:s1",
+    ])
+  })
+
+  it("denies the 6th reply to one submission", async () => {
+    for (let i = 0; i < 5; i++) {
+      expect(
+        (
+          await checkSendReplyRateLimit({
+            userId: `u${i}`,
+            submissionId: "s1",
+            now: T,
+          })
+        ).allowed
+      ).toBe(true)
+    }
+    const denied = await checkSendReplyRateLimit({
+      userId: "u99",
+      submissionId: "s1",
+      now: T,
+    })
+    expect(denied.allowed).toBe(false)
+  })
+})
+
+describe("resolveClientIp trusted proxy (SEC-204)", () => {
+  const headers = (entries: Record<string, string>) => new Headers(entries)
+
+  beforeEach(() => {
+    delete process.env.TRUSTED_PROXY_IPS
+  })
+
+  it("ignores a spoofed X-Forwarded-For with no trusted proxy", () => {
+    const ip = resolveClientIp(
+      headers({ "x-forwarded-for": "203.0.113.7, 198.51.100.1" }),
+      "192.0.2.44"
+    )
+    expect(ip).toBe("192.0.2.44")
+  })
+
+  it("returns null with no peer IP and no trusted proxy", () => {
+    const ip = resolveClientIp(
+      headers({ "x-forwarded-for": "203.0.113.7" }),
+      null
+    )
+    expect(ip).toBeNull()
+  })
+
+  it("rotating spoofed XFF values all resolve to the same peer IP", () => {
+    const ips = ["203.0.113.1", "203.0.113.2", "203.0.113.3"].map((spoof) =>
+      resolveClientIp(headers({ "x-forwarded-for": spoof }), "192.0.2.44")
+    )
+    expect(ips).toEqual(["192.0.2.44", "192.0.2.44", "192.0.2.44"])
+  })
+
+  it("trusts XFF when the peer is a listed proxy IP", () => {
+    process.env.TRUSTED_PROXY_IPS = "192.0.2.44"
+    const ip = resolveClientIp(
+      headers({ "x-forwarded-for": "203.0.113.7, 192.0.2.44" }),
+      "192.0.2.44"
+    )
+    expect(ip).toBe("203.0.113.7")
+  })
+
+  it("trusts XFF when the peer is inside a listed CIDR", () => {
+    process.env.TRUSTED_PROXY_IPS = "192.0.2.0/24"
+    const ip = resolveClientIp(
+      headers({ "x-forwarded-for": "203.0.113.7" }),
+      "192.0.2.200"
+    )
+    expect(ip).toBe("203.0.113.7")
+  })
+
+  it("does not trust XFF when the peer is outside the listed CIDR", () => {
+    process.env.TRUSTED_PROXY_IPS = "192.0.2.0/24"
+    const ip = resolveClientIp(
+      headers({ "x-forwarded-for": "203.0.113.7" }),
+      "192.0.3.200"
+    )
+    expect(ip).toBe("192.0.3.200")
+  })
+
+  it("trusts cf-connecting-ip only with cf-ray and the cloudflare token", () => {
+    process.env.TRUSTED_PROXY_IPS = "cloudflare"
+    const viaCf = resolveClientIp(
+      headers({
+        "cf-ray": "abc123",
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "198.51.100.9",
+      }),
+      "172.64.0.1"
+    )
+    expect(viaCf).toBe("203.0.113.7")
+    const noRay = resolveClientIp(
+      headers({ "cf-connecting-ip": "203.0.113.7" }),
+      "172.64.0.1"
+    )
+    expect(noRay).toBe("172.64.0.1")
+  })
+})
+
+describe("ipMatchesCidr", () => {
+  it("matches exact IPs and IPv4 CIDRs", () => {
+    expect(ipMatchesCidr("192.0.2.44", "192.0.2.44")).toBe(true)
+    expect(ipMatchesCidr("192.0.2.44", "192.0.2.45")).toBe(false)
+    expect(ipMatchesCidr("192.0.2.200", "192.0.2.0/24")).toBe(true)
+    expect(ipMatchesCidr("192.0.3.200", "192.0.2.0/24")).toBe(false)
+    expect(ipMatchesCidr("10.0.0.1", "10.0.0.0/8")).toBe(true)
+  })
+
+  it("matches IPv6 CIDRs and normalises IPv4-mapped IPv6", () => {
+    expect(ipMatchesCidr("2001:db8::1", "2001:db8::/32")).toBe(true)
+    expect(ipMatchesCidr("2001:db9::1", "2001:db8::/32")).toBe(false)
+    expect(ipMatchesCidr("::ffff:192.0.2.44", "192.0.2.44")).toBe(true)
+  })
+
+  it("rejects malformed input", () => {
+    expect(ipMatchesCidr("not-an-ip", "192.0.2.0/24")).toBe(false)
+    expect(ipMatchesCidr("192.0.2.1", "192.0.2.0/33")).toBe(false)
   })
 })

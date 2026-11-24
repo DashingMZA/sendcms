@@ -150,9 +150,11 @@ and starts the app on `$PORT`.
 The compose file's `NEXT_PUBLIC_*` defaults are the localhost URLs
 (`http://localhost:3000` … `:3004`). For a public host, set them in a
 `.env` file next to the compose file **before building** (build args)
-— they are also passed as runtime env. `BETTER_AUTH_SECRET` and the
-Postgres password default to dev-only placeholders in the compose
-file; override them in production. The `migrate` / `seed` one-off
+— they are also passed as runtime env. `DATABASE_URL`,
+`BETTER_AUTH_SECRET`, `CRON_SECRET` and the Postgres password have
+no defaults in the compose file (Phase 16, LVE-016): compose refuses
+to start without them in `.env`, so a public host can never run on
+well-known dev values. The `migrate` / `seed` one-off
 services target the Dockerfile's `builder` stage (full deps + Prisma,
 no app build) so they stay fast.
 

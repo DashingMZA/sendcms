@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { AdminSession } from "@sendcms/auth"
 import { AuditAction, AuditResource, Prisma, db } from "@sendcms/database"
 import type {
@@ -113,20 +114,75 @@ function findWorkspaceRoot(startDir: string): string | null {
   return null
 }
 
+// Directory of this module file. The workspace root is resolved from
+// here as well as from process.cwd() (DOC-018): in a deployed server
+// the working directory is the app directory, not the workspace root,
+// so the pnpm-workspace.yaml marker is not discoverable from cwd and
+// the old reader silently fell back to "no emergency" — the kill-switch
+// could be inert in production with no error or log. Resolving from
+// the module file keeps the configured flag in effect wherever the
+// process starts.
+const moduleDir = dirname(fileURLToPath(import.meta.url))
+
+// Resolves config/config.json, preferring the workspace root found
+// from the working directory and falling back to the root found from
+// this module file's location. Returns the resolved path and whether
+// the module-file fallback was used, or null when neither walk finds
+// the workspace marker or the config file.
+function resolveConfigPath(): {
+  path: string
+  viaModuleFile: boolean
+} | null {
+  for (const [startDir, viaModuleFile] of [
+    [process.cwd(), false],
+    [moduleDir, true],
+  ] as const) {
+    const root = findWorkspaceRoot(startDir)
+    if (!root) continue
+    const path = join(root, "config", "config.json")
+    if (existsSync(path)) return { path, viaModuleFile }
+  }
+  return null
+}
+
 export function readPlatformConfig(): PlatformConfig {
   if (platformConfigCache) return platformConfigCache
   let emergency = false
-  try {
-    const root = findWorkspaceRoot(process.cwd())
-    if (root) {
-      const raw = readFileSync(join(root, "config", "config.json"), "utf8")
+  const resolved = resolveConfigPath()
+  if (!resolved) {
+    // Loud fallback (DOC-018): the emergency kill-switch is running
+    // on its default (OFF) because config/config.json could not be
+    // found from either the working directory or this package's
+    // location. Fail-open is deliberate — a missing file must never
+    // disable form submission — but the operator must see that the
+    // configured flag is not in effect.
+    logger.warn(
+      "config/config.json not found; emergency switch defaulting to OFF",
+      {
+        cwd: process.cwd(),
+        defaults: { emergency: false },
+      }
+    )
+  } else {
+    if (resolved.viaModuleFile) {
+      logger.warn(
+        "config/config.json not found from working directory; resolved relative to package file",
+        { cwd: process.cwd(), configPath: resolved.path }
+      )
+    }
+    try {
+      const raw = readFileSync(resolved.path, "utf8")
       const parsed = JSON.parse(raw) as {
         platform?: { emergency?: unknown }
       }
       emergency = parsed.platform?.emergency === true
+    } catch {
+      logger.warn(
+        "config/config.json unreadable; emergency switch defaulting to OFF",
+        { configPath: resolved.path, defaults: { emergency: false } }
+      )
+      emergency = false
     }
-  } catch {
-    emergency = false
   }
   platformConfigCache = { emergency }
   return platformConfigCache
@@ -1085,18 +1141,59 @@ export async function getUserSubscription(
   }
 }
 
-// The user's ACTIVE or TRIALING subscription (latest first). One active
-// subscription per user is enforced in the service (assign cancels the
-// old one before creating the new one) — a DB partial unique index is
-// not expressible in Prisma schema.
+// ─── Subscription expiry (BIL-080) ──────────────────────────────────────
+
+// A PAST_DUE subscription keeps its paid entitlements for this long
+// past its period end while the renewal is retried, then it expires.
+export const PAST_DUE_GRACE_DAYS = 7
+
+function pastDueGraceEnd(row: {
+  currentPeriodEnd: Date | null
+  updatedAt: Date
+}): Date {
+  const base = row.currentPeriodEnd ?? row.updatedAt
+  return new Date(base.getTime() + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000)
+}
+
+// True when the row still grants entitlements right now. A row with
+// no period end never expires on its own; a PAST_DUE row stays live
+// through its grace window; any other row past its period end is
+// expired (the expiry job is the writer — this is the read-side
+// belt-and-braces for a missed run).
+export function isSubscriptionPeriodLive(
+  row: {
+    status: SubscriptionStatus
+    currentPeriodEnd: Date | null
+    updatedAt: Date
+  },
+  now: Date = new Date()
+): boolean {
+  if (!row.currentPeriodEnd) return true
+  if (row.currentPeriodEnd > now) return true
+  if (row.status === "PAST_DUE") return now <= pastDueGraceEnd(row)
+  return false
+}
+
+// The user's ACTIVE, TRIALING, or in-grace PAST_DUE subscription
+// (latest first). One active subscription per user is enforced in the
+// service (assign cancels the old one before creating the new one) —
+// a DB partial unique index is not expressible in Prisma schema.
+//
+// BIL-080 belt-and-braces: a row past its `currentPeriodEnd` is
+// treated as expired here even if the expiry job missed a run —
+// except a PAST_DUE row inside its grace window (see
+// `isSubscriptionPeriodLive`), which keeps its paid entitlements
+// until the grace ends.
 async function findActiveSubscription(
   userId: string
 ): Promise<SubscriptionWithRelations | null> {
   const row = await db.subscription.findFirst({
-    where: { userId, status: { in: ["ACTIVE", "TRIALING"] } },
+    where: { userId, status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] } },
     include: subscriptionInclude,
     orderBy: { createdAt: "desc" },
   })
+  if (!row) return null
+  if (!isSubscriptionPeriodLive(row as SubscriptionWithRelations)) return null
   return row as SubscriptionWithRelations | null
 }
 
@@ -1241,16 +1338,19 @@ export async function listPublishedPlans(): Promise<PublicPlan[]> {
 
 // The signed-in user's own active subscription (if any) — for the
 // dashboard billing page. Ownership is the check: a user only ever
-// sees their own row.
+// sees their own row. BIL-080: same period-live rule as
+// `findActiveSubscription` — a row past its period end (outside a
+// PAST_DUE grace window) is not shown as active.
 export async function getMySubscription(
   userId: string
 ): Promise<SubscriptionSummary | null> {
   const row = await db.subscription.findFirst({
-    where: { userId, status: { in: ["ACTIVE", "TRIALING"] } },
+    where: { userId, status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] } },
     include: subscriptionInclude,
     orderBy: { createdAt: "desc" },
   })
   if (!row) return null
+  if (!isSubscriptionPeriodLive(row as SubscriptionWithRelations)) return null
   return toSubscriptionSummary(row as SubscriptionWithRelations)
 }
 
@@ -1284,6 +1384,17 @@ export async function activateSubscriptionFromCheckout(
   if (!target) throw new ApiError("User not found", 404)
   const now = new Date()
   const created = await db.$transaction(async (tx) => {
+    // BIL-090: the duplicate guard is atomic — a transaction-scoped
+    // advisory lock on (provider, providerSubscriptionId) serializes
+    // concurrent deliveries of the same checkout event, so two
+    // deliveries cannot both pass the `findFirst` below and create two
+    // ACTIVE subscriptions. (No unique index on
+    // providerSubscriptionId exists — schema changes are out of scope
+    // for this fix — so the lock, plus the BillingEvent guard in the
+    // webhook handler, is the serialization point.)
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.provider}:${input.providerSubscriptionId}`}))`
+    )
     const duplicate = await tx.subscription.findFirst({
       where: {
         provider: input.provider,
@@ -1369,14 +1480,19 @@ export async function activateSubscriptionFromCheckout(
 // subscription id (provider-side cancellation webhook). Returns null
 // when no active subscription matches — the provider may cancel
 // something SendCMS never activated, and that is not an error.
+// BIL-090: the lookup is scoped to (provider,
+// providerSubscriptionId) — provider id formats differ, and an id
+// alone is not globally unique.
 export async function cancelSubscriptionFromProvider(
+  provider: BillingProvider,
   providerSubscriptionId: string,
   reason: string
 ): Promise<SubscriptionSummary | null> {
   const existing = await db.subscription.findFirst({
     where: {
+      provider,
       providerSubscriptionId,
-      status: { in: ["ACTIVE", "TRIALING"] },
+      status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
     },
     orderBy: { createdAt: "desc" },
   })
@@ -1416,14 +1532,25 @@ export async function cancelSubscriptionFromProvider(
 // does not give a period end, it is computed from the plan version's
 // billing interval, extending from the current end when that is
 // still in the future. Returns null when nothing matches.
+// BIL-090: the lookup is scoped to (provider,
+// providerSubscriptionId).
+// BIL-085: the extension is monotonic — a stale or out-of-order
+// renewal (an old `invoice.paid` retried after the next period
+// already extended the subscription) is a no-op that returns the
+// existing row, never moves the period end backwards, and writes no
+// event. A successful extension writes a RENEWED event in the same
+// transaction as the update, and revives a PAST_DUE subscription
+// back to ACTIVE.
 export async function extendSubscriptionPeriod(
+  provider: BillingProvider,
   providerSubscriptionId: string,
   periodEnd: Date | null
 ): Promise<SubscriptionSummary | null> {
   const existing = await db.subscription.findFirst({
     where: {
+      provider,
       providerSubscriptionId,
-      status: { in: ["ACTIVE", "TRIALING"] },
+      status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
     },
     include: {
       planVersion: { select: { billingInterval: true } },
@@ -1438,12 +1565,180 @@ export async function extendSubscriptionPeriod(
       : now
   const nextEnd =
     periodEnd ?? periodEndFor(existing.planVersion.billingInterval, base)
-  const updated = await db.subscription.update({
-    where: { id: existing.id },
-    data: { currentPeriodEnd: nextEnd },
-    include: subscriptionInclude,
+  // A null derived end (a non-recurring interval has no next period)
+  // is a no-op: there is nothing to extend to.
+  if (!nextEnd) {
+    const unchanged = await db.subscription.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: subscriptionInclude,
+    })
+    return toSubscriptionSummary(unchanged as SubscriptionWithRelations)
+  }
+  if (existing.currentPeriodEnd && nextEnd <= existing.currentPeriodEnd) {
+    const unchanged = await db.subscription.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: subscriptionInclude,
+    })
+    return toSubscriptionSummary(unchanged as SubscriptionWithRelations)
+  }
+  const updated = await db.$transaction(async (tx) => {
+    const renewed = await tx.subscription.update({
+      where: { id: existing.id },
+      data: { currentPeriodEnd: nextEnd, status: "ACTIVE" },
+      include: subscriptionInclude,
+    })
+    await tx.subscriptionEvent.create({
+      data: {
+        subscriptionId: existing.id,
+        type: "RENEWED",
+        fromPlanVersionId: existing.planVersionId,
+        toPlanVersionId: existing.planVersionId,
+        adminId: null,
+        reason: `Renewed via ${provider}`,
+      },
+    })
+    return renewed
+  })
+  await logAudit({
+    userId: existing.userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: existing.id,
+    detail: {
+      event: "subscription-renewed",
+      provider,
+      providerSubscriptionId,
+      currentPeriodEnd: nextEnd.toISOString(),
+    },
   })
   return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// BIL-080: mark the subscription behind a provider subscription id
+// PAST_DUE after a failed renewal payment. Entitlements survive
+// through the grace window (see `isSubscriptionPeriodLive`); the
+// expiry job flips it to EXPIRED once the grace ends, and a
+// successful renewal revives it via `extendSubscriptionPeriod`.
+// Returns null when nothing matches — a payment failure for a
+// subscription SendCMS never activated is not an error. No
+// SubscriptionEvent is written: the event enum has no PAST_DUE type;
+// the audit row is the record.
+export async function markSubscriptionPastDue(
+  provider: BillingProvider,
+  providerSubscriptionId: string
+): Promise<SubscriptionSummary | null> {
+  const existing = await db.subscription.findFirst({
+    where: {
+      provider,
+      providerSubscriptionId,
+      status: { in: ["ACTIVE", "TRIALING"] },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  if (!existing) return null
+  const updated = await db.subscription.update({
+    where: { id: existing.id },
+    data: { status: "PAST_DUE" },
+    include: subscriptionInclude,
+  })
+  await logAudit({
+    userId: existing.userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: existing.id,
+    detail: {
+      event: "subscription-payment-failed",
+      provider,
+      providerSubscriptionId,
+      graceDays: PAST_DUE_GRACE_DAYS,
+    },
+  })
+  return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// BIL-080: the daily expiry job (Wave 9 wires the cron/worker
+// schedule — this is the job function). For every ACTIVE / TRIALING /
+// PAST_DUE subscription whose period has ended:
+// - `cancelAtPeriodEnd` → CANCELED (the user asked to cancel at the
+//   end of the paid period) with a CANCELED event;
+// - otherwise → EXPIRED with an EXPIRED event — except a PAST_DUE
+//   subscription still inside its grace window, which is left alone
+//   to be retried.
+// `dryRun` reports what would change without writing anything.
+// Returns the per-subscription outcomes; the caller logs them.
+export async function expireSubscriptions(
+  now: Date = new Date(),
+  opts: { dryRun?: boolean } = {}
+): Promise<
+  {
+    subscriptionId: string
+    userId: string
+    fromStatus: SubscriptionStatus
+    toStatus: "CANCELED" | "EXPIRED"
+    dryRun: boolean
+  }[]
+> {
+  const due = await db.subscription.findMany({
+    where: {
+      status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+      currentPeriodEnd: { lt: now },
+    },
+    orderBy: { createdAt: "asc" },
+  })
+  const results: {
+    subscriptionId: string
+    userId: string
+    fromStatus: SubscriptionStatus
+    toStatus: "CANCELED" | "EXPIRED"
+    dryRun: boolean
+  }[] = []
+  for (const row of due) {
+    if (row.status === "PAST_DUE" && now <= pastDueGraceEnd(row)) {
+      continue
+    }
+    const toStatus = row.cancelAtPeriodEnd ? "CANCELED" : "EXPIRED"
+    const eventType = row.cancelAtPeriodEnd ? "CANCELED" : "EXPIRED"
+    if (!opts.dryRun) {
+      await db.$transaction(async (tx) => {
+        await tx.subscription.update({
+          where: { id: row.id },
+          data: { status: toStatus, cancelAtPeriodEnd: false },
+        })
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: row.id,
+            type: eventType,
+            fromPlanVersionId: row.planVersionId,
+            toPlanVersionId: null,
+            adminId: null,
+            reason: row.cancelAtPeriodEnd
+              ? "Period ended after cancel-at-period-end"
+              : "Period ended without renewal",
+          },
+        })
+      })
+      await logAudit({
+        userId: row.userId,
+        action: AuditAction.UPDATE,
+        resourceType: AuditResource.SUBSCRIPTION,
+        resourceId: row.id,
+        detail: {
+          event: "subscription-expired",
+          fromStatus: row.status,
+          toStatus,
+          currentPeriodEnd: row.currentPeriodEnd?.toISOString() ?? null,
+        },
+      })
+    }
+    results.push({
+      subscriptionId: row.id,
+      userId: row.userId,
+      fromStatus: row.status,
+      toStatus,
+      dryRun: opts.dryRun ?? false,
+    })
+  }
+  return results
 }
 
 // Migration preview: which subscriptions a migration to `planVersionId`
@@ -1907,27 +2202,44 @@ export async function getEffectiveEntitlements(
 // Fail-open wrappers for the enforcement points. The core paths (form
 // create, domain register, public submit, MCP, AI rescore) must never
 // break because the plans module errored — they call these, get null on
-// any failure, and fall back to the platform defaults.
+// any failure, and fall back to the platform defaults. SRC-216: this
+// fail-open is for READ paths only; creation paths use
+// `checkLimitStrict` (fail closed). The failure is logged loudly — a
+// silent null here used to disable every quota.
 export async function getEffectiveEntitlementsSafe(
   userId: string
 ): Promise<EffectiveEntitlements | null> {
   try {
     return await getEffectiveEntitlements(userId)
   } catch (err) {
-    logger.error("effective entitlements lookup failed", {
-      error: err,
-      userId,
-    })
+    logger.error(
+      "effective entitlements lookup failed, failing open to Free defaults",
+      {
+        error: err,
+        userId,
+      }
+    )
     return null
   }
 }
 
 // ─── Usage metering ───────────────────────────────────────────────────
 
-// Idempotent: a retried operation with the same idempotencyKey returns
-// the existing row instead of double-counting (the key is @unique).
-export async function recordUsage(input: RecordUsageInput): Promise<UsageRow> {
-  const data = {
+// DB-050: the ledger write is retried (bounded) instead of failing
+// on the first DB blip. The submit path writes its row inside the
+// submission transaction (`recordUsageInTransaction` below), so the
+// crash window between the submit commit and the ledger write is
+// closed there; `reconcileUsageLedger` remains as the backfill for
+// rows lost by other paths (AI/MCP usage). A P2002 is still the
+// idempotency re-read, not a retry.
+const RECORD_USAGE_MAX_ATTEMPTS = 3
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function toUsageLedgerData(input: RecordUsageInput) {
+  return {
     userId: input.userId,
     meter: input.meter,
     quantity: input.quantity ?? 1,
@@ -1937,24 +2249,66 @@ export async function recordUsage(input: RecordUsageInput): Promise<UsageRow> {
     idempotencyKey: input.idempotencyKey,
     resourceId: input.resourceId ?? null,
   }
-  try {
-    return await db.usageLedger.create({ data })
-  } catch (err) {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === "P2002"
-    ) {
-      const existing = await db.usageLedger.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-      })
-      if (existing) return existing
+}
+
+// Idempotent: a retried operation with the same idempotencyKey returns
+// the existing row instead of double-counting (the key is @unique).
+export async function recordUsage(input: RecordUsageInput): Promise<UsageRow> {
+  const data = toUsageLedgerData(input)
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= RECORD_USAGE_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await db.usageLedger.create({ data })
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const existing = await db.usageLedger.findUnique({
+          where: { idempotencyKey: input.idempotencyKey },
+        })
+        if (existing) return existing
+      }
+      lastError = err
+      if (attempt < RECORD_USAGE_MAX_ATTEMPTS) {
+        logger.warn("usage ledger write failed, retrying", {
+          attempt,
+          userId: input.userId,
+          meter: input.meter,
+        })
+        await sleep(25 * attempt)
+      }
     }
-    throw err
   }
+  throw lastError
+}
+
+// DB-050: the submission path writes its ledger row inside the
+// submission transaction (same tx client), so a crash between the
+// submit commit and the ledger write cannot lose the attribution row.
+// Single create, no retry — inside a transaction the write either
+// commits with the submission or rolls back with it. The idempotency
+// key is the submission id, so a duplicate cannot occur for a fresh
+// submit. Other callers keep using `recordUsage` (bounded retry).
+export async function recordUsageInTransaction(
+  tx: Prisma.TransactionClient,
+  input: RecordUsageInput
+): Promise<UsageRow> {
+  return tx.usageLedger.create({ data: toUsageLedgerData(input) })
 }
 
 // Summed usage for a user + meter in one period bucket. `period` is the
 // bucket start (month start / day start / hour start, UTC).
+//
+// ADM-033: the ledger total alone under-reports — the ledger is a
+// reporting record, never reconciled, while enforcement reads the live
+// tables (`getUsedForMeter`). The endpoint therefore reports BOTH
+// numbers plus a divergence flag: `liveTotal` is the same live count
+// enforcement uses (null when the requested period is not the current
+// bucket, so a live count cannot be compared against it), and
+// `orphanLedgerRows` counts ledger rows in the bucket whose
+// `resourceId` matches no real resource (SUBMISSIONS only — the only
+// meter with an orphan check; see `findOrphanUsageRows`).
 export async function getUsage(
   userId: string,
   meter: UsageMeter | undefined,
@@ -1964,6 +2318,9 @@ export async function getUsage(
   meter: UsageMeter | null
   period: Date
   total: number
+  liveTotal: number | null
+  divergent: boolean
+  orphanLedgerRows: number
 }> {
   const where: Prisma.UsageLedgerWhereInput = { userId, period }
   if (meter) where.meter = meter
@@ -1971,12 +2328,127 @@ export async function getUsage(
     _sum: { quantity: true },
     where,
   })
+  const ledgerTotal = total._sum.quantity ?? 0
+  let liveTotal: number | null = null
+  if (meter) {
+    const now = new Date()
+    // Count meters are point-in-time; the period-bound meters only
+    // compare against the bucket they are currently in.
+    const comparable =
+      meter === "FORMS" ||
+      meter === "DOMAINS" ||
+      meter === "API_KEYS" ||
+      (meter === "SUBMISSIONS" &&
+        period.getTime() === startOfUtcMonth(now).getTime()) ||
+      (meter === "AI_REQUESTS" &&
+        period.getTime() === startOfUtcDay(now).getTime()) ||
+      (meter === "MCP_REQUESTS" &&
+        period.getTime() === startOfUtcHour(now).getTime())
+    if (comparable) liveTotal = await getUsedForMeter(userId, meter, now)
+  }
+  const orphanLedgerRows = meter
+    ? (await findOrphanUsageRows(userId, meter, period)).length
+    : 0
   return {
     userId,
     meter: meter ?? null,
     period,
-    total: total._sum.quantity ?? 0,
+    total: ledgerTotal,
+    liveTotal,
+    divergent: liveTotal !== null && liveTotal !== ledgerTotal,
+    orphanLedgerRows,
   }
+}
+
+// ADM-033: ledger rows whose `resourceId` names a resource that does
+// not exist. Implemented for SUBMISSIONS (the submit path sets
+// `resourceId` = the submission id); other meters carry no resource
+// reference to check against, so they report none.
+export async function findOrphanUsageRows(
+  userId: string,
+  meter: UsageMeter,
+  period: Date
+): Promise<{ id: string; resourceId: string; createdAt: Date }[]> {
+  if (meter !== "SUBMISSIONS") return []
+  const rows =
+    (await db.usageLedger.findMany({
+      where: {
+        userId,
+        meter,
+        period,
+        resourceId: { not: null },
+      },
+      select: { id: true, resourceId: true, createdAt: true },
+    })) ?? []
+  const resourceIds = rows
+    .map((row) => row.resourceId)
+    .filter((id): id is string => id !== null)
+  if (resourceIds.length === 0) return []
+  const live =
+    (await db.submission.findMany({
+      where: { id: { in: resourceIds } },
+      select: { id: true },
+    })) ?? []
+  const liveIds = new Set(live.map((row) => row.id))
+  return rows
+    .filter((row) => row.resourceId !== null && !liveIds.has(row.resourceId))
+    .map((row) => ({
+      id: row.id,
+      resourceId: row.resourceId as string,
+      createdAt: row.createdAt,
+    }))
+}
+
+// DB-050: reconcile the SUBMISSIONS ledger against the live
+// Submission table for one user + month. A submission written by the
+// submit path with no ledger row (crash or DB blip between the
+// submission commit and the best-effort `recordUsage` call) gets its
+// row backfilled with the same idempotency key the submit path uses
+// (the submission id), so a later retry can never double-count.
+// Returns what was checked, backfilled, and how many orphan ledger
+// rows the bucket still holds. AI/MCP usage has no source table to
+// reconcile against here — their best-effort writers live in the
+// ai-settings / mcp packages.
+export async function reconcileUsageLedger(
+  userId: string,
+  period: Date = startOfUtcMonth()
+): Promise<{ checked: number; backfilled: number; orphans: number }> {
+  const monthStart = startOfUtcMonth(period)
+  const nextMonth = new Date(monthStart)
+  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1)
+  const [submissions, ledgerRows] = await Promise.all([
+    db.submission.findMany({
+      where: {
+        form: { ownerId: userId },
+        createdAt: { gte: monthStart, lt: nextMonth },
+      },
+      select: { id: true, createdAt: true },
+    }),
+    db.usageLedger.findMany({
+      where: { userId, meter: "SUBMISSIONS", period: monthStart },
+      select: { idempotencyKey: true },
+    }),
+  ])
+  const submissionList = submissions ?? []
+  const recorded = new Set((ledgerRows ?? []).map((row) => row.idempotencyKey))
+  let backfilled = 0
+  for (const submission of submissionList) {
+    if (recorded.has(submission.id)) continue
+    await recordUsage({
+      userId,
+      meter: "SUBMISSIONS",
+      quantity: 1,
+      unit: "submission",
+      period: startOfUtcMonth(submission.createdAt).toISOString(),
+      sourceEvent: "submission:created",
+      idempotencyKey: submission.id,
+      resourceId: submission.id,
+    })
+    backfilled++
+  }
+  const orphans = (await findOrphanUsageRows(userId, "SUBMISSIONS", monthStart))
+    .length
+  return { checked: submissionList.length, backfilled, orphans }
 }
 
 // How much of a meter the user has used in the current period. Count
@@ -2060,6 +2532,41 @@ export async function checkLimit(
   }
 }
 
+// SRC-216: "no limit configured" and "the lookup failed" must not
+// be the same value. `checkLimit` returning a limit of `null` means
+// "unlimited by the plan"; a failed lookup is a `LimitCheckError`.
+// Creation paths use `checkLimitStrict` (fail CLOSED — a plans-module
+// error refuses the creation with 503 rather than silently granting
+// unlimited resources). Read paths keep `checkLimitSafe` (fail open),
+// but the failure is logged loudly so silent over-provisioning is
+// visible.
+export class LimitCheckError extends ApiError {
+  constructor(
+    message = "The plan limit could not be checked. Please try again.",
+    cause?: unknown
+  ) {
+    super(message, 503)
+    this.name = "LimitCheckError"
+    this.cause = cause
+  }
+}
+
+export async function checkLimitStrict(
+  userId: string,
+  meter: UsageMeter
+): Promise<LimitCheck> {
+  try {
+    return await checkLimit(userId, meter)
+  } catch (err) {
+    logger.error("limit check failed, creation refused (fail-closed)", {
+      error: err,
+      userId,
+      meter,
+    })
+    throw new LimitCheckError(undefined, err)
+  }
+}
+
 export async function checkLimitSafe(
   userId: string,
   meter: UsageMeter
@@ -2067,7 +2574,12 @@ export async function checkLimitSafe(
   try {
     return await checkLimit(userId, meter)
   } catch (err) {
-    logger.error("limit check failed", { error: err, userId, meter })
+    // FAIL-OPEN, LOUD: read paths keep working, but a failed lookup
+    // must never silently disable quotas — this line is the signal.
+    logger.error(
+      "limit check failed, failing open: quotas are NOT enforced for this call",
+      { error: err, userId, meter }
+    )
     return null
   }
 }

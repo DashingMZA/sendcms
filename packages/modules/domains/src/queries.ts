@@ -100,8 +100,13 @@ export function useSetDomainStatus(id: string) {
 export function useDeleteDomain(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () =>
-      apiFetch<void>(`/api/v1/domains/${id}`, { method: "DELETE" }),
+    // SRC-208: the domain string travels as the confirmation token —
+    // the service deletes only when it matches.
+    mutationFn: (confirmation: string) =>
+      apiFetch<void>(`/api/v1/domains/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: domainKeys.list })
     },

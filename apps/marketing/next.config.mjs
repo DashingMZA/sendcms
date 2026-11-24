@@ -11,6 +11,9 @@ const workspaceRoot = path.resolve(__dirname, "../..")
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // X-Powered-By (Phase 16, SEC-302): suppress the `X-Powered-By:
+  // Next.js` header on every document response.
+  poweredByHeader: false,
   transpilePackages: ["@sendcms/shared", "@sendcms/ui", "@sendcms/content"],
   turbopack: {
     root: workspaceRoot,

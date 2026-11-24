@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
 import { createLogger } from "@sendcms/observability"
 import { submitForm } from "@sendcms/submissions"
+import { isVerifiedOrigin } from "@sendcms/domains"
 import {
   ApiError,
   getEffectiveOrigin,
@@ -50,10 +51,16 @@ function getClientIp(req: NextRequest): string | null {
 }
 
 export async function OPTIONS(req: NextRequest) {
-  // Preflight carries no body, so the form is unknown here — the real
-  // check happens on POST. Echoing the origin in a preflight grants
-  // nothing: it carries no data, and POST still enforces the allowlist.
-  const origin = getEffectiveOrigin(req) ?? "*"
+  // Preflight carries no body, so the form is unknown here. Per the
+  // SDK-021 decision (user, 2026-11-24), only origins whose host is a
+  // VERIFIED domain get CORS headers — any other origin gets a bare 204
+  // with no Access-Control-Allow-Origin, so the browser blocks the
+  // request. No Access-Control-Allow-Credentials is ever sent.
+  const origin = getEffectiveOrigin(req)
+  if (!origin) return new NextResponse(null, { status: 204 })
+  if (!(await isVerifiedOrigin(origin))) {
+    return new NextResponse(null, { status: 204 })
+  }
   return new NextResponse(null, {
     status: 204,
     headers: publicCorsHeaders(origin),

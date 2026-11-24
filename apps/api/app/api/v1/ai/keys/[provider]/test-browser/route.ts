@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceCustomerAiRateLimit } from "@/lib/rate-limit"
 import { testBrowserKey } from "@sendcms/ai-settings"
 import {
   AiProviderNameSchema,
@@ -16,6 +17,12 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const rateLimited = await enforceCustomerAiRateLimit(
+      req,
+      session.user.id,
+      true
+    )
+    if (rateLimited) return rateLimited
     const parsedProvider = AiProviderNameSchema.safeParse(
       (await params).provider
     )

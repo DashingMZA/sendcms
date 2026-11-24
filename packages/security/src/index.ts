@@ -21,18 +21,34 @@ export {
 export type { CspOptions } from "./csp"
 export {
   checkAdminApiRateLimit,
+  checkAuthEmailRateLimit,
   checkAuthSignInRateLimit,
+  checkAuthSignUpRateLimit,
   checkRateLimit,
+  checkSendReplyRateLimit,
+  checkTestEmailRateLimit,
   DEFAULT_ADMIN_API_HOUR_LIMIT,
   DEFAULT_ADMIN_API_MINUTE_LIMIT,
   DEFAULT_AUTH_SIGNIN_MINUTE_PER_EMAIL_LIMIT,
   DEFAULT_AUTH_SIGNIN_MINUTE_PER_IP_LIMIT,
   DEFAULT_RATE_LIMIT_CONFIG,
+  DEFAULT_SEND_REPLY_PER_MINUTE_PER_SUBMISSION,
+  DEFAULT_SEND_REPLY_PER_MINUTE_PER_USER,
+  DEFAULT_TEST_EMAIL_PER_MINUTE_PER_FORM,
+  DEFAULT_TEST_EMAIL_PER_MINUTE_PER_USER,
+  ipMatchesCidr,
   parseRateLimitConfig,
+  parseTrustedProxyList,
   readRateLimitConfig,
   resetRateLimitConfigCache,
+  resolveClientIp,
 } from "./rate-limit"
-export type { RateLimitConfig, RateLimitResult } from "./rate-limit"
+export type {
+  AuthEmailRateLimitKind,
+  RateLimitConfig,
+  RateLimitResult,
+} from "./rate-limit"
+export { isValidBearerToken } from "./cron-auth"
 export {
   DEFAULT_STEP_UP_CONFIG,
   DEFAULT_STEP_UP_MAX_ATTEMPTS_PER_HOUR,

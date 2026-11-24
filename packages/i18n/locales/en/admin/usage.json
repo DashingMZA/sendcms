@@ -5,7 +5,8 @@
   "colRemaining": "Remaining",
   "colSource": "Limit source",
   "colUsed": "Used",
-  "description": "Per-user usage against their effective plan limits. Usage is read from the metering ledger; count meters are also checked live at creation time.",
+  "description": "Per-user usage against their effective plan limits. Used shows the live count when available, otherwise the metering ledger; a badge marks rows where the ledger differs from the live count.",
+  "divergentBadge": "Ledger differs",
   "meterAiRequests": "AI requests",
   "meterAll": "All meters",
   "meterApiKeys": "API keys",
@@ -28,5 +29,5 @@
   "sourcePlan": "Plan",
   "title": "Usage",
   "unlimited": "Unlimited",
-  "usageNote": "Usage totals come from the metering ledger. The MCP row is hourly, and the usage endpoint only accepts a date, so hourly MCP usage is not shown here — it is enforced live per API key instead."
+  "usageNote": "Used comes from the live count when available, otherwise the metering ledger. The MCP row is hourly, and the usage endpoint only accepts a date, so hourly MCP usage is not shown here — it is enforced live per API key instead."
 }

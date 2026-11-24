@@ -2,14 +2,22 @@ export {
   AI_PROVIDERS,
   DEFAULT_MODELS,
   PROVIDER_ENV_VARS,
+  aiEnvConfigToEnv,
   getAiModel,
   getAiModelForKey,
   getAiModelId,
   isAiConfigured,
+  normalizeAiEnv,
+  pickAiEnvConfig,
   resolveAiProvider,
   toAiCallUsage,
 } from "./provider"
-export type { AiCallUsage, AiProvider, AiProviderName } from "./provider"
+export type {
+  AiCallUsage,
+  AiEnvConfig,
+  AiProvider,
+  AiProviderName,
+} from "./provider"
 export {
   BYOK_MASTER_KEY_VERSION,
   decryptByokKey,
@@ -40,3 +48,12 @@ export {
 export type { FieldSuggestion, FieldSuggestions } from "./form-builder"
 export { ReplyDraftSchema, draftReply } from "./drafts"
 export type { ReplyDraft } from "./drafts"
+export {
+  UNTRUSTED_BLOCK_END,
+  UNTRUSTED_BLOCK_START,
+  isInstructionLikeLine,
+  neutraliseInstructionLines,
+  neutraliseUntrustedJson,
+  wrapDelimitedBlock,
+  wrapUntrustedData,
+} from "./untrusted"

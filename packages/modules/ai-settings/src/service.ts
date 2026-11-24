@@ -9,9 +9,11 @@ import {
   getAiModelId,
   getAiModel,
   isAiConfigured,
+  normalizeAiEnv,
   resolveAiProvider,
   toAiCallUsage,
   type AiCallUsage,
+  type AiEnvConfig,
   type AiProviderName,
 } from "@sendcms/ai"
 import { AuditAction, AuditResource, db } from "@sendcms/database"
@@ -381,6 +383,46 @@ export type AiKeyTestResult = {
   error?: string
 }
 
+// ─── Key-test error sanitisation (AIM-006) ──────────────────────────
+// A provider's auth error echoes part of the tested key (OpenAI's own
+// redaction still shows the first ~8 + last 4 chars). The Test-button
+// response AND the structured log must never carry key material: only
+// the fingerprint's last 4 chars are shown anywhere else in this
+// module. So a probe failure is mapped to a short allowlisted
+// message — nothing from the provider's message is ever returned or
+// logged. The scrub step runs first as belt-and-braces (a provider
+// could echo a different fragment tomorrow): any token that appears
+// in the key is dropped before classification, so the classifier only
+// ever sees safe words.
+const KEY_TEST_ERROR_MESSAGES: { pattern: RegExp; message: string }[] = [
+  {
+    pattern: /incorrect api key|invalid api key|authentication/i,
+    message: "Incorrect API key.",
+  },
+  {
+    pattern: /rate limit|too many requests/i,
+    message: "Rate limit exceeded. Try again later.",
+  },
+  {
+    pattern: /overloaded|currently experiencing high demand/i,
+    message: "The provider is overloaded. Try again later.",
+  },
+]
+
+export function sanitizeKeyTestError(message: string, apiKey: string): string {
+  const scrubbed = message
+    .split(/(\s+)/)
+    .map((token) => {
+      const bare = token.replace(/[^A-Za-z0-9_-]/g, "")
+      return bare.length >= 4 && apiKey.includes(bare) ? "[redacted]" : token
+    })
+    .join("")
+  for (const { pattern, message: safe } of KEY_TEST_ERROR_MESSAGES) {
+    if (pattern.test(scrubbed)) return safe
+  }
+  return "Key test failed."
+}
+
 /** One live probe of a raw API key: a single-token generateText
     call that proves the key works for this provider. A list-models
     call would need a second, provider-specific client per provider;
@@ -413,13 +455,16 @@ async function probeKey(
       usage: toAiCallUsage(result.usage),
     }
   } catch (err) {
-    // Error message only — the key is never in a provider error, and
-    // the plaintext key is never logged.
+    // Sanitised (AIM-006): a provider error can echo part of the key
+    // — the raw message never leaves this function.
     return {
       ok: false,
       latencyMs: Date.now() - started,
       model: modelId,
-      error: err instanceof Error ? err.message : "Key test failed.",
+      error: sanitizeKeyTestError(
+        err instanceof Error ? err.message : "Key test failed.",
+        apiKey
+      ),
       usage: null,
     }
   }
@@ -484,10 +529,13 @@ export async function testUserAiKey(
   }
   const probe = await probeKey(provider, apiKey, modelId)
   if (!probe.ok) {
+    // The log carries the sanitised probe error plus the fingerprint
+    // last4 (AIM-006) — never key material.
     logger.warn("byok key test failed", {
       userId,
       provider,
       error: probe.error,
+      fingerprintLast4: row.keyFingerprint.slice(-4),
     })
   }
   // Best-effort: a failed status write must not hide the test result.
@@ -543,6 +591,7 @@ export async function testBrowserKey(
   const modelId = model?.trim() || DEFAULT_MODELS[provider]
   const probe = await probeKey(provider, apiKey.trim(), modelId)
   if (!probe.ok) {
+    // Sanitised by probeKey (AIM-006) — never key material.
     logger.warn("browser key test failed", {
       userId,
       provider,
@@ -607,17 +656,38 @@ async function validateBillingMode(
 /** BYOK pauses the platform key for this user — that is exactly what
     the mode means, no separate paused flag. Re-enabling PLATFORM
     resumes it. */
+// DB-051: the previous mode is read under a row lock in the same
+// transaction as the write, so a concurrent change cannot make the
+// audit's old value stale. A missing row locks nothing, but the upsert
+// then creates it — and the previous value is PLATFORM either way
+// (the column default).
+async function setBillingModeLocked(
+  userId: string,
+  mode: AiBillingMode
+): Promise<AiBillingMode> {
+  return db.$transaction(
+    async (tx) => {
+      const locked = await tx.$queryRaw<{ billingMode: AiBillingMode }[]>`
+        SELECT "billingMode" FROM "UserAiSettings" WHERE "userId" = ${userId} FOR UPDATE
+      `
+      const previous = locked.length > 0 ? locked[0].billingMode : "PLATFORM"
+      await tx.userAiSettings.upsert({
+        where: { userId },
+        create: { userId, billingMode: mode },
+        update: { billingMode: mode },
+      })
+      return previous
+    },
+    { maxWait: 20000, timeout: 30000 }
+  )
+}
+
 export async function setUserAiBillingMode(
   userId: string,
   mode: AiBillingMode
 ): Promise<AiBillingMode> {
   await validateBillingMode(userId, mode)
-  const previous = await getUserAiBillingMode(userId)
-  await db.userAiSettings.upsert({
-    where: { userId },
-    create: { userId, billingMode: mode },
-    update: { billingMode: mode },
-  })
+  const previous = await setBillingModeLocked(userId, mode)
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -639,12 +709,7 @@ export async function setUserAiBillingModeForAdmin(
 ): Promise<AiBillingMode> {
   requireAdmin(actor, "MANAGE_AI")
   await validateBillingMode(userId, mode)
-  const previous = await getUserAiBillingMode(userId)
-  await db.userAiSettings.upsert({
-    where: { userId },
-    create: { userId, billingMode: mode },
-    update: { billingMode: mode },
-  })
+  const previous = await setBillingModeLocked(userId, mode)
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -720,7 +785,10 @@ export type ResolveAiOptions = {
   browserKey?: string
   browserModel?: string
   resourceId?: string
-  env?: NodeJS.ProcessEnv
+  // SRC-123: either a whole environment (legacy callers) or the
+  // explicit AiEnvConfig a route built with pickAiEnvConfig — the
+  // resolver only ever sees the AI vars, never the ambient env.
+  env?: NodeJS.ProcessEnv | AiEnvConfig
 }
 
 async function getProviderConfigRow(provider: AiProviderName): Promise<{
@@ -906,7 +974,7 @@ export async function resolveAiModelForUser(
   userId: string,
   opts: ResolveAiOptions
 ): Promise<ResolvedAiModel> {
-  const env = opts.env ?? process.env
+  const env = normalizeAiEnv(opts.env ?? process.env)
 
   // (1) A per-request browser-only key. It needs an explicit provider
   // — the key is bound to one provider and must never be sent to

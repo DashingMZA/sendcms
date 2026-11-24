@@ -422,6 +422,76 @@ const { store, mockDb } = vi.hoisted(() => {
           return row
         }
       ),
+      // AIM-007: the limiter claims with a single conditional
+      // UPDATE (updateMany). The fake applies the WHERE + write
+      // synchronously — no await between the match and the apply —
+      // which mirrors Postgres's single-statement atomicity.
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>
+          data: Record<string, unknown>
+        }) => {
+          const row = store.rateLimits.get(where.apiKeyId as string)
+          if (!row) return { count: 0 }
+          for (const [field, value] of Object.entries(where)) {
+            if (field === "apiKeyId") continue
+            const current = (row as unknown as Record<string, unknown>)[field]
+            if (
+              typeof value === "object" &&
+              value !== null &&
+              "lt" in (value as Record<string, unknown>)
+            ) {
+              if (
+                typeof current !== "number" ||
+                current >= (value as { lt: number }).lt
+              ) {
+                return { count: 0 }
+              }
+            } else if (
+              typeof value === "object" &&
+              value !== null &&
+              "not" in (value as Record<string, unknown>)
+            ) {
+              const not = (value as { not: unknown }).not
+              if (
+                current instanceof Date &&
+                not instanceof Date &&
+                current.getTime() === not.getTime()
+              ) {
+                return { count: 0 }
+              }
+              if (current === not) return { count: 0 }
+            } else if (value instanceof Date) {
+              if (
+                !(current instanceof Date) ||
+                current.getTime() !== value.getTime()
+              ) {
+                return { count: 0 }
+              }
+            } else if (current !== value) {
+              return { count: 0 }
+            }
+          }
+          for (const [field, value] of Object.entries(data)) {
+            if (
+              typeof value === "object" &&
+              value !== null &&
+              "increment" in (value as Record<string, unknown>)
+            ) {
+              const current = (row as unknown as Record<string, unknown>)[field]
+              ;(row as unknown as Record<string, unknown>)[field] =
+                (typeof current === "number" ? current : 0) +
+                (value as { increment: number }).increment
+            } else {
+              ;(row as unknown as Record<string, unknown>)[field] = value
+            }
+          }
+          return { count: 1 }
+        }
+      ),
     },
     // Minimal stubs for the MCP tool modules (registration only —
     // no tool is executed in this file).

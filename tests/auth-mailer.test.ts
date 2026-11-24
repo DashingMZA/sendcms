@@ -4,6 +4,7 @@ import {
   buildPlatformTransporter,
   formatFromAddress,
   getPlatformFromAddress,
+  redactAuthEmailUrl,
   sendPasswordResetEmail,
   sendVerificationEmail,
 } from "@sendcms/email"
@@ -102,28 +103,79 @@ describe("getPlatformFromAddress", () => {
   })
 })
 
-describe("auth mailer without SMTP", () => {
-  it("logs the verification link in non-production and resolves", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
-    await sendVerificationEmail({
-      user: { name: "Zaheer", email: "zaheer@example.com" },
-      url: "http://localhost:3000/verify-email?token=abc",
-    })
-    expect(logSpy).toHaveBeenCalledOnce()
-    expect(logSpy.mock.calls[0][0]).toContain("zaheer@example.com")
-    expect(logSpy.mock.calls[0][0]).toContain(
-      "http://localhost:3000/verify-email?token=abc"
+describe("redactAuthEmailUrl", () => {
+  it("redacts the token in a reset path, keeping the link shape", () => {
+    expect(
+      redactAuthEmailUrl(
+        "http://localhost:3000/reset-password/tok-abc-123?callbackURL=/dashboard"
+      )
+    ).toBe(
+      "http://localhost:3000/reset-password/<redacted>?callbackURL=/dashboard"
     )
   })
 
-  it("logs the reset link in non-production and resolves", async () => {
+  it("redacts the token query param, keeping the link shape", () => {
+    expect(
+      redactAuthEmailUrl("http://localhost:3000/verify-email?token=tok-abc-123")
+    ).toBe("http://localhost:3000/verify-email?token=<redacted>")
+  })
+
+  it("reduces an unknown URL shape to its origin, never logging it whole", () => {
+    expect(
+      redactAuthEmailUrl("http://localhost:3000/some/other?x=tok-abc-123")
+    ).toBe("http://localhost:3000/<redacted>")
+    expect(redactAuthEmailUrl("not-a-url")).toBe("<redacted>")
+  })
+})
+
+describe("auth mailer without SMTP", () => {
+  // EML-002 / TST-020: the dev log must carry the link SHAPE, never the
+  // bearer-equivalent token. These tests fail if the token appears in
+  // any logged line.
+  it("logs the verification link shape in non-production and resolves", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    await sendVerificationEmail({
+      user: { name: "Zaheer", email: "zaheer@example.com" },
+      url: "http://localhost:3000/verify-email?token=tok-abc-123",
+    })
+    expect(logSpy).toHaveBeenCalledOnce()
+    const line = logSpy.mock.calls[0][0] as string
+    expect(line).toContain("[auth-email]")
+    expect(line).toContain("zaheer@example.com")
+    expect(line).toContain(
+      "http://localhost:3000/verify-email?token=<redacted>"
+    )
+    expect(line).not.toContain("tok-abc-123")
+  })
+
+  it("logs the reset link shape in non-production and resolves", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
     await sendPasswordResetEmail({
       user: { name: "Zaheer", email: "zaheer@example.com" },
-      url: "http://localhost:3000/reset-password/abc",
+      url: "http://localhost:3000/reset-password/tok-abc-123",
     })
     expect(logSpy).toHaveBeenCalledOnce()
-    expect(logSpy.mock.calls[0][0]).toContain("password reset")
+    const line = logSpy.mock.calls[0][0] as string
+    expect(line).toContain("password reset")
+    expect(line).toContain("http://localhost:3000/reset-password/<redacted>")
+    expect(line).not.toContain("tok-abc-123")
+  })
+
+  it("logs the full link only on explicit opt-in", async () => {
+    vi.stubEnv("SENDCMS_DEV_LOG_EMAIL_TOKENS", "1")
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+    try {
+      await sendVerificationEmail({
+        user: { name: "Zaheer", email: "zaheer@example.com" },
+        url: "http://localhost:3000/verify-email?token=tok-abc-123",
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(logSpy).toHaveBeenCalledOnce()
+    expect(logSpy.mock.calls[0][0]).toContain(
+      "http://localhost:3000/verify-email?token=tok-abc-123"
+    )
   })
 
   it("throws in production when SMTP is not configured", async () => {

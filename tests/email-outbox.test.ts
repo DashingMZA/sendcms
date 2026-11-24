@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { render } from "@react-email/render"
 import {
   SubmissionNotification,
@@ -154,5 +154,84 @@ describe("email-jobs validators", () => {
     expect(
       EmailJobListQuerySchema.parse({ status: "FAILED", page: "2" })
     ).toEqual({ status: "FAILED", page: 2 })
+  })
+})
+
+// Cron route auth + concurrent jobs (Phase 16, Wave 1: SRC-115 /
+// EML-067). The three jobs are mocked — these tests pin the route's
+// own decisions: the bearer check is case-insensitive on the scheme
+// and constant-time on the token, and one hit runs all three jobs.
+const mockProcessOutbox = vi.hoisted(() =>
+  vi.fn(async () => ({ processed: 1, sent: 1, failed: 0 }))
+)
+const mockRescore = vi.hoisted(() =>
+  vi.fn(async () => ({ checked: 2, markedSpam: 0 }))
+)
+const mockDigests = vi.hoisted(() => vi.fn(async () => ({ sent: 0 })))
+
+vi.mock("@sendcms/notifications", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/notifications")>()
+  return { ...actual, processEmailOutbox: mockProcessOutbox }
+})
+vi.mock("@sendcms/submissions", () => ({
+  rescoreNewSubmissions: mockRescore,
+  sendDueDigests: mockDigests,
+}))
+
+import { NextRequest } from "next/server"
+import { GET as cronGet } from "../apps/api/app/api/cron/email-outbox/route"
+
+describe("GET /api/cron/email-outbox (SRC-115 / EML-067)", () => {
+  const URL = "http://localhost:3001/api/cron/email-outbox"
+
+  function cronRequest(authorization?: string): NextRequest {
+    return new NextRequest(URL, {
+      headers: authorization ? { Authorization: authorization } : {},
+    })
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", "test-cron-secret")
+    mockProcessOutbox.mockClear()
+    mockRescore.mockClear()
+    mockDigests.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("accepts a lowercase bearer scheme and runs all three jobs", async () => {
+    const res = await cronGet(cronRequest("bearer test-cron-secret"))
+    expect(res.status).toBe(200)
+    expect(mockProcessOutbox).toHaveBeenCalledTimes(1)
+    expect(mockRescore).toHaveBeenCalledTimes(1)
+    expect(mockDigests).toHaveBeenCalledTimes(1)
+    const body = await res.json()
+    expect(body).toMatchObject({ processed: 1, rescored: 2, digests: 0 })
+  })
+
+  it("accepts the canonical Bearer scheme", async () => {
+    const res = await cronGet(cronRequest("Bearer test-cron-secret"))
+    expect(res.status).toBe(200)
+  })
+
+  it("rejects a wrong token with 401 and runs no jobs", async () => {
+    const res = await cronGet(cronRequest("Bearer wrong-secret"))
+    expect(res.status).toBe(401)
+    expect(mockProcessOutbox).not.toHaveBeenCalled()
+    expect(mockRescore).not.toHaveBeenCalled()
+    expect(mockDigests).not.toHaveBeenCalled()
+  })
+
+  it("rejects a missing Authorization header with 401", async () => {
+    const res = await cronGet(cronRequest())
+    expect(res.status).toBe(401)
+  })
+
+  it("returns 503 when CRON_SECRET is not configured", async () => {
+    vi.stubEnv("CRON_SECRET", "")
+    const res = await cronGet(cronRequest("Bearer test-cron-secret"))
+    expect(res.status).toBe(503)
   })
 })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceSendReplyRateLimit } from "@/lib/rate-limit"
 import { sendReplyToSubmission } from "@sendcms/inbox"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
@@ -13,6 +14,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
     const { submissionId } = await params
+    // Email-sending route (EML-003): per-user + per-submission
+    // buckets, before any reply is enqueued.
+    const limited = await enforceSendReplyRateLimit(
+      session.user.id,
+      submissionId
+    )
+    if (limited) return limited
     const body = await req.json().catch(() => ({}))
     const subject = typeof body.subject === "string" ? body.subject : ""
     const replyBody = typeof body.body === "string" ? body.body : ""

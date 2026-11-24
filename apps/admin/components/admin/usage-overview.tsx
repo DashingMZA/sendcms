@@ -389,7 +389,9 @@ function UsageMeterRow({
   isOverride: boolean
 }) {
   const { data } = useUsage(userId, meter, periodForMeter(meter))
-  const used = data?.total ?? 0
+  // ADM-033: show the live count enforcement uses when the endpoint
+  // has one, falling back to the ledger total for past buckets.
+  const used = data?.liveTotal ?? data?.total ?? 0
   const remaining = limit === null ? null : Math.max(0, limit - used)
   return (
     <MeterRowCells
@@ -400,6 +402,7 @@ function UsageMeterRow({
       periodKey={periodLabelKey(meter)}
       source={source}
       isOverride={isOverride}
+      divergent={data?.divergent ?? false}
     />
   )
 }
@@ -439,6 +442,7 @@ function MeterRowCells({
   periodKey,
   source,
   isOverride,
+  divergent = false,
 }: {
   meter: UsageMeter
   used: number | null
@@ -447,6 +451,7 @@ function MeterRowCells({
   periodKey: string
   source: "override" | "plan" | "none"
   isOverride: boolean
+  divergent?: boolean
 }) {
   const { t } = useTranslation("usage")
   const sourceLabel =
@@ -458,7 +463,12 @@ function MeterRowCells({
   return (
     <TableRow>
       <TableCell className="font-medium">{meterLabel(meter, t)}</TableCell>
-      <TableCell>{used === null ? "—" : used}</TableCell>
+      <TableCell>
+        <span className="flex items-center gap-2">
+          {used === null ? "—" : used}
+          {divergent && <Badge variant="outline">{t("divergentBadge")}</Badge>}
+        </span>
+      </TableCell>
       <TableCell>
         {limit === null
           ? source === "none"

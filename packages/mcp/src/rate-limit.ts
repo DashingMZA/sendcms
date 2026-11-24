@@ -54,43 +54,84 @@ export async function checkMcpRateLimit(
   const hourStart = new Date(now)
   hourStart.setMinutes(0, 0, 0)
 
-  const row = await db.apiKeyRateLimit.findUnique({
-    where: { apiKeyId: keyId },
-  })
-  const minuteCount =
-    row && row.minuteWindowStart.getTime() === minuteStart.getTime()
-      ? row.minuteCount + 1
-      : 1
-  const hourCount =
-    row && row.hourWindowStart.getTime() === hourStart.getTime()
-      ? row.hourCount + 1
-      : 1
-  if (minuteCount > minuteLimit) {
-    throw new ApiError(
-      "Too many MCP requests. Please wait a minute and try again.",
-      429
-    )
-  }
-  if (hourCount > hourLimit) {
-    throw new ApiError(
-      "Too many MCP requests from this key. Try again later.",
-      429
-    )
-  }
+  // AIM-007: the counter MUST be claimed atomically. The old code
+  // read the row, computed count+1 in memory, then upserted — N
+  // concurrent calls all read the same count and all wrote count+1,
+  // so a 150-call burst against a 120/min limit sailed through with
+  // the counter advancing by ~40. The claim below is a single
+  // conditional UPDATE (insert-if-absent first): the WHERE pins both
+  // window starts AND requires both counts under their limits, so two
+  // concurrent claims serialize on the row — the second sees the
+  // first's increment in its own WHERE. Exactly `limit` calls are
+  // admitted per window, and a denied call increments nothing, so the
+  // stored counter always equals the admitted count. A window that
+  // rolled over is reset by its own atomic UPDATE, then the claim is
+  // retried; when nothing resets, the windows are current and a limit
+  // is genuinely reached.
   await db.apiKeyRateLimit.upsert({
     where: { apiKeyId: keyId },
     create: {
       apiKeyId: keyId,
       minuteWindowStart: minuteStart,
-      minuteCount,
+      minuteCount: 0,
       hourWindowStart: hourStart,
-      hourCount,
+      hourCount: 0,
     },
-    update: {
-      minuteWindowStart: minuteStart,
-      minuteCount,
-      hourWindowStart: hourStart,
-      hourCount,
-    },
+    // No-op touch: the row already exists; the windows/counts are
+    // managed by the conditional UPDATEs below, never by this upsert.
+    update: { updatedAt: new Date() },
   })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const claimed = await db.apiKeyRateLimit.updateMany({
+      where: {
+        apiKeyId: keyId,
+        minuteWindowStart: minuteStart,
+        minuteCount: { lt: minuteLimit },
+        hourWindowStart: hourStart,
+        hourCount: { lt: hourLimit },
+      },
+      data: {
+        minuteCount: { increment: 1 },
+        hourCount: { increment: 1 },
+      },
+    })
+    if (claimed.count === 1) return
+    const resetMinute = await db.apiKeyRateLimit.updateMany({
+      where: { apiKeyId: keyId, minuteWindowStart: { not: minuteStart } },
+      data: { minuteWindowStart: minuteStart, minuteCount: 0 },
+    })
+    const resetHour = await db.apiKeyRateLimit.updateMany({
+      where: { apiKeyId: keyId, hourWindowStart: { not: hourStart } },
+      data: { hourWindowStart: hourStart, hourCount: 0 },
+    })
+    if (resetMinute.count === 0 && resetHour.count === 0) {
+      // Both windows are current, so the claim failed on a limit, not
+      // a rollover. Re-read once to report which limit was hit (a
+      // plain read: the counts can only have grown since the claim,
+      // so the verdict is stable).
+      const current = await db.apiKeyRateLimit.findUnique({
+        where: { apiKeyId: keyId },
+      })
+      if (
+        current &&
+        current.minuteWindowStart.getTime() === minuteStart.getTime() &&
+        current.minuteCount >= minuteLimit
+      ) {
+        throw new ApiError(
+          "Too many MCP requests. Please wait a minute and try again.",
+          429
+        )
+      }
+      throw new ApiError(
+        "Too many MCP requests from this key. Try again later.",
+        429
+      )
+    }
+  }
+  // A window reset but the retry still never claimed (a zero limit, or
+  // a pathological race) — deny rather than admit.
+  throw new ApiError(
+    "Too many MCP requests. Please wait a minute and try again.",
+    429
+  )
 }

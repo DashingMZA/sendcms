@@ -32,11 +32,17 @@ import { requireAdmin, type AuditOpts } from "./require-admin"
 //   (revoked), BYOK keys (credentials — must be gone), AI settings,
 //   MCP settings, flag overrides, entitlement overrides, admin notes
 //   ABOUT the user, domains + forms (cascade: fields, submissions +
-//   events, notification settings, email jobs, AI daily usage).
-//   KEPT: AuditLog, Subscription, SubscriptionEvent, UsageLedger,
-//   AiUsageRecord, McpUsageRecord — billing/audit history must
-//   survive erasure. The audit row for the erasure itself carries
-//   only counts, never PII.
+//   events, notification settings, AI daily usage), EmailJob rows
+//   addressed to the user or belonging to their forms, and
+//   Verification rows for the old email (Phase 16, SRC-213).
+//   KEPT: AuditLog and SubscriptionEvent rows (SetNull links — the
+//   audit trail survives erasure). Subscription, UsageLedger,
+//   AiUsageRecord and McpUsageRecord are Cascade off User and are
+//   KEPT ONLY because erasure anonymizes the user row and never
+//   calls db.user.delete (owner decision 2026-11-24, DB-005: keep
+//   Cascade) — a hard user delete WOULD delete those rows with the
+//   user. The audit row for the erasure itself carries only counts,
+//   never PII.
 //
 // Guards (same as Phase 3): the PLATFORM_OWNER can never be erased;
 // self-erasure is forbidden (403). A refused erasure attempt is
@@ -277,6 +283,10 @@ export async function executeErasure(
   // guard, immediately before the transaction.
   await requireStepUp(actor)
 
+  // SRC-213: capture the old email BEFORE the anonymizing update —
+  // the EmailJob/Verification cleanup below keys off it, and the
+  // update must not be able to move the value under us.
+  const oldEmail = target.email
   const now = new Date()
   const counts = await db.$transaction(async (tx) => {
     // Re-check inside the transaction: the state is the enforcement
@@ -305,6 +315,17 @@ export async function executeErasure(
         locale: null,
       },
     })
+    // SRC-213: EmailJob rows are NOT removed by the form cascade
+    // (their form/submission FKs are SetNull), so delete them here
+    // before the forms go away — the form filter needs the ids while
+    // the forms still exist. Verification rows are keyed by the old
+    // email and would otherwise keep a live token for it.
+    const userFormIds = (
+      await tx.form.findMany({
+        where: { ownerId: target.id },
+        select: { id: true },
+      })
+    ).map((f) => f.id)
     const [
       accounts,
       keys,
@@ -317,6 +338,8 @@ export async function executeErasure(
       notes,
       domains,
       forms,
+      emailJobs,
+      verifications,
     ] = await Promise.all([
       tx.account.deleteMany({ where: { userId: target.id } }),
       tx.apiKey.updateMany({
@@ -332,6 +355,14 @@ export async function executeErasure(
       tx.adminNote.deleteMany({ where: { userId: target.id } }),
       tx.domain.deleteMany({ where: { ownerId: target.id } }),
       tx.form.deleteMany({ where: { ownerId: target.id } }),
+      tx.emailJob.deleteMany({
+        where: {
+          OR: [{ to: oldEmail }, { formId: { in: userFormIds } }],
+        },
+      }),
+      tx.verification.deleteMany({
+        where: { identifier: oldEmail },
+      }),
     ])
     await tx.deletionRequest.update({
       where: { id },
@@ -349,6 +380,8 @@ export async function executeErasure(
       adminNotesDeleted: notes.count,
       domainsDeleted: domains.count,
       formsDeleted: forms.count,
+      emailJobsDeleted: emailJobs.count,
+      verificationsDeleted: verifications.count,
     }
   })
   await logAudit({

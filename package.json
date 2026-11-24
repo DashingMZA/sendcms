@@ -25,7 +25,8 @@
     "sdk:build": "pnpm --filter @sendcms/sdk build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "check:workspace-imports": "node scripts/check-workspace-imports.mjs",
+    "typecheck": "turbo run typecheck && tsc --noEmit && node scripts/check-workspace-imports.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

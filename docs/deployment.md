@@ -69,6 +69,31 @@ push is disabled via the Ignored Build Step (owner directive
 | `AI_DAILY_CALL_CAP`                                                                                                 | no                     | Model calls allowed per form per day (default 100).                                                                                                                                         |
 | `AI_DIGEST_INTERVAL_HOURS`                                                                                          | no                     | Inbox digest interval in hours (default 24 = daily; 168 = weekly).                                                                                                                          |
 
+### Per-project env (Vercel) — only what each project needs
+
+The six Vercel projects used to carry the identical 29-var set, so a
+leak of any one project's env exposed the whole platform's secrets
+(Phase 16, LVE-020). Each project carries **only** the vars its code
+reads — the lists below are the authority, verified against the
+`process.env` reads in each app and the packages it imports. Remove
+any var not listed for a project from that project's settings.
+
+| Project (`sendcms-*`) | Vars it needs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sendcms` (api)       | Everything: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUSTED_ORIGINS`, `COOKIE_DOMAIN` (production), all `NEXT_PUBLIC_*_URL` vars, OAuth `GOOGLE_` / `GITHUB_` / `FACEBOOK_CLIENT_ID` + `_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, `SMTP_*`, `CRON_SECRET`, `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, AI keys + `AI_PROVIDER` / `AI_MODEL` / `AI_SPAM_THRESHOLD` / `AI_DAILY_CALL_CAP` / `AI_DIGEST_INTERVAL_HOURS` / `AI_BYOK_MASTER_KEY`, billing keys (`STRIPE_*`, `PAYPAL_*`, `POLAR_*`, `FREEMIUS_*`, `GUMROAD_*`). |
+| `sendcms-dashboard`   | `DATABASE_URL`, `BETTER_AUTH_SECRET` (**same value as api** — they share the session), `BETTER_AUTH_URL`, `COOKIE_DOMAIN` (production, same value as api), `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DASHBOARD_URL`, `NEXT_PUBLIC_DOCS_URL`, `NEXT_PUBLIC_UPDATES_URL`, `NEXT_PUBLIC_ADMIN_URL`, `NEXT_PUBLIC_AUTH_URL`. No OAuth secrets, no mail keys, no `CRON_SECRET`, no billing/AI keys — the auth handler and mailer live on the api app.                                                                                          |
+| `sendcms-admin`       | Same as dashboard, plus `NEXT_PUBLIC_ADMIN_URL` (its own public URL, used for the sign-in callback).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `sendcms-marketing`   | Only public URLs: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DASHBOARD_URL`, `NEXT_PUBLIC_UPDATES_URL`. No secrets at all — no `DATABASE_URL`, no `CRON_SECRET`, no `SMTP_*`, no OAuth secrets.                                                                                                                                                                                                                                                                                                                                            |
+| `sendcms-docs`        | Only public URLs: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_DOCS_URL`. No secrets at all.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `sendcms-updates`     | Only public URLs: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_UPDATES_URL`. No secrets at all.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+Notes: `TRUSTED_ORIGINS` is set on the **api** project only (the auth
+handler reads it); the dashboard/admin apps' own Better Auth instances
+do session lookups, not OAuth callbacks, so they do not need it. The
+standalone email worker is not a Vercel project — it needs
+`DATABASE_URL`, `RESEND_API_KEY` / `RESEND_FROM` (or `SMTP_*`), and
+`WORKER_PORT` / `WORKER_POLL_INTERVAL_MS` only.
+
 Copy `.env.example` to `.env` for local development. Never commit
 `.env` (it is gitignored). The seed script (`pnpm db:seed`) creates
 SendCMS demo data — a verified demo user, domain, form, and sample

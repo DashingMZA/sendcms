@@ -42,6 +42,7 @@ const mockLogAudit = vi.hoisted(() => vi.fn(async () => undefined))
 const mockActivate = vi.hoisted(() => vi.fn(async () => null))
 const mockCancel = vi.hoisted(() => vi.fn(async () => null))
 const mockExtend = vi.hoisted(() => vi.fn(async () => null))
+const mockMarkPastDue = vi.hoisted(() => vi.fn(async () => null))
 
 // A stateful in-memory fake DB. Prisma `select`/`include` args are
 // ignored — the code only reads the fields it needs.
@@ -58,6 +59,7 @@ const { store, mockDb } = vi.hoisted(() => {
     providerEventId: string
     eventType: string
     processedAt: Date | null
+    createdAt: Date
   }
   type StoredVersion = {
     id: string
@@ -214,6 +216,7 @@ const { store, mockDb } = vi.hoisted(() => {
           const row: StoredEvent = {
             id: `evt-${store.eventSeq++}`,
             processedAt: null,
+            createdAt: new Date(),
             ...data,
           }
           store.events.set(`${data.provider}:${data.providerEventId}`, row)
@@ -273,6 +276,18 @@ const { store, mockDb } = vi.hoisted(() => {
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn(mockDb)
     ),
+    // DB-051: the locked read in setProviderConfig. The template tag
+    // arrives as (strings, ...values); values[0] is the provider.
+    $queryRaw: vi.fn(
+      async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?")
+        if (sql.includes('"BillingProviderConfig"')) {
+          const row = store.configs.get(values[0] as string)
+          return row ? [{ id: row.id }] : []
+        }
+        return []
+      }
+    ),
   }
 
   return { store, mockDb }
@@ -290,6 +305,7 @@ vi.mock("@sendcms/plans", async (importOriginal) => {
     activateSubscriptionFromCheckout: mockActivate,
     cancelSubscriptionFromProvider: mockCancel,
     extendSubscriptionPeriod: mockExtend,
+    markSubscriptionPastDue: mockMarkPastDue,
   }
 })
 
@@ -301,7 +317,11 @@ import {
   setProviderConfig,
 } from "@sendcms/billing"
 import { listPublishedPlans } from "@sendcms/plans"
-import { isProviderConfigured, missingEnvVars } from "@sendcms/billing"
+import {
+  isProviderConfigured,
+  missingEnvVars,
+  stripeKeyModeMismatch,
+} from "@sendcms/billing"
 
 const savedEnv: Record<string, string | undefined> = {}
 
@@ -834,5 +854,330 @@ describe("public plans — only published, non-private plans", () => {
     expect(plans.map((p) => p.slug)).toEqual(["pro"])
     expect(plans[0].version.priceAmount).toBe(9900)
     expect(plans[0].version.entitlements).toEqual(entitlements)
+  })
+})
+
+describe("Polar webhook — async verification + webhook-id event id (BIL-040 / BIL-041)", () => {
+  const secret = "whsec_polar_test_secret"
+
+  // Standard Webhooks signing: v1,base64(HMAC-SHA256(secret,
+  // "<webhook-id>.<timestamp>.<body>")) — verified against the real
+  // installed SDK before these tests were written.
+  function polarHeaders(id: string, payload: string) {
+    const ts = String(Math.floor(Date.now() / 1000))
+    const signature = `v1,${createHmac("sha256", secret)
+      .update(`${id}.${ts}.${payload}`)
+      .digest("base64")}`
+    return {
+      "webhook-id": id,
+      "webhook-timestamp": ts,
+      "webhook-signature": signature,
+    }
+  }
+
+  function checkoutPayload() {
+    return JSON.stringify({
+      type: "checkout.updated",
+      timestamp: new Date().toISOString(),
+      api_version: "2026-10",
+      data: {
+        status: "confirmed",
+        subscription_id: "sub_polar_1",
+        metadata: { user_id: "user-1", plan_version_id: "pv-1" },
+      },
+    })
+  }
+
+  beforeEach(() => {
+    setEnv({ POLAR_WEBHOOK_SECRET: secret })
+  })
+
+  it("verifies a signed checkout.updated and activates the subscription", async () => {
+    const payload = checkoutPayload()
+    const result = await handleWebhook(
+      "POLAR",
+      payload,
+      polarHeaders("msg_polar_1", payload)
+    )
+    expect(result).toMatchObject({
+      received: true,
+      kind: "checkout-completed",
+    })
+    expect(mockActivate).toHaveBeenCalledTimes(1)
+    expect(mockActivate).toHaveBeenCalledWith({
+      userId: "user-1",
+      planVersionId: "pv-1",
+      provider: "POLAR",
+      providerSubscriptionId: "sub_polar_1",
+      periodEnd: null,
+    })
+  })
+
+  it("dedupes a redelivery with the same webhook-id (BIL-041)", async () => {
+    const payload = checkoutPayload()
+    const headers = polarHeaders("msg_polar_2", payload)
+    await handleWebhook("POLAR", payload, headers)
+    const second = await handleWebhook("POLAR", payload, headers)
+    expect(second).toMatchObject({ received: true, duplicate: true })
+    expect(mockActivate).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects a bad signature with 401 and no unhandled rejection", async () => {
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown) => {
+      rejections.push(reason)
+    }
+    process.on("unhandledRejection", onRejection)
+    try {
+      const payload = checkoutPayload()
+      const headers = polarHeaders("msg_polar_3", payload)
+      await expect(
+        handleWebhook("POLAR", payload, {
+          ...headers,
+          "webhook-signature": "v1,badbadbadbad",
+        })
+      ).rejects.toMatchObject({ status: 401 })
+      expect(mockActivate).not.toHaveBeenCalled()
+      // Let any floating rejection surface before asserting.
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(rejections).toEqual([])
+    } finally {
+      process.off("unhandledRejection", onRejection)
+    }
+  })
+
+  it("maps a past-due subscription update to PAST_DUE (BIL-080)", async () => {
+    const payload = JSON.stringify({
+      type: "subscription.updated",
+      timestamp: new Date().toISOString(),
+      api_version: "2026-10",
+      data: { id: "sub_polar_1", status: "past_due" },
+    })
+    const result = await handleWebhook(
+      "POLAR",
+      payload,
+      polarHeaders("msg_polar_4", payload)
+    )
+    expect(result).toMatchObject({ received: true, kind: "payment-failed" })
+    expect(mockMarkPastDue).toHaveBeenCalledWith("POLAR", "sub_polar_1")
+  })
+})
+
+describe("Stripe test/live key separation (BIL-010)", () => {
+  it("accepts a test key outside production", () => {
+    setEnv({ NODE_ENV: "test", STRIPE_SECRET_KEY: "sk_test_x" })
+    expect(stripeKeyModeMismatch()).toBeNull()
+  })
+
+  it("accepts a live key in production", () => {
+    setEnv({ NODE_ENV: "production", STRIPE_SECRET_KEY: "sk_live_x" })
+    expect(stripeKeyModeMismatch()).toBeNull()
+  })
+
+  it("flags a test key in production", () => {
+    setEnv({ NODE_ENV: "production", STRIPE_SECRET_KEY: "sk_test_x" })
+    expect(stripeKeyModeMismatch()).toMatchObject({
+      expected: "live",
+      actual: "test",
+    })
+  })
+
+  it("flags a live key when STRIPE_MODE=test overrides the environment", () => {
+    setEnv({
+      NODE_ENV: "production",
+      STRIPE_MODE: "test",
+      STRIPE_SECRET_KEY: "sk_live_x",
+    })
+    expect(stripeKeyModeMismatch()).toMatchObject({
+      expected: "test",
+      actual: "live",
+    })
+  })
+
+  it("refuses checkout with a test key in production", async () => {
+    seedVersion()
+    seedConfig("STRIPE", true, [])
+    setEnv({
+      NODE_ENV: "production",
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_PUBLISHABLE_KEY: "pk_test_x",
+      STRIPE_WEBHOOK_SECRET: "test-hook-value",
+    })
+    await expect(
+      createCheckoutSession(ownerSession, {
+        planVersionId: "pv-1",
+        provider: "STRIPE",
+      })
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("does not match"),
+    })
+  })
+})
+
+describe("PayPal webhook — generic 502 (BIL-024)", () => {
+  beforeEach(() => {
+    setEnv({
+      PAYPAL_CLIENT_ID: "id",
+      PAYPAL_CLIENT_SECRET: "client-value",
+      PAYPAL_WEBHOOK_ID: "wh_123",
+    })
+  })
+
+  it("does not surface provider error detail to the caller", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/oauth2/token")) {
+        return { ok: true, json: async () => ({ access_token: "tok" }) }
+      }
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ message: "ACCOUNT_FROZEN internal detail" }),
+      }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const payload = JSON.stringify({
+        id: "WH-test-err",
+        event_type: "BILLING.SUBSCRIPTION.ACTIVATED",
+        resource: { id: "I-TESTSUB", custom_id: "user-1:pv-1" },
+      })
+      let thrown: unknown = null
+      try {
+        await handleWebhook("PAYPAL", payload, {
+          "paypal-auth-algo": "SHA256withRSA",
+          "paypal-cert-url": "https://example.com/cert",
+          "paypal-transmission-id": "tx-1",
+          "paypal-transmission-sig": "sig",
+          "paypal-transmission-time": new Date().toISOString(),
+        })
+      } catch (err) {
+        thrown = err
+      }
+      expect(thrown).toMatchObject({
+        status: 502,
+        message: "The payment provider is unavailable. Please try again.",
+      })
+      expect((thrown as Error).message).not.toContain("ACCOUNT_FROZEN")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("maps a failed subscription payment to PAST_DUE (BIL-080)", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/oauth2/token")) {
+        return { ok: true, json: async () => ({ access_token: "tok" }) }
+      }
+      return {
+        ok: true,
+        json: async () => ({ verification_status: "SUCCESS" }),
+      }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const payload = JSON.stringify({
+        id: "WH-test-pf",
+        event_type: "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+        resource: { id: "I-TESTSUB" },
+      })
+      const result = await handleWebhook("PAYPAL", payload, {
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-cert-url": "https://example.com/cert",
+        "paypal-transmission-id": "tx-1",
+        "paypal-transmission-sig": "sig",
+        "paypal-transmission-time": new Date().toISOString(),
+      })
+      expect(result).toMatchObject({
+        received: true,
+        kind: "payment-failed",
+      })
+      expect(mockMarkPastDue).toHaveBeenCalledWith("PAYPAL", "I-TESTSUB")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe("Stripe webhook — failed invoice maps to PAST_DUE (BIL-080)", () => {
+  const webhookSecret = "whsec_test_secret"
+
+  function stripeSignature(payload: string): string {
+    const ts = Math.floor(Date.now() / 1000)
+    const signed = `${ts}.${payload}`
+    const v1 = createHmac("sha256", webhookSecret).update(signed).digest("hex")
+    return `t=${ts},v1=${v1}`
+  }
+
+  beforeEach(() => {
+    setEnv({
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_PUBLISHABLE_KEY: "pk_test_x",
+      STRIPE_WEBHOOK_SECRET: webhookSecret,
+    })
+  })
+
+  it("invoice.payment_failed calls markSubscriptionPastDue", async () => {
+    const payload = JSON.stringify({
+      id: "evt_test_pf",
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          id: "in_test",
+          parent: {
+            subscription_details: { subscription: "sub_test" },
+          },
+        },
+      },
+    })
+    const result = await handleWebhook("STRIPE", payload, {
+      "stripe-signature": stripeSignature(payload),
+    })
+    expect(result).toMatchObject({ received: true, kind: "payment-failed" })
+    expect(mockMarkPastDue).toHaveBeenCalledWith("STRIPE", "sub_test")
+  })
+})
+
+describe("Freemius webhook — replay protection (BIL-088)", () => {
+  function deliver(payload: string, signature: string) {
+    return handleWebhook("FREEMIUS", payload, { "x-signature": signature })
+  }
+
+  it("dedupes a replay inside the window, rejects it after the window", async () => {
+    const secret = "freemius-secret"
+    setEnv({
+      FREEMIUS_SECRET_KEY: secret,
+      FREEMIUS_PLAN_MAP: JSON.stringify({ "pv-1": "123" }),
+    })
+    store.users.set("buyer-1", { id: "buyer-1", email: "buyer@example.com" })
+    const payload = JSON.stringify({
+      id: "fs-evt-replay",
+      type: "license.created",
+      objects: {
+        license: { plan_id: 123 },
+        user: { email: "buyer@example.com" },
+      },
+      data: { license_id: "lic_1" },
+    })
+    const signature = createHmac("sha256", secret).update(payload).digest("hex")
+
+    const first = await deliver(payload, signature)
+    expect(first).toMatchObject({ received: true, kind: "checkout-completed" })
+    const second = await deliver(payload, signature)
+    expect(second).toMatchObject({ received: true, duplicate: true })
+    expect(mockActivate).toHaveBeenCalledTimes(1)
+
+    // Age the first-seen record past the 10-minute window: the same
+    // captured payload is now a replay, not a redelivery.
+    const stored = [...store.events.values()].find(
+      (event) => event.providerEventId === "fs-evt-replay"
+    )
+    expect(stored).toBeDefined()
+    stored!.createdAt = new Date(Date.now() - 11 * 60 * 1000)
+    await expect(deliver(payload, signature)).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Replayed"),
+    })
+    expect(mockActivate).toHaveBeenCalledTimes(1)
   })
 })

@@ -14,6 +14,22 @@ const mockDb = vi.hoisted(() => ({
     // on this call, and a plain vi.fn() returns undefined.
     update: vi.fn(async () => ({})),
   },
+  // The real plan-limit check (checkLimitStrict, SRC-216) runs
+  // against these: no subscription, no overrides, the default Free
+  // plan (whose apiKeys cap is 10, matching MAX_ACTIVE_API_KEYS).
+  entitlementOverride: { findMany: vi.fn(async () => []) },
+  subscription: { findFirst: vi.fn(async () => null) },
+  plan: {
+    findFirst: vi.fn(async () => ({
+      id: "plan-free",
+      slug: "free",
+      status: "PUBLISHED",
+      currentVersion: {
+        id: "pv-free",
+        entitlements: FREE_PLAN_V1_ENTITLEMENTS,
+      },
+    })),
+  },
   auditLog: { create: vi.fn() },
   $transaction: vi.fn(async (fn: unknown) =>
     typeof fn === "function"
@@ -36,6 +52,7 @@ import {
   rotateApiKeyForUser,
 } from "@sendcms/api-keys"
 import { ApiError } from "@sendcms/api-client"
+import { FREE_PLAN_V1_ENTITLEMENTS } from "@sendcms/plans/validators"
 
 const userId = "user-1"
 

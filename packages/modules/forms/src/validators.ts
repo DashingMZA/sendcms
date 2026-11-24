@@ -112,17 +112,31 @@ export const UpdateFieldSchema = refineField(
 
 export type UpdateFieldInput = z.infer<typeof UpdateFieldSchema>
 
+// A redirect target is either a same-site relative path or an absolute
+// http(s) URL. Anything else (ftp:, javascript:, protocol-relative
+// `//host`, bare hostnames) is rejected. Whether the absolute host is
+// one the owner controls is enforced in the service (SEC-210).
+const RedirectUrlSchema = z.string().refine(
+  (v) => {
+    const value = v.trim()
+    if (value.startsWith("/") && !value.startsWith("//")) return true
+    try {
+      const scheme = new URL(value).protocol
+      return scheme === "http:" || scheme === "https:"
+    } catch {
+      return false
+    }
+  },
+  {
+    message: "Redirect URL must be a relative path or a valid http(s) URL",
+  }
+)
+
 export const CreateFormSchema = z.object({
   name: z.string().trim().min(1, "Enter a form name").max(100),
   description: z.string().max(500).optional(),
   successMessage: z.string().max(500).optional(),
-  redirectUrl: z
-    .string()
-    .url("Redirect URL must be a valid http(s) URL")
-    .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
-      message: "Redirect URL must start with http:// or https://",
-    })
-    .optional(),
+  redirectUrl: RedirectUrlSchema.optional(),
   honeypotEnabled: z.boolean().optional().default(true),
   turnstileEnabled: z.boolean().optional().default(false),
   dailyLimit: z.number().int().min(1).max(100000).optional(),
@@ -135,14 +149,7 @@ export const UpdateFormSchema = z.object({
   description: z.string().max(500).optional().nullable(),
   active: z.boolean().optional(),
   successMessage: z.string().max(500).optional().nullable(),
-  redirectUrl: z
-    .string()
-    .url("Redirect URL must be a valid http(s) URL")
-    .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
-      message: "Redirect URL must start with http:// or https://",
-    })
-    .optional()
-    .nullable(),
+  redirectUrl: RedirectUrlSchema.optional().nullable(),
   honeypotEnabled: z.boolean().optional(),
   turnstileEnabled: z.boolean().optional(),
   // Phase 12: per-form AI opt-in. Default OFF (DB default false) — no

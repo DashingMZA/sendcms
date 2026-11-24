@@ -74,8 +74,13 @@ export function useUpdateForm(id: string) {
 export function useDeleteForm(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () =>
-      apiFetch<void>(`/api/v1/forms/${id}`, { method: "DELETE" }),
+    // SRC-208: the form name travels as the confirmation token — the
+    // service archives the form only when it matches.
+    mutationFn: (confirmation: string) =>
+      apiFetch<void>(`/api/v1/forms/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation }),
+      }),
     onSuccess: () => invalidateForm(qc),
   })
 }
@@ -203,6 +208,23 @@ export function useDeleteNotificationEmail(
       apiFetch<void>(
         `/api/v1/forms/${formId}/notifications/${notificationId}`,
         { method: "DELETE" }
+      ),
+    onSuccess: () => invalidateForm(qc, formId),
+  })
+}
+
+/** Re-sends the confirmation email for an unconfirmed recipient
+    (EML-004 — expired link, lost email). */
+export function useResendNotificationConfirmation(
+  formId: string,
+  notificationId: string
+) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<NotificationSettings>(
+        `/api/v1/forms/${formId}/notifications/${notificationId}/resend`,
+        { method: "POST" }
       ),
     onSuccess: () => invalidateForm(qc, formId),
   })

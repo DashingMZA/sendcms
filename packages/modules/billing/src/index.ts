@@ -1,11 +1,19 @@
 export {
   BILLING_PROVIDERS,
   BILLING_PROVIDER_IDS,
+  assertStripeKeyMode,
+  expectedStripeMode,
   getBillingProviderDefinition,
   isProviderConfigured,
   missingEnvVars,
+  stripeKeyModeMismatch,
+  stripeSecretKeyMode,
 } from "./registry"
-export type { BillingProviderDefinition, BillingProviderId } from "./registry"
+export type {
+  BillingProviderDefinition,
+  BillingProviderId,
+  StripeKeyMode,
+} from "./registry"
 export {
   createCheckoutSession,
   handleWebhook,

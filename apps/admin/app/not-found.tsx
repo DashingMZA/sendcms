@@ -6,6 +6,8 @@ import { dashboardSignInURL } from "@/lib/callback-url"
 export const metadata: Metadata = {
   title: "Page not found — SendCMS Admin",
   description: "The page you're looking for doesn't exist or was moved.",
+  // Error page — never indexed (Phase 16, PRF-034).
+  robots: { index: false, follow: false },
 }
 
 // Admin 404: back to the admin overview, or to sign-in (the admin app

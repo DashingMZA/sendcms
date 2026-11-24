@@ -22,6 +22,20 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex")
 }
 
+// AIM-006: no meaningful fragment of a key may appear in a text
+// (response body or log line). 8+ char windows catch any real echo —
+// a provider redaction shows the first ~8 chars — plus the last 4
+// (the fingerprint tail). 4-char windows are too strict: the fake
+// keys contain ordinary words ("test", "browser") that also appear
+// in the fixed messages ("Key test failed.", "userId").
+function expectNoKeyFragments(text: string, key: string) {
+  for (let i = 0; i + 8 <= key.length; i++) {
+    expect(text).not.toContain(key.slice(i, i + 8))
+  }
+  expect(text).not.toContain(key.slice(-4))
+  expect(text).not.toContain(key)
+}
+
 function freeEntitlements(): EffectiveEntitlements {
   return {
     entitlements: FREE_PLAN_V1_ENTITLEMENTS,
@@ -77,6 +91,12 @@ const supportSession = makeSession({
 const mockLogAudit = vi.hoisted(() =>
   vi.fn(async (call: { detail?: Record<string, unknown> }) => call)
 )
+const mockLogger = vi.hoisted(() => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+}))
 const mockGetEffective = vi.hoisted(() => vi.fn())
 const mockGetAiModelForKey = vi.hoisted(() => vi.fn())
 const mockGenerateText = vi.hoisted(() => vi.fn())
@@ -413,6 +433,21 @@ const { store, mockDb } = vi.hoisted(() => {
         }
       ),
     },
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn(mockDb)
+    ),
+    // DB-051: the locked read in setBillingModeLocked. The template
+    // tag arrives as (strings, ...values); values[0] is the userId.
+    $queryRaw: vi.fn(
+      async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?")
+        if (sql.includes('"UserAiSettings"')) {
+          const row = store.settings.get(values[0] as string)
+          return row ? [{ billingMode: row.billingMode }] : []
+        }
+        return []
+      }
+    ),
   }
 
   return { store, mockDb }
@@ -423,6 +458,9 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   return { ...actual, db: mockDb }
 })
 vi.mock("@sendcms/security", () => ({ logAudit: mockLogAudit }))
+vi.mock("@sendcms/observability", () => ({
+  createLogger: () => mockLogger,
+}))
 vi.mock("@sendcms/plans", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/plans")>()
   return { ...actual, getEffectiveEntitlementsSafe: mockGetEffective }
@@ -451,6 +489,7 @@ import {
   listUserAiKeysForAdmin,
   recordAiUsage,
   resolveAiModelForUser,
+  sanitizeKeyTestError,
   saveUserAiKey,
   setProviderConfig,
   setUserAiBillingMode,
@@ -702,6 +741,59 @@ describe("testUserAiKey", () => {
       status: 404,
     })
   })
+
+  // AIM-006: the provider's auth error quotes the key's first ~8 and
+  // last 4 chars (OpenAI's own redaction). Neither the response nor
+  // the structured log may carry any 4+ char fragment of the key.
+  it("never echoes key fragments when the provider error quotes the key", async () => {
+    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    mockGenerateText.mockRejectedValueOnce(
+      new Error(
+        `Incorrect API key provided: ${BYOK_KEY.slice(0, 8)}${"*".repeat(24)}${BYOK_KEY.slice(-4)}. You can find your API key at https://platform.openai.com/account/api-keys.`
+      )
+    )
+    const result = await testUserAiKey("user-1", "openai")
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe("Incorrect API key.")
+    expectNoKeyFragments(result.error ?? "", BYOK_KEY)
+    const warnCall = mockLogger.warn.mock.calls.find(
+      (call) => call[0] === "byok key test failed"
+    )
+    expect(warnCall).toBeDefined()
+    expectNoKeyFragments(JSON.stringify(warnCall?.[1] ?? {}), BYOK_KEY)
+    expect(warnCall?.[1]).toMatchObject({
+      fingerprintLast4: sha256(BYOK_KEY).slice(-4),
+    })
+  })
+})
+
+describe("sanitizeKeyTestError", () => {
+  it("maps rate-limit and overload errors to safe messages", () => {
+    expect(
+      sanitizeKeyTestError("Rate limit reached for gpt-4o-mini", BYOK_KEY)
+    ).toBe("Rate limit exceeded. Try again later.")
+    expect(
+      sanitizeKeyTestError(
+        "The model is overloaded. Please try again.",
+        BYOK_KEY
+      )
+    ).toBe("The provider is overloaded. Try again later.")
+  })
+
+  it("falls back to a generic message for unknown errors", () => {
+    expect(sanitizeKeyTestError("Something exploded", BYOK_KEY)).toBe(
+      "Key test failed."
+    )
+  })
+
+  it("drops key fragments even when no allowlisted phrase matches", () => {
+    const sanitised = sanitizeKeyTestError(
+      `Bad gateway for ${BYOK_KEY}`,
+      BYOK_KEY
+    )
+    expect(sanitised).toBe("Key test failed.")
+    expectNoKeyFragments(sanitised, BYOK_KEY)
+  })
 })
 
 describe("testBrowserKey", () => {
@@ -751,6 +843,25 @@ describe("testBrowserKey", () => {
     })
     expect(mockGetAiModelForKey).toHaveBeenCalledTimes(1)
     expect(mockGetAiModelForKey.mock.calls[0][1]).toBe(BROWSER_KEY)
+  })
+
+  // AIM-006: same key-echo rule for a browser-only key (which has no
+  // stored fingerprint to log instead).
+  it("never echoes key fragments when the provider error quotes the browser key", async () => {
+    mockGenerateText.mockRejectedValueOnce(
+      new Error(
+        `Incorrect API key provided: ${BROWSER_KEY.slice(0, 8)}${"*".repeat(20)}${BROWSER_KEY.slice(-4)}.`
+      )
+    )
+    const result = await testBrowserKey("user-1", "openai", BROWSER_KEY)
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe("Incorrect API key.")
+    expectNoKeyFragments(result.error ?? "", BROWSER_KEY)
+    const warnCall = mockLogger.warn.mock.calls.find(
+      (call) => call[0] === "browser key test failed"
+    )
+    expect(warnCall).toBeDefined()
+    expectNoKeyFragments(JSON.stringify(warnCall?.[1] ?? {}), BROWSER_KEY)
   })
 
   it("rejects a too-short key without calling the provider", async () => {

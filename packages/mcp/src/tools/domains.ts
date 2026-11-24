@@ -97,14 +97,17 @@ export function registerDomainTools(server: McpServer, auth: McpAuthContext) {
       {
         title: "Delete a domain",
         description:
-          "Delete a domain. Refused while any form is still linked to it — unlink those forms first.",
+          "Delete a domain. Refused while any form is still linked to it — unlink those forms first. Pass the domain string as confirmation.",
         inputSchema: {
           domainId: z.string().min(1, "Enter a domain id"),
+          confirmation: z
+            .string()
+            .min(1, "Enter the domain string to confirm deletion"),
         },
       },
-      ({ domainId }) =>
+      ({ domainId, confirmation }) =>
         runTool(async () => {
-          await deleteDomainForUser(auth.userId, domainId)
+          await deleteDomainForUser(auth.userId, domainId, confirmation)
           return { deleted: true, domainId }
         })
     )

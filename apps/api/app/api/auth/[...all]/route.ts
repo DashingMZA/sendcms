@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { betterAuth } from "@/lib/auth"
-import { enforceAuthSignInRateLimit } from "@/lib/rate-limit"
+import {
+  enforceAuthEmailRateLimit,
+  enforceAuthSignInRateLimit,
+  enforceAuthSignUpRateLimit,
+} from "@/lib/rate-limit"
 import { getEffectiveOrigin, normalizeOrigin } from "@sendcms/api-client"
 import { toNextJsHandler } from "@sendcms/auth"
 
@@ -70,11 +74,35 @@ async function withCors(
 export const GET = (req: NextRequest) => withCors(req, handlers.GET)
 export const POST = (req: NextRequest) =>
   withCors(req, async (r) => {
-    // Email sign-in only: per-IP + per-email buckets, before Better
-    // Auth sees the request. GETs (OAuth callbacks, session reads)
-    // and other auth endpoints are not limited.
-    if (r.nextUrl.pathname.endsWith("/sign-in/email")) {
+    // Rate-limited auth POSTs (Phase 16, Wave 1: SEC-008 / SEC-203 /
+    // EML-003), before Better Auth sees the request. Every endpoint
+    // that creates accounts or sends mail is gated per-IP + per-email:
+    // sign-in, sign-up, password reset (forget / request / reset —
+    // reset-password carries no email, so it gets the per-IP bucket
+    // only), verification mail, and OAuth initiation. GETs (OAuth
+    // callbacks, session reads) and verify-email are not limited.
+    const path = r.nextUrl.pathname
+    if (path.endsWith("/sign-in/email")) {
       const limited = await enforceAuthSignInRateLimit(r)
+      if (limited) return limited
+    } else if (path.endsWith("/sign-up/email")) {
+      const limited = await enforceAuthSignUpRateLimit(r)
+      if (limited) return limited
+    } else if (
+      path.endsWith("/forget-password") ||
+      path.endsWith("/request-password-reset") ||
+      path.endsWith("/reset-password")
+    ) {
+      const limited = await enforceAuthEmailRateLimit(r, "reset")
+      if (limited) return limited
+    } else if (path.endsWith("/send-verification-email")) {
+      const limited = await enforceAuthEmailRateLimit(r, "verify")
+      if (limited) return limited
+    } else if (
+      path.endsWith("/sign-in/social") ||
+      path.endsWith("/sign-up/social")
+    ) {
+      const limited = await enforceAuthEmailRateLimit(r, "social")
       if (limited) return limited
     }
     return handlers.POST(r)

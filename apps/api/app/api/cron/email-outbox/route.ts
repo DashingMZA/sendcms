@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
+import { isValidBearerToken } from "@sendcms/security"
 import { rescoreNewSubmissions, sendDueDigests } from "@sendcms/submissions"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
@@ -22,12 +23,19 @@ export async function GET(req: NextRequest) {
       throw new ApiError("Email outbox cron is not configured.", 503)
     }
     const header = req.headers.get("authorization")
-    if (header !== `Bearer ${secret}`) {
+    // Timing-safe bearer check (SRC-115 / EML-067): the scheme is
+    // case-insensitive and the token comparison is constant-time.
+    if (!isValidBearerToken(header, secret)) {
       throw new ApiError("Unauthorized", 401)
     }
-    const result = await processEmailOutbox({ limit: 100 })
-    const rescore = await rescoreNewSubmissions({ limit: 100 })
-    const digest = await sendDueDigests({ limit: 100 })
+    // The three jobs are independent — run them concurrently
+    // (SRC-115): serially, one hit ran three limit-100 jobs back to
+    // back and grew toward serverless timeouts as the queues grew.
+    const [result, rescore, digest] = await Promise.all([
+      processEmailOutbox({ limit: 100 }),
+      rescoreNewSubmissions({ limit: 100 }),
+      sendDueDigests({ limit: 100 }),
+    ])
     return ok({
       ...result,
       rescored: rescore.checked,

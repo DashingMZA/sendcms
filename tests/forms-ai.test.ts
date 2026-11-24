@@ -20,12 +20,18 @@ const mockAi = vi.hoisted(() => ({
     ],
   })),
 }))
-vi.mock("@sendcms/ai", () => mockAi)
+vi.mock("@sendcms/ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/ai")>()
+  // The real normalizeAiEnv stays live: the resolver normalizes the
+  // explicit AiEnvConfig the tests pass (SRC-123) back to the env
+  // record its legacy path reads.
+  return { ...actual, ...mockAi }
+})
 vi.mock("@sendcms/security", () => ({ logAudit: vi.fn(async () => {}) }))
 
 import { suggestFieldsForForm } from "@sendcms/forms"
 
-const ENV = { OPENAI_API_KEY: "sk-test" }
+const AI_ENV = { apiKeys: { openai: "sk-test" } }
 
 function makeForm(overrides: Record<string, unknown> = {}) {
   return {
@@ -57,7 +63,7 @@ describe("suggestFieldsForForm", () => {
       "user-1",
       "form-1",
       "ask for the company too",
-      ENV
+      AI_ENV
     )
     expect(result.fields).toHaveLength(1)
     expect(result.fields[0].name).toBe("company")
@@ -75,7 +81,7 @@ describe("suggestFieldsForForm", () => {
   it("refuses when AI is off for the form", async () => {
     mockDb.form.findFirst.mockResolvedValue(makeForm({ aiEnabled: false }))
     await expect(
-      suggestFieldsForForm("user-1", "form-1", "ask for the company", ENV)
+      suggestFieldsForForm("user-1", "form-1", "ask for the company", AI_ENV)
     ).rejects.toMatchObject({ status: 403 })
     expect(mockAi.suggestFields).not.toHaveBeenCalled()
   })
@@ -83,7 +89,7 @@ describe("suggestFieldsForForm", () => {
   it("refuses with 503 when no provider is configured", async () => {
     mockAi.isAiConfigured.mockReturnValue(false)
     await expect(
-      suggestFieldsForForm("user-1", "form-1", "ask for the company", ENV)
+      suggestFieldsForForm("user-1", "form-1", "ask for the company", AI_ENV)
     ).rejects.toMatchObject({ status: 503 })
     expect(mockAi.suggestFields).not.toHaveBeenCalled()
   })
@@ -91,7 +97,7 @@ describe("suggestFieldsForForm", () => {
   it("throws 404 for a form the user does not own", async () => {
     mockDb.form.findFirst.mockResolvedValue(null)
     await expect(
-      suggestFieldsForForm("user-1", "form-1", "ask for the company", ENV)
+      suggestFieldsForForm("user-1", "form-1", "ask for the company", AI_ENV)
     ).rejects.toMatchObject({ status: 404 })
   })
 })

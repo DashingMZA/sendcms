@@ -9,7 +9,11 @@ const mockDb = vi.hoisted(() => ({
   domain: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
   form: { count: vi.fn(), findMany: vi.fn() },
   submission: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
-  apiKeyRateLimit: { findUnique: vi.fn(), upsert: vi.fn() },
+  apiKeyRateLimit: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    updateMany: vi.fn(),
+  },
   auditLog: { create: vi.fn() },
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
@@ -29,6 +33,105 @@ const readAuth: McpAuthContext = {
   keyId: "key-2",
   userId: "user-1",
   scope: "READ",
+}
+
+// ─── Store-backed ApiKeyRateLimit fake ───────────────────────────────
+// The limiter's atomicity in production comes from Postgres: each
+// claim is ONE conditional UPDATE statement, so concurrent claims
+// serialize on the row. This fake mirrors exactly that guarantee —
+// each mocked call matches + applies synchronously (no await between
+// the WHERE check and the write), so a Promise.all burst cannot
+// interleave inside one statement, just as it cannot inside the real
+// single-statement UPDATE. The fake does NOT re-implement the
+// limiter's decision logic (that lives in the real code under test);
+// it only provides the atomic store.
+type RateLimitRow = {
+  apiKeyId: string
+  minuteWindowStart: Date
+  minuteCount: number
+  hourWindowStart: Date
+  hourCount: number
+}
+
+const rateStore = new Map<string, RateLimitRow>()
+
+function rateWindowStarts(now = new Date()) {
+  const minuteStart = new Date(now)
+  minuteStart.setSeconds(0, 0)
+  const hourStart = new Date(now)
+  hourStart.setMinutes(0, 0, 0)
+  return { minuteStart, hourStart }
+}
+
+function seedRateRow(overrides: Partial<RateLimitRow> = {}): RateLimitRow {
+  const { minuteStart, hourStart } = rateWindowStarts()
+  const row: RateLimitRow = {
+    apiKeyId: "key-1",
+    minuteWindowStart: minuteStart,
+    minuteCount: 0,
+    hourWindowStart: hourStart,
+    hourCount: 0,
+    ...overrides,
+  }
+  rateStore.set(row.apiKeyId, row)
+  return row
+}
+
+function rateWhereMatches(
+  row: RateLimitRow,
+  where: Record<string, unknown>
+): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    const current = row[key as keyof RateLimitRow]
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "lt" in (value as Record<string, unknown>)
+    ) {
+      if (
+        typeof current !== "number" ||
+        current >= (value as { lt: number }).lt
+      ) {
+        return false
+      }
+    } else if (
+      typeof value === "object" &&
+      value !== null &&
+      "not" in (value as Record<string, unknown>)
+    ) {
+      const not = (value as { not: unknown }).not
+      if (
+        current instanceof Date &&
+        not instanceof Date &&
+        current.getTime() === not.getTime()
+      ) {
+        return false
+      }
+      if (current === not) return false
+    } else if (value instanceof Date) {
+      if (!(current instanceof Date) || current.getTime() !== value.getTime()) {
+        return false
+      }
+    } else if (current !== value) {
+      return false
+    }
+  }
+  return true
+}
+
+function applyRateData(row: RateLimitRow, data: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "increment" in (value as Record<string, unknown>)
+    ) {
+      const field = key as "minuteCount" | "hourCount"
+      row[field] += (value as { increment: number }).increment
+    } else {
+      ;(row as Record<string, unknown>)[key] = value
+    }
+  }
 }
 
 const ALL_TOOLS = [
@@ -105,6 +208,45 @@ beforeEach(() => {
   mockDb.submission.findMany.mockResolvedValue([])
   mockDb.submission.groupBy.mockResolvedValue([])
   mockDb.form.findMany.mockResolvedValue([])
+  rateStore.clear()
+  mockDb.apiKeyRateLimit.findUnique.mockImplementation(
+    async ({ where }: { where: { apiKeyId: string } }) =>
+      rateStore.get(where.apiKeyId) ?? null
+  )
+  mockDb.apiKeyRateLimit.upsert.mockImplementation(
+    async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { apiKeyId: string }
+      create: RateLimitRow
+      update: Record<string, unknown>
+    }) => {
+      const existing = rateStore.get(where.apiKeyId)
+      if (existing) {
+        applyRateData(existing, update)
+        return existing
+      }
+      const row: RateLimitRow = { ...create }
+      rateStore.set(where.apiKeyId, row)
+      return row
+    }
+  )
+  mockDb.apiKeyRateLimit.updateMany.mockImplementation(
+    async ({
+      where,
+      data,
+    }: {
+      where: Record<string, unknown>
+      data: Record<string, unknown>
+    }) => {
+      const row = rateStore.get(where.apiKeyId as string)
+      if (!row || !rateWhereMatches(row, where)) return { count: 0 }
+      applyRateData(row, data)
+      return { count: 1 }
+    }
+  )
 })
 
 describe("tools/list", () => {
@@ -194,51 +336,73 @@ describe("tools/call", () => {
 })
 
 describe("checkMcpRateLimit", () => {
-  it("passes under the limits and upserts the counters", async () => {
-    mockDb.apiKeyRateLimit.findUnique.mockResolvedValue(null)
+  it("passes under the limits and counts the call once", async () => {
     await checkMcpRateLimit("key-1")
-    expect(mockDb.apiKeyRateLimit.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { apiKeyId: "key-1" },
-        create: expect.objectContaining({ minuteCount: 1, hourCount: 1 }),
-      })
-    )
+    expect(rateStore.get("key-1")).toMatchObject({
+      minuteCount: 1,
+      hourCount: 1,
+    })
   })
 
-  it("429s past the per-minute limit", async () => {
-    const now = new Date()
-    const minuteStart = new Date(now)
-    minuteStart.setSeconds(0, 0)
-    const hourStart = new Date(now)
-    hourStart.setMinutes(0, 0, 0)
-    mockDb.apiKeyRateLimit.findUnique.mockResolvedValue({
-      apiKeyId: "key-1",
-      minuteWindowStart: minuteStart,
+  it("429s past the per-minute limit and does not increment", async () => {
+    seedRateRow({ minuteCount: 120, hourCount: 50 })
+    await expect(checkMcpRateLimit("key-1")).rejects.toThrowError(
+      "Too many MCP requests"
+    )
+    expect(rateStore.get("key-1")).toMatchObject({
       minuteCount: 120,
-      hourWindowStart: hourStart,
       hourCount: 50,
     })
-    await expect(checkMcpRateLimit("key-1")).rejects.toThrowError(
-      "Too many MCP requests"
-    )
-    expect(mockDb.apiKeyRateLimit.upsert).not.toHaveBeenCalled()
   })
 
-  it("429s past the per-hour limit", async () => {
-    const now = new Date()
-    const minuteStart = new Date(now)
-    minuteStart.setSeconds(0, 0)
-    const hourStart = new Date(now)
-    hourStart.setMinutes(0, 0, 0)
-    mockDb.apiKeyRateLimit.findUnique.mockResolvedValue({
-      apiKeyId: "key-1",
-      minuteWindowStart: minuteStart,
-      minuteCount: 1,
-      hourWindowStart: hourStart,
-      hourCount: 2000,
-    })
+  it("429s past the per-hour limit and does not increment", async () => {
+    seedRateRow({ minuteCount: 1, hourCount: 2000 })
     await expect(checkMcpRateLimit("key-1")).rejects.toThrowError(
       "Too many MCP requests"
     )
+    expect(rateStore.get("key-1")).toMatchObject({
+      minuteCount: 1,
+      hourCount: 2000,
+    })
+  })
+
+  it("rolls a stale window over instead of denying", async () => {
+    const staleMinute = new Date(Date.now() - 60_000)
+    staleMinute.setSeconds(0, 0)
+    seedRateRow({ minuteWindowStart: staleMinute, minuteCount: 120 })
+    await checkMcpRateLimit("key-1")
+    expect(rateStore.get("key-1")).toMatchObject({
+      minuteCount: 1,
+      hourCount: 1,
+    })
+  })
+
+  // TST-006 / AIM-007: the regression test for the read-then-upsert
+  // race. The audit's live burst (150 concurrent calls vs 120/min)
+  // returned 150×200; with the atomic claim exactly 120 are
+  // admitted, the rest are 429, and the stored counter equals the
+  // admitted count. Fails on the old implementation (all 130 admit,
+  // counter advances ~1 per batch).
+  it("a 130-call burst in batches of 10 admits exactly 120", async () => {
+    const results: string[] = []
+    for (let batch = 0; batch < 13; batch++) {
+      const outcomes = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          checkMcpRateLimit("key-1").then(
+            () => "ok",
+            (err: unknown) => (err instanceof Error ? err.message : String(err))
+          )
+        )
+      )
+      results.push(...outcomes)
+    }
+    expect(results.filter((r) => r === "ok")).toHaveLength(120)
+    const denied = results.filter((r) => r !== "ok")
+    expect(denied).toHaveLength(10)
+    expect(denied.every((r) => r.includes("Too many MCP requests"))).toBe(true)
+    expect(rateStore.get("key-1")).toMatchObject({
+      minuteCount: 120,
+      hourCount: 120,
+    })
   })
 })

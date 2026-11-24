@@ -21,10 +21,21 @@ vi.mock("@sendcms/database", async (importOriginal) => {
 vi.mock("@sendcms/domains/dns-verification", () => ({
   checkVerification: vi.fn(),
 }))
+// The plans module is mocked so the fail-closed limit check in
+// createDomainForUser does not run the real entitlement lookup against
+// this file's partial Prisma mock (same pattern as billing.test.ts).
+const mockCheckLimitStrict = vi.hoisted(() =>
+  vi.fn(async () => ({ allowed: true, limit: null, used: 0, remaining: null }))
+)
+vi.mock("@sendcms/plans", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/plans")>()
+  return { ...actual, checkLimitStrict: mockCheckLimitStrict }
+})
 
 import {
   createDomainForUser,
   deleteDomainForUser,
+  isVerifiedOrigin,
   setDomainStatusForUser,
   startVerificationForUser,
   verifyDomainForUser,
@@ -57,6 +68,12 @@ function makeDomain(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockCheckLimitStrict.mockResolvedValue({
+    allowed: true,
+    limit: null,
+    used: 0,
+    remaining: null,
+  })
   mockDb.user.findUnique.mockResolvedValue({
     id: "user-1",
     emailVerified: true,
@@ -254,6 +271,28 @@ describe("verifyDomainForUser", () => {
   })
 })
 
+describe("isVerifiedOrigin (SDK-021 / SEC-207)", () => {
+  it("returns true only for a VERIFIED domain row", async () => {
+    mockDb.domain.findFirst.mockResolvedValueOnce({ id: "dom-1" })
+    await expect(isVerifiedOrigin("https://www.example.com")).resolves.toBe(
+      true
+    )
+    expect(mockDb.domain.findFirst).toHaveBeenCalledWith({
+      where: { domain: "example.com", status: "VERIFIED" },
+      select: { id: true },
+    })
+    mockDb.domain.findFirst.mockResolvedValueOnce(null)
+    await expect(isVerifiedOrigin("https://evil.example")).resolves.toBe(false)
+  })
+
+  it("returns false without a DB lookup for null or unparseable origins", async () => {
+    mockDb.domain.findFirst.mockClear()
+    await expect(isVerifiedOrigin(null)).resolves.toBe(false)
+    await expect(isVerifiedOrigin("not a url")).resolves.toBe(false)
+    expect(mockDb.domain.findFirst).not.toHaveBeenCalled()
+  })
+})
+
 describe("setDomainStatusForUser / deleteDomainForUser", () => {
   it("refuses to suspend an already suspended domain", async () => {
     mockDb.domain.findFirst.mockResolvedValue(
@@ -276,12 +315,24 @@ describe("setDomainStatusForUser / deleteDomainForUser", () => {
     mockDb.domain.findFirst.mockResolvedValue(
       makeDomain({ _count: { formLinks: 2 } })
     )
-    await expectApiError(deleteDomainForUser("user-1", "dom-1"), 409)
+    await expectApiError(
+      deleteDomainForUser("user-1", "dom-1", "example.com"),
+      409
+    )
+    expect(mockDb.domain.delete).not.toHaveBeenCalled()
+  })
+
+  it("refuses to delete without the matching confirmation token", async () => {
+    await expectApiError(
+      deleteDomainForUser("user-1", "dom-1", "wrong.com"),
+      422
+    )
+    await expectApiError(deleteDomainForUser("user-1", "dom-1", ""), 422)
     expect(mockDb.domain.delete).not.toHaveBeenCalled()
   })
 
   it("deletes an unlinked domain", async () => {
-    await deleteDomainForUser("user-1", "dom-1")
+    await deleteDomainForUser("user-1", "dom-1", "example.com")
     expect(mockDb.domain.delete).toHaveBeenCalledWith({
       where: { id: "dom-1" },
     })

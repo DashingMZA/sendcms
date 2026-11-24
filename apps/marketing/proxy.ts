@@ -30,8 +30,13 @@ export function proxy(req: NextRequest) {
   // The demo page loads the SDK script from the api origin and its
   // REST tab fetches the submit API cross-origin — the policy allows
   // that origin for `connect-src` (there is no nonce mechanism for
-  // `fetch`). See `packages/security/src/csp.ts`.
-  const policy = buildCsp(nonce, { apiOrigin: apiUrl() })
+  // `fetch`). See `packages/security/src/csp.ts`. Violations report
+  // to the api app's report route (Phase 16, SRC-318).
+  const apiOrigin = apiUrl()
+  const policy = buildCsp(nonce, {
+    apiOrigin,
+    reportUri: `${apiOrigin}/api/csp-report`,
+  })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
 
   const requestHeaders = new Headers(req.headers)
