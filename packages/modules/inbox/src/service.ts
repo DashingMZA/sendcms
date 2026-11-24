@@ -24,9 +24,12 @@ import { enqueueReply } from "@sendcms/notifications"
 
 // ---------------------------------------------------------------------------
 // Inbox dashboard. Admin-side reads and status changes.
-// Isolation rule: a Submission has no ownerId of its own — every query
-// scopes through its Form (form.ownerId = the viewer). A submission
-// whose form belongs to someone else is invisible, not just forbidden.
+// Isolation rule: a Submission carries its owner's id denormalized
+// (ownerId, set from form.ownerId at create time — PRF-011, Phase 16,
+// Wave 3), and every owner-scoped query filters on it directly instead
+// of joining Form. A submission whose ownerId is someone else's is
+// invisible, not just forbidden. The list query still joins Form, but
+// only to read the form's name for display — never to scope the rows.
 
 export const INBOX_PAGE_SIZE = 20
 
@@ -187,7 +190,10 @@ function buildInboxWhere(
   filters: InboxFilters,
   includeStatus: boolean
 ): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`f."ownerId" = ${userId}`]
+  // PRF-011 (Phase 16, Wave 3): scope on the denormalized
+  // s."ownerId" — served by @@index([ownerId, status, createdAt]) /
+  // @@index([ownerId, createdAt]) — never through the Form join.
+  const parts: Prisma.Sql[] = [Prisma.sql`s."ownerId" = ${userId}`]
   if (includeStatus) {
     const statuses = tabStatuses(filters.tab ?? "all")
     if (statuses) {
@@ -244,13 +250,11 @@ export async function listSubmissionsForUser(
     db.$queryRaw<{ n: number }[]>(Prisma.sql`
       SELECT COUNT(*)::int AS n
       FROM "Submission" s
-      JOIN "Form" f ON f.id = s."formId"
       WHERE ${buildInboxWhere(userId, filters, true)}
     `),
     db.$queryRaw<{ status: SubmissionStatus; n: number }[]>(Prisma.sql`
       SELECT s.status, COUNT(*)::int AS n
       FROM "Submission" s
-      JOIN "Form" f ON f.id = s."formId"
       WHERE ${buildInboxWhere(userId, filters, false)}
       GROUP BY s.status
     `),
@@ -427,7 +431,7 @@ export async function getUnreadSubmissionCountForUser(
   userId: string
 ): Promise<number> {
   return db.submission.count({
-    where: { status: SubmissionStatus.NEW, form: { ownerId: userId } },
+    where: { status: SubmissionStatus.NEW, ownerId: userId },
   })
 }
 

@@ -205,6 +205,14 @@ the dashboard: New → Blueprint → this repo.
   a free plan, run `pnpm db:migrate:deploy` manually (with the
   production `DATABASE_URL` set) instead.
 
+⚠️ **Hard gate — Render free plan (LVE-015):** `preDeployCommand`
+never runs on the free plan, so a deploy is **blocked** until `pnpm
+db:migrate:deploy` has been run manually against the production
+`DATABASE_URL` and confirmed applied. Deploying code against an
+unmigrated DB is the failure this gate prevents — run the migration
+first, confirm it, then deploy. See the
+[runbook](../operations/runbook.md#database-backup-migrations-and-rollback).
+
 ## Netlify
 
 One site per app. Each app owns `apps/<app>/netlify.toml`:

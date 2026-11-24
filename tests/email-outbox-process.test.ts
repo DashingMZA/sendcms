@@ -56,7 +56,7 @@ function makeSubmission(overrides: Record<string, unknown> = {}) {
     pageUrl: "https://example.com/contact",
     originDomain: "example.com",
     createdAt: new Date(),
-    form: { id: "form-1", name: "Contact us" },
+    form: { id: "form-1", name: "Contact us", ownerId: "user-1" },
     ...overrides,
   }
 }
@@ -108,7 +108,12 @@ describe("enqueueSubmissionNotifications", () => {
     expect(mockDb.emailJob.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
-          expect.objectContaining({ to: "owner@example.com" }),
+          expect.objectContaining({
+            to: "owner@example.com",
+            // Phase 16 (DB-034): the created job carries its form's
+            // owner — the outbox listing filters on it, not on a join.
+            ownerId: "user-1",
+          }),
         ]),
       })
     )

@@ -47,7 +47,10 @@ const log = createLogger("billing")
 // - NO mapping rows for a provider = all countries (the default).
 //   The admin sets per-provider countries from the admin app; the
 //   intended defaults (Stripe everywhere, PayPal US/GB/AU/DE and
-//   friends, Gumroad PK) are admin choices, never hardcoded here.
+//   friends, Gumroad PK) are admin choices, never hardcoded here —
+//   they are seeded by migration
+//   20261124154600_seed_billing_provider_countries (BIL-125), and the
+//   admin can change any provider's countries afterwards.
 // - Webhook events are idempotent on (provider, providerEventId):
 //   an already-processed event id is skipped, never applied twice.
 // - Never trust client-supplied plan/price: the checkout re-reads
@@ -108,19 +111,17 @@ function toConfigRow(
 
 // ─── Admin: provider configs ──────────────────────────────────────────
 
-// List all five provider configs, creating the rows on first use.
-// Booleans ONLY for env presence — never the values.
+// List all five provider configs. Pure read — the rows are seeded by
+// migration 20261124154500_seed_billing_provider_configs (BIL-129), so
+// this endpoint never writes; a row missing from the DB (migration not
+// applied yet, or a row deleted out of band) is presented as disabled
+// with no countries, never created here. Country defaults are seeded
+// separately (20261124154600, BIL-125) and are admin-editable, never
+// hardcoded in this service.
 export async function listProviderConfigs(
   actor: AdminSession
 ): Promise<BillingProviderConfigRow[]> {
   requireBillingAdmin(actor, "VIEW_BILLING")
-  for (const definition of BILLING_PROVIDERS) {
-    await db.billingProviderConfig.upsert({
-      where: { provider: definition.id },
-      update: {},
-      create: { provider: definition.id },
-    })
-  }
   const configs = await db.billingProviderConfig.findMany({
     include: { countries: { select: { countryCode: true } } },
     orderBy: { provider: "asc" },
@@ -128,7 +129,13 @@ export async function listProviderConfigs(
   // Present in the user-approved provider order, not enum order.
   const byId = new Map(configs.map((c) => [c.provider, c]))
   return BILLING_PROVIDERS.map((definition) =>
-    toConfigRow(byId.get(definition.id)!)
+    toConfigRow(
+      byId.get(definition.id) ?? {
+        provider: definition.id,
+        isEnabled: false,
+        countries: [],
+      }
+    )
   )
 }
 

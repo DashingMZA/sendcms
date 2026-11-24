@@ -107,7 +107,7 @@ export async function enqueueSubmissionNotifications(
 ): Promise<number> {
   const submission = await db.submission.findUnique({
     where: { id: submissionId },
-    include: { form: { select: { id: true, name: true } } },
+    include: { form: { select: { id: true, name: true, ownerId: true } } },
   })
   if (!submission || submission.formId !== formId) return 0
   if (submission.status === SubmissionStatus.SPAM) return 0
@@ -129,9 +129,26 @@ export async function enqueueSubmissionNotifications(
       to: recipient.email,
       subject,
       formId,
+      // Phase 16 (DB-034): denormalized owner, set from the
+      // already-loaded form — the outbox listing filters on this
+      // column instead of joining Form.
+      ownerId: submission.form.ownerId,
       submissionId,
     }))
   )
+}
+
+/** Resolves a form's owner for the denormalized EmailJob.ownerId.
+    Throws when the form is gone — today the same call would fail one
+    line later on the formId FK, so a missing form stays loud instead
+    of silently enqueueing an owner-less job. */
+async function resolveFormOwnerId(formId: string): Promise<string> {
+  const form = await db.form.findUnique({
+    where: { id: formId },
+    select: { ownerId: true },
+  })
+  if (!form) throw new Error(`Form ${formId} not found.`)
+  return form.ownerId
 }
 
 /** Creates one PENDING DIGEST job for the form owner. The digest
@@ -149,12 +166,17 @@ export async function enqueueDigest({
   subject: string
   payload: DigestProps
 }): Promise<number> {
+  // Phase 16 (DB-034): denormalized owner, resolved from the form
+  // before the create — the outbox listing filters on this column
+  // instead of joining Form.
+  const ownerId = await resolveFormOwnerId(formId)
   return enqueueEmailJobs([
     {
       type: EmailJobType.DIGEST,
       to,
       subject,
       formId,
+      ownerId,
       payload: payload as unknown as Prisma.InputJsonValue,
     },
   ])
@@ -179,12 +201,17 @@ export async function enqueueReply({
   body: string
   formName: string
 }): Promise<number> {
+  // Phase 16 (DB-034): denormalized owner, resolved from the form
+  // before the create — the outbox listing filters on this column
+  // instead of joining Form.
+  const ownerId = await resolveFormOwnerId(formId)
   return enqueueEmailJobs([
     {
       type: EmailJobType.SUBMISSION_REPLY,
       to,
       subject,
       formId,
+      ownerId,
       submissionId,
       payload: {
         formName,
@@ -377,9 +404,11 @@ async function processOneJob(
       message === "Digest payload is missing or malformed." ||
       message === "Reply payload is missing or malformed." ||
       attempts >= MAX_EMAIL_ATTEMPTS
+    // SRC-329 (Phase 16, Wave 3): the queue re-reads the attempt
+    // count from the row for its own cutoff/backoff — this snapshot
+    // is only used for the caller's terminal decision below.
     await markEmailJobFailed(job.id, {
       error: message,
-      attempts,
       terminal,
     })
     // EML-007: a reply job that will never be retried gets an
@@ -437,7 +466,11 @@ export async function listEmailJobsForUser(
   }
 ): Promise<EmailJobListResult> {
   const page = Math.max(1, filters.page ?? 1)
-  const baseWhere = { form: { ownerId: userId } }
+  // Phase 16 (DB-034): the denormalized ownerId filters the owner's
+  // jobs directly — no Form join for the owner filter (Stream C
+  // proved the join still seq-scans at 220k rows). The form include
+  // below stays: it only supplies the display name.
+  const baseWhere = { ownerId: userId }
   const where = {
     ...baseWhere,
     ...(filters.status ? { status: filters.status } : {}),

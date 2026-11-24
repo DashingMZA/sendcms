@@ -252,6 +252,11 @@ describe.skipIf(!hasDb)("submission concurrency (real DB)", () => {
     await db.submission.createMany({
       data: Array.from({ length: 9 }, (_, i) => ({
         formId: fixture.formId,
+        // PRF-011 (Phase 16, Wave 3): Submission.ownerId is required
+        // — the seeded rows belong to the fixture's owner, like the
+        // form. (Stream B follow-up fix: Stream A's ownerId change
+        // left this createMany untyped; same family as the seed fix.)
+        ownerId: fixture.userId,
         data: { message: `seed ${i}` },
         status: "NEW",
         originDomain: fixture.domain,

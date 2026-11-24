@@ -316,16 +316,11 @@ export async function executeErasure(
       },
     })
     // SRC-213: EmailJob rows are NOT removed by the form cascade
-    // (their form/submission FKs are SetNull), so delete them here
-    // before the forms go away — the form filter needs the ids while
-    // the forms still exist. Verification rows are keyed by the old
-    // email and would otherwise keep a live token for it.
-    const userFormIds = (
-      await tx.form.findMany({
-        where: { ownerId: target.id },
-        select: { id: true },
-      })
-    ).map((f) => f.id)
+    // (their form/submission FKs are SetNull), so delete them here.
+    // Phase 16 (DB-034): the denormalized EmailJob.ownerId filters
+    // the user's jobs directly — no form-id lookup, and no ordering
+    // dependency on the form delete below. Verification rows are keyed
+    // by the old email and would otherwise keep a live token for it.
     const [
       accounts,
       keys,
@@ -357,7 +352,7 @@ export async function executeErasure(
       tx.form.deleteMany({ where: { ownerId: target.id } }),
       tx.emailJob.deleteMany({
         where: {
-          OR: [{ to: oldEmail }, { formId: { in: userFormIds } }],
+          OR: [{ to: oldEmail }, { ownerId: target.id }],
         },
       }),
       tx.verification.deleteMany({

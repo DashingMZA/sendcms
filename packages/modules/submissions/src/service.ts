@@ -530,6 +530,13 @@ export async function submitForm(
         const submission = await tx.submission.create({
           data: {
             formId: form.id,
+            // Phase 16 (PRF-011): denormalized owner, kept in sync on
+            // create — the inbox / quota / analytics queries filter on
+            // this column instead of joining Form. The value comes
+            // from the already-loaded form, inside the same advisory
+            // lock that serializes this owner's submits, so it cannot
+            // disagree with the form's owner.
+            ownerId: form.ownerId,
             data,
             status,
             originDomain: getOriginHost(meta.origin) ?? "unknown",

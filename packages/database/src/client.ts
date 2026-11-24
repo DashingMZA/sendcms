@@ -63,11 +63,33 @@ function createPrismaClient() {
     idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 10000,
     allowExitOnIdle: true,
+    // Phase 16 (DB-036): a runaway query fails fast instead of wedging
+    // one of the 5 pool connections indefinitely. 30 s is deliberately
+    // generous: the slowest legitimate queries (admin-overview fan-out,
+    // digest aggregation) complete in milliseconds to low seconds on
+    // indexed data, and the interactive submit transaction waits up to
+    // 120 s on advisory locks — but that wait is lock queuing, not
+    // query execution, so the statement timeout does not cut it short.
+    // (pg applies this as `SET statement_timeout` per connection.)
+    statement_timeout: 30_000,
     ...resolveDatabaseSsl(rawUrl),
   })
 
   return new PrismaClient({ adapter })
 }
+
+// Pool budget (Phase 16, DB-036): every app (6: api, dashboard, admin,
+// marketing, docs, updates) plus the email worker opens its own pool
+// of `max: 5`, so the platform can hold ~35 connections against
+// Postgres with no PgBouncer/pooler in front of it. That is fine for
+// one small Postgres, but the number is a deliberate budget, not an
+// accident: do not raise `max` per process without counting the
+// platform-wide total first. If connection pressure grows, add
+// PgBouncer (transaction mode) rather than raising `max` everywhere.
+// There is no cheap pool-exhaustion metric here: the PrismaPg adapter
+// does not expose the underlying pg Pool, so pool waits surface only
+// as the 10 s connection-timeout error — a pool-wait metric is a
+// follow-up if exhaustion is ever observed in production logs.
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 

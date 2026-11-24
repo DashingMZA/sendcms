@@ -53,9 +53,11 @@ export type DashboardOverview = {
   activity: DayCount[]
 }
 
-/** Overview stats for one user. Every submission query is scoped
-    through `form.ownerId` — submissions carry no ownerId of their
-    own (same rule as the inbox service). */
+/** Overview stats for one user. Every submission query filters on
+    the denormalized `ownerId` (PRF-011, Phase 16, Wave 3) — served by
+    @@index([ownerId, status, createdAt]) / @@index([ownerId,
+    createdAt]) — instead of joining Form. The `recent` query still
+    includes the form, but only to read its name for display. */
 export async function getDashboardOverview(
   userId: string
 ): Promise<DashboardOverview> {
@@ -76,22 +78,22 @@ export async function getDashboardOverview(
     }),
     db.form.count({ where: { ownerId: userId } }),
     db.form.count({ where: { ownerId: userId, active: true } }),
-    db.submission.count({ where: { form: { ownerId: userId } } }),
+    db.submission.count({ where: { ownerId: userId } }),
     db.submission.count({
-      where: { form: { ownerId: userId }, status: SubmissionStatus.NEW },
+      where: { ownerId: userId, status: SubmissionStatus.NEW },
     }),
     db.submission.count({
-      where: { form: { ownerId: userId }, status: SubmissionStatus.SPAM },
+      where: { ownerId: userId, status: SubmissionStatus.SPAM },
     }),
     db.submission.findMany({
-      where: { form: { ownerId: userId } },
+      where: { ownerId: userId },
       include: { form: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
     db.submission.findMany({
       where: {
-        form: { ownerId: userId },
+        ownerId: userId,
         createdAt: {
           gte: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000),
         },
@@ -143,27 +145,27 @@ export async function getSubmissionAnalytics(
   const since = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)
   const [total, rows, byFormRaw, byDomainRaw, byStatusRaw] = await Promise.all([
     db.submission.count({
-      where: { form: { ownerId: userId }, createdAt: { gte: since } },
+      where: { ownerId: userId, createdAt: { gte: since } },
     }),
     db.submission.findMany({
-      where: { form: { ownerId: userId }, createdAt: { gte: since } },
+      where: { ownerId: userId, createdAt: { gte: since } },
       select: { createdAt: true },
     }),
     db.submission.groupBy({
       by: ["formId"],
-      where: { form: { ownerId: userId }, createdAt: { gte: since } },
+      where: { ownerId: userId, createdAt: { gte: since } },
       _count: true,
       orderBy: { _count: { formId: "desc" } },
     }),
     db.submission.groupBy({
       by: ["originDomain"],
-      where: { form: { ownerId: userId }, createdAt: { gte: since } },
+      where: { ownerId: userId, createdAt: { gte: since } },
       _count: true,
       orderBy: { _count: { originDomain: "desc" } },
     }),
     db.submission.groupBy({
       by: ["status"],
-      where: { form: { ownerId: userId }, createdAt: { gte: since } },
+      where: { ownerId: userId, createdAt: { gte: since } },
       _count: true,
     }),
   ])

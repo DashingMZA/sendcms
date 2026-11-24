@@ -63,6 +63,11 @@ pnpm db:seed        # demo data (idempotent; demo data only, never on production
 pnpm sdk:build      # esbuild the SDK bundle → apps/api/public/forms/v1.js
 ```
 
+Migration hygiene (descriptive names, `migrate dev` validation,
+enum-add comments, the `(createdAt, id)` tie-break rule, and the
+destructive-warning gate) lives in the
+[runbook](../operations/runbook.md#migration-hygiene-db-043).
+
 `pnpm build` runs the app builds **sequentially** (`--concurrency 1`):
 the five apps' parallel builds contend on `next/font/google` and fail
 intermittently (ADR 0006). Do not remove the flag without re-verifying

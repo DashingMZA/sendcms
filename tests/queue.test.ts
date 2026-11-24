@@ -58,6 +58,9 @@ describe("enqueueEmailJobs", () => {
         to: "owner@example.com",
         subject: "New submission",
         formId: "form-1",
+        // Phase 16 (DB-034): the denormalized owner is required —
+        // the outbox listing filters on it instead of joining Form.
+        ownerId: "user-1",
         submissionId: "sub-1",
       },
     ])
@@ -137,8 +140,12 @@ describe("markEmailJobSent", () => {
 })
 
 describe("markEmailJobFailed", () => {
+  // SRC-329 (Phase 16, Wave 3): the function reads the attempt count
+  // from the row, never from the caller — so each test seeds the row
+  // the mocked findUnique returns.
   it("keeps a retriable failure PENDING with a backoff retry time", async () => {
-    await markEmailJobFailed("job-1", { error: "provider down", attempts: 1 })
+    mockDb.emailJob.findUnique.mockResolvedValue({ attempts: 1 })
+    await markEmailJobFailed("job-1", { error: "provider down" })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null; lastError: string }
     }
@@ -148,10 +155,10 @@ describe("markEmailJobFailed", () => {
   })
 
   it("marks a job FAILED when its attempts are exhausted", async () => {
-    await markEmailJobFailed("job-1", {
-      error: "provider down",
+    mockDb.emailJob.findUnique.mockResolvedValue({
       attempts: MAX_EMAIL_ATTEMPTS,
     })
+    await markEmailJobFailed("job-1", { error: "provider down" })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null }
     }
@@ -160,9 +167,9 @@ describe("markEmailJobFailed", () => {
   })
 
   it("marks a job FAILED when the failure is terminal", async () => {
+    mockDb.emailJob.findUnique.mockResolvedValue({ attempts: 1 })
     await markEmailJobFailed("job-1", {
       error: "Submission or form no longer exists.",
-      attempts: 1,
       terminal: true,
     })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
@@ -173,11 +180,38 @@ describe("markEmailJobFailed", () => {
   })
 
   it("truncates a long error message", async () => {
-    await markEmailJobFailed("job-1", { error: "x".repeat(600), attempts: 1 })
+    mockDb.emailJob.findUnique.mockResolvedValue({ attempts: 1 })
+    await markEmailJobFailed("job-1", { error: "x".repeat(600) })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { lastError: string }
     }
     expect(updateArg.data.lastError.length).toBe(501)
     expect(updateArg.data.lastError.endsWith("…")).toBe(true)
+  })
+
+  it("uses the DB attempt count for the backoff, not a caller value", async () => {
+    // An external increment between claim and mark (row now at 3
+    // attempts) must drive the delay — the 15-minute step — even
+    // though the caller never passes an attempt count at all.
+    mockDb.emailJob.findUnique.mockResolvedValue({ attempts: 3 })
+    const before = Date.now()
+    await markEmailJobFailed("job-1", { error: "provider down" })
+    expect(mockDb.emailJob.findUnique).toHaveBeenCalledWith({
+      where: { id: "job-1" },
+      select: { attempts: true },
+    })
+    const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
+      data: { status: string; nextAttemptAt: Date | null }
+    }
+    expect(updateArg.data.status).toBe("PENDING")
+    const delay = (updateArg.data.nextAttemptAt as Date).getTime() - before
+    expect(delay).toBeGreaterThanOrEqual(15 * 60_000 - 1000)
+    expect(delay).toBeLessThan(15 * 60_000 + 5000)
+  })
+
+  it("returns quietly when the job row is gone", async () => {
+    mockDb.emailJob.findUnique.mockResolvedValue(null)
+    await markEmailJobFailed("job-1", { error: "provider down" })
+    expect(mockDb.emailJob.update).not.toHaveBeenCalled()
   })
 })

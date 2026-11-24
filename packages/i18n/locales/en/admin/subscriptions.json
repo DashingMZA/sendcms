@@ -89,7 +89,7 @@
   "migrateTargetPlaceholder": "Select a plan",
   "migrateTargetVersion": "Target: {plan} v{version}",
   "migrateTitle": "Migrate subscriptions",
-  "migrateTruncated": "Only the first 100 affected users are shown. This run migrates those 100; repeat the migration for the rest.",
+  "migrateTruncated": "Only the first 100 affected users are shown. This run migrates all affected subscriptions, not just the 100 shown — there is no need to repeat the migration for the rest.",
   "migrateUserSearchPlaceholder": "Search users to add",
   "migratedCount": "{count} subscription(s) migrated.",
   "next": "Next",

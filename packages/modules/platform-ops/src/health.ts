@@ -29,6 +29,18 @@ export type PlatformHealth = {
   emergency: boolean
 }
 
+// The McpSettings singleton id (Phase 16, ADM-095). This MUST match
+// `MCP_SETTINGS_ID` in @sendcms/mcp-admin (packages/modules/
+// mcp-admin/src/service.ts), which upserts the row under this id —
+// the health read pins to it with findUnique instead of a bare
+// findFirst, so a stray second row can never make health report the
+// wrong kill-switch state. platform-ops does not depend on mcp-admin,
+// so the id is duplicated here by value, not imported; if the
+// mcp-admin id ever changes, this must change with it. The regression
+// test in tests/platform-ops.test.ts asserts the read is issued
+// against exactly this id.
+const MCP_SETTINGS_ID = "platform"
+
 /** Live platform health: DB ping, real counts, outbox depth, today's
     AI calls, the last-24h MCP error rate, the MCP kill-switch state,
     and the emergency flag. Reads need VIEW_ADMIN_DASHBOARD. */
@@ -84,7 +96,10 @@ export async function getPlatformHealth(
       where: { createdAt: { gte: dayAgo } },
       _count: { _all: true },
     }),
-    db.mcpSettings.findFirst({ select: { globalEnabled: true } }),
+    db.mcpSettings.findUnique({
+      where: { id: MCP_SETTINGS_ID },
+      select: { globalEnabled: true },
+    }),
   ])
 
   let mcpTotal = 0

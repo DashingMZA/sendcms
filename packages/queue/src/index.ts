@@ -35,6 +35,12 @@ export type NewEmailJob = {
   to: string
   subject: string
   formId: string
+  // Denormalized owner (Phase 16, DB-034): the form's owner, set by
+  // the caller from form.ownerId — the outbox listing filters on this
+  // column instead of joining Form. Required, never optional: the
+  // column is NOT NULL, so a job without it fails fast at the
+  // database instead of silently writing an owner-less row.
+  ownerId: string
   // Only submission-notification jobs point at a submission; DIGEST
   // jobs (and auth jobs) have none.
   submissionId?: string
@@ -107,15 +113,23 @@ function truncateError(message: string): string {
 
 /** Failure: retriable failures stay PENDING with a backoff — the next
     drain picks them up again. Only terminal failures (out of attempts,
-    or the submission/form is gone) become FAILED. */
+    or the submission/form is gone) become FAILED.
+    SRC-329 (Phase 16, Wave 3): the attempt count is read from the row,
+    never trusted from the caller — the caller only holds the snapshot
+    it claimed, and a concurrent claim (or any external increment)
+    would make a caller-supplied count stale, miscomputing both the
+    backoff delay and the MAX_EMAIL_ATTEMPTS cutoff. A row that no
+    longer exists has nothing to mark, so it returns quietly. */
 export async function markEmailJobFailed(
   id: string,
-  {
-    error,
-    attempts,
-    terminal = false,
-  }: { error: string; attempts: number; terminal?: boolean }
+  { error, terminal = false }: { error: string; terminal?: boolean }
 ): Promise<void> {
+  const row = await db.emailJob.findUnique({
+    where: { id },
+    select: { attempts: true },
+  })
+  if (!row) return
+  const attempts = row.attempts
   const retryable = !terminal && attempts < MAX_EMAIL_ATTEMPTS
   await db.emailJob.update({
     where: { id },

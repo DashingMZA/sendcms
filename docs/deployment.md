@@ -31,8 +31,13 @@ push is disabled via the Ignored Build Step (owner directive
 ## Requirements
 
 - Node.js 24+, pnpm 12
-- PostgreSQL (any hosted Postgres; the dev database is a Prisma Postgres
-  instance at `db.prisma.io`)
+- PostgreSQL **17+ (minimum)** — docker-compose pins
+  `postgres:17-alpine`, and the migrations rely on it: multi-value
+  `ADD VALUE` on an enum needs Postgres ≥ 12 and `gen_random_uuid()`
+  needs ≥ 13, both satisfied by 17. No lower version is supported;
+  confirm the production database is 17+ before the first
+  `migrate deploy` (the dev database is a Prisma Postgres instance
+  at `db.prisma.io`).
 - The environment variables below
 
 ## Environment variables
@@ -111,7 +116,30 @@ pnpm db:migrate:deploy # prisma migrate deploy — apply on a server (production
 
 Migrations are additive. Apply with `prisma migrate deploy` — never
 `db:reset` on a live database (it is destructive and requires typed
-confirmation for that reason).
+confirmation for that reason). Before any destructive migration
+(`DROP TABLE` / `DROP COLUMN`), follow the pre-migration backup
+checklist and schema-rollback procedure in the
+[runbook](operations/runbook.md#database-backup-migrations-and-rollback).
+
+Seeding: `pnpm db:seed` is the supported path — it runs
+`packages/database/prisma/seed.ts` (demo data: verified demo user,
+domain, form, sample submissions; idempotent, safe to re-run; demo
+data only, never on production). There is no root `prisma.seed` key
+(DOC-031: the old key pointed at a `prisma/seed.ts` that does not
+exist, so it was deleted); `prisma db seed` from the repo root is
+not supported — use `pnpm db:seed`.
+
+Connection pool (Phase 16, DB-036): each process opens its own pool
+of 5 connections (`packages/database/src/client.ts` — `max: 5`), so
+the platform holds ~35 connections against Postgres (6 apps + the
+email worker) with no PgBouncer/pooler in front of it. That is the
+deliberate budget for one small Postgres — do not raise `max` per
+process without counting the platform-wide total first. A
+`statement_timeout` of 30 s is set on every connection so a runaway
+query fails fast instead of wedging a pool connection indefinitely;
+30 s is generous against the slowest legitimate queries (admin
+overview fan-out, digest aggregation), which complete in milliseconds
+to low seconds on indexed data.
 
 ## Build and run
 

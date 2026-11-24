@@ -91,6 +91,7 @@ const { store, mockDb } = vi.hoisted(() => {
     countries: [
       { code: "US", name: "United States" },
       { code: "GB", name: "United Kingdom" },
+      { code: "AU", name: "Australia" },
       { code: "DE", name: "Germany" },
       { code: "PK", name: "Pakistan" },
       { code: "AE", name: "United Arab Emirates" },
@@ -422,7 +423,20 @@ describe("provider registry — configured/unconfigured", () => {
 })
 
 describe("admin provider configs", () => {
-  it("auto-creates all five rows, in provider order", async () => {
+  // BIL-129 (Phase 16, Wave 3): the GET is a pure read — the five
+  // rows are seeded by migration
+  // 20261124154500_seed_billing_provider_configs, never created by
+  // the read path. These tests assert on seeded rows.
+  it("returns all five seeded rows, in provider order", async () => {
+    for (const provider of [
+      "STRIPE",
+      "PAYPAL",
+      "POLAR",
+      "FREEMIUS",
+      "GUMROAD",
+    ]) {
+      seedConfig(provider, false, [])
+    }
     const rows = await listProviderConfigs(ownerSession)
     expect(rows.map((r) => r.provider)).toEqual([
       "STRIPE",
@@ -432,11 +446,67 @@ describe("admin provider configs", () => {
       "GUMROAD",
     ])
     expect(rows.every((r) => r.isEnabled === false)).toBe(true)
+    expect(rows.every((r) => r.allCountries)).toBe(true)
     expect(
       rows.find((r) => r.provider === "GUMROAD")?.checkoutImplemented
     ).toBe(false)
     expect(rows.find((r) => r.provider === "STRIPE")?.checkoutImplemented).toBe(
       true
+    )
+    expect(mockDb.billingProviderConfig.upsert).not.toHaveBeenCalled()
+  })
+
+  it("returns five rows with zero config rows — and writes nothing", async () => {
+    const rows = await listProviderConfigs(ownerSession)
+    expect(rows.map((r) => r.provider)).toEqual([
+      "STRIPE",
+      "PAYPAL",
+      "POLAR",
+      "FREEMIUS",
+      "GUMROAD",
+    ])
+    expect(rows.every((r) => r.isEnabled === false)).toBe(true)
+    expect(rows.every((r) => r.countries.length === 0)).toBe(true)
+    expect(store.configs.size).toBe(0)
+    expect(mockDb.billingProviderConfig.upsert).not.toHaveBeenCalled()
+  })
+
+  // BIL-125 (Phase 16, Wave 3): the owner-approved country defaults
+  // seeded by migration 20261124154600_seed_billing_provider_countries
+  // (PayPal US/GB/AU/DE, Gumroad PK, Stripe/Polar/Freemius all
+  // countries) — listed as seeded, and PayPal never offered in PK.
+  it("returns the seeded country defaults; PK excludes PayPal", async () => {
+    setEnv({
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_PUBLISHABLE_KEY: "pk_test_x",
+      STRIPE_WEBHOOK_SECRET: "whsec_x",
+      PAYPAL_CLIENT_ID: "id",
+      PAYPAL_CLIENT_SECRET: "secret",
+      PAYPAL_WEBHOOK_ID: "wh",
+      GUMROAD_APP_ID: "gum-id",
+      GUMROAD_APP_SECRET: "gum-secret",
+    })
+    seedConfig("STRIPE", true, [])
+    seedConfig("PAYPAL", true, ["US", "GB", "AU", "DE"])
+    seedConfig("GUMROAD", true, ["PK"])
+    const rows = await listProviderConfigs(ownerSession)
+    expect(rows.find((r) => r.provider === "PAYPAL")?.countries).toEqual([
+      "US",
+      "GB",
+      "AU",
+      "DE",
+    ])
+    expect(rows.find((r) => r.provider === "GUMROAD")?.countries).toEqual([
+      "PK",
+    ])
+    expect(rows.find((r) => r.provider === "STRIPE")?.allCountries).toBe(true)
+    const pkProviders = (await listEnabledProviders("PK")).map(
+      (p) => p.provider
+    )
+    expect(pkProviders).toContain("STRIPE")
+    expect(pkProviders).not.toContain("PAYPAL")
+    expect((await listEnabledProviders("AU")).map((p) => p.provider)).toContain(
+      "PAYPAL"
     )
   })
 
@@ -507,7 +577,9 @@ describe("listEnabledProviders — country filter", () => {
       GUMROAD_APP_SECRET: undefined,
     })
     seedConfig("STRIPE", true, []) // everywhere
-    seedConfig("PAYPAL", true, ["US", "GB", "DE"])
+    // BIL-125: the fixture matches the seeded owner defaults
+    // (PayPal US/GB/AU/DE), not the old three-country subset.
+    seedConfig("PAYPAL", true, ["US", "GB", "AU", "DE"])
     seedConfig("GUMROAD", true, ["PK"])
     seedConfig("POLAR", false, [])
   })

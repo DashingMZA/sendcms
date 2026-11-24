@@ -962,7 +962,6 @@ describe("executeErasure", () => {
       },
     })
     mockDb.user.update.mockResolvedValue({ id: userId })
-    mockDb.form.findMany.mockResolvedValue([{ id: "form-1" }])
     for (const del of [
       mockDb.account.deleteMany,
       mockDb.session.deleteMany,
@@ -999,11 +998,13 @@ describe("executeErasure", () => {
         }),
       })
     )
-    // SRC-213: outbox rows addressed to the user (or on their forms)
+    // SRC-213: outbox rows addressed to the user (or owned by them)
     // and auth verification rows for the old email are deleted.
+    // Phase 16 (DB-034): the outbox filter is the denormalized
+    // ownerId — no form-id lookup precedes the delete.
     expect(mockDb.emailJob.deleteMany).toHaveBeenCalledWith({
       where: {
-        OR: [{ to: oldEmail }, { formId: { in: ["form-1"] } }],
+        OR: [{ to: oldEmail }, { ownerId: userId }],
       },
     })
     expect(mockDb.verification.deleteMany).toHaveBeenCalledWith({

@@ -4,8 +4,16 @@
 // Safe to re-run: existing rows are upserted, submissions are created only
 // when the demo form has none yet. Demo data only — never run against a
 // production database.
+// DB-023 / SRC-329 (Phase 16, Wave 3): the seed uses the `db`
+// singleton from ../src/client — the one PrismaClient per process,
+// with the singleton's sslmode handling, pool limits, and statement
+// timeout — instead of constructing a second client with raw pg
+// defaults. (A relative import, not `@sendcms/database`: this file
+// lives inside the database package itself, which has no self-link
+// in its own node_modules.) `config()` stays: the seed is run via
+// tsx, and dotenv-cli already puts DATABASE_URL in the environment
+// before tsx starts, so the singleton builds on the real URL.
 import {
-  PrismaClient,
   DomainVerificationMethod,
   DomainVerificationStatus,
   DomainStatus,
@@ -13,14 +21,11 @@ import {
   SubmissionStatus,
   SubmissionEventType,
 } from "../generated/prisma/client"
-import { PrismaPg } from "@prisma/adapter-pg"
+import { db } from "../src/client"
 import { config } from "dotenv"
 import { createHash } from "node:crypto"
 
 config()
-
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
-const db = new PrismaClient({ adapter })
 
 const DEMO_USER_EMAIL = "demo@example.com"
 const DEMO_DOMAIN = "demo.example.com"
@@ -187,7 +192,12 @@ async function main() {
           originDomain: DEMO_DOMAIN,
           pageUrl: `https://${DEMO_DOMAIN}/contact`,
           contentHash: contentHash(form.id, s.data),
-          formId: form.id,
+          // PRF-011 (Phase 16, Wave 3): the denormalized owner — the
+          // demo submissions belong to the demo user, like the demo
+          // form. The checked create input requires both relations
+          // (form + owner); scalar FKs alone do not satisfy it.
+          form: { connect: { id: form.id } },
+          owner: { connect: { id: user.id } },
         },
       })
       await db.submissionEvent.create({

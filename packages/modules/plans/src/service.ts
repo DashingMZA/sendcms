@@ -2408,7 +2408,7 @@ export async function reconcileUsageLedger(
   const [submissions, ledgerRows] = await Promise.all([
     db.submission.findMany({
       where: {
-        form: { ownerId: userId },
+        ownerId: userId,
         createdAt: { gte: monthStart, lt: nextMonth },
       },
       select: { id: true, createdAt: true },
@@ -2462,9 +2462,13 @@ async function getUsedForMeter(
     return db.apiKey.count({ where: { userId, revokedAt: null } })
   }
   if (meter === "SUBMISSIONS") {
+    // PRF-011 (Phase 16, Wave 3): the monthly quota count filters on
+    // the denormalized Submission.ownerId — served by
+    // @@index([ownerId, createdAt]) — instead of joining Form. This
+    // runs on the public submit path, so the index path matters.
     return db.submission.count({
       where: {
-        form: { ownerId: userId },
+        ownerId: userId,
         createdAt: { gte: startOfUtcMonth(at) },
       },
     })

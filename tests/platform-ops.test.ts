@@ -189,7 +189,7 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
     emailJobs: [] as Row[],
     verifications: [] as Row[],
     aiProviderConfigs: [] as Row[],
-    mcpSettings: null as Row | null,
+    mcpSettingsRows: [] as Row[],
   }
 
   const nextId = () => `id-${++store.seq}`
@@ -733,8 +733,18 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
       }),
     },
     mcpSettings: {
+      // ADM-095: health pins the singleton by id ("platform").
+      // findUnique looks the row up by id; findFirst (what the old
+      // code used) returns insertion order — the decoy row first when
+      // one exists, which is exactly the hazard the pin removes.
+      findUnique: vi.fn(async (args: Row = {}) => {
+        const id = (args.where as Row)?.id as string | undefined
+        const row = store.mcpSettingsRows.find((r) => r.id === id)
+        return row ? { ...row } : null
+      }),
       findFirst: vi.fn(async () => {
-        return store.mcpSettings ? { ...store.mcpSettings } : null
+        const row = store.mcpSettingsRows[0]
+        return row ? { ...row } : null
       }),
     },
     aiProviderConfig: {
@@ -1009,9 +1019,10 @@ beforeEach(() => {
     store.emailJobs,
     store.verifications,
     store.aiProviderConfigs,
+    store.mcpSettingsRows,
   ])
     arr.length = 0
-  store.mcpSettings = { globalEnabled: true }
+  store.mcpSettingsRows = [{ id: "platform", globalEnabled: true }]
 
   seedUser("admin-1", {
     name: "Admin",
@@ -1276,6 +1287,9 @@ beforeEach(() => {
       id: "job-u2",
       to: "customer2@example.com",
       formId: "form-2",
+      // Phase 16 (DB-034): the denormalized owner — erasure deletes
+      // the user's outbox rows by ownerId now, not by form id.
+      ownerId: "user-2",
       status: "SENT",
       createdAt: hoursAgo(1),
     },
@@ -1283,6 +1297,7 @@ beforeEach(() => {
       id: "job-u2b",
       to: "someone-else@example.com",
       formId: "form-2",
+      ownerId: "user-2",
       status: "SENT",
       createdAt: hoursAgo(2),
     }
@@ -1607,6 +1622,24 @@ describe("health and system", () => {
       expect(typeof value).toBe("boolean")
     }
     expect(summary.emergency).toBe(false)
+  })
+
+  it("pins the MCP kill-switch read to the platform singleton (ADM-095)", async () => {
+    // A stray second row with the kill-switch flipped, inserted
+    // FIRST — the old bare findFirst would have reported this row.
+    store.mcpSettingsRows.unshift({ id: "rogue", globalEnabled: false })
+    const health = await getPlatformHealth(ownerSession)
+    expect(health.mcp.globalEnabled).toBe(true)
+    expect(mockDb.mcpSettings.findUnique).toHaveBeenCalledWith({
+      where: { id: "platform" },
+      select: { globalEnabled: true },
+    })
+  })
+
+  it("reports the kill-switch off when the platform row itself is off", async () => {
+    store.mcpSettingsRows = [{ id: "platform", globalEnabled: false }]
+    const health = await getPlatformHealth(ownerSession)
+    expect(health.mcp.globalEnabled).toBe(false)
   })
 })
 

@@ -16,6 +16,7 @@ branch (this branch) is **not deployed** — the ✅ items marked
 - [What runs where](#what-runs-where)
 - [Environment variables (per app)](#environment-variables-per-app)
 - [The email outbox (how notifications actually flow)](#the-email-outbox-how-notifications-actually-flow)
+- [Database backup, migrations, and rollback](#database-backup-migrations-and-rollback)
 - [Logs and the audit log](#logs-and-the-audit-log)
 - [Security posture (what is and isn't in place)](#security-posture-what-is-and-isnt-in-place)
 - [When something is wrong](#when-something-is-wrong)
@@ -128,6 +129,162 @@ flowchart TB
    the outbox — it is sent directly, and with no provider configured
    the dev server logs the link (`[auth-email] …`) while production
    fails loudly.
+
+## Database backup, migrations, and rollback
+
+There are **no down migrations by design** (0 in the repo). Schema
+rollback therefore means one of the two procedures below — never
+hand-editing `_prisma_migrations` (that table is edited only via a
+restore, never by hand: a hand-edited row makes `migrate deploy`
+disagree with the database about what has applied).
+
+### Pre-destructive-migration backup (required)
+
+Any migration containing `DROP TABLE` or `DROP COLUMN` must pass
+this checklist item in review **before** it is applied anywhere
+shared:
+
+1. Take a backup first: `pg_dump -Fc` against the target database
+   (or a provider snapshot on Prisma Postgres), and keep it with a
+   stated retention (at least until the migration has been verified
+   in production).
+2. Verify the backup restores: restore it to a scratch database and
+   confirm the app boots against it (a backup that has never been
+   restored is not a backup).
+3. Only then run `pnpm db:migrate:deploy`.
+
+The historical removal of the comment system (migration
+`20261118084500_remove_comment_system`, 9 tables + 3 enums, DB-019)
+was owner-approved but shipped with **no** backup step recorded
+anywhere — that gap is recorded here so it is not repeated, not as
+a defect in the removal decision itself.
+
+### Schema-rollback procedure
+
+To roll the schema back to before migration N:
+
+1. **Restore from backup (the only full rollback):** restore the
+   backup taken before migration N. This loses every write made
+   after N — say so in the incident record before doing it.
+2. **Or a compensating forward migration (DDL only):** hand-write a
+   new migration that reverses the DDL (re-create the table/column,
+   re-add the enum value where Postgres allows it). This recovers
+   the schema shape, **not the data**: anything dropped by `DROP
+TABLE` / `DROP COLUMN` cannot be recovered by a forward
+   migration — only the backup has it. Enum values cannot be
+   dropped at all, so a rollback across an enum-add migration
+   leaves the value in place (harmless) or needs the table
+   recreated.
+3. Never edit `_prisma_migrations` by hand to "un-apply" a
+   migration — that corrupts the applied-migration record. The
+   restore path rewrites the table correctly; the forward path
+   leaves it alone (N stays applied, N+1 reverses it).
+
+**Not the same as plan-version rollback.** The "rollback" in
+[plan-versioning.md](../admin-control-plane/plan-versioning.md) is
+a business-domain operation — running a new migration back to a
+previous plan version for a subscription. It touches plan data, not
+the schema. Do not confuse the two when reading incident notes.
+
+### Pre-deploy auth check (DB-006)
+
+Migration `20261117224500_switch_auth_to_better_auth` reshapes the
+auth tables (drops OAuth tokens, sessions, verification tokens, and
+resets `emailVerified`). Its header claims "sendcms was never
+deployed, so no production rows existed" — that claim is
+**unverified against the production database** and is recorded as
+such, not as a fact. Before applying this migration on **any** new
+environment, assert the `User` / `Account` / `Session` row counts
+are 0 (or the expected seed-only counts). If they are not, stop:
+the migration fails part-way on its `NOT NULL` adds and destroys
+auth state on a populated DB.
+
+### Backups and point-in-time recovery (PRF-016 — UNVERIFIED)
+
+**No backup evidence exists for the production Prisma Postgres
+database, and none is claimed here.** No backup schedule, snapshot
+policy, PITR setting, `pg_dump` step, or retention statement exists
+anywhere in the repo or its deployment configs, and no restore has
+ever been tested. The owner must confirm in the Prisma dashboard
+what the plan provides and record the answers here:
+
+- Automated backups? (yes/no)
+- PITR window? (hours/days, or none)
+- Retention? (days)
+
+**Status: NOT CONFIRMED — owner-side, unverified.** Until the
+answers are recorded, treat the production DB as having no proven
+backup. If the plan provides nothing, the fallback is an
+owner-side setup task: a scheduled `pg_dump -Fc` job (or provider
+snapshot) with a stated retention — not a repo change.
+
+**Restore drill (run once the mechanism is known, then yearly):**
+restore the latest backup to a scratch database, point a local api
+server at it, and confirm sign-in, the dashboard inbox, and one
+public submit all work. Record the drill date and result here.
+
+### Deploy gate — Render free plan (LVE-015)
+
+Render's `preDeployCommand` (`pnpm db:migrate:deploy` on the api
+service) is a **paid-plan feature and never runs on the free plan**.
+A Render deploy is therefore **blocked** until `pnpm
+db:migrate:deploy` has been run manually against the production
+`DATABASE_URL` and confirmed applied. Deploying code against an
+unmigrated DB is the failure this gate prevents — see
+[deployment/platforms.md](../deployment/platforms.md#render).
+
+### Migration hygiene (DB-043)
+
+- **Descriptive names, permanent once applied.** A migration
+  directory name describes the change (`add_<thing>`,
+  `seed_<thing>`); never a bare generic word (`init`, `update`,
+  `fix`) unless it is the first migration. Renaming a directory
+  breaks `_prisma_migrations` matching, so a misleading name
+  (e.g. `20260520103642_init`, which only changes a column default)
+  is never renamed — it is grandfathered and documented instead.
+- **Validate with `migrate dev` against a live shadow DB.**
+  Migrations must be produced by `prisma migrate dev`, not offline
+  `prisma migrate diff`. The one exception is
+  `20261117185033_add_contact_form_models` (the largest migration,
+  generated offline — its header says so honestly; it applies
+  cleanly from a fresh database). No new migration may carry a "no
+  shadow DB" disclaimer.
+- **Multi-value enum adds carry the PG ≤ 11 warning comment** that
+  migrations #28/#32/#33 carry for the same pattern (adding two
+  values to one enum in one migration needs Postgres ≥ 12).
+  Migration #36 (`20261122070123_add_step_up_verification`) lacks
+  the comment — applied migrations are never edited, so the
+  convention is recorded here for future ones instead.
+- **Tie-break rule:** a "first row" pick orders by `(createdAt,
+id)`, never by `createdAt` alone — two rows can share the
+  earliest timestamp (DB-044: the RBAC backfill's `ORDER BY
+"createdAt" ASC LIMIT 1` was arbitrary on ties).
+- **Cuid PKs in hand-written data migrations.** New rows use the
+  repo's `cuid()` convention (or deterministic literal ids in seed
+  SQL) — never `gen_random_uuid()` / `uuid_generate` (DB-044).
+- **Destructive-warning gate:** a `migration.sql` containing
+  Prisma's "data will be lost" warning header must ship a
+  `destructive-acknowledged.md` in its own directory, recording
+  the approval — see `tests/migration-hygiene.test.ts`. The three
+  historical migrations that carry the header
+  (`20260509102410_add_commenter_and_likes`,
+  `20260616043423_rbac_roles`, `20261122050526_add_countries_table`)
+  are grandfathered in that test with their reasons; they are not
+  edited.
+- **Minimum Postgres is 17** (see [Deployment](../deployment.md#requirements)
+  — docker-compose pins `postgres:17-alpine`).
+
+### Drift check (DB-020)
+
+The single-platform-owner partial unique index
+(`User_single_platform_owner_idx`) is hand-written in migration
+`20261117190655_single_platform_owner` because Prisma cannot
+express a partial index; it is documented in a comment on
+`User.platformRole` in `schema.prisma`. The drift check — `prisma
+migrate diff --from-migrations --to-schema` reporting exactly this
+one index and nothing else — **stays open**: it needs a shadow DB,
+which does not exist on db.prisma.io (owner decision 2026-11-24:
+fresh-DB test only, no shadow DB).
 
 ## Logs and the audit log
 

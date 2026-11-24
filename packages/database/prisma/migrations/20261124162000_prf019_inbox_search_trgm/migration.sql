@@ -1,0 +1,65 @@
+-- Phase 16, Wave 3 — PRF-019: trigram GIN indexes for inbox search.
+--
+-- The inbox search (packages/modules/inbox/src/service.ts,
+-- buildInboxWhere) matches `%term%` with a leading-wildcard ILIKE
+-- against three expressions:
+--   s."originDomain" ILIKE … OR s."pageUrl" ILIKE … OR s."data"::text ILIKE …
+-- No btree index can serve a leading-wildcard ILIKE, and no trigram
+-- index existed — every search seq-scanned the owner's submissions.
+-- This migration adds one GIN trigram index per searched expression,
+-- so Postgres can serve each OR branch from a bitmap index scan and
+-- combine them (BitmapOr) with the ownerId btree (PRF-011) via
+-- BitmapAnd. The search query itself is UNCHANGED: the three ILIKE
+-- branches already name exactly the indexed expressions, so the
+-- search semantics are byte-identical — no cross-field false
+-- positives, no change to what a user sees, only the access path.
+--
+-- Why three per-field indexes instead of one index on a concatenated
+-- expression (originDomain || pageUrl || data::text):
+--   * A concatenated expression changes the semantics: a multi-word
+--     term split across two fields (e.g. the tail of originDomain +
+--     the head of pageUrl) would match the concatenation while
+--     matching no single field. The per-field indexes keep the OR
+--     semantics exact.
+--   * No write-path change: no new column, no backfill, and the
+--     submission create path (Stream A/B) is untouched. A
+--     searchable-text column would have needed a schema change plus
+--     a backfill plus write-time population.
+--   * Trade-off, stated plainly: three indexes cost more write
+--     overhead than one (GIN maintenance on the data::text index
+--     especially), but GIN fastupdate (on by default) amortizes
+--     inserts through the pending list, and inbox search is the
+--     read that grows with the owner's submission count.
+--
+-- Known limit (pg_trgm, not this migration): a search term shorter
+-- than 3 characters yields no trigram, so a 1–2 character search
+-- still seq-scans. Every normal search term (3+ chars) is indexed.
+--
+-- Prisma cannot express GIN indexes, so these live in hand-written
+-- migration SQL only — the DB-020 pattern. The schema documents them
+-- in a comment on the Submission model (do NOT re-create them in the
+-- schema); `prisma migrate diff --from-migrations --to-schema` is
+-- expected to report exactly these three indexes plus the pg_trgm
+-- extension as drift, and nothing else.
+--
+-- CREATE INDEX (not CONCURRENTLY): migrate deploy runs each
+-- migration inside a transaction, and CONCURRENTLY cannot run in
+-- one. The Submission table is small at this stage; a concurrent
+-- rebuild can be done out-of-band later if the table grows large
+-- enough for the lock to matter.
+--
+-- pg_trgm availability: verified on the dev database (Postgres 17.2,
+-- pg_trgm 1.6 listed in pg_available_extensions, CREATE EXTENSION
+-- succeeds) before this migration was written. If a future
+-- environment blocks extension creation, this migration fails loudly
+-- at the CREATE EXTENSION step — that is the signal to enable
+-- pg_trgm on that database, not to silently ship an unindexed
+-- search.
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- One trigram index per searched expression, in the same order as
+-- the OR branches in buildInboxWhere.
+CREATE INDEX "Submission_originDomain_trgm_idx" ON "Submission" USING gin ("originDomain" gin_trgm_ops);
+CREATE INDEX "Submission_pageUrl_trgm_idx" ON "Submission" USING gin ("pageUrl" gin_trgm_ops);
+CREATE INDEX "Submission_data_text_trgm_idx" ON "Submission" USING gin (("data"::text) gin_trgm_ops);
