@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { listFormsForUser } from "@sendcms/forms"
 import { listEmailJobsForUser } from "@sendcms/notifications"
@@ -18,8 +18,8 @@ type Props = {
 }
 
 export default async function NotificationsPage({ searchParams }: Props) {
-  const session = await auth()
-  const userId = session!.user!.id as string
+  const session = await requireDashboardSession()
+  const userId = session.user.id
 
   const raw = await searchParams
   const flat: Record<string, string> = {}

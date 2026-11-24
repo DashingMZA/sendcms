@@ -29,10 +29,13 @@ export function ForgotPasswordForm() {
     // redirectTo is REQUIRED: the reset email links to
     // /api/auth/reset-password/:token, which validates the token and
     // redirects to redirectTo with ?token=… — without it the link lands
-    // on an error instead of this app's /reset-password page.
+    // on an error instead of this app's /reset-password page. It must
+    // be ABSOLUTE (SEC-001): a relative path resolves against the api
+    // origin, which has no /reset-password route and 404s. This page
+    // runs on the dashboard app, so its own origin is the right one.
     const { error } = await authClient.requestPasswordReset({
       email: parsed.data.email,
-      redirectTo: "/reset-password",
+      redirectTo: `${window.location.origin}/reset-password`,
     })
     setLoading(false)
     if (error) {

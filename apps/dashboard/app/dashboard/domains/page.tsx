@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { listDomainsForUser } from "@sendcms/domains"
 
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -16,10 +16,10 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { DomainsTable } from "./domains-table"
 
 export default async function DomainsPage() {
-  const session = await auth()
-  const domains = await listDomainsForUser(session!.user!.id as string)
+  const session = await requireDashboardSession()
+  const domains = await listDomainsForUser(session.user.id)
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_DOMAINS_DOMAINS)
   const t = await getTranslator(locale, "domains")
 

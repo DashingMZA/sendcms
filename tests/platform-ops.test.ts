@@ -517,11 +517,17 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
     },
     // Phase 9: the gated actions (deletion approve/erase) call
     // requireStepUp, which reads the latest unexpired verification.
-    // These tests run as a verified admin.
+    // These tests run as a verified admin. The step-up core consumes
+    // the row it accepts (single-use) and prunes expired rows, so the
+    // mock carries the id, the consuming updateMany, and the prune
+    // deleteMany.
     stepUpVerification: {
       findFirst: vi.fn(async () => ({
+        id: "step-up-1",
         expiresAt: new Date("2099-01-01T00:00:00.000Z"),
       })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     submission: {
       findMany: vi.fn(async (args: Row = {}) => {

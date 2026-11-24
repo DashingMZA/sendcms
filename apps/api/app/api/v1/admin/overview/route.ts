@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { getAdminOverview } from "@sendcms/platform-ops"
 import { OverviewQuerySchema } from "@sendcms/platform-ops/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // Real platform overview for a date range. Reads need
-// VIEW_ADMIN_DASHBOARD (enforced in the service).
+// VIEW_ADMIN_DASHBOARD (enforced at the route and in the service).
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_ADMIN_DASHBOARD")
     const limited = await enforceAdminApiRateLimit(req, session.user.id)
     if (limited) return limited
     const parsed = OverviewQuerySchema.safeParse(

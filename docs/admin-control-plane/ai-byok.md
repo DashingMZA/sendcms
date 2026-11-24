@@ -115,21 +115,25 @@ Envelope layout, per `UserAiKey` row (all fields base64):
 browserModel?, resourceId?, env? })` — the single function every AI
 capability calls. Precedence:
 
-1. **Per-request browser-only key** — used for this call only via
+1. **Mode / emergency gate (read first)** — a `DISABLED` billing
+   mode or the Phase 4 emergency flag refuses the call before any
+   key path runs, including a per-request browser-only key (owner
+   decision 2026-11-24, AIM-005 / AIM-020).
+2. **Per-request browser-only key** — used for this call only via
    `getAiModelForKey`, never stored, never logged. Needs an explicit
    provider: the key is bound to one provider and must never be sent
    to another.
-2. **Billing mode BYOK** — the user's stored enabled key for the
+3. **Billing mode BYOK** — the user's stored enabled key for the
    provider (decrypt + `getAiModelForKey`). If the key is missing,
    disabled, or unreadable → throw a clear error, **NEVER silently
    fall back to the platform key**. A provider with no stored BYOK
    key also throws — there is no silent platform fallback.
-3. **Billing mode PLATFORM** — the platform key, but ONLY when the
+4. **Billing mode PLATFORM** — the platform key, but ONLY when the
    plan allows platform AI (`aiPlatformAllowed`), the admin has the
    provider enabled (`AiProviderConfig.isEnabled`), and the Phase 4
    emergency flag is off (the emergency flag is folded into the
    effective entitlements by `@sendcms/plans`).
-4. **DISABLED or nothing configured** — a clear "AI is not
+5. **DISABLED or nothing configured** — a clear "AI is not
    available" error (`AiNotAvailableError`, 503). Callers degrade to
    the non-AI behavior.
 

@@ -742,6 +742,20 @@ describe("testUserAiKey", () => {
     })
   })
 
+  // AIM-005/AIM-020 follow-through (Wave 2 coordinator): a key test
+  // resolves a model for a live probe, so a DISABLED billing mode
+  // refuses it — no probe call, no usage row.
+  it("refuses to probe when the billing mode is DISABLED", async () => {
+    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await setUserAiBillingMode("user-1", "DISABLED")
+    await expect(testUserAiKey("user-1", "openai")).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringContaining("disabled"),
+    })
+    expect(mockGenerateText).not.toHaveBeenCalled()
+    expect(store.usage).toHaveLength(0)
+  })
+
   // AIM-006: the provider's auth error quotes the key's first ~8 and
   // last 4 chars (OpenAI's own redaction). Neither the response nor
   // the structured log may carry any 4+ char fragment of the key.
@@ -868,6 +882,32 @@ describe("testBrowserKey", () => {
     await expect(
       testBrowserKey("user-1", "openai", "short")
     ).rejects.toMatchObject({ status: 422 })
+    expect(mockGenerateText).not.toHaveBeenCalled()
+    expect(store.usage).toHaveLength(0)
+  })
+
+  // AIM-005/AIM-020 follow-through (Wave 2 coordinator): a browser-key
+  // probe resolves a model, so DISABLED mode and suspended accounts
+  // refuse it before any provider call.
+  it("refuses to probe when the billing mode is DISABLED", async () => {
+    await setUserAiBillingMode("user-1", "DISABLED")
+    await expect(
+      testBrowserKey("user-1", "openai", BROWSER_KEY)
+    ).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringContaining("disabled"),
+    })
+    expect(mockGenerateText).not.toHaveBeenCalled()
+    expect(store.usage).toHaveLength(0)
+  })
+
+  it("refuses to probe for a suspended user", async () => {
+    await expect(
+      testBrowserKey("suspended-1", "openai", BROWSER_KEY)
+    ).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringContaining("not available"),
+    })
     expect(mockGenerateText).not.toHaveBeenCalled()
     expect(store.usage).toHaveLength(0)
   })
@@ -1034,6 +1074,70 @@ describe("resolveAiModelForUser", () => {
 
   it("throws when the mode is DISABLED", async () => {
     await setUserAiBillingMode("user-1", "DISABLED")
+    await expect(
+      resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: ENV })
+    ).rejects.toMatchObject({ status: 503 })
+  })
+
+  it("DISABLED wins over a browser-only key (AIM-005 / AIM-020)", async () => {
+    await setUserAiBillingMode("user-1", "DISABLED")
+    await expect(
+      resolveAiModelForUser("user-1", {
+        purpose: "suggest-fields",
+        provider: "openai",
+        browserKey: "sk-browser-key-99999999",
+        env: ENV,
+      })
+    ).rejects.toMatchObject({ status: 503 })
+    // No model was built from the browser key.
+    expect(mockGetAiModelForKey).not.toHaveBeenCalled()
+  })
+
+  it("DISABLED wins over a stored BYOK key (AIM-005 / AIM-020)", async () => {
+    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await setUserAiBillingMode("user-1", "DISABLED")
+    await expect(
+      resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: ENV })
+    ).rejects.toMatchObject({ status: 503 })
+    expect(mockGetAiModelForKey).not.toHaveBeenCalled()
+  })
+
+  it("PLATFORM mode still resolves a browser-only key", async () => {
+    await setUserAiBillingMode("user-1", "PLATFORM")
+    const resolved = await resolveAiModelForUser("user-1", {
+      purpose: "suggest-fields",
+      provider: "openai",
+      browserKey: "sk-browser-key-99999999",
+      env: ENV,
+    })
+    expect(resolved.billingMode).toBe("BYOK")
+    expect(resolved.provider).toBe("openai")
+    expect((resolved.model as unknown as { keyLast4: string }).keyLast4).toBe(
+      "9999"
+    )
+  })
+
+  it("throws when the emergency switch is on, even with a browser-only key", async () => {
+    mockGetEffective.mockResolvedValue({
+      ...freeEntitlements(),
+      emergency: true,
+    })
+    await expect(
+      resolveAiModelForUser("user-1", {
+        purpose: "suggest-fields",
+        provider: "openai",
+        browserKey: "sk-browser-key-99999999",
+        env: ENV,
+      })
+    ).rejects.toMatchObject({ status: 503 })
+    expect(mockGetAiModelForKey).not.toHaveBeenCalled()
+  })
+
+  it("throws when the emergency switch is on (no browser key)", async () => {
+    mockGetEffective.mockResolvedValue({
+      ...freeEntitlements(),
+      emergency: true,
+    })
     await expect(
       resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: ENV })
     ).rejects.toMatchObject({ status: 503 })

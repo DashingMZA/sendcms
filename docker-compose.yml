@@ -71,7 +71,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
-      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002,http://localhost:3006}
       CRON_SECRET: ${CRON_SECRET:?CRON_SECRET must be set in .env - generate with openssl rand -base64 32}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
@@ -112,7 +112,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
-      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002,http://localhost:3006}
       <<: *next-public
     depends_on:
       postgres:
@@ -145,7 +145,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
-      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002,http://localhost:3006}
       <<: *next-public
     depends_on:
       postgres:

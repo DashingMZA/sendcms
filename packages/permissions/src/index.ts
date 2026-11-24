@@ -4,3 +4,4 @@
 // only platform-level rules remain.
 
 export * from "./platform"
+export { getEffectiveRole, requireAdmin, type AdminActor } from "./admin"

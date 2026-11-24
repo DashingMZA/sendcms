@@ -498,6 +498,9 @@ importers:
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../packages/permissions
       '@sendcms/plans':
         specifier: workspace:*
         version: link:../../packages/modules/plans
@@ -513,6 +516,9 @@ importers:
       '@sendcms/support':
         specifier: workspace:*
         version: link:../../packages/modules/support
+      better-auth:
+        specifier: 1.7.25
+        version: 1.7.25(@prisma/client@7.10.1(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(typescript@6.0.3))(mysql2@3.24.4(@types/node@26.6.6))(next@16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1)))
       next:
         specifier: 16.4.6
         version: 16.4.6(@babel/core@7.29.0(supports-color@10.2.2))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -589,6 +595,9 @@ importers:
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../../packages/modules/notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions
@@ -1658,6 +1667,13 @@ importers:
         version: 6.0.3
 
   packages/permissions:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../database
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@sendcms/config':
         specifier: workspace:*

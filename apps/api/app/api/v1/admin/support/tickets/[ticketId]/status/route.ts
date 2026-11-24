@@ -1,20 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setTicketStatus } from "@sendcms/support"
 import { SetTicketStatusSchema } from "@sendcms/support/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // Moves a ticket along the status machine. Only the transitions the
 // service allows succeed — anything else is a 409. Writes need
-// MANAGE_USERS or the SUPPORT role (enforced in the service).
+// MANAGE_USERS or the SUPPORT role (enforced at the route and in the service).
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_CUSTOMER_DATA")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { ticketId } = await params

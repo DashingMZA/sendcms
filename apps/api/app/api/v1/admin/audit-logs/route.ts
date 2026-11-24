@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { listAuditLogs } from "@sendcms/platform-ops"
 import { AuditLogsQuerySchema } from "@sendcms/platform-ops/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // Append-only audit history, newest first. There is no update or
 // delete endpoint for audit rows, by design.
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_AUDIT_LOGS")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const parsed = AuditLogsQuerySchema.safeParse(

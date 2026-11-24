@@ -62,10 +62,10 @@ means rebuilding — a runtime-only change does not reach the browser
 bundle. Secrets (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `*_KEY`,
 `*_SECRET`) are runtime-only and are never build args.
 
-`BETTER_AUTH_SECRET` must be the **same value** on the api and
-dashboard apps (they share the session cookie). `BETTER_AUTH_URL` is
+`BETTER_AUTH_SECRET` must be the **same value** on the api,
+dashboard, and admin apps (they share the session cookie). `BETTER_AUTH_URL` is
 the api app's public URL on every platform; `TRUSTED_ORIGINS` is the
-dashboard app's public URL. Full variable table:
+dashboard and admin apps' public URLs. Full variable table:
 [Deployment](../deployment.md#environment-variables).
 
 ## Platform × app matrix
@@ -258,7 +258,7 @@ supported path is the Dockerfile:
    `/docs` (docs), `/changelog` (updates), `/health` (worker).
 5. Add a Postgres service in the project and set `DATABASE_URL` on
    the api / dashboard / worker services from it. Set
-   `BETTER_AUTH_SECRET` (same value on api + dashboard),
+   `BETTER_AUTH_SECRET` (same value on api + dashboard + admin),
    `BETTER_AUTH_URL`, `TRUSTED_ORIGINS`, and the OAuth / email
    secrets as service variables.
 

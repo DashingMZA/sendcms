@@ -77,7 +77,9 @@ Tests: `tests/ai-byok.test.ts` (41 tests, shared with
   administrator." The emergency switch never disables form
   submission, the inbox, or any non-AI service. (A per-request
   browser-only key is the user's own key spent on their own
-  account, so it is not blocked by the platform switch.)
+  account, but it is NOT a bypass: DISABLED mode and the
+  emergency switch block browser-only keys too — owner decision
+  2026-11-24, AIM-005 / AIM-020.)
 
 ## Attribution (BYOK vs platform, never mixed)
 
@@ -123,7 +125,7 @@ Every model call records an `AiUsageRecord`:
   mode (`setUserAiBillingModeForAdmin`).
 - **Emergency disable:** the Phase 4 emergency flag
   (`config/config.json`, `platform.emergency`) stops all AI
-  (BYOK + platform). It needs a restart to take effect (config is
+  (BYOK + platform + per-request browser-only keys). It needs a restart to take effect (config is
   read once and cached by `@sendcms/plans`).
 - **Audit:** every billing-mode change, provider-config change, and
   BYOK key change is audited (see [ai-byok](./ai-byok.md) for the

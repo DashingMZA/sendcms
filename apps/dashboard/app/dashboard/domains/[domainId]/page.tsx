@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getDomainForUser } from "@sendcms/domains"
 import { ApiError } from "@sendcms/api-client"
 
@@ -18,18 +18,18 @@ export default async function DomainDetailPage({
 }: {
   params: Promise<{ domainId: string }>
 }) {
-  const session = await auth()
+  const session = await requireDashboardSession()
   const { domainId } = await params
   let domain: Awaited<ReturnType<typeof getDomainForUser>> | null = null
   try {
-    domain = await getDomainForUser(session!.user!.id as string, domainId)
+    domain = await getDomainForUser(session.user.id, domainId)
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound()
     throw err
   }
   if (!domain) notFound()
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_DOMAINS_DOMAINS)
   const t = await getTranslator(locale, "domains")
 

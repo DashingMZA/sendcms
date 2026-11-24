@@ -6,6 +6,7 @@ import {
   platformCan,
   type AdminRole,
   type PlatformCapability,
+  type PlatformRole,
 } from "@sendcms/permissions"
 
 const ALL_CAPABILITIES: PlatformCapability[] = [
@@ -47,8 +48,36 @@ describe("platformCan", () => {
   it("gates the admin app and no customer dashboard route", () => {
     // The comment system's routes were removed, so no /dashboard route is
     // gated. The admin app (Phase 2) is the only gated route.
+    // Phase 16, Wave 2 — SEC-102: one entry per admin page family,
+    // so the proxy can deny before the page fetches anything
+    // (SUPPORT → /admin/plans is a 307 to /admin/unauthorized, not
+    // a page that half-loads then 500s). The proxy matches the
+    // LONGEST prefix, so /admin/subscriptions/migrate wins over
+    // /admin/subscriptions.
     expect(PLATFORM_ROUTE_CAPABILITY).toEqual({
       "/admin": "VIEW_ADMIN_DASHBOARD",
+      "/admin/ai": "VIEW_AI_USAGE",
+      "/admin/ai/models": "VIEW_AI_USAGE",
+      "/admin/ai/providers": "MANAGE_AI",
+      "/admin/ai/settings": "MANAGE_AI",
+      "/admin/ai/usage": "VIEW_AI_USAGE",
+      "/admin/announcements": "MANAGE_ANNOUNCEMENTS",
+      "/admin/audit-logs": "VIEW_AUDIT_LOGS",
+      "/admin/billing": "VIEW_BILLING",
+      "/admin/features": "MANAGE_FEATURE_FLAGS",
+      "/admin/health": "VIEW_ADMIN_DASHBOARD",
+      "/admin/mcp": "VIEW_MCP",
+      "/admin/mcp/keys": "VIEW_MCP",
+      "/admin/plans": "VIEW_PLAN_VERSIONS",
+      "/admin/security": "MANAGE_USERS",
+      "/admin/settings": "VIEW_ADMIN_DASHBOARD",
+      "/admin/submissions": "VIEW_CUSTOMER_DATA",
+      "/admin/subscriptions": "VIEW_USERS",
+      "/admin/subscriptions/migrate": "MIGRATE_SUBSCRIPTIONS",
+      "/admin/support": "VIEW_CUSTOMER_DATA",
+      "/admin/translations": "MANAGE_TRANSLATIONS",
+      "/admin/usage": "MANAGE_USAGE",
+      "/admin/users": "VIEW_USERS",
     })
   })
 
@@ -60,6 +89,11 @@ describe("platformCan", () => {
   it("grants a plain platform user no platform capability", () => {
     for (const cap of ALL_CAPABILITIES)
       expect(platformCan("PLATFORM_USER", cap)).toBe(false)
+  })
+
+  it("denies an unknown role instead of throwing (SRC-307)", () => {
+    for (const cap of ALL_CAPABILITIES)
+      expect(platformCan("BOGUS" as PlatformRole, cap)).toBe(false)
   })
 })
 
@@ -125,6 +159,11 @@ describe("adminCan", () => {
     )
     expect(adminCan("SUPPORT", "MANAGE_USERS")).toBe(false)
     expect(adminCan("SUPPORT", "VIEW_AUDIT_LOGS")).toBe(false)
+  })
+
+  it("denies an unknown role instead of throwing (SRC-307)", () => {
+    for (const cap of ALL_CAPABILITIES)
+      expect(adminCan("BOGUS" as AdminRole, cap)).toBe(false)
   })
 
   it("covers every admin role in the capability map", () => {

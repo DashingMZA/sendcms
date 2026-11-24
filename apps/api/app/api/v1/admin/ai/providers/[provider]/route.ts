@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setProviderConfig } from "@sendcms/ai-settings"
 import {
@@ -12,8 +12,7 @@ type Params = { params: Promise<{ provider: string }> }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("MANAGE_AI")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const providerParsed = AiProviderNameSchema.safeParse(

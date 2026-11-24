@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getSubmissionAnalytics } from "@sendcms/analytics"
 
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -21,13 +21,10 @@ import {
 } from "@remixicon/react"
 
 export default async function AnalyticsPage() {
-  const session = await auth()
-  const analytics = await getSubmissionAnalytics(
-    session!.user!.id as string,
-    30
-  )
+  const session = await requireDashboardSession()
+  const analytics = await getSubmissionAnalytics(session.user.id, 30)
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "analytics")
 
   const statusCount = (status: string) =>

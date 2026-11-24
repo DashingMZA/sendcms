@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { listMcpKeys } from "@sendcms/mcp-admin"
 import { McpPaginationQuerySchema } from "@sendcms/mcp-admin/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // Every API key with its owner and its 30-day call count. Metadata
 // only — the key hash is never selected, and the plaintext key is
 // unrecoverable by design.
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_MCP")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const parsed = McpPaginationQuerySchema.safeParse(

@@ -18,16 +18,14 @@ import {
 } from "@sendcms/ai"
 import { AuditAction, AuditResource, db } from "@sendcms/database"
 import type {
-  AdminRole,
   AiBillingMode,
   AiKeyTestStatus,
   AiProvider,
   AiUsageStatus,
-  PlatformRole,
   Prisma,
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
-import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { requireAdmin } from "@sendcms/permissions"
 import { getEffectiveEntitlementsSafe } from "@sendcms/plans"
 import {
   FREE_PLAN_V1_ENTITLEMENTS,
@@ -68,25 +66,10 @@ const logger = createLogger("ai-settings")
 
 // ─── Authorization ────────────────────────────────────────────────────
 
-// The actor's effective role: the platform owner outranks everything,
-// a staff adminRole comes next, and everyone else is a plain user.
-function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
-  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
-  return session.user.adminRole ?? "PLATFORM_USER"
-}
-
-// Throws 403 unless the actor holds the capability.
-export function requireAdmin(
-  session: AdminSession,
-  capability: PlatformCapability
-): void {
-  if (!adminCan(getEffectiveRole(session), capability)) {
-    throw new ApiError(
-      "Forbidden: you do not have permission for this admin action.",
-      403
-    )
-  }
-}
+// The admin gate lives in `@sendcms/permissions` (Phase 16, Wave 2 —
+// SRC-215 / SRC-411): one implementation for every module, re-exported
+// here so existing import paths keep working.
+export { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 
 // ─── Provider mapping ─────────────────────────────────────────────────
 
@@ -470,6 +453,20 @@ async function probeKey(
   }
 }
 
+// A key test resolves a model for a live probe call, so it obeys the
+// same gate as resolveAiModelForUser (owner decision 2026-11-24,
+// AIM-005/AIM-020): a DISABLED billing mode or a suspended/disabled
+// account resolves no model at all — including a probe.
+async function assertAiTestAllowed(userId: string): Promise<void> {
+  const user = await getUserOrThrow(userId)
+  if (user.status === "SUSPENDED" || user.status === "DISABLED") {
+    throw new AiNotAvailableError("AI is not available for this account.")
+  }
+  if ((await getUserAiBillingMode(userId)) === "DISABLED") {
+    throw new AiNotAvailableError("AI is disabled for this account.")
+  }
+}
+
 /** Tests one saved key with the smallest live call that proves it
     works. A failed test NEVER falls back to the platform key — the
     result is the failure, and the caller shows it. The usage record
@@ -478,6 +475,7 @@ export async function testUserAiKey(
   userId: string,
   provider: AiProviderName
 ): Promise<AiKeyTestResult> {
+  await assertAiTestAllowed(userId)
   const row = await db.userAiKey.findUnique({
     where: {
       userId_provider: {
@@ -585,6 +583,7 @@ export async function testBrowserKey(
   apiKey: string,
   model?: string
 ): Promise<AiKeyTestResult> {
+  await assertAiTestAllowed(userId)
   if (typeof apiKey !== "string" || apiKey.trim().length < 8) {
     throw new ApiError("A valid API key is required to test it.", 422)
   }
@@ -953,7 +952,36 @@ function pickByokProvider(
   )
 }
 
+/** Builds a model from a per-request browser-only key. The key is
+    bound to one provider and must never be sent to another. Shared
+    by the resolution below and by the store-unreadable fallback,
+    where the mode could not be determined at all. */
+function resolveBrowserKeyModel(
+  browserKey: string,
+  opts: ResolveAiOptions
+): ResolvedAiModel {
+  const provider = opts.provider
+  if (!provider || !AI_PROVIDER_NAMES.includes(provider)) {
+    throw new AiNotAvailableError(
+      "A browser-only key needs a provider. Pick the provider the key belongs to."
+    )
+  }
+  const modelId = opts.browserModel?.trim() || DEFAULT_MODELS[provider]
+  return {
+    model: getAiModelForKey(provider, browserKey, modelId),
+    billingMode: "BYOK",
+    provider,
+    modelId,
+  }
+}
+
 /** The single function every AI capability calls. Precedence:
+    (0) the mode / emergency gate — read FIRST (AIM-005 / AIM-020,
+    owner decision 2026-11-24): DISABLED wins over every key path,
+    including a per-request browser-only key, and the Phase 4
+    emergency switch stops every path too — a browser-only key is
+    the user's own money, but it is not a bypass around an admin
+    disabling AI for the account or for the platform;
     (1) a per-request browser-only key — used for THIS call only via
     getAiModelForKey, never stored, never logged (the "Browser only"
     storage choice; the dashboard keeps it in localStorage and sends
@@ -976,37 +1004,16 @@ export async function resolveAiModelForUser(
 ): Promise<ResolvedAiModel> {
   const env = normalizeAiEnv(opts.env ?? process.env)
 
-  // (1) A per-request browser-only key. It needs an explicit provider
-  // — the key is bound to one provider and must never be sent to
-  // another. No plan check here: it is reachable only by an
-  // authenticated non-suspended user, and it spends the user's own
-  // money, not the platform's (the platform emergency switch stops
-  // BYOK and platform AI, not a user's own browser key).
-  const browserKey = opts.browserKey?.trim()
-  if (browserKey) {
-    const provider = opts.provider
-    if (!provider || !AI_PROVIDER_NAMES.includes(provider)) {
-      throw new AiNotAvailableError(
-        "A browser-only key needs a provider. Pick the provider the key belongs to."
-      )
-    }
-    const modelId = opts.browserModel?.trim() || DEFAULT_MODELS[provider]
-    return {
-      model: getAiModelForKey(provider, browserKey, modelId),
-      billingMode: "BYOK",
-      provider,
-      modelId,
-    }
-  }
-
-  // (2) Read the user's mode, keys and entitlements. If the settings
-  // store itself is unreadable, fall back to the platform default —
-  // the mode could not be determined, so there is no BYOK mode to
-  // protect. This is a STORE-AVAILABILITY fallback, not a key
-  // fallback: once the mode is known to be BYOK, a missing/disabled/
-  // failing key NEVER falls back to the platform key (below).
-  // Clean ApiErrors (unknown user) propagate; only unexpected store
-  // errors fall through to the platform default.
+  // (0) Read the user's mode, keys and entitlements FIRST. If the
+  // settings store itself is unreadable, fall back to the platform
+  // default — the mode could not be determined, so there is no
+  // DISABLED mode to protect (a browser-only key still resolves
+  // for this one call, below). This is a STORE-AVAILABILITY
+  // fallback, not a key fallback: once the mode is known to be
+  // BYOK, a missing/disabled/failing key NEVER falls back to the
+  // platform key (below). Clean ApiErrors (unknown user)
+  // propagate; only unexpected store errors fall through to the
+  // platform default.
   let mode: AiBillingMode
   let keys: {
     id: string
@@ -1049,6 +1056,13 @@ export async function resolveAiModelForUser(
       userId,
       purpose: opts.purpose,
     })
+    // The mode could not be determined, so no DISABLED mode is
+    // being protected here: a browser-only key still resolves for
+    // this one call, exactly as before the gate moved first.
+    const fallbackBrowserKey = opts.browserKey?.trim()
+    if (fallbackBrowserKey) {
+      return resolveBrowserKeyModel(fallbackBrowserKey, opts)
+    }
     return resolveAiModelLegacy(env, opts.provider)
   }
 
@@ -1061,7 +1075,19 @@ export async function resolveAiModelForUser(
     throw new AiNotAvailableError("AI is disabled for this account.")
   }
 
-  // (3) BYOK: the user's own key. A missing, disabled, or unreadable
+  // (1) A per-request browser-only key. It needs an explicit provider
+  // — the key is bound to one provider and must never be sent to
+  // another. It reaches here only after the gate above: a DISABLED
+  // mode or the emergency switch has already refused the call.
+  // No plan check here: it is reachable only by an authenticated
+  // non-suspended user, and it spends the user's own money, not the
+  // platform's.
+  const browserKey = opts.browserKey?.trim()
+  if (browserKey) {
+    return resolveBrowserKeyModel(browserKey, opts)
+  }
+
+  // (2) BYOK: the user's own key. A missing, disabled, or unreadable
   // key throws — NEVER silently fall back to the platform key.
   if (mode === "BYOK") {
     if (!entitlements.aiByokAllowed) {
@@ -1120,7 +1146,7 @@ export async function resolveAiModelForUser(
     }
   }
 
-  // (4) PLATFORM: the system's .env key, when the plan allows it.
+  // (3) PLATFORM: the system's .env key, when the plan allows it.
   if (!entitlements.aiPlatformAllowed) {
     throw new AiNotAvailableError("Your plan does not allow platform AI.")
   }

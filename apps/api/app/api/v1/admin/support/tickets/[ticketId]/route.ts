@@ -1,18 +1,17 @@
 import { NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { getTicket } from "@sendcms/support"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // Any user's ticket, with the full thread. Reads need
-// VIEW_CUSTOMER_DATA (enforced in the service).
+// VIEW_CUSTOMER_DATA (enforced at the route and in the service).
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_CUSTOMER_DATA")
     const rateLimited = await enforceAdminApiRateLimit(_req, session.user.id)
     if (rateLimited) return rateLimited
     const { ticketId } = await params

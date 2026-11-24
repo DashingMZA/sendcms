@@ -27,6 +27,7 @@
     "@sendcms/i18n": "workspace:*",
     "@sendcms/inbox": "workspace:*",
     "@sendcms/notifications": "workspace:*",
+    "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
     "@sendcms/sdk": "workspace:*",

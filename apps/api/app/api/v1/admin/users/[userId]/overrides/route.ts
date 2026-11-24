@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import {
   listEntitlementOverrides,
@@ -9,15 +9,14 @@ import {
   EntitlementOverrideListQuerySchema,
   SetEntitlementOverrideSchema,
 } from "@sendcms/plans/validators"
-import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
+import { created, handleApiError, ok } from "@sendcms/api-client"
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("MANAGE_USAGE")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { userId } = await params
@@ -48,8 +47,7 @@ export async function POST(
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("MANAGE_USAGE")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { userId } = await params

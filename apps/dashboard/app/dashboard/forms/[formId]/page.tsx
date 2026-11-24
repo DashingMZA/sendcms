@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getFormForUser } from "@sendcms/forms"
 import { ApiError } from "@sendcms/api-client"
 
@@ -17,16 +17,16 @@ type Params = { params: Promise<{ formId: string }> }
 
 export default async function FormDetailPage({ params }: Params) {
   const { formId } = await params
-  const session = await auth()
+  const session = await requireDashboardSession()
   let form
   try {
-    form = await getFormForUser(session!.user!.id as string, formId)
+    form = await getFormForUser(session.user.id, formId)
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound()
     throw err
   }
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
   const t = await getTranslator(locale, "forms")
 

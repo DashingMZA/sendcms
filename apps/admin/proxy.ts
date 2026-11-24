@@ -104,9 +104,12 @@ export default async function proxy(req: NextRequest) {
   if (path === "/admin/unauthorized")
     return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
 
-  const matched = Object.keys(PLATFORM_ROUTE_CAPABILITY).find(
-    (route) => path === route || path.startsWith(route + "/")
-  )
+  // Longest matching prefix wins (Phase 16, Wave 2 — SEC-102): the
+  // map holds both "/admin" and "/admin/ai/providers", and a plain
+  // first-match would always stop at "/admin".
+  const matched = Object.keys(PLATFORM_ROUTE_CAPABILITY)
+    .filter((route) => path === route || path.startsWith(route + "/"))
+    .sort((a, b) => b.length - a.length)[0]
   if (matched) {
     const role =
       result.user.platformRole === "PLATFORM_OWNER"

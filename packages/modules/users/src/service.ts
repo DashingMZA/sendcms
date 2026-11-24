@@ -3,9 +3,13 @@ import { db } from "@sendcms/database"
 import { ApiError } from "@sendcms/shared"
 
 export async function lookupUserByEmail(email: string) {
-  const normalized = email.toLowerCase()
+  const normalized = email.trim().toLowerCase()
   const user = await db.user.findUnique({ where: { email: normalized } })
-  if (!user) throw new ApiError("No user found with that email", 404)
+  // Generic not-found: the message must not confirm or deny whether
+  // an account exists for the probed address (SRC-228). No route
+  // exposes this lookup today — it is an admin-service helper — so
+  // the generic message costs no admin UX.
+  if (!user) throw new ApiError("User not found", 404)
   return { id: user.id, name: user.name, email: user.email }
 }
 

@@ -53,8 +53,8 @@
     "NEXT_PUBLIC_APP_URL": "https://jadoo.bond",
     "NEXT_PUBLIC_API_URL": "https://api.jadoo.bond",
     "BETTER_AUTH_URL": "https://api.jadoo.bond",
-    "TRUSTED_ORIGINS": "https://dashboard.jadoo.bond",
+    "TRUSTED_ORIGINS": "https://dashboard.jadoo.bond,https://admin.jadoo.bond",
   },
   // Secrets are NOT stored here. Set them in the Cloudflare
-  // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, RESEND_API_KEY, CRON_SECRET (plus GITHUB_/FACEBOOK_ client secrets and SMTP_* when used).
+  // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, RESEND_API_KEY, CRON_SECRET (plus GITHUB_/FACEBOOK_ client secrets and SMTP_* when used).
 }

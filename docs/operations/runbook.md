@@ -70,29 +70,29 @@ file. `wrangler.jsonc` holds only non-secret `vars` (plus a comment
 listing the secrets each worker needs). The full table with
 descriptions is in [Deployment](../deployment.md#environment-variables).
 
-| Variable                                                  | Where                     | Notes                                                                                      |
-| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`                                            | api, dashboard            | Postgres connection string (`?sslmode=verify-full` for Prisma Postgres).                   |
-| `BETTER_AUTH_SECRET`                                      | api, dashboard            | Random 32+ char secret. No fallback — auth refuses to start without it.                    |
-| `BETTER_AUTH_URL`                                         | api                       | The api app's public URL (the auth handler lives there).                                   |
-| `TRUSTED_ORIGINS`                                         | api                       | Comma-separated origins allowed to call auth (the dashboard app's URL).                    |
-| `NEXT_PUBLIC_APP_URL`                                     | all five                  | The marketing app's public URL.                                                            |
-| `NEXT_PUBLIC_API_URL`                                     | marketing, dashboard, api | The api app's public URL (SDK bundle origin + submit API).                                 |
-| `NEXT_PUBLIC_DASHBOARD_URL`                               | marketing, dashboard, api | The dashboard app's public URL (auth callback + inbox links).                              |
-| `NEXT_PUBLIC_DOCS_URL`                                    | marketing, docs           | The docs app's public URL.                                                                 |
-| `NEXT_PUBLIC_UPDATES_URL`                                 | marketing, updates        | The updates app's public URL.                                                              |
-| `NEXT_PUBLIC_AUTH_URL`                                    | dashboard                 | The api app's public URL (the auth client talks to it).                                    |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | api                       | Google OAuth. Redirect URI: `<API_URL>/api/auth/callback/google`.                          |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | api                       | GitHub OAuth (only offered when set).                                                      |
-| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`           | api                       | Facebook OAuth (only offered when set).                                                    |
-| `RESEND_API_KEY`                                          | api                       | Resend API key (set separately in deployment env).                                         |
-| `RESEND_FROM`                                             | api                       | A sending address on a verified Resend domain.                                             |
-| `SMTP_*`                                                  | api                       | SMTP fallback when no Resend key is set.                                                   |
-| `CRON_SECRET`                                             | api                       | Bearer token for the email-outbox cron.                                                    |
-| `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | api                       | Cloudflare Turnstile (forms that enable it answer 503 without the secret).                 |
-| `COOKIE_DOMAIN`                                           | api, dashboard            | Production only, when the apps run on subdomains of one domain. Unset = host-only cookies. |
-| `LOG_LEVEL`                                               | all                       | `info` / `warn` / `error` (default `info`).                                                |
-| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                 | email worker              | Defaults 3005 / 30000.                                                                     |
+| Variable                                                  | Where                            | Notes                                                                                      |
+| --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                            | api, dashboard, admin            | Postgres connection string (`?sslmode=verify-full` for Prisma Postgres).                   |
+| `BETTER_AUTH_SECRET`                                      | api, dashboard, admin            | Random 32+ char secret. No fallback — auth refuses to start without it.                    |
+| `BETTER_AUTH_URL`                                         | api                              | The api app's public URL (the auth handler lives there).                                   |
+| `TRUSTED_ORIGINS`                                         | api                              | Comma-separated origins allowed to call auth (the dashboard and admin apps' URLs).         |
+| `NEXT_PUBLIC_APP_URL`                                     | all six                          | The marketing app's public URL.                                                            |
+| `NEXT_PUBLIC_API_URL`                                     | marketing, dashboard, api, admin | The api app's public URL (SDK bundle origin + submit API).                                 |
+| `NEXT_PUBLIC_DASHBOARD_URL`                               | marketing, dashboard, api, admin | The dashboard app's public URL (auth callback + inbox links).                              |
+| `NEXT_PUBLIC_DOCS_URL`                                    | marketing, docs                  | The docs app's public URL.                                                                 |
+| `NEXT_PUBLIC_UPDATES_URL`                                 | marketing, updates               | The updates app's public URL.                                                              |
+| `NEXT_PUBLIC_AUTH_URL`                                    | dashboard, admin                 | The api app's public URL (the auth client talks to it).                                    |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | api                              | Google OAuth. Redirect URI: `<API_URL>/api/auth/callback/google`.                          |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | api                              | GitHub OAuth (only offered when set).                                                      |
+| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`           | api                              | Facebook OAuth (only offered when set).                                                    |
+| `RESEND_API_KEY`                                          | api                              | Resend API key (set separately in deployment env).                                         |
+| `RESEND_FROM`                                             | api                              | A sending address on a verified Resend domain.                                             |
+| `SMTP_*`                                                  | api                              | SMTP fallback when no Resend key is set.                                                   |
+| `CRON_SECRET`                                             | api                              | Bearer token for the email-outbox cron.                                                    |
+| `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | api                              | Cloudflare Turnstile (forms that enable it answer 503 without the secret).                 |
+| `COOKIE_DOMAIN`                                           | api, dashboard, admin            | Production only, when the apps run on subdomains of one domain. Unset = host-only cookies. |
+| `LOG_LEVEL`                                               | all                              | `info` / `warn` / `error` (default `info`).                                                |
+| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                 | email worker                     | Defaults 3005 / 30000.                                                                     |
 
 ## The email outbox (how notifications actually flow)
 
@@ -187,7 +187,7 @@ flowchart TB
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Submissions not arriving in the inbox     | The api worker's logs; then the `Submission` table (was it saved?) vs the `EmailJob` table (was the notification enqueued?). A 201 with no inbox row means the save failed — check the submit route's `scope: "submissions"` error. |
 | Emails not arriving                       | `EmailJob` rows for the form (stuck `PENDING` = the drain isn't running — check the cron schedule / worker health; `FAILED` = provider error, read the job's error). Then the Resend dashboard.                                     |
-| Sign-in fails with 403                    | `BETTER_AUTH_URL` vs the request `Origin` (the api app's URL must match) and `TRUSTED_ORIGINS` (must include the dashboard app's URL).                                                                                              |
+| Sign-in fails with 403                    | `BETTER_AUTH_URL` vs the request `Origin` (the api app's URL must match) and `TRUSTED_ORIGINS` (must include the dashboard and admin apps' URLs).                                                                                   |
 | Verification link lands on the wrong host | `NEXT_PUBLIC_DASHBOARD_URL` (the callback URL is built from it on the server).                                                                                                                                                      |
 | Dashboard shows a 500 on `/sign-in`       | The callback-URL helper falls back to `NEXT_PUBLIC_DASHBOARD_URL` during SSR — check it is set.                                                                                                                                     |
 | CI fails on a fresh checkout              | `pnpm db:generate` and `pnpm sdk:build` run before typecheck/lint/test (the Prisma client and the SDK bundle are both gitignored).                                                                                                  |

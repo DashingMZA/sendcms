@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url"
 import type { AdminSession } from "@sendcms/auth"
 import { AuditAction, AuditResource, Prisma, db } from "@sendcms/database"
 import type {
-  AdminRole,
   BillingInterval,
   BillingProvider,
   Plan,
@@ -12,13 +11,12 @@ import type {
   PlanStatus,
   PlanVersion,
   PlanVersionStatus,
-  PlatformRole,
   SubscriptionEventType,
   SubscriptionStatus,
   UsageMeter,
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
-import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { requireAdmin } from "@sendcms/permissions"
 import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import {
@@ -60,25 +58,10 @@ const logger = createLogger("plans")
 
 // ─── Authorization ────────────────────────────────────────────────────
 
-// The actor's effective role: the platform owner outranks everything,
-// a staff adminRole comes next, and everyone else is a plain user.
-function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
-  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
-  return session.user.adminRole ?? "PLATFORM_USER"
-}
-
-// Throws 403 unless the actor holds the capability.
-export function requireAdmin(
-  session: AdminSession,
-  capability: PlatformCapability
-): void {
-  if (!adminCan(getEffectiveRole(session), capability)) {
-    throw new ApiError(
-      "Forbidden: you do not have permission for this admin action.",
-      403
-    )
-  }
-}
+// The admin gate lives in `@sendcms/permissions` (Phase 16, Wave 2 —
+// SRC-215 / SRC-411): one implementation for every module, re-exported
+// here so existing import paths keep working.
+export { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 
 // ─── Platform config (emergency switch) ───────────────────────────────
 
@@ -2310,6 +2293,7 @@ export async function recordUsageInTransaction(
 // `resourceId` matches no real resource (SUBMISSIONS only — the only
 // meter with an orphan check; see `findOrphanUsageRows`).
 export async function getUsage(
+  actor: AdminSession,
   userId: string,
   meter: UsageMeter | undefined,
   period: Date
@@ -2322,6 +2306,11 @@ export async function getUsage(
   divergent: boolean
   orphanLedgerRows: number
 }> {
+  // SEC-101: the admin usage endpoint is admin-only — a plain
+  // signed-in user must never read another user's usage totals.
+  // The capability check lives here (second layer); the route also
+  // gates on MANAGE_USAGE before calling (SRC-105).
+  requireAdmin(actor, "MANAGE_USAGE")
   const where: Prisma.UsageLedgerWhereInput = { userId, period }
   if (meter) where.meter = meter
   const total = await db.usageLedger.aggregate({

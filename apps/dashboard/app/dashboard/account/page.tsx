@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getUserAuthMethods } from "@sendcms/users"
 
 import { getConfiguredOAuthProviders } from "@sendcms/auth"
@@ -32,8 +32,8 @@ import { ChangePasswordForm } from "./change-password-form"
 import { LinkProviderButtons } from "./link-provider-buttons"
 
 export default async function AccountPage() {
-  const session = await auth()
-  const { id, name, email, image, emailVerified } = session!.user
+  const session = await requireDashboardSession()
+  const { id, name, email, image, emailVerified } = session.user
   const { hasPassword, providers } = await getUserAuthMethods(id)
   const configured = getConfiguredOAuthProviders()
   const unlinked = configured.filter((p) => !providers.includes(p))

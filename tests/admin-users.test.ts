@@ -51,11 +51,22 @@ const mockDb = vi.hoisted(() => ({
   },
   // Phase 9: the gated actions (disable, role change) call
   // requireStepUp, which reads the latest unexpired verification.
-  // These tests run as a verified admin.
+  // These tests run as a verified admin. The step-up core consumes
+  // the row it accepts (single-use) and prunes expired rows, so the
+  // mock carries the id, the consuming updateMany, and the prune
+  // deleteMany.
   stepUpVerification: {
-    findFirst: vi.fn(async () => ({
-      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
-    })),
+    findFirst: vi.fn(
+      async (): Promise<{
+        id: string
+        expiresAt: Date
+      } | null> => ({
+        id: "step-up-1",
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+      })
+    ),
+    updateMany: vi.fn(async () => ({ count: 1 })),
+    deleteMany: vi.fn(async () => ({ count: 0 })),
   },
   // DB-051: setAdminRole reads the previous role under a row lock.
   $queryRaw: vi.fn(async (): Promise<{ adminRole: string | null }[]> => [
@@ -105,6 +116,7 @@ import {
 } from "@sendcms/admin-users"
 import { SuspendUserSchema } from "@sendcms/admin-users/validators"
 import { ApiError } from "@sendcms/api-client"
+import { Prisma } from "@sendcms/database"
 
 const userId = "user-1"
 const adminId = "admin-1"
@@ -644,6 +656,17 @@ describe("setAdminRole", () => {
 })
 
 describe("revokeUserApiKeys / revokeUserSessions", () => {
+  it("refuses a bulk API-key revoke without step-up (SEC-103 / ADM-009)", async () => {
+    mockDb.stepUpVerification.findFirst.mockResolvedValueOnce(null)
+    await expect(revokeUserApiKeys(ownerActor(), userId)).rejects.toMatchObject(
+      {
+        status: 403,
+        message: expect.stringContaining("Step-up verification required"),
+      }
+    )
+    expect(mockDb.apiKey.updateMany).not.toHaveBeenCalled()
+  })
+
   it("revokes all active keys and audits the count", async () => {
     mockDb.apiKey.updateMany.mockResolvedValue({ count: 3 })
     const result = await revokeUserApiKeys(ownerActor(), userId)
@@ -689,9 +712,11 @@ describe("requireEmailVerification / triggerPasswordReset", () => {
     mockDb.user.update.mockResolvedValue({ id: userId, emailVerified: false })
     const updated = await requireEmailVerification(ownerActor(), userId, sender)
     expect(updated.emailVerified).toBe(false)
-    expect(sender.sendVerificationEmail).toHaveBeenCalledWith(
-      "customer@example.com"
-    )
+    expect(sender.sendVerificationEmail).toHaveBeenCalledWith({
+      email: "customer@example.com",
+      name: undefined,
+      userId,
+    })
     expect(mockDb.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: userId },
@@ -861,6 +886,56 @@ describe("requestDeletion", () => {
     await expect(
       requestDeletion(ownerActor(), userId, { reason: "  " })
     ).rejects.toThrowError("Reason is required")
+  })
+
+  // ADM-002: the owner/self guards every sibling action has — the
+  // platform owner can never be deleted, and no admin can request
+  // deletion of their own account. Nothing is written in either case.
+  it("refuses the platform owner as a target", async () => {
+    mockDb.user.findUnique.mockResolvedValue(
+      makeTargetUser({ platformRole: "PLATFORM_OWNER" })
+    )
+    await expect(
+      requestDeletion(ownerActor(), userId, { reason: "Leaving" })
+    ).rejects.toThrowError("platform owner account cannot be deleted")
+    expect(mockDb.user.update).not.toHaveBeenCalled()
+    expect(mockDb.deletionRequest.create).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+  })
+
+  it("refuses self-targeting", async () => {
+    await expect(
+      requestDeletion(
+        makeActor({ id: userId, adminRole: "SUPER_ADMIN" }),
+        userId,
+        { reason: "Leaving" }
+      )
+    ).rejects.toThrowError("your own account")
+    expect(mockDb.user.update).not.toHaveBeenCalled()
+    expect(mockDb.deletionRequest.create).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+  })
+
+  // SRC-210: two concurrent requests must not both succeed. The
+  // pre-check passes for the second request (the first has not
+  // committed yet), so the partial unique index rejects its create
+  // with P2002 — the service turns that into the same friendly 409.
+  it("turns a concurrent duplicate into a 409 (P2002)", async () => {
+    mockDb.user.update.mockResolvedValue({
+      id: userId,
+      deletionRequestedAt: new Date(),
+      deletionRequestReason: "Leaving",
+    })
+    mockDb.deletionRequest.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError(
+        "Unique constraint failed on the fields: (`userId`)",
+        { code: "P2002", clientVersion: "7.10.1" }
+      )
+    )
+    await expect(
+      requestDeletion(ownerActor(), userId, { reason: "Leaving" })
+    ).rejects.toThrowError("A deletion request is already open for this user.")
+    expect(mockLogAudit).not.toHaveBeenCalled()
   })
 })
 

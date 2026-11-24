@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { BillingProvider } from "@sendcms/database"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setProviderConfig } from "@sendcms/billing"
 import { setProviderConfigSchema } from "@sendcms/billing/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 type Params = { params: Promise<{ provider: string }> }
 
@@ -12,8 +12,7 @@ type Params = { params: Promise<{ provider: string }> }
 // PATCH body. Enabling requires the provider's env credentials.
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("MANAGE_BILLING")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { provider } = await params

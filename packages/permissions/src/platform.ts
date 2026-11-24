@@ -81,7 +81,7 @@ const PLATFORM_PERMISSIONS: Record<
 export const platformCan = (
   role: PlatformRole,
   cap: PlatformCapability
-): boolean => PLATFORM_PERMISSIONS[role].includes(cap)
+): boolean => (PLATFORM_PERMISSIONS[role] ?? []).includes(cap)
 
 // --- Admin staff roles (Admin Control Plane, Phase 2) -----------------------
 // The platform owner stays the highest authority (every capability).
@@ -170,10 +170,47 @@ export const adminCan = (
 ): boolean => {
   if (role === "PLATFORM_OWNER") return true
   if (role === "PLATFORM_USER") return false
-  return ADMIN_ROLE_CAPABILITIES[role].includes(cap)
+  // Unknown role: deny (fail closed) instead of throwing on the
+  // record lookup — a corrupt or future role string in the DB must
+  // read as "no capability", never a 500 (SRC-307).
+  return (ADMIN_ROLE_CAPABILITIES[role] ?? []).includes(cap)
 }
 
-// Platform routes gated by capability — consumed by proxy.ts.
+// Platform routes gated by capability — consumed by proxy.ts
+// (apps/admin/proxy.ts; the dashboard proxy reads the same map and
+// finds no /dashboard entry, so it is unaffected).
+//
+// One entry per admin page family (Phase 16, Wave 2 — SEC-102): the
+// capability is the READ capability the page's data needs, so a staff
+// member outside it is redirected to /admin/unauthorized before the
+// page's server fetch can 500. Write mutations stay gated by their own
+// API routes (SRC-105) — the proxy only decides whether the page
+// shell may load. The longest matching prefix wins (the proxy sorts
+// by length), so "/admin/ai/providers" beats "/admin/ai" beats
+// "/admin". Every entry must stay in sync with the page's data
+// source; tests/permissions.test.ts pins the whole map.
 export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin": "VIEW_ADMIN_DASHBOARD",
+  "/admin/ai": "VIEW_AI_USAGE",
+  "/admin/ai/models": "VIEW_AI_USAGE",
+  "/admin/ai/providers": "MANAGE_AI",
+  "/admin/ai/settings": "MANAGE_AI",
+  "/admin/ai/usage": "VIEW_AI_USAGE",
+  "/admin/announcements": "MANAGE_ANNOUNCEMENTS",
+  "/admin/audit-logs": "VIEW_AUDIT_LOGS",
+  "/admin/billing": "VIEW_BILLING",
+  "/admin/features": "MANAGE_FEATURE_FLAGS",
+  "/admin/health": "VIEW_ADMIN_DASHBOARD",
+  "/admin/mcp": "VIEW_MCP",
+  "/admin/mcp/keys": "VIEW_MCP",
+  "/admin/plans": "VIEW_PLAN_VERSIONS",
+  "/admin/security": "MANAGE_USERS",
+  "/admin/settings": "VIEW_ADMIN_DASHBOARD",
+  "/admin/submissions": "VIEW_CUSTOMER_DATA",
+  "/admin/subscriptions": "VIEW_USERS",
+  "/admin/subscriptions/migrate": "MIGRATE_SUBSCRIPTIONS",
+  "/admin/support": "VIEW_CUSTOMER_DATA",
+  "/admin/translations": "MANAGE_TRANSLATIONS",
+  "/admin/usage": "MANAGE_USAGE",
+  "/admin/users": "VIEW_USERS",
 }

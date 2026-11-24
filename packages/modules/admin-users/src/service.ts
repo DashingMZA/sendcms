@@ -1,12 +1,8 @@
 import type { AdminSession } from "@sendcms/auth"
-import { AuditAction, AuditResource, db } from "@sendcms/database"
-import type {
-  AdminRole,
-  PlatformRole,
-  Prisma,
-  UserStatus,
-} from "@sendcms/database"
-import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { AuditAction, AuditResource, db, Prisma } from "@sendcms/database"
+import type { AdminRole, PlatformRole, UserStatus } from "@sendcms/database"
+import { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
+import { getTargetUserOrThrow } from "@sendcms/permissions/target-user"
 import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type { AdminUserListQuery } from "./validators"
@@ -21,35 +17,29 @@ import type { AdminUserListQuery } from "./validators"
 
 // ─── Authorization ────────────────────────────────────────────────────
 
-// The actor's effective role: the platform owner outranks everything,
-// a staff adminRole comes next, and everyone else is a plain user.
-function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
-  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
-  return session.user.adminRole ?? "PLATFORM_USER"
-}
-
-// Throws 403 unless the actor holds the capability.
-export function requireAdmin(
-  session: AdminSession,
-  capability: PlatformCapability
-): void {
-  if (!adminCan(getEffectiveRole(session), capability)) {
-    throw new ApiError(
-      "Forbidden: you do not have permission for this admin action.",
-      403
-    )
-  }
-}
+// The admin gate lives in `@sendcms/permissions` (Phase 16, Wave 2 —
+// SRC-215 / SRC-411): one implementation for every module, re-exported
+// here so existing import paths keep working. `getTargetUserOrThrow`
+// is the shared lookup from the same home.
+export { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 
 // ─── Email sending ────────────────────────────────────────────────────
 
 // The service never imports Better Auth (or any mailer) itself: the
-// route layer injects a sender built from `betterAuth.api`, so the
+// route layer injects a sender built from the auth instance, so the
 // verification / reset email is REALLY sent — never just a flag flip.
 // If the send throws, the service propagates the error and nothing is
 // half-applied (requireEmailVerification sends BEFORE flipping the flag).
 export type AdminEmailSender = {
-  sendVerificationEmail: (email: string) => Promise<void>
+  // ADM-001: the verification send takes the target's identity, not
+  // just the address — the sender mints the token for that user
+  // directly (no admin session involved; see
+  // apps/api/lib/admin-email-sender.ts).
+  sendVerificationEmail: (input: {
+    email: string
+    name?: string | null
+    userId?: string
+  }) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
 }
 
@@ -169,22 +159,9 @@ async function getSubmissionCounts(
   return counts
 }
 
-// The target user for an admin action, with the fields the guards need.
-async function getTargetUserOrThrow(userId: string) {
-  const target = await db.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      platformRole: true,
-      status: true,
-      adminRole: true,
-      email: true,
-      emailVerified: true,
-    },
-  })
-  if (!target) throw new ApiError("User not found", 404)
-  return target
-}
+// The target user for an admin action is looked up by the shared
+// helper from `@sendcms/permissions/target-user` (imported above) —
+// it selects the fields the guards need (platformRole, email, …).
 
 // The platform owner account can never be suspended, disabled, or have
 // its staff role changed.
@@ -694,6 +671,11 @@ export async function setAdminRole(
 
 export async function revokeUserApiKeys(actor: AdminSession, userId: string) {
   requireAdmin(actor, "MANAGE_USERS")
+  // SEC-103 / ADM-009: revoking all of a user's API keys is a
+  // destructive, account-wide action — it requires a fresh step-up
+  // verification like the single MCP-key revoke, and the proof is
+  // consumed, so one password entry revokes one user's keys.
+  await requireStepUp(actor)
   await getTargetUserOrThrow(userId)
   const result = await db.apiKey.updateMany({
     where: { userId, revokedAt: null },
@@ -735,7 +717,11 @@ export async function requireEmailVerification(
   const target = await getTargetUserOrThrow(userId)
   // Send FIRST: if the mail fails, nothing changes and the admin sees
   // the error instead of a silently unverified user with no email.
-  await sender.sendVerificationEmail(target.email)
+  await sender.sendVerificationEmail({
+    email: target.email,
+    name: target.name,
+    userId: target.id,
+  })
   const updated = await db.user.update({
     where: { id: userId },
     data: { emailVerified: false },
@@ -931,7 +917,12 @@ export async function requestDeletion(
   if (!input.reason.trim()) {
     throw new ApiError("Reason is required", 400)
   }
-  await getTargetUserOrThrow(userId)
+  // ADM-002: the owner/self guards every sibling action has — the
+  // platform owner can never be deleted, and no admin can request
+  // deletion of their own account.
+  const target = await getTargetUserOrThrow(userId)
+  forbidOwnerTarget(target, "deleted")
+  forbidSelfTarget(actor, userId, "request deletion of")
   const open = await db.deletionRequest.findFirst({
     where: { userId, status: { in: ["REQUESTED", "APPROVED"] } },
     select: { id: true },
@@ -940,20 +931,39 @@ export async function requestDeletion(
     throw new ApiError("A deletion request is already open for this user.", 409)
   }
   const now = new Date()
-  const [updated, request] = await db.$transaction([
-    db.user.update({
-      where: { id: userId },
-      data: { deletionRequestedAt: now, deletionRequestReason: input.reason },
-      select: {
-        id: true,
-        deletionRequestedAt: true,
-        deletionRequestReason: true,
-      },
-    }),
-    db.deletionRequest.create({
-      data: { userId, reason: input.reason },
-    }),
-  ])
+  // SRC-210: the one-open-request check above is a pre-check only —
+  // two concurrent requests could both pass it. The partial unique
+  // index `DeletionRequest_one_open_idx` (raw migration
+  // 20261124131329, Prisma cannot express a partial unique index)
+  // makes the create atomic; a P2002 here means the other request
+  // won, so it becomes the same friendly 409.
+  const [updated, request] = await db
+    .$transaction([
+      db.user.update({
+        where: { id: userId },
+        data: { deletionRequestedAt: now, deletionRequestReason: input.reason },
+        select: {
+          id: true,
+          deletionRequestedAt: true,
+          deletionRequestReason: true,
+        },
+      }),
+      db.deletionRequest.create({
+        data: { userId, reason: input.reason },
+      }),
+    ])
+    .catch((err: unknown) => {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        throw new ApiError(
+          "A deletion request is already open for this user.",
+          409
+        )
+      }
+      throw err
+    })
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,

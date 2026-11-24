@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getSubmissionForUser } from "@sendcms/inbox"
 import { ApiError } from "@sendcms/api-client"
 
@@ -17,19 +17,16 @@ type Params = { params: Promise<{ submissionId: string }> }
 
 export default async function SubmissionDetailPage({ params }: Params) {
   const { submissionId } = await params
-  const session = await auth()
+  const session = await requireDashboardSession()
   let submission
   try {
-    submission = await getSubmissionForUser(
-      session!.user!.id as string,
-      submissionId
-    )
+    submission = await getSubmissionForUser(session.user.id, submissionId)
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound()
     throw err
   }
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_INBOX_DOMAINS)
   const t = await getTranslator(locale, "inbox")
 

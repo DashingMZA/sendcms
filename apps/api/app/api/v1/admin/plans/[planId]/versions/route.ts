@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { createPlanVersion } from "@sendcms/plans"
 import { CreatePlanVersionSchema } from "@sendcms/plans/validators"
-import { ApiError, created, handleApiError } from "@sendcms/api-client"
+import { created, handleApiError } from "@sendcms/api-client"
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ planId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("MANAGE_PLANS")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { planId } = await params

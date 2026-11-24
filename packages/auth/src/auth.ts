@@ -4,7 +4,7 @@ import { headers } from "next/headers"
 import { db } from "@sendcms/database"
 import { sendPasswordResetEmail, sendVerificationEmail } from "@sendcms/email"
 import { createLogger } from "@sendcms/observability"
-import { logAudit } from "@sendcms/security"
+import { logAudit, parseTrustedProxyList } from "@sendcms/security"
 import { getConfiguredOAuthProviders } from "./providers"
 import type { AdminRole, PlatformRole } from "@sendcms/permissions"
 
@@ -12,10 +12,22 @@ export type UserStatus = "ACTIVE" | "SUSPENDED" | "DISABLED"
 
 const logger = createLogger("auth")
 
+// Trusted reverse-proxy IPs/CIDRs for Better Auth's client-IP
+// resolution (SEC-010): the same TRUSTED_PROXY_IPS list the rate
+// limiter uses. Only IP/CIDR entries are passed through — the list
+// may also carry the `cloudflare` token, which Better Auth does not
+// understand (its cf-connecting-ip handling has no cf-ray check, so
+// it is not wired here either).
+function trustedProxyEntries(): string[] {
+  return parseTrustedProxyList(process.env.TRUSTED_PROXY_IPS).filter(
+    (entry) => /^[0-9a-f:.]+\/\d+$/.test(entry) || /^[0-9a-f:.]+$/.test(entry)
+  )
+}
+
 /**
  * Admin auth — Better Auth 1.7.x (stable), database sessions.
  *
- * Providers: Google (always), GitHub + Facebook when their client ID +
+ * Providers: Google/GitHub/Facebook OAuth when their client ID +
  * secret are set (see ./providers — the sign-in UI only offers
  * configured providers). Email/password with mandatory verification:
  * sign-in is blocked until the email is verified.
@@ -59,8 +71,60 @@ export type AdminSession = {
   }
 }
 
+/**
+ * Better Auth builds verification email links against its own mount
+ * point (`<api>/api/auth/verify-email?token=…`), but the page that
+ * consumes the token lives on the dashboard app at /verify-email —
+ * the dashboard serves no /api/auth/* routes (only /api/v1/* is
+ * rewritten to the api), so a link that keeps the /api/auth prefix
+ * 404s there and the email is never verified. That breaks the
+ * sign-up, resend, and change-email flows alike (adjacent discovery
+ * in Wave 2, same family as SEC-001 / SEC-002 / ADM-001; corrected
+ * live 2026-11-24 after the origin-only rewrite was caught 404ing).
+ * Rewrite the link to the dashboard origin AND strip the /api/auth
+ * mount prefix from the path; the token and callbackURL are preserved
+ * untouched.
+ */
+export function verificationUrlOnDashboard(url: string): string {
+  const dashboardOrigin =
+    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
+  try {
+    const parsed = new URL(url)
+    const dashboard = new URL(dashboardOrigin)
+    parsed.protocol = dashboard.protocol
+    parsed.host = dashboard.host
+    if (parsed.pathname.startsWith("/api/auth/")) {
+      parsed.pathname = parsed.pathname.slice("/api/auth".length)
+    }
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
 export function createSendcmsAuth() {
   const configuredProviders = getConfiguredOAuthProviders()
+
+  // Cross-app auth (Phase 7): the dashboard app's pages run on a
+  // different origin than the api app that serves /api/auth/*. The
+  // browser auth client posts cross-origin, so the dashboard (and any
+  // other app origin) must be trusted here, or Better Auth rejects the
+  // request with INVALID_ORIGIN. Comma-separated list, e.g.
+  // TRUSTED_ORIGINS=http://localhost:3002,http://localhost:3006 (dev)
+  // or the dashboard and admin apps' public URLs (production). The
+  // baseURL above is trusted implicitly; this list holds the OTHER
+  // apps' origins. Empty is LOUD, not silent (SEC-005): without it,
+  // cross-origin auth fails at sign-in time with no hint at boot.
+  const trustedOrigins = (process.env.TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+  if (trustedOrigins.length === 0) {
+    logger.warn(
+      "[auth] TRUSTED_ORIGINS is empty — dashboard/admin origins will be refused with INVALID_ORIGIN; set it to the dashboard and admin app URLs",
+      { baseURL: process.env.BETTER_AUTH_URL ?? null }
+    )
+  }
 
   const betterAuth = createBetterAuth({
     database: prismaAdapter(db, { provider: "postgresql" }),
@@ -68,18 +132,7 @@ export function createSendcmsAuth() {
       process.env.BETTER_AUTH_URL ??
       process.env.NEXT_PUBLIC_APP_URL ??
       "http://localhost:3000",
-    // Cross-app auth (Phase 7): the dashboard app's pages run on a
-    // different origin than the api app that serves /api/auth/*. The
-    // browser auth client posts cross-origin, so the dashboard (and any
-    // other app origin) must be trusted here, or Better Auth rejects the
-    // request with INVALID_ORIGIN. Comma-separated list, e.g.
-    // TRUSTED_ORIGINS=http://localhost:3002 (dev) or the dashboard
-    // app's public URL (production). The baseURL above is trusted
-    // implicitly; this list holds the OTHER apps' origins.
-    trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    trustedOrigins,
     // Session lifetime: 30 days (Better Auth default is 7 days). The
     // session is refreshed when used after `updateAge` (default 1 day),
     // so active users stay signed in; an idle session expires 30 days
@@ -92,34 +145,72 @@ export function createSendcmsAuth() {
     // session cookie needs Domain=<domain> to be shared across them.
     // Unset = host-only cookies (current behavior, dev). Set via
     // COOKIE_DOMAIN in production only — never commit a value here.
+    //
+    // Cookie attributes are set explicitly (SEC-321) instead of
+    // relying on the library defaults: HttpOnly + SameSite=Lax
+    // always; Secure only over HTTPS (production) — a Secure cookie
+    // on the http dev origins would never be sent back.
+    //
+    // Client-IP tracking (SEC-010): Better Auth reads the IP from
+    // x-forwarded-for by default; the trusted proxies are the same
+    // TRUSTED_PROXY_IPS list the rate limiter uses, so a forwarded
+    // chain is walked right-to-left past trusted hops only. Without
+    // trusted proxies a single-value header is trusted (library
+    // behaviour); multi-value chains are not. ipv6Subnet 128
+    // records the full address instead of the library's /64
+    // collapse — the session row is an audit record, not a
+    // rate-limit key.
     advanced: {
       defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
         ...(process.env.COOKIE_DOMAIN
           ? { domain: process.env.COOKIE_DOMAIN }
           : {}),
+      },
+      ipAddress: {
+        trustedProxies: trustedProxyEntries(),
+        ipv6Subnet: 128,
       },
     },
     // No fallback value here on purpose: Better Auth fails fast without a
     // secret instead of silently signing with an insecure default.
     secret: process.env.BETTER_AUTH_SECRET,
     socialProviders: {
-      google: {
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      },
-      ...(configuredProviders.includes("github")
+      // Every provider is gated on its credentials being set
+      // (SRC-306 / DOC-020 / SEC-004): an unconfigured provider is
+      // neither registered nor offered, so the sign-in button can
+      // never lead to a failed OAuth attempt. No `!` assertions on
+      // possibly-empty values — the credentials are read into locals
+      // and only spread in when both are present.
+      ...(configuredProviders.includes("google") &&
+      process.env.GOOGLE_CLIENT_ID &&
+      process.env.GOOGLE_CLIENT_SECRET
         ? {
-            github: {
-              clientId: process.env.GITHUB_CLIENT_ID!,
-              clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+            google: {
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             },
           }
         : {}),
-      ...(configuredProviders.includes("facebook")
+      ...(configuredProviders.includes("github") &&
+      process.env.GITHUB_CLIENT_ID &&
+      process.env.GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(configuredProviders.includes("facebook") &&
+      process.env.FACEBOOK_CLIENT_ID &&
+      process.env.FACEBOOK_CLIENT_SECRET
         ? {
             facebook: {
-              clientId: process.env.FACEBOOK_CLIENT_ID!,
-              clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
+              clientId: process.env.FACEBOOK_CLIENT_ID,
+              clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
             },
           }
         : {}),
@@ -154,7 +245,10 @@ export function createSendcmsAuth() {
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24, // 24 hours
       sendVerificationEmail: async ({ user, url }) => {
-        await sendVerificationEmail({ user, url })
+        await sendVerificationEmail({
+          user,
+          url: verificationUrlOnDashboard(url),
+        })
       },
     },
     user: {
@@ -187,6 +281,28 @@ export function createSendcmsAuth() {
       },
     },
     databaseHooks: {
+      session: {
+        create: {
+          // SEC-003 / SEC-106 / SEC-321: a suspended or disabled user
+          // must not mint a fresh session at sign-in at all. Returning
+          // false makes createSession return null, and sign-in then
+          // throws 401 FAILED_TO_CREATE_SESSION with no Set-Cookie —
+          // no fresh credential for an account the platform
+          // deliberately disabled. This covers every sign-in path
+          // (email, OAuth, verify-email auto-sign-in) because they all
+          // create the session through this hook. The auth() helper
+          // below keeps its own status check as the second layer: a
+          // row created before this hook existed still reads as
+          // signed out until the account is ACTIVE again.
+          before: async (session) => {
+            const user = await db.user.findUnique({
+              where: { id: session.userId },
+              select: { status: true },
+            })
+            if (user && user.status !== "ACTIVE") return false
+          },
+        },
+      },
       user: {
         create: {
           after: async (user) => {
@@ -234,8 +350,9 @@ export function createSendcmsAuth() {
    * and server component treats them as signed out. The session row stays
    * in the DB, so reactivating/restoring the account restores access
    * without a fresh sign-in. (The proxies enforce the same rule for page
-   * access; a suspended user can still obtain a session cookie by signing
-   * in, but it is useless — every check rejects it.)
+   * access; since Phase 16 Wave 2 the session.create.before hook also
+   * refuses to mint a session for a non-ACTIVE user at sign-in time —
+   * this check is the second layer for rows created before that hook.)
    */
   async function auth(): Promise<AdminSession | null> {
     const result = await betterAuth.api.getSession({

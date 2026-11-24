@@ -1,9 +1,10 @@
 import type { AdminSession } from "@sendcms/auth"
 import { AuditAction, AuditResource, db, Prisma } from "@sendcms/database"
-import type { AdminRole, McpUsageStatus, PlatformRole } from "@sendcms/database"
+import type { McpUsageStatus } from "@sendcms/database"
 import { MCP_TOOL_NAMES, parseMcpAllowedTools } from "@sendcms/mcp"
 import { revokeApiKeyForUser } from "@sendcms/api-keys"
-import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { requireAdmin } from "@sendcms/permissions"
+import { getTargetUserOrThrow } from "@sendcms/permissions/target-user"
 import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type {
@@ -41,34 +42,13 @@ import type {
 
 // ─── Authorization ────────────────────────────────────────────────────
 
-// The actor's effective role: the platform owner outranks everything,
-// a staff adminRole comes next, and everyone else is a plain user.
-function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
-  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
-  return session.user.adminRole ?? "PLATFORM_USER"
-}
+// The admin gate lives in `@sendcms/permissions` (Phase 16, Wave 2 —
+// SRC-215 / SRC-411): one implementation for every module, re-exported
+// here so existing import paths keep working.
+export { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 
-// Throws 403 unless the actor holds the capability.
-export function requireAdmin(
-  session: AdminSession,
-  capability: PlatformCapability
-): void {
-  if (!adminCan(getEffectiveRole(session), capability)) {
-    throw new ApiError(
-      "Forbidden: you do not have permission for this admin action.",
-      403
-    )
-  }
-}
-
-async function getTargetUserOrThrow(userId: string) {
-  const target = await db.user.findUnique({
-    where: { id: userId },
-    select: { id: true, name: true, email: true },
-  })
-  if (!target) throw new ApiError("User not found.", 404)
-  return target
-}
+// The target lookup is the shared helper from
+// `@sendcms/permissions/target-user` (imported above).
 
 // ─── Global kill-switch ───────────────────────────────────────────────
 

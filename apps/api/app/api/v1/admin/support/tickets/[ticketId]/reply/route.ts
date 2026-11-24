@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { adminReply } from "@sendcms/support"
 import { ReplyToTicketSchema } from "@sendcms/support/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // A staff reply to a ticket. MANAGE_USERS holders and SUPPORT-role
-// staff may reply (enforced in the service).
+// staff may reply (enforced at the route and in the service).
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_CUSTOMER_DATA")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { ticketId } = await params

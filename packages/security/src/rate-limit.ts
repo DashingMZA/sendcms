@@ -99,7 +99,15 @@ export function parseRateLimitConfig(value: unknown): RateLimitConfig {
   }
 }
 
-let rateLimitConfigCache: RateLimitConfig | null = null
+let rateLimitConfigCache: {
+  config: RateLimitConfig
+  loadedAt: number
+} | null = null
+
+// Config reload interval (SRC-327): re-read config/config.json at
+// most every 60 seconds, so a limit change takes effect without a
+// restart while the file is not re-read on every request.
+export const RATE_LIMIT_CONFIG_CACHE_TTL_MS = 60_000
 
 export function resetRateLimitConfigCache(): void {
   rateLimitConfigCache = null
@@ -146,16 +154,24 @@ function resolveConfigPath(): {
   return null
 }
 
-// Reads config/config.json once per process (same pattern as the plans
-// module's readPlatformConfig). A missing file, bad JSON, or missing
-// key all mean "use the defaults" — the limiter must never fail
-// because its config is unreadable; the fail-open rule below covers
-// the rest. The fallback is LOUD, not silent (DOC-018): when the file
-// cannot be found from the working directory, or cannot be read at
-// all, a warning names the values that fell back to defaults, so an
-// operator can see the platform is running on defaults.
-export function readRateLimitConfig(): RateLimitConfig {
-  if (rateLimitConfigCache) return rateLimitConfigCache
+// Reads config/config.json, re-reading at most every
+// RATE_LIMIT_CONFIG_CACHE_TTL_MS (SRC-327): a limit change takes
+// effect without a restart (within a minute), while a missing file,
+// bad JSON, or missing key all mean "use the defaults" — the limiter
+// must never fail because its config is unreadable; the fail-open
+// rule below covers the rest. The fallback is LOUD, not silent
+// (DOC-018): when the file cannot be found from the working
+// directory, or cannot be read at all, a warning names the values
+// that fell back to defaults, so an operator can see the platform is
+// running on defaults.
+export function readRateLimitConfig(now: Date = new Date()): RateLimitConfig {
+  if (
+    rateLimitConfigCache &&
+    now.getTime() - rateLimitConfigCache.loadedAt <
+      RATE_LIMIT_CONFIG_CACHE_TTL_MS
+  ) {
+    return rateLimitConfigCache.config
+  }
   let config = DEFAULT_RATE_LIMIT_CONFIG
   const resolved = resolveConfigPath()
   if (!resolved) {
@@ -181,8 +197,54 @@ export function readRateLimitConfig(): RateLimitConfig {
       config = DEFAULT_RATE_LIMIT_CONFIG
     }
   }
-  rateLimitConfigCache = config
-  return rateLimitConfigCache
+  rateLimitConfigCache = { config, loadedAt: now.getTime() }
+  return config
+}
+
+// The per-IP bucket for one auth check (SRC-327): when no client IP
+// could be resolved, there is NO shared `ip:unknown` bucket —
+// unknown-IP callers must not share one bucket, where one flood
+// locks out every other unidentified caller. Callers with an actor
+// key (email) are keyed by that instead; callers with neither an IP
+// nor an actor key fall back to a per-endpoint bucket (see
+// checkAuthUnknownBucket below), which is the only key left. Returns
+// null when the bucket is skipped (the caller proceeds to the next
+// check), otherwise the limiter's verdict.
+async function checkAuthIpBucket(input: {
+  ip?: string | null
+  subject: string
+  minuteLimit: number
+  now?: Date
+}): Promise<RateLimitResult | null> {
+  const ip = input.ip?.trim() || null
+  if (!ip) return null
+  return checkRateLimit({
+    scope: RateLimitScope.AUTH,
+    subject: input.subject,
+    minuteLimit: input.minuteLimit,
+    hourLimit: null,
+    now: input.now,
+  })
+}
+
+// Last-resort bucket for auth requests with no IP and no actor key
+// (reset-password and OAuth initiation carry no email): one bucket
+// per endpoint kind, so a flood on one endpoint cannot exhaust
+// another endpoint's budget. This is the ONLY shared bucket left —
+// every caller that can be keyed by IP or email is keyed by that
+// instead.
+async function checkAuthUnknownBucket(input: {
+  subject: string
+  minuteLimit: number
+  now?: Date
+}): Promise<RateLimitResult> {
+  return checkRateLimit({
+    scope: RateLimitScope.AUTH,
+    subject: input.subject,
+    minuteLimit: input.minuteLimit,
+    hourLimit: null,
+    now: input.now,
+  })
 }
 
 // ─── Windows ────────────────────────────────────────────────────────────
@@ -354,19 +416,29 @@ export async function checkRateLimit(input: {
 // Admin API: one bucket per authenticated user ("user:<id>"), falling
 // back to the client IP when no user is known (an unauthenticated
 // caller — the route still 401s, but the bucket keeps a flood of
-// anonymous hits from ever reaching the per-user counters).
+// anonymous hits from ever reaching the per-user counters). With
+// neither a user nor an IP there is nothing to key on, so the check
+// passes (SRC-327: no shared `ip:unknown` bucket).
 export async function checkAdminApiRateLimit(input: {
   userId?: string | null
   ip?: string | null
   now?: Date
 }): Promise<RateLimitResult> {
-  const config = readRateLimitConfig()
-  const subject = input.userId
-    ? `user:${input.userId}`
-    : `ip:${input.ip ?? "unknown"}`
+  const config = readRateLimitConfig(input.now)
+  if (input.userId) {
+    return checkRateLimit({
+      scope: RateLimitScope.ADMIN_API,
+      subject: `user:${input.userId}`,
+      minuteLimit: config.adminApi.perMinute,
+      hourLimit: config.adminApi.perHour,
+      now: input.now,
+    })
+  }
+  const ip = input.ip?.trim() || null
+  if (!ip) return { allowed: true, minuteCount: 0, hourCount: 0 }
   return checkRateLimit({
     scope: RateLimitScope.ADMIN_API,
-    subject,
+    subject: `ip:${ip}`,
     minuteLimit: config.adminApi.perMinute,
     hourLimit: config.adminApi.perHour,
     now: input.now,
@@ -376,24 +448,32 @@ export async function checkAdminApiRateLimit(input: {
 // Auth sign-in: TWO buckets, both must pass — per-IP (one address
 // hammering many accounts) and per-email (many addresses hammering
 // one account). The email bucket is only checked when an email was
-// supplied (a body that fails to parse still gets the IP bucket).
-// Returns the first denial, so the caller reports one Retry-After.
+// supplied (a body that fails to parse still gets the IP bucket);
+// with no IP and no email, the per-endpoint unknown bucket applies
+// (SRC-327). Returns the first denial, so the caller reports one
+// Retry-After.
 export async function checkAuthSignInRateLimit(input: {
   ip?: string | null
   email?: string | null
   now?: Date
 }): Promise<RateLimitResult> {
-  const config = readRateLimitConfig()
-  const ipResult = await checkRateLimit({
-    scope: RateLimitScope.AUTH,
-    subject: `ip:${input.ip ?? "unknown"}`,
+  const config = readRateLimitConfig(input.now)
+  const email = input.email?.trim().toLowerCase()
+  const ipResult = await checkAuthIpBucket({
+    ip: input.ip,
+    subject: `ip:${input.ip?.trim()}`,
     minuteLimit: config.authSignIn.perMinutePerIp,
-    hourLimit: null,
     now: input.now,
   })
-  if (!ipResult.allowed) return ipResult
-  const email = input.email?.trim().toLowerCase()
-  if (!email) return ipResult
+  if (ipResult && !ipResult.allowed) return ipResult
+  if (!ipResult && !email) {
+    return checkAuthUnknownBucket({
+      subject: "ip:unknown",
+      minuteLimit: config.authSignIn.perMinutePerIp,
+      now: input.now,
+    })
+  }
+  if (!email) return ipResult ?? { allowed: true, minuteCount: 0, hourCount: 0 }
   return checkRateLimit({
     scope: RateLimitScope.AUTH,
     subject: `email:${email}`,
@@ -407,23 +487,30 @@ export async function checkAuthSignInRateLimit(input: {
 // as sign-in, on separate subjects so sign-up attempts never consume
 // the sign-in budget (and vice versa). Limits reuse the authSignIn
 // config values — no new config keys (the config reader is owned by
-// the DOC-018 fix).
+// the DOC-018 fix). No IP + no email → the per-endpoint unknown
+// bucket (SRC-327).
 export async function checkAuthSignUpRateLimit(input: {
   ip?: string | null
   email?: string | null
   now?: Date
 }): Promise<RateLimitResult> {
-  const config = readRateLimitConfig()
-  const ipResult = await checkRateLimit({
-    scope: RateLimitScope.AUTH,
-    subject: `signup-ip:${input.ip ?? "unknown"}`,
+  const config = readRateLimitConfig(input.now)
+  const email = input.email?.trim().toLowerCase()
+  const ipResult = await checkAuthIpBucket({
+    ip: input.ip,
+    subject: `signup-ip:${input.ip?.trim()}`,
     minuteLimit: config.authSignIn.perMinutePerIp,
-    hourLimit: null,
     now: input.now,
   })
-  if (!ipResult.allowed) return ipResult
-  const email = input.email?.trim().toLowerCase()
-  if (!email) return ipResult
+  if (ipResult && !ipResult.allowed) return ipResult
+  if (!ipResult && !email) {
+    return checkAuthUnknownBucket({
+      subject: "signup-ip:unknown",
+      minuteLimit: config.authSignIn.perMinutePerIp,
+      now: input.now,
+    })
+  }
+  if (!email) return ipResult ?? { allowed: true, minuteCount: 0, hourCount: 0 }
   return checkRateLimit({
     scope: RateLimitScope.AUTH,
     subject: `signup-email:${email}`,
@@ -450,17 +537,23 @@ export async function checkAuthEmailRateLimit(input: {
   now?: Date
 }): Promise<RateLimitResult> {
   const kind = input.kind ?? "reset"
-  const config = readRateLimitConfig()
-  const ipResult = await checkRateLimit({
-    scope: RateLimitScope.AUTH,
-    subject: `${kind}-ip:${input.ip ?? "unknown"}`,
+  const config = readRateLimitConfig(input.now)
+  const email = input.email?.trim().toLowerCase()
+  const ipResult = await checkAuthIpBucket({
+    ip: input.ip,
+    subject: `${kind}-ip:${input.ip?.trim()}`,
     minuteLimit: config.authSignIn.perMinutePerIp,
-    hourLimit: null,
     now: input.now,
   })
-  if (!ipResult.allowed) return ipResult
-  const email = input.email?.trim().toLowerCase()
-  if (!email) return ipResult
+  if (ipResult && !ipResult.allowed) return ipResult
+  if (!ipResult && !email) {
+    return checkAuthUnknownBucket({
+      subject: `${kind}-ip:unknown`,
+      minuteLimit: config.authSignIn.perMinutePerIp,
+      now: input.now,
+    })
+  }
+  if (!email) return ipResult ?? { allowed: true, minuteCount: 0, hourCount: 0 }
   return checkRateLimit({
     scope: RateLimitScope.AUTH,
     subject: `${kind}-email:${email}`,

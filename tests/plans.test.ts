@@ -973,6 +973,7 @@ describe("recordUsage + getUsage", () => {
   it("sums quantities for a period bucket", async () => {
     mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 42 } })
     const usage = await getUsage(
+      ownerActor(),
       userId,
       "SUBMISSIONS",
       new Date("2026-11-01T00:00:00Z")
@@ -1504,6 +1505,7 @@ describe("getUsage live counts + divergence (ADM-033)", () => {
     mockDb.form.count.mockResolvedValue(5)
     mockDb.usageLedger.findMany.mockResolvedValue([])
     const usage = await getUsage(
+      ownerActor(),
       userId,
       "FORMS",
       new Date("2026-11-01T00:00:00Z")
@@ -1517,7 +1519,12 @@ describe("getUsage live counts + divergence (ADM-033)", () => {
     mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 4 } })
     mockDb.submission.count.mockResolvedValue(4)
     mockDb.usageLedger.findMany.mockResolvedValue([])
-    const usage = await getUsage(userId, "SUBMISSIONS", startOfUtcMonth())
+    const usage = await getUsage(
+      ownerActor(),
+      userId,
+      "SUBMISSIONS",
+      startOfUtcMonth()
+    )
     expect(usage.total).toBe(4)
     expect(usage.liveTotal).toBe(4)
     expect(usage.divergent).toBe(false)
@@ -1528,6 +1535,7 @@ describe("getUsage live counts + divergence (ADM-033)", () => {
     mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 3 } })
     mockDb.usageLedger.findMany.mockResolvedValue([])
     const usage = await getUsage(
+      ownerActor(),
       userId,
       "SUBMISSIONS",
       new Date("2026-10-01T00:00:00Z")
@@ -1535,6 +1543,14 @@ describe("getUsage live counts + divergence (ADM-033)", () => {
     expect(usage.total).toBe(3)
     expect(usage.liveTotal).toBeNull()
     expect(usage.divergent).toBe(false)
+  })
+
+  it("refuses a plain user (SEC-101: usage is admin-only)", async () => {
+    mockDb.usageLedger.aggregate.mockResolvedValue({ _sum: { quantity: 1 } })
+    await expect(
+      getUsage(plainUserActor(), "owner-1", "SUBMISSIONS", startOfUtcMonth())
+    ).rejects.toThrowError("Forbidden")
+    expect(mockDb.usageLedger.aggregate).not.toHaveBeenCalled()
   })
 
   it("counts orphan ledger rows for SUBMISSIONS", async () => {
@@ -1553,7 +1569,12 @@ describe("getUsage live counts + divergence (ADM-033)", () => {
       }
     )
     mockDb.submission.findMany.mockResolvedValue([])
-    const usage = await getUsage(userId, "SUBMISSIONS", startOfUtcMonth())
+    const usage = await getUsage(
+      ownerActor(),
+      userId,
+      "SUBMISSIONS",
+      startOfUtcMonth()
+    )
     expect(usage.orphanLedgerRows).toBe(1)
     expect(usage.divergent).toBe(false)
   })

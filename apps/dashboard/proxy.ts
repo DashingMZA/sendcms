@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { betterAuth } from "@/lib/auth"
+import { createLogger } from "@sendcms/observability"
 import {
   PLATFORM_ROUTE_CAPABILITY,
   platformCan,
@@ -24,6 +25,7 @@ import {
  * Next 16 proxy default) — it is NOT edge-safe.
  */
 export default async function proxy(req: NextRequest) {
+  const logger = createLogger("dashboard-proxy")
   // CSP nonce (Admin Control Plane, Phase 9): a fresh nonce per
   // request, set on the request headers so Next.js applies it to its
   // own inline scripts, and on every response this proxy returns.
@@ -59,6 +61,19 @@ export default async function proxy(req: NextRequest) {
   requestHeaders.set("x-nonce", nonce)
   requestHeaders.set(headerName, policy)
 
+  // The deep link the user asked for, preserved through sign-in
+  // (Phase 16, Wave 2 — SRC-116): the sign-in page honours
+  // `callbackURL` and lands the user back on the original path
+  // afterwards, instead of always dropping them on /dashboard.
+  const redirectToSignIn = (): NextResponse => {
+    const url = new URL("/sign-in", req.url)
+    url.searchParams.set(
+      "callbackURL",
+      req.nextUrl.pathname + req.nextUrl.search
+    )
+    return withCsp(NextResponse.redirect(url))
+  }
+
   // Public auth pages (Admin Control Plane, Phase 9): they live
   // outside /dashboard but must still get the CSP header. They need
   // no session, so they pass straight through here, before the
@@ -85,26 +100,36 @@ export default async function proxy(req: NextRequest) {
     return withCsp(NextResponse.next({ request: { headers: requestHeaders } }))
   }
 
-  const result = await betterAuth.api.getSession({
-    headers: req.headers,
-  })
+  // SEC-006: a failing session lookup (the database is unreachable)
+  // must redirect to sign-in, never throw an unhandled 500 from the
+  // proxy. The failure is logged server-side; the sign-in redirect
+  // keeps the deep link, so the user lands back here once the
+  // database (and sign-in) works again.
+  let result
+  try {
+    result = await betterAuth.api.getSession({
+      headers: req.headers,
+    })
+  } catch (err) {
+    logger.error("dashboard proxy session lookup failed", { error: err })
+    return redirectToSignIn()
+  }
   if (!result) {
-    const url = req.nextUrl.clone()
-    url.pathname = "/sign-in"
-    return withCsp(NextResponse.redirect(url))
+    return redirectToSignIn()
   }
 
   // Suspension enforcement (Admin Control Plane, Phase 3).
   if ((result.user.status ?? "ACTIVE") !== "ACTIVE") {
-    const url = req.nextUrl.clone()
-    url.pathname = "/sign-in"
-    return withCsp(NextResponse.redirect(url))
+    return redirectToSignIn()
   }
 
   const path = req.nextUrl.pathname
-  const matched = Object.keys(PLATFORM_ROUTE_CAPABILITY).find(
-    (route) => path === route || path.startsWith(route + "/")
-  )
+  // Longest matching prefix wins (Phase 16, Wave 2 — SEC-102): the
+  // map holds nested entries, and a plain first-match would always
+  // stop at the shortest one.
+  const matched = Object.keys(PLATFORM_ROUTE_CAPABILITY)
+    .filter((route) => path === route || path.startsWith(route + "/"))
+    .sort((a, b) => b.length - a.length)[0]
   if (matched) {
     const role = (result.user.platformRole ?? "PLATFORM_USER") as PlatformRole
     if (!platformCan(role, PLATFORM_ROUTE_CAPABILITY[matched])) {

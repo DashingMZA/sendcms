@@ -7,10 +7,22 @@ import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
 import { EmailSignInForm } from "./email-sign-in-form"
 import { marketingTermsURL } from "@/lib/app-links"
+import { resolveSignInCallbackURL } from "@/lib/callback-url"
 
-export default async function SignInPage() {
+// The sign-in page honours `?callbackURL=` (Phase 16, Wave 2 —
+// SRC-116): the dashboard proxy appends the deep link the user
+// asked for, and the admin proxy an absolute admin URL. The value is
+// validated (dashboard/admin origin only) before it reaches either
+// form, so a crafted link can never redirect elsewhere.
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackURL?: string }>
+}) {
   const session = await auth()
-  if (session) redirect("/dashboard")
+  const { callbackURL } = await searchParams
+  const callback = resolveSignInCallbackURL(callbackURL)
+  if (session) redirect(callbackURL ? callback : "/dashboard")
   const providers = getConfiguredOAuthProviders()
 
   return (
@@ -18,7 +30,7 @@ export default async function SignInPage() {
       title="Welcome back"
       description="Sign in to your dashboard to manage forms and submissions."
     >
-      <SocialSignInButtons providers={providers} />
+      <SocialSignInButtons providers={providers} callbackURL={callback} />
 
       <div className="flex items-center gap-4">
         <span className="h-px flex-1 bg-border" />
@@ -28,7 +40,7 @@ export default async function SignInPage() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <EmailSignInForm />
+      <EmailSignInForm callbackURL={callback} />
 
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}

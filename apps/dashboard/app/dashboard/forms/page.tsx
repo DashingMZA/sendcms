@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { listFormsForUser } from "@sendcms/forms"
 
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -16,10 +16,10 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { FormsTable } from "./forms-table"
 
 export default async function FormsPage() {
-  const session = await auth()
-  const forms = await listFormsForUser(session!.user!.id as string)
+  const session = await requireDashboardSession()
+  const forms = await listFormsForUser(session.user.id)
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
   const t = await getTranslator(locale, "forms")
 

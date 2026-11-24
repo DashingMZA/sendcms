@@ -10,7 +10,15 @@ import { SignInSchema } from "@sendcms/users/validators"
 
 import { Button, Input, Label } from "@sendcms/ui"
 
-export function EmailSignInForm() {
+// The post-sign-in landing URL, validated by the sign-in page
+// (SRC-116): a deep link from the proxy (`/dashboard/inbox/<id>`) or
+// an absolute admin URL. Defaults to /dashboard when the page was
+// opened directly.
+export function EmailSignInForm({
+  callbackURL = dashboardCallbackURL(),
+}: {
+  callbackURL?: string
+}) {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -34,7 +42,7 @@ export function EmailSignInForm() {
     const { error } = await authClient.signIn.email({
       email,
       password,
-      callbackURL: dashboardCallbackURL(),
+      callbackURL,
     })
     setLoading(false)
     if (error) {
@@ -52,7 +60,7 @@ export function EmailSignInForm() {
       }
       return
     }
-    router.push("/dashboard")
+    router.push(callbackURL)
     router.refresh()
   }
 

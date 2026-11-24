@@ -239,4 +239,30 @@ describe("POST /api/auth/* rate limiting (SEC-008 / SEC-203 / EML-003)", () => {
     }
     expect(mockAuthGet).toHaveBeenCalledTimes(5)
   })
+
+  it("two unknown-IP sign-in bursts do not share one bucket (SRC-327)", async () => {
+    // These requests carry no resolvable IP (NextRequest has no peer
+    // IP), so the old shared `ip:unknown` bucket would 429 the second
+    // burst after the first burst spent it. With the fix, an
+    // unknown-IP caller is keyed by email instead: burst A exhausts
+    // its own email budget, burst B (a different email) still gets
+    // its first requests through.
+    const burstA = {
+      email: "w1-burst-a@example.com",
+      password: "ProbePass123!",
+    }
+    for (let i = 0; i < 25; i++) {
+      await POST(authPost("/api/auth/sign-in/email", burstA))
+    }
+    const burstB = {
+      email: "w1-burst-b@example.com",
+      password: "ProbePass123!",
+    }
+    for (let i = 0; i < 10; i++) {
+      const res = await POST(authPost("/api/auth/sign-in/email", burstB))
+      expect(res.status).toBe(200)
+    }
+    const denied = await POST(authPost("/api/auth/sign-in/email", burstB))
+    expect(denied.status).toBe(429)
+  })
 })

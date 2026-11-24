@@ -1,3 +1,4 @@
+import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
 import {
   DASHBOARD_FORMS_DOMAINS,
@@ -9,6 +10,7 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { NewFormForm } from "./new-form-form"
 
 export default async function NewFormPage() {
+  await requireDashboardSession()
   const locale = await getRequestLocale()
   const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
   const t = await getTranslator(locale, "forms")

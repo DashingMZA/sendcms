@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { listApiKeysForUser } from "@sendcms/api-keys"
 
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -13,10 +13,10 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { ApiKeysManager } from "./api-keys-manager"
 
 export default async function ApiKeysPage() {
-  const session = await auth()
-  const keys = await listApiKeysForUser(session!.user!.id as string)
+  const session = await requireDashboardSession()
+  const keys = await listApiKeysForUser(session.user.id)
 
-  const locale = await getRequestLocale(session!.user!.id as string)
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_API_KEYS_DOMAINS)
   const t = await getTranslator(locale, "api-keys")
 

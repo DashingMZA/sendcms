@@ -4,6 +4,7 @@ import { useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
 import { ChangePasswordSchema } from "@sendcms/users/validators"
+import { apiFetch } from "@sendcms/shared"
 
 import { Button, Input, Label } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
@@ -42,6 +43,25 @@ export function ChangePasswordForm() {
       return
     }
     setLoading(true)
+    // SEC-007: changing the password requires a server-enforced
+    // step-up proof on top of the current password — re-enter the
+    // current password to mint one bound to this action, then send
+    // the change. The same password serves as both the proof and
+    // Better Auth's current-password check. Without the proof the api
+    // route refuses the change with 403.
+    try {
+      await apiFetch<{ verifiedUntil: string }>("/api/v1/step-up/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          password: parsed.data.currentPassword,
+          action: "change-password",
+        }),
+      })
+    } catch (err) {
+      setLoading(false)
+      setError(err instanceof Error ? err.message : t("passwordChangeFailed"))
+      return
+    }
     const { error } = await authClient.changePassword({
       currentPassword: parsed.data.currentPassword,
       newPassword: parsed.data.newPassword,

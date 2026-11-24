@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { getAiUsageSummary } from "@sendcms/ai-settings"
 import { AiUsageSummaryQuerySchema } from "@sendcms/ai-settings/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, ok } from "@sendcms/api-client"
 
 // BYOK vs PLATFORM totals, separated — never mixed. Cost only counts
 // provider-reported costs; it is never an estimate.
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    const session = await requireAdminApi("VIEW_AI_USAGE")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const parsed = AiUsageSummaryQuerySchema.safeParse(

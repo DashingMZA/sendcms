@@ -4,11 +4,9 @@ import {
   AuditAction,
   AuditResource,
   db,
-  type AdminRole,
   type BillingProvider,
-  type PlatformRole,
 } from "@sendcms/database"
-import { adminCan, type PlatformCapability } from "@sendcms/permissions"
+import { requireAdmin, type PlatformCapability } from "@sendcms/permissions"
 import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
@@ -59,21 +57,14 @@ const log = createLogger("billing")
 
 // ─── Authorization ────────────────────────────────────────────────────
 
-function getEffectiveRole(session: AdminSession): PlatformRole | AdminRole {
-  if (session.user.platformRole === "PLATFORM_OWNER") return "PLATFORM_OWNER"
-  return session.user.adminRole ?? "PLATFORM_USER"
-}
-
+// `requireBillingAdmin` keeps its name as a thin wrapper over the
+// shared gate in `@sendcms/permissions` (Phase 16, Wave 2 —
+// SRC-215): same body, same 403, one implementation.
 export function requireBillingAdmin(
   session: AdminSession,
   capability: PlatformCapability
 ): void {
-  if (!adminCan(getEffectiveRole(session), capability)) {
-    throw new ApiError(
-      "Forbidden: you do not have permission for this admin action.",
-      403
-    )
-  }
+  requireAdmin(session, capability)
 }
 
 // ─── Types ────────────────────────────────────────────────────────────

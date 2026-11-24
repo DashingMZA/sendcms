@@ -29,11 +29,13 @@
     "@sendcms/mcp-admin": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
+    "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "@sendcms/support": "workspace:*",
+    "better-auth": "1.7.25",
     "next": "16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

@@ -47,6 +47,9 @@
     "enabled": false,
   },
   "vars": {
+    "BETTER_AUTH_URL": "https://api.jadoo.bond",
+    "TRUSTED_ORIGINS": "https://dashboard.jadoo.bond,https://admin.jadoo.bond",
+    "NEXT_PUBLIC_APP_URL": "https://jadoo.bond",
     "NEXT_PUBLIC_DASHBOARD_URL": "https://dashboard.jadoo.bond",
     "NEXT_PUBLIC_AUTH_URL": "https://api.jadoo.bond",
     "NEXT_PUBLIC_API_URL": "https://api.jadoo.bond",

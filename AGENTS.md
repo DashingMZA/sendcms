@@ -154,7 +154,7 @@ Required env (see `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER
 
 Google Cloud Console — authorized redirect URIs must include:
 
-- `<APP_URL>/api/auth/callback/google` (admin Better Auth)
+- `<BETTER_AUTH_URL>/api/auth/callback/google` (admin Better Auth)
 
 <!-- BEGIN:project-guidelines-rules -->
 

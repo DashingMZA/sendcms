@@ -1236,6 +1236,10 @@ model Announcement {
 // erasure ONLY because erasure anonymizes the user row and never
 // calls db.user.delete — a hard user delete WOULD delete them with
 // the user.
+// At most one open (REQUESTED/APPROVED) request per user — enforced
+// by the partial unique index `DeletionRequest_one_open_idx` (raw
+// migration 20261124131329; Prisma cannot express a partial unique
+// index). The service pre-checks and translates a P2002 into a 409.
 model DeletionRequest {
   id           String                @id @default(cuid())
   userId       String
@@ -1415,26 +1419,39 @@ model RateLimitBucket {
   @@unique([scope, subject])
 }
 
-// Step-up re-authentication (Admin Control Plane, Phase 9): one row
-// per successful password re-entry, before a high-impact admin
-// action. Append-only — rows are never updated or deleted by the app;
-// they expire by `expiresAt` and are simply ignored afterwards.
-// `requireStepUp` accepts any unexpired row for the user, so a single
-// verification covers the actions taken inside its TTL window. No
-// password material ever lives on this row (or anywhere else in the
-// step-up flow) — the password is checked against the credential
-// Account row and then dropped.
+// Step-up re-authentication (Admin Control Plane, Phase 9; single-use
+// + action-bound since Phase 16 Wave 2): one row per successful
+// password re-entry, before a high-impact action. A row authorizes
+// exactly one action: `requireStepUp` accepts only an unexpired,
+// unconsumed row whose `action` matches, and consumes it (sets
+// `consumedAt`) in the same call — one password entry unlocks one
+// action, never a 10-minute window over all of them. `action` is null
+// for the legacy admin flow, which mints an unbound verification that
+// only the action-less `requireStepUp(actor)` call accepts. Expired
+// and consumed rows are pruned best-effort by the step-up helpers
+// (`pruneStepUpVerifications`). No password material ever lives on
+// this row (or anywhere else in the step-up flow) — the password is
+// checked against the credential Account row and then dropped.
 model StepUpVerification {
   id String @id @default(cuid())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // The sensitive action this verification authorizes
+  // ("change-password", "change-email", "2fa-enable", "2fa-disable");
+  // null = legacy unbound verification (admin flow).
+  action String?
+
   verifiedAt DateTime @default(now())
   expiresAt  DateTime
 
-  // createdAt only: append-only event rows have no updatedAt.
+  // Set when the verification is spent by requireStepUp (single-use).
+  consumedAt DateTime?
+
+  // createdAt only: rows are never otherwise updated.
   createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
+  @@index([userId, action, expiresAt])
 }

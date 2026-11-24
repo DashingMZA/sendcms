@@ -48,6 +48,9 @@
     "enabled": false,
   },
   "vars": {
+    "BETTER_AUTH_URL": "https://api.sendcms.bond",
+    "TRUSTED_ORIGINS": "https://dashboard.sendcms.bond,https://admin.sendcms.bond",
+    "NEXT_PUBLIC_APP_URL": "https://sendcms.bond",
     "NEXT_PUBLIC_ADMIN_URL": "https://admin.sendcms.bond",
     "NEXT_PUBLIC_AUTH_URL": "https://api.sendcms.bond",
     "NEXT_PUBLIC_API_URL": "https://api.sendcms.bond",

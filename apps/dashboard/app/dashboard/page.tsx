@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { getDashboardOverview } from "@sendcms/analytics"
 import { listFormsForUser } from "@sendcms/forms"
 
@@ -24,8 +24,8 @@ import {
 } from "@remixicon/react"
 
 export default async function OverviewPage() {
-  const session = await auth()
-  const userId = session!.user!.id as string
+  const session = await requireDashboardSession()
+  const userId = session.user.id
   const [overview, forms] = await Promise.all([
     getDashboardOverview(userId),
     listFormsForUser(userId),

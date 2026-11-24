@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { listFormsForUser } from "@sendcms/forms"
 
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -21,8 +21,8 @@ import {
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
 export default async function ApiPage() {
-  const session = await auth()
-  const userId = session!.user!.id as string
+  const session = await requireDashboardSession()
+  const userId = session.user.id
   // The snippet's script src + the REST examples point at the API app
   // (the app that serves /forms/v1.js and /api/*) — not at this
   // dashboard app. See ADR 0006.

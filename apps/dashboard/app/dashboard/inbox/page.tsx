@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
 import { listDomainsForUser } from "@sendcms/domains"
 import { listFormsForUser } from "@sendcms/forms"
@@ -19,8 +19,8 @@ type Props = {
 }
 
 export default async function InboxPage({ searchParams }: Props) {
-  const session = await auth()
-  const userId = session!.user!.id as string
+  const session = await requireDashboardSession()
+  const userId = session.user.id
 
   const raw = await searchParams
   const flat: Record<string, string> = {}

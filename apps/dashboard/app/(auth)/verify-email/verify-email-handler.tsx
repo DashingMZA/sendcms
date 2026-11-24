@@ -36,41 +36,61 @@ export function VerifyEmailHandler({
   useEffect(() => {
     if (!token || started.current) return
     started.current = true
-    authClient.verifyEmail({ query: { token } }).then(({ error }) => {
-      if (error) {
-        const code = (error as { code?: string }).code
-        if (code === "EMAIL_ALREADY_VERIFIED") {
-          setStatus("success")
+    authClient
+      .verifyEmail({ query: { token } })
+      .then(({ error }) => {
+        if (error) {
+          const code = (error as { code?: string }).code
+          if (code === "EMAIL_ALREADY_VERIFIED") {
+            setStatus("success")
+            return
+          }
+          setStatus("error")
+          setError(
+            code === "TOKEN_EXPIRED"
+              ? "This verification link has expired. Request a new one below."
+              : (error.message ??
+                  "This verification link is invalid. Request a new one below.")
+          )
           return
         }
+        setStatus("success")
+        router.push(callbackURL || "/dashboard")
+        router.refresh()
+      })
+      // Network/offline failure rejects instead of resolving with
+      // { error } — without this the page stays on "Verifying your
+      // email…" forever (SRC-106).
+      .catch(() => {
         setStatus("error")
         setError(
-          code === "TOKEN_EXPIRED"
-            ? "This verification link has expired. Request a new one below."
-            : (error.message ??
-                "This verification link is invalid. Request a new one below.")
+          "Couldn't reach the server. Check your connection and try again below."
         )
-        return
-      }
-      setStatus("success")
-      router.push(callbackURL || "/dashboard")
-      router.refresh()
-    })
+      })
   }, [token, callbackURL, router])
 
   async function resend() {
     if (!email) return
     setResending(true)
-    const { error } = await authClient.sendVerificationEmail({
-      email,
-      callbackURL: callbackURL || "/dashboard",
-    })
-    setResending(false)
-    if (error) {
-      setError(error.message ?? "Couldn't resend the verification email.")
-      return
+    try {
+      const { error } = await authClient.sendVerificationEmail({
+        email,
+        callbackURL: callbackURL || "/dashboard",
+      })
+      if (error) {
+        setError(error.message ?? "Couldn't resend the verification email.")
+        return
+      }
+      setResent(true)
+    } catch {
+      // A rejected send leaves resending=true and the button
+      // permanently disabled without this (SRC-106).
+      setError(
+        "Couldn't reach the server. Check your connection and try again."
+      )
+    } finally {
+      setResending(false)
     }
-    setResent(true)
   }
 
   if (status === "pending") {

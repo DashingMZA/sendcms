@@ -39,6 +39,7 @@ export {
   ipMatchesCidr,
   parseRateLimitConfig,
   parseTrustedProxyList,
+  RATE_LIMIT_CONFIG_CACHE_TTL_MS,
   readRateLimitConfig,
   resetRateLimitConfigCache,
   resolveClientIp,
@@ -50,14 +51,26 @@ export type {
 } from "./rate-limit"
 export { isValidBearerToken } from "./cron-auth"
 export {
+  consumeStepUpVerification,
   DEFAULT_STEP_UP_CONFIG,
   DEFAULT_STEP_UP_MAX_ATTEMPTS_PER_HOUR,
   DEFAULT_STEP_UP_TTL_MINUTES,
+  findStepUpVerification,
+  isStepUpAction,
   parseStepUpConfig,
+  pruneStepUpVerifications,
   readStepUpConfig,
   requireStepUp,
   resetStepUpConfigCache,
+  STEP_UP_ACTIONS,
+  STEP_UP_CONFIG_CACHE_TTL_MS,
   verifyStepUp,
 } from "./step-up"
-export type { StepUpConfig, StepUpResult, StepUpSession } from "./step-up"
+export type {
+  StepUpAction,
+  StepUpConfig,
+  StepUpResult,
+  StepUpSession,
+  StepUpVerificationRow,
+} from "./step-up"
 export { renderHeadersFile, securityHeaders } from "./headers.mjs"
