@@ -7,22 +7,20 @@ import {
   encryptByokKey,
   getAiModelForKey,
   getAiModelId,
-  getAiModel,
-  isAiConfigured,
+  isAiAuthFailure,
   normalizeAiEnv,
   resolveAiProvider,
-  toAiCallUsage,
+  toAiCallUsageWithCost,
   type AiCallUsage,
   type AiEnvConfig,
   type AiProviderName,
 } from "@sendcms/ai"
-import { AuditAction, AuditResource, db } from "@sendcms/database"
+import { AuditAction, AuditResource, db, Prisma } from "@sendcms/database"
 import type {
   AiBillingMode,
   AiKeyTestStatus,
   AiProvider,
   AiUsageStatus,
-  Prisma,
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
 import { requireAdmin } from "@sendcms/permissions"
@@ -116,6 +114,7 @@ const keyMetaSelect = {
   model: true,
   isEnabled: true,
   keyVersion: true,
+  authFailureCount: true,
   lastTestedAt: true,
   lastTestStatus: true,
   keyFingerprint: true,
@@ -128,6 +127,9 @@ export type UserAiKeyMeta = {
   model: string | null
   isEnabled: boolean
   keyVersion: number
+  /** Consecutive provider-auth failures at call time (AIM-003);
+      the key auto-disables at AI_BYOK_AUTO_DISABLE_AFTER. */
+  authFailureCount: number
   lastTestedAt: Date | null
   lastTestStatus: AiKeyTestStatus
   fingerprintLast4: string
@@ -140,6 +142,7 @@ type UserAiKeyMetaRow = {
   model: string | null
   isEnabled: boolean
   keyVersion: number
+  authFailureCount?: number
   lastTestedAt: Date | null
   lastTestStatus: AiKeyTestStatus
   keyFingerprint: string
@@ -153,6 +156,9 @@ function toUserAiKeyMeta(row: UserAiKeyMetaRow): UserAiKeyMeta {
     model: row.model,
     isEnabled: row.isEnabled,
     keyVersion: row.keyVersion,
+    // Rows written before the Wave 8 migration have no column in
+    // the mock DBs the tests use — default to 0, never undefined.
+    authFailureCount: row.authFailureCount ?? 0,
     lastTestedAt: row.lastTestedAt,
     lastTestStatus: row.lastTestStatus,
     // Last 4 hex chars of the SHA-256 fingerprint — display only, it
@@ -183,13 +189,27 @@ function assertNotSuspended(user: { status: string }): void {
     keyVersion, re-enables the key, and resets the test status — the
     new key has not been tested yet. A save never tests the key
     (testing is the separate Test-button action). Audit records only
-    the provider + fingerprint last4 — never key material. */
+    the provider + fingerprint last4 — never key material.
+    AIM-025 (provider-terms gate, ADR 0010 Decision 4): saving a
+    server-side key requires an explicit terms acknowledgement —
+    the caller confirms they have read the provider's
+    data-processing / no-training terms. Without it the save is
+    refused (422); "Browser only" storage needs no acknowledgement
+    because nothing is sent to the server. The master-key error is
+    an ApiError 503 from getByokMasterKey (ADM-061 / DSH-301) — it
+    propagates unchanged, never wrapped into a generic 500. */
 export async function saveUserAiKey(
   userId: string,
   input: SaveAiKeyInput
 ): Promise<UserAiKeyMeta> {
   const user = await getUserOrThrow(userId)
   assertNotSuspended(user)
+  if (input.termsAcknowledged !== true) {
+    throw new ApiError(
+      "Saving a key on the server requires acknowledging the provider's data-processing terms first — the acknowledgement checkbox is on the save form. (Or choose “Browser only”: the key then stays in your browser and is never sent to the server.)",
+      422
+    )
+  }
   // The plan's provider allowlist applies at save time too: a key for
   // a provider the plan forbids could never resolve, so saving it
   // would only confuse. A failed entitlements lookup falls back to
@@ -244,6 +264,9 @@ export async function saveUserAiKey(
       model: input.model,
       isEnabled: true,
       keyVersion: { increment: 1 },
+      // A replaced key is a new key: the old key's auth-failure
+      // streak must not auto-disable its replacement (AIM-003).
+      authFailureCount: 0,
       lastTestStatus: "UNTESTED",
       lastTestedAt: null,
     },
@@ -367,6 +390,212 @@ export async function deleteUserAiKey(
   })
 }
 
+// ─── BYOK key auto-disable on call-time auth failure (AIM-003) ──
+
+// Consecutive provider-auth failures before the key auto-disables.
+// 3 is small enough to stop a bad key burning failed calls within
+// a day, large enough that one bad probe (e.g. a provider blip
+// misclassified as auth) cannot kill a good key. Re-enabling is a
+// deliberate user action (enableUserAiKey); saving a new key resets
+// the counter.
+export const AI_BYOK_AUTO_DISABLE_AFTER = 3
+
+/** Records one provider-AUTH failure for a stored BYOK key at call
+    time (suggest-fields, draft-reply, rescore, digest, key-test).
+    Increments the consecutive-failure counter, marks lastTestStatus
+    FAILED, and auto-disables the key at the threshold with an audit
+    event — so a bad key stops burning a live provider call on every
+    subsequent request. Best-effort: it NEVER throws (a failed
+    bookkeeping write must not mask the call's own result). Only
+    auth failures call this — transient errors (429/5xx/timeout)
+    must never disable a key; callers classify with
+    isAiAuthFailure first. */
+export async function recordByokAuthFailure(
+  userId: string,
+  provider: AiProviderName
+): Promise<void> {
+  try {
+    const row = await db.userAiKey.findUnique({
+      where: {
+        userId_provider: {
+          userId,
+          provider: PROVIDER_NAME_TO_ENUM[provider],
+        },
+      },
+      select: { id: true, keyFingerprint: true, authFailureCount: true },
+    })
+    if (!row) return
+    const failures = (row.authFailureCount ?? 0) + 1
+    const autoDisabled = failures >= AI_BYOK_AUTO_DISABLE_AFTER
+    await db.userAiKey.update({
+      where: { id: row.id },
+      data: {
+        authFailureCount: failures,
+        lastTestedAt: new Date(),
+        lastTestStatus: "FAILED",
+        ...(autoDisabled ? { isEnabled: false } : {}),
+      },
+    })
+    if (autoDisabled) {
+      await logAudit({
+        userId,
+        action: AuditAction.UPDATE,
+        resourceType: AuditResource.AI_KEY,
+        resourceId: row.id,
+        detail: {
+          event: "byok-key-auto-disabled",
+          provider,
+          consecutiveAuthFailures: failures,
+          fingerprintLast4: row.keyFingerprint.slice(-4),
+        },
+      })
+    }
+  } catch (err) {
+    logger.error("byok auth failure recording failed", {
+      error: err,
+      userId,
+      provider,
+    })
+  }
+}
+
+/** Resets the consecutive-auth-failure counter after a successful
+    call with a stored BYOK key (AIM-003: the counter is
+    CONSECUTIVE, so one good call clears the streak). Best-effort:
+    never throws. */
+export async function recordByokAuthSuccess(
+  userId: string,
+  provider: AiProviderName
+): Promise<void> {
+  try {
+    await db.userAiKey.updateMany({
+      where: {
+        userId,
+        provider: PROVIDER_NAME_TO_ENUM[provider],
+        authFailureCount: { gt: 0 },
+      },
+      data: { authFailureCount: 0 },
+    })
+  } catch (err) {
+    logger.error("byok auth success recording failed", {
+      error: err,
+      userId,
+      provider,
+    })
+  }
+}
+
+// ─── Daily AI budget claim (AIM-028 / SRC-218) ────────────────────
+
+// The owner's daily AI budget (aiRequestsPerDay) is ONE budget
+// shared by the worker rescore path (per-form AiDailyUsage rows)
+// and the interactive paths (per-owner AiDailyOwnerUsage rows).
+// A claim sums BOTH counters for today and increments the row for
+// the caller's path — under one advisory lock on (owner, day), so
+// two concurrent polls (worker + cron) or two interactive calls
+// cannot both spend the last unit (SRC-218: the old rescore code
+// read the counter, called the model, then incremented — the cap
+// was exceeded by the concurrency factor). A claimed unit is
+// consumed even when the model call then fails — a down provider
+// cannot retry the same rows unboundedly on every poll. Returns
+// false when the owner's budget is exhausted (or the cap is 0).
+export async function claimAiCall(
+  ownerId: string | undefined,
+  opts: { formId?: string; cap: number; today?: Date }
+): Promise<boolean> {
+  const cap = opts.cap
+  if (cap <= 0) return false
+  const today = opts.today ?? startOfUtcDay(new Date())
+  const lockKey = `ai-daily:${ownerId ?? `form:${opts.formId ?? "unknown"}`}:${today.toISOString().slice(0, 10)}`
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(727001, hashtext(${lockKey}))`
+    )
+    const formIds = ownerId
+      ? (
+          await tx.form.findMany({
+            where: { ownerId },
+            select: { id: true },
+          })
+        ).map((f) => f.id)
+      : opts.formId
+        ? [opts.formId]
+        : []
+    const [formRows, ownerRows] = await Promise.all([
+      formIds.length > 0
+        ? tx.aiDailyUsage.findMany({
+            where: { formId: { in: formIds }, date: today },
+            select: { calls: true },
+          })
+        : Promise.resolve([] as { calls: number }[]),
+      ownerId
+        ? tx.aiDailyOwnerUsage.findMany({
+            where: { userId: ownerId, date: today },
+            select: { calls: true },
+          })
+        : Promise.resolve([] as { calls: number }[]),
+    ])
+    const used =
+      formRows.reduce((sum, r) => sum + r.calls, 0) +
+      ownerRows.reduce((sum, r) => sum + r.calls, 0)
+    if (used >= cap) return false
+    if (opts.formId) {
+      await tx.aiDailyUsage.upsert({
+        where: { formId_date: { formId: opts.formId, date: today } },
+        create: { formId: opts.formId, date: today, calls: 1 },
+        update: { calls: { increment: 1 } },
+      })
+    } else if (ownerId) {
+      await tx.aiDailyOwnerUsage.upsert({
+        where: { userId_date: { userId: ownerId, date: today } },
+        create: { userId: ownerId, date: today, calls: 1 },
+        update: { calls: { increment: 1 } },
+      })
+    } else {
+      return false
+    }
+    return true
+  })
+}
+
+/** UTC midnight starting the day `at` falls on — the AiDailyUsage /
+    AiDailyOwnerUsage bucket. */
+export function startOfUtcDay(at: Date = new Date()): Date {
+  const day = new Date(at)
+  day.setUTCHours(0, 0, 0, 0)
+  return day
+}
+
+// Default interactive daily cap when the entitlements lookup fails
+// (same 100 as the rescore path's DEFAULT_AI_DAILY_CALL_CAP — a
+// plans-module error must never stop interactive AI, nor grant
+// unlimited calls).
+export const DEFAULT_INTERACTIVE_AI_DAILY_CAP = 100
+
+/** Claims one unit of an owner's daily AI budget for an
+    interactive call (suggest-fields, draft-reply, key-test —
+    AIM-028). The cap is the owner's aiRequestsPerDay from their
+    effective plan; a suspended owner has null entitlements → cap 0
+    (refused). Returns false when the budget is exhausted — the
+    caller answers 429 and writes no usage row for the refused call. */
+export async function claimInteractiveAiCall(
+  userId: string,
+  opts: { cap?: number } = {}
+): Promise<boolean> {
+  let cap = opts.cap
+  if (cap === undefined) {
+    const effective = await getEffectiveEntitlementsSafe(userId)
+    cap =
+      effective === null
+        ? DEFAULT_INTERACTIVE_AI_DAILY_CAP
+        : effective.entitlements
+          ? (effective.entitlements.aiRequestsPerDay ??
+            DEFAULT_INTERACTIVE_AI_DAILY_CAP)
+          : 0
+  }
+  return claimAiCall(userId, { cap })
+}
+
 // ─── Test button ──────────────────────────────────────────────────────
 
 export type AiKeyTestResult = {
@@ -431,6 +660,10 @@ async function probeKey(
   latencyMs: number
   model: string
   error?: string
+  /** True when the probe failed on provider auth (AIM-003) — the
+      caller feeds that back to the stored key row. The sanitised
+      error string alone cannot carry the classification. */
+  authFailure?: boolean
   usage: AiCallUsage | null
 }> {
   const started = Date.now()
@@ -440,12 +673,15 @@ async function probeKey(
       model,
       prompt: "Reply with the single word: ok",
       maxOutputTokens: 1,
+      // SRC-311: a hung probe used to block the Test button until
+      // the proxy gave up (AIM-001's live 85 s evidence).
+      abortSignal: AbortSignal.timeout(25_000),
     })
     return {
       ok: true,
       latencyMs: Date.now() - started,
       model: modelId,
-      usage: toAiCallUsage(result.usage),
+      usage: toAiCallUsageWithCost(modelId, result.usage),
     }
   } catch (err) {
     // Sanitised (AIM-006): a provider error can echo part of the key
@@ -458,6 +694,7 @@ async function probeKey(
         err instanceof Error ? err.message : "Key test failed.",
         apiKey
       ),
+      authFailure: isAiAuthFailure(err),
       usage: null,
     }
   }
@@ -498,7 +735,8 @@ export async function testUserAiKey(
   const modelId = row.model ?? DEFAULT_MODELS[provider]
   // Decrypt first: a key that cannot be decrypted is a failed test,
   // never a reason to try the platform key. The AAD binds the
-  // lowercase provider name (see the mapping above).
+  // lowercase provider name (see the mapping above). The master key
+  // is selected by the row's recorded version (SRC-314).
   let apiKey: string
   try {
     apiKey = decryptByokKey({
@@ -508,6 +746,7 @@ export async function testUserAiKey(
       encryptedDek: row.encryptedDek,
       keyIv: row.keyIv,
       keyTag: row.keyTag,
+      masterKeyVersion: row.masterKeyVersion,
     })
   } catch (err) {
     const error = err instanceof Error ? err.message : "Key test failed."
@@ -535,6 +774,17 @@ export async function testUserAiKey(
     })
     return { ok: false, latencyMs: 0, model: modelId, error }
   }
+  // AIM-028: a key test is a billable model call — it counts toward
+  // the owner's daily AI budget like any interactive call. The
+  // per-minute route limiter (5/min) caps bursts; this caps the day.
+  // Claimed after the decrypt (a 404/decrypt failure consumes
+  // nothing) and before the probe.
+  if (!(await claimInteractiveAiCall(userId))) {
+    throw new ApiError(
+      "You have reached your daily AI limit. Try again tomorrow.",
+      429
+    )
+  }
   const probe = await probeKey(provider, apiKey, modelId)
   if (!probe.ok) {
     // The log carries the sanitised probe error plus the fingerprint
@@ -545,6 +795,14 @@ export async function testUserAiKey(
       error: probe.error,
       fingerprintLast4: row.keyFingerprint.slice(-4),
     })
+    // AIM-003: a probe that fails on provider auth feeds the
+    // auto-disable counter — the Test button is a call-time failure
+    // too. Transient failures do not count.
+    if (probe.authFailure) {
+      await recordByokAuthFailure(userId, provider)
+    }
+  } else {
+    await recordByokAuthSuccess(userId, provider)
   }
   // Best-effort: a failed status write must not hide the test result.
   try {
@@ -570,6 +828,7 @@ export async function testUserAiKey(
     status: probe.ok ? "SUCCESS" : "FAILED",
     tokensIn: probe.usage?.promptTokens ?? null,
     tokensOut: probe.usage?.completionTokens ?? null,
+    costMicros: probe.usage?.costMicros ?? null,
     sourceEvent: "key-test",
     resourceId: row.id,
   })
@@ -597,6 +856,15 @@ export async function testBrowserKey(
   if (typeof apiKey !== "string" || apiKey.trim().length < 8) {
     throw new ApiError("A valid API key is required to test it.", 422)
   }
+  // AIM-028: a browser-key test is a billable model call too — but
+  // only a VALID key claims budget (a 422 for a too-short key
+  // consumes nothing).
+  if (!(await claimInteractiveAiCall(userId))) {
+    throw new ApiError(
+      "You have reached your daily AI limit. Try again tomorrow.",
+      429
+    )
+  }
   const modelId = model?.trim() || DEFAULT_MODELS[provider]
   const probe = await probeKey(provider, apiKey.trim(), modelId)
   if (!probe.ok) {
@@ -615,6 +883,7 @@ export async function testBrowserKey(
     status: probe.ok ? "SUCCESS" : "FAILED",
     tokensIn: probe.usage?.promptTokens ?? null,
     tokensOut: probe.usage?.completionTokens ?? null,
+    costMicros: probe.usage?.costMicros ?? null,
     sourceEvent: "key-test",
   })
   return {
@@ -751,8 +1020,9 @@ export type RecordAiUsageInput = {
 
 /** Records one AI call for cost attribution. Best-effort: it NEVER
     throws — a failed usage write must not break the capability that
-    made the call. costMicros is only set when the caller passes a
-    reliable provider-reported cost; never an estimate. */
+    made the call. costMicros is the price-table cost computed from
+    the provider-reported token counts (DB-033); null when the model
+    has no price row — never an estimate. */
 export async function recordAiUsage(input: RecordAiUsageInput): Promise<void> {
   try {
     await db.aiUsageRecord.create({
@@ -872,51 +1142,12 @@ async function resolvePlatformModel(
   }
 }
 
-// Env vars for provider detection in the legacy fallback path.
-// Mirrors PROVIDER_ENV_VARS in @sendcms/ai; kept local so the
-// fallback works even when @sendcms/ai is only partially available
-// (e.g. under the existing service tests, which mock the ai package).
-const LEGACY_PROVIDER_ENV_VARS: Record<AiProviderName, string> = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google: "GOOGLE_GENERATIVE_AI_API_KEY",
-  deepseek: "DEEPSEEK_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
-}
-
-function detectProviderFromEnv(env: NodeJS.ProcessEnv): AiProviderName | null {
-  const explicit = env.AI_PROVIDER?.trim().toLowerCase()
-  if (explicit && (AI_PROVIDER_NAMES as readonly string[]).includes(explicit)) {
-    return explicit as AiProviderName
-  }
-  for (const provider of AI_PROVIDER_NAMES) {
-    if (env[LEGACY_PROVIDER_ENV_VARS[provider]]) return provider
-  }
-  return null
-}
-
-/** The pre-BYOK platform path: the system's .env key, resolved the
-    way the capabilities did before Phase 5. Used ONLY when the
-    settings store itself is unreadable (the mode cannot be known) —
-    see the resolver. It is a store-availability fallback, NOT a key
-    fallback: it never runs when the mode is known to be BYOK. */
-async function resolveAiModelLegacy(
-  env: NodeJS.ProcessEnv,
-  providerHint?: AiProviderName
-): Promise<ResolvedAiModel> {
-  if (!isAiConfigured(env)) {
-    throw new AiNotAvailableError(
-      "No AI provider is configured. Set a provider key first."
-    )
-  }
-  const model = getAiModel(env)
-  const provider = providerHint ?? detectProviderFromEnv(env) ?? "openai"
-  const modelId =
-    typeof (model as { modelId?: unknown }).modelId === "string"
-      ? (model as { modelId: string }).modelId
-      : DEFAULT_MODELS[provider]
-  return { model, billingMode: "PLATFORM", provider, modelId }
-}
+// SRC-202: the pre-BYOK platform path (`resolveAiModelLegacy` +
+// `detectProviderFromEnv` + `LEGACY_PROVIDER_ENV_VARS`) used to run
+// when the settings store was unreadable (the mode could not be
+// known). It is REMOVED: a store error now fails closed with
+// AiNotAvailableError in the resolver, so a DISABLED / BYOK-only /
+// suspended mode can never be bypassed by a platform-key fallback.
 
 /** Picks the provider for a BYOK-mode call. Throws
     AiNotAvailableError when no usable key exists — never a reason to
@@ -963,9 +1194,7 @@ function pickByokProvider(
 }
 
 /** Builds a model from a per-request browser-only key. The key is
-    bound to one provider and must never be sent to another. Shared
-    by the resolution below and by the store-unreadable fallback,
-    where the mode could not be determined at all. */
+    bound to one provider and must never be sent to another. */
 function resolveBrowserKeyModel(
   browserKey: string,
   opts: ResolveAiOptions
@@ -998,12 +1227,14 @@ function resolveBrowserKeyModel(
     it per request); (2) billingMode BYOK — the user's stored enabled
     key; a missing, disabled, or unreadable key throws, NEVER
     silently falling back to the platform key; (3) billingMode
-    PLATFORM — the platform key via getAiModel(), only when the plan
-    allows platform AI, the admin has the provider enabled, and the
-    Phase 4 emergency flag is off (the emergency flag is folded into
-    the effective entitlements by @sendcms/plans); (4) DISABLED or
-    nothing configured — a clear "AI is not available" error, so
-    callers degrade to the non-AI behavior.
+    PLATFORM — the platform key via resolvePlatformModel, only when
+    the plan allows platform AI, the admin has the provider enabled,
+    and the Phase 4 emergency flag is off (the emergency flag is
+    folded into the effective entitlements by @sendcms/plans); (4)
+    DISABLED or nothing configured — a clear "AI is not available"
+    error, so callers degrade to the non-AI behavior. A store error
+    while reading the mode fails CLOSED (SRC-202) with
+    AiNotAvailableError — never a legacy platform-key fallback.
     Never send a customer's key to a different provider: the key is
     bound to its provider by the crypto AAD and by the lookup.
     The returned { model, billingMode, provider, modelId } lets the
@@ -1015,15 +1246,15 @@ export async function resolveAiModelForUser(
   const env = normalizeAiEnv(opts.env ?? process.env)
 
   // (0) Read the user's mode, keys and entitlements FIRST. If the
-  // settings store itself is unreadable, fall back to the platform
-  // default — the mode could not be determined, so there is no
-  // DISABLED mode to protect (a browser-only key still resolves
-  // for this one call, below). This is a STORE-AVAILABILITY
-  // fallback, not a key fallback: once the mode is known to be
-  // BYOK, a missing/disabled/failing key NEVER falls back to the
-  // platform key (below). Clean ApiErrors (unknown user)
-  // propagate; only unexpected store errors fall through to the
-  // platform default.
+  // settings store itself is unreadable, FAIL CLOSED (SRC-202): the
+  // mode could not be determined, so there is NO safe default — a
+  // legacy platform-key fallback here would silently serve AI to a
+  // user whose mode may be DISABLED, BYOK-only, or suspended, and
+  // would spend the platform key for a call that was never
+  // authorized. Callers already degrade on AiNotAvailableError
+  // (503), so a store outage degrades AI instead of bypassing the
+  // mode gate. Clean ApiErrors (unknown user, suspended account)
+  // propagate as-is.
   let mode: AiBillingMode
   let keys: {
     id: string
@@ -1035,6 +1266,7 @@ export async function resolveAiModelForUser(
     encryptedDek: string
     keyIv: string
     keyTag: string
+    masterKeyVersion: number
   }[]
   let entitlements: EffectiveEntitlementsShape
   let emergency: boolean
@@ -1061,19 +1293,14 @@ export async function resolveAiModelForUser(
     emergency = effective?.emergency ?? false
   } catch (err) {
     if (err instanceof ApiError) throw err
-    logger.warn("ai settings unreadable, using platform default", {
+    logger.warn("ai settings unreadable, failing closed", {
       error: err,
       userId,
       purpose: opts.purpose,
     })
-    // The mode could not be determined, so no DISABLED mode is
-    // being protected here: a browser-only key still resolves for
-    // this one call, exactly as before the gate moved first.
-    const fallbackBrowserKey = opts.browserKey?.trim()
-    if (fallbackBrowserKey) {
-      return resolveBrowserKeyModel(fallbackBrowserKey, opts)
-    }
-    return resolveAiModelLegacy(env, opts.provider)
+    throw new AiNotAvailableError(
+      "AI is not available right now. Please try again later."
+    )
   }
 
   if (emergency) {
@@ -1137,6 +1364,7 @@ export async function resolveAiModelForUser(
         encryptedDek: row.encryptedDek,
         keyIv: row.keyIv,
         keyTag: row.keyTag,
+        masterKeyVersion: row.masterKeyVersion,
       })
     } catch (err) {
       // A missing/misconfigured master key is a platform error, not
@@ -1245,8 +1473,13 @@ function toProviderConfigRow(row: {
   }
 }
 
-/** All five providers with their config. Missing rows are auto-created
-    with defaults on first read, so the admin always sees all five. */
+/** All five providers with their config. Missing rows are returned
+    from the in-memory defaults — the read is pure. SRC-235: this
+    used to `createMany` the missing rows on a GET path, so a read
+    could fail on a write error and hid a missing seed. The rows are
+    seeded by migration
+    (`20261125091400_wave8d_seed_platform_settings`) and created by
+    `setProviderConfig` on the first write. */
 export async function listProviderConfigs(
   actor: AdminSession
 ): Promise<AiProviderConfigRow[]> {
@@ -1257,21 +1490,16 @@ export async function listProviderConfigs(
   const byProvider = new Map(
     rows.map((r) => [PROVIDER_ENUM_TO_NAME[r.provider], r])
   )
-  const missing = AI_PROVIDER_NAMES.filter((p) => !byProvider.has(p))
-  if (missing.length > 0) {
-    await db.aiProviderConfig.createMany({
-      data: missing.map((p) => ({
-        provider: PROVIDER_NAME_TO_ENUM[p],
-        ...PROVIDER_DEFAULTS[p],
-      })),
-      skipDuplicates: true,
+  // Every provider, in registry order: the stored row when one
+  // exists, the platform default otherwise (never a write).
+  return AI_PROVIDER_NAMES.map((name) => {
+    const row = byProvider.get(name)
+    if (row) return toProviderConfigRow(row)
+    return toProviderConfigRow({
+      provider: PROVIDER_NAME_TO_ENUM[name],
+      ...PROVIDER_DEFAULTS[name],
     })
-    const fresh = await db.aiProviderConfig.findMany({
-      orderBy: { provider: "asc" },
-    })
-    return fresh.map(toProviderConfigRow)
-  }
-  return rows.map(toProviderConfigRow)
+  })
 }
 
 export type ProviderConfigInput = {
@@ -1291,6 +1519,12 @@ export async function setProviderConfig(
   if (input.allowedModels !== undefined)
     data.allowedModels = input.allowedModels
   if (input.defaultModel !== undefined) data.defaultModel = input.defaultModel
+  // ADM-062: capture the previous row BEFORE the upsert, so the
+  // audit record carries what changed — mirroring
+  // setUserMcpSettings (old/new), not just {event, provider}.
+  const previous = await db.aiProviderConfig.findUnique({
+    where: { provider: PROVIDER_NAME_TO_ENUM[provider] },
+  })
   const row = await db.aiProviderConfig.upsert({
     where: { provider: PROVIDER_NAME_TO_ENUM[provider] },
     create: {
@@ -1306,7 +1540,12 @@ export async function setProviderConfig(
     action: AuditAction.UPDATE,
     resourceType: AuditResource.SETTINGS,
     resourceId: row.id,
-    detail: { event: "ai-provider-config-changed", provider },
+    detail: {
+      event: "ai-provider-config-changed",
+      provider,
+      old: previous ? toProviderConfigRow(previous) : null,
+      new: toProviderConfigRow(row),
+    },
   })
   return toProviderConfigRow(row)
 }
@@ -1447,15 +1686,31 @@ export type AiUsageModeSummary = {
   calls: number
   success: number
   failed: number
+  /** RETRY rows (ADM-063): without this bucket success + failed
+      never added up to calls. */
+  retry: number
   tokensIn: number
   tokensOut: number
   costMicros: number
+}
+
+/** Per-model totals over the summary's full window (ADM-065):
+    the "models in use" table aggregates these instead of sampling
+    the most recent 100 usage rows. */
+export type AiUsageModelRow = {
+  provider: AiProviderName
+  model: string
+  calls: number
+  success: number
+  failed: number
+  retry: number
 }
 
 export type AiUsageSummary = {
   byok: AiUsageModeSummary
   platform: AiUsageModeSummary
   total: AiUsageModeSummary
+  models: AiUsageModelRow[]
 }
 
 function emptyModeSummary(): AiUsageModeSummary {
@@ -1463,6 +1718,7 @@ function emptyModeSummary(): AiUsageModeSummary {
     calls: 0,
     success: 0,
     failed: 0,
+    retry: 0,
     tokensIn: 0,
     tokensOut: 0,
     costMicros: 0,
@@ -1480,17 +1736,29 @@ type AiUsageGroupRow = {
   }
 }
 
+type AiUsageModelGroupRow = {
+  provider: AiProvider
+  model: string
+  status: AiUsageStatus
+  _count: { _all: number }
+}
+
 // One summarizer for the admin getAiUsageSummary and the customer
 // getMyAiUsage below: BYOK vs PLATFORM totals, separated — never
-// mixed. costMicros only counts provider-reported costs; it is never
-// an estimate.
-function toAiUsageSummary(grouped: AiUsageGroupRow[]): AiUsageSummary {
+// mixed. costMicros counts the price-table cost from
+// recordAiUsage (DB-033); it is null for unknown models, never an
+// estimate.
+function toAiUsageSummary(
+  grouped: AiUsageGroupRow[],
+  modelGrouped: AiUsageModelGroupRow[] = []
+): AiUsageSummary {
   const byMode = new Map<AiBillingMode, AiUsageModeSummary>()
   for (const g of grouped) {
     const bucket = byMode.get(g.billingMode) ?? emptyModeSummary()
     bucket.calls += g._count._all
     if (g.status === "SUCCESS") bucket.success += g._count._all
     if (g.status === "FAILED") bucket.failed += g._count._all
+    if (g.status === "RETRY") bucket.retry += g._count._all
     bucket.tokensIn += g._sum.tokensIn ?? 0
     bucket.tokensOut += g._sum.tokensOut ?? 0
     bucket.costMicros += g._sum.costMicros ?? 0
@@ -1503,28 +1771,57 @@ function toAiUsageSummary(grouped: AiUsageGroupRow[]): AiUsageSummary {
     calls: byok.calls + platform.calls + disabled.calls,
     success: byok.success + platform.success + disabled.success,
     failed: byok.failed + platform.failed + disabled.failed,
+    retry: byok.retry + platform.retry + disabled.retry,
     tokensIn: byok.tokensIn + platform.tokensIn + disabled.tokensIn,
     tokensOut: byok.tokensOut + platform.tokensOut + disabled.tokensOut,
     costMicros: byok.costMicros + platform.costMicros + disabled.costMicros,
   }
-  return { byok, platform, total }
+  const modelMap = new Map<string, AiUsageModelRow>()
+  for (const g of modelGrouped) {
+    const key = `${g.provider}:${g.model}`
+    const row = modelMap.get(key) ?? {
+      provider: PROVIDER_ENUM_TO_NAME[g.provider],
+      model: g.model,
+      calls: 0,
+      success: 0,
+      failed: 0,
+      retry: 0,
+    }
+    row.calls += g._count._all
+    if (g.status === "SUCCESS") row.success += g._count._all
+    if (g.status === "FAILED") row.failed += g._count._all
+    if (g.status === "RETRY") row.retry += g._count._all
+    modelMap.set(key, row)
+  }
+  const models = [...modelMap.values()].sort((a, b) => b.calls - a.calls)
+  return { byok, platform, total, models }
 }
 
-/** BYOK vs PLATFORM totals, separated — never mixed. costMicros only
-    counts provider-reported costs; it is never an estimate. */
+/** BYOK vs PLATFORM totals, separated — never mixed. costMicros
+    counts the price-table cost recorded per call (DB-033); it is
+    null for unknown models, never an estimate. The `models`
+    aggregate covers the summary's full window (ADM-065), so the
+    models page no longer samples the most recent 100 rows. */
 export async function getAiUsageSummary(
   actor: AdminSession,
   filters: AiUsageSummaryQuery
 ): Promise<AiUsageSummary> {
   requireAdmin(actor, "VIEW_AI_USAGE")
   const where = usageWhere(filters)
-  const grouped = await db.aiUsageRecord.groupBy({
-    by: ["billingMode", "status"],
-    where,
-    _count: { _all: true },
-    _sum: { tokensIn: true, tokensOut: true, costMicros: true },
-  })
-  return toAiUsageSummary(grouped)
+  const [grouped, modelGrouped] = await Promise.all([
+    db.aiUsageRecord.groupBy({
+      by: ["billingMode", "status"],
+      where,
+      _count: { _all: true },
+      _sum: { tokensIn: true, tokensOut: true, costMicros: true },
+    }),
+    db.aiUsageRecord.groupBy({
+      by: ["provider", "model", "status"],
+      where,
+      _count: { _all: true },
+    }),
+  ])
+  return toAiUsageSummary(grouped, modelGrouped)
 }
 
 // ─── Customer: own AI usage (AIM-014, Wave 6) ─────────────────────────────

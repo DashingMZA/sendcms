@@ -87,32 +87,42 @@ export async function createApiKeyForUser(
   if (!user.emailVerified) {
     throw new ApiError("Verify your email before creating an API key.", 403)
   }
-  const activeCount = await db.apiKey.count({
-    where: { userId, revokedAt: null },
-  })
   // The limit comes from the user's effective plan entitlements.
   // SRC-216: fail CLOSED — a plans-module error refuses key creation
   // (503) instead of silently falling back to the default cap.
   const limit = await checkLimitStrict(userId, "API_KEYS")
   const maxKeys = limit.limit ?? MAX_ACTIVE_API_KEYS
-  if (activeCount >= maxKeys) {
-    throw new ApiError(
-      `You can have at most ${maxKeys} active API keys. Revoke one first.`,
-      409
-    )
-  }
   const key = generateApiKey()
   const { prefix, last4 } = keyDisplayParts(key)
-  const created = await db.apiKey.create({
-    data: {
-      name: input.name,
-      scope: input.scope,
-      keyHash: hashApiKey(key),
-      prefix,
-      last4,
-      userId,
-    },
-    select: publicApiKeySelect,
+  // SRC-219: the count check used to run outside the insert, so two
+  // concurrent creates both saw `maxKeys - 1` active keys and both
+  // succeeded. The count + insert now run in ONE transaction under a
+  // per-user advisory lock (same shape as domain/form creation), so
+  // concurrent creates for one user serialize and at most `maxKeys`
+  // active keys can exist. The lock is transaction-scoped: it is
+  // released on commit/rollback, never held across requests.
+  const created = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:create:api-key:" + userId}))`
+    const activeCount = await tx.apiKey.count({
+      where: { userId, revokedAt: null },
+    })
+    if (activeCount >= maxKeys) {
+      throw new ApiError(
+        `You can have at most ${maxKeys} active API keys. Revoke one first.`,
+        409
+      )
+    }
+    return tx.apiKey.create({
+      data: {
+        name: input.name,
+        scope: input.scope,
+        keyHash: hashApiKey(key),
+        prefix,
+        last4,
+        userId,
+      },
+      select: publicApiKeySelect,
+    })
   })
   await logAudit({
     userId,

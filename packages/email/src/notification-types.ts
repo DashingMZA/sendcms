@@ -65,6 +65,12 @@ export type DigestProps = {
   /** Recipient locale ("en" | "ur"). Drives the template chrome
       strings and the item dates; defaults to English. */
   locale?: string
+  /** SRC-203 / DB-031: set when the digest hit the 50-submission
+      cap — `count` is only the included items, `totalCount` is every
+      new submission in the window. The renderers can say "and N
+      more" instead of silently dropping the rest. */
+  truncated?: boolean
+  totalCount?: number
 }
 
 export type DigestRenderer = (

@@ -18,6 +18,7 @@ import {
 import type { FormDetail, FormDetailResponse } from "@sendcms/forms/queries"
 import { getFormEmbedWarnings } from "@sendcms/forms/queries"
 import { useSendTestEmail } from "@sendcms/notifications/queries"
+import { useAiBillingMode } from "@sendcms/ai-settings/queries"
 import { ApiClientError } from "@sendcms/shared"
 
 import {
@@ -98,6 +99,11 @@ export function FormDetail({
     form.turnstileEnabled
   )
   const [aiEnabled, setAiEnabled] = useState(form.aiEnabled)
+  // AIM-025: name the resolved AI provider under the toggle — the
+  // billing mode decides whose key a form's AI calls use. The query
+  // is read-only; while it loads, the static description already
+  // states what is sent and under whose terms.
+  const { data: aiBillingMode } = useAiBillingMode()
   // EML-093: the digest preference lives here with the AI toggle —
   // the digest is a notification preference, not an AI feature.
   // Interval is the form's own value, else the platform default (24).
@@ -303,6 +309,16 @@ export function FormDetail({
               <p className="text-xs text-muted-foreground">
                 {t("aiDescription")}
               </p>
+              {aiBillingMode === "BYOK" && (
+                <p className="text-xs text-muted-foreground">
+                  {t("aiProviderByok")}
+                </p>
+              )}
+              {aiBillingMode === "PLATFORM" && (
+                <p className="text-xs text-muted-foreground">
+                  {t("aiProviderPlatform")}
+                </p>
+              )}
             </div>
             <Switch
               id="settings-ai"

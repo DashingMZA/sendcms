@@ -15,16 +15,20 @@ export type {
   StripeKeyMode,
 } from "./registry"
 export {
+  createBillingPortalSession,
   createCheckoutSession,
   handleWebhook,
   listBillingEvents,
+  listCheckoutAttempts,
   listCountries,
   listEnabledProviders,
   listMyBillingEvents,
   listProviderConfigs,
   listPublicCountries,
+  reconcileCheckout,
   requireBillingAdmin,
   setProviderConfig,
+  verifyCheckoutReturn,
 } from "./service"
 // SRC-110: the dashboard billing page server-fetches the caller's
 // subscription instead of waiting on the client query. The read lives
@@ -35,19 +39,33 @@ export { getMySubscription } from "@sendcms/plans"
 export type {
   BillingEventRow,
   BillingProviderConfigRow,
+  CheckoutAttemptRow,
+  CheckoutReturnVerification,
   EnabledBillingProvider,
 } from "./service"
 export { getFreemiusPlanMapCount } from "./providers"
+// BIL-001 / BIL-082 / BIL-089: the provider-side cancel + plan-change
+// dispatchers — the api routes pass them into the plans service so
+// provider-billed subscriptions are actually canceled / re-priced at
+// the provider, not only in SendCMS.
+export {
+  cancelSubscriptionAtProvider,
+  updateSubscriptionAtProvider,
+} from "./providers"
 export { countryFromHeaders } from "./geo"
 export {
   checkoutSessionSchema,
   BillingEventsQuerySchema,
+  CheckoutAttemptsQuerySchema,
+  reconcileCheckoutSchema,
   setProviderConfigBodySchema,
   setProviderConfigSchema,
 } from "./validators"
 export type {
   BillingEventsQuery,
+  CheckoutAttemptsQuery,
   CheckoutSessionInput,
+  ReconcileCheckoutInput,
   SetProviderConfigBodyInput,
   SetProviderConfigInput,
 } from "./validators"

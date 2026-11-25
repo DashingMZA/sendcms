@@ -125,6 +125,15 @@ flowchart TB
    (`processEmailOutbox({ limit })`); the worker polls every 30 s,
    the cron every 5 min. Either can run alone; running both is safe
    (claiming is atomic).
+4. The same cron hit (and the worker) also runs the AI background
+   jobs — spam re-scoring (`rescoreNewSubmissions`) and the inbox
+   digest (`sendDueDigests`). Both are gated on the `ai-spam-rescore`
+   / `ai-digest` feature flags, seeded disabled by migration
+   `20261125091400_wave8d_seed_platform_settings`; enable them in
+   `/admin/features` once a platform AI key is configured. If the
+   jobs return zero counts, check the flags first — a missing or
+   disabled flag turns its job off by design (see
+   [Deployment](../deployment.md#ai-background-jobs)).
 4. Auth mail (verification + password reset) does **not** go through
    the outbox — it is sent directly, and with no provider configured
    the dev server logs the link (`[auth-email] …`) while production
@@ -343,6 +352,7 @@ fresh-DB test only, no shadow DB).
 | Symptom                                   | First check                                                                                                                                                                                                                         |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Submissions not arriving in the inbox     | The api worker's logs; then the `Submission` table (was it saved?) vs the `EmailJob` table (was the notification enqueued?). A 201 with no inbox row means the save failed — check the submit route's `scope: "submissions"` error. |
+| AI re-scoring / digests never run (cron returns zero counts) | The `ai-spam-rescore` / `ai-digest` flags in `/admin/features` — both are seeded **disabled** and gate their jobs (missing/disabled = job off, by design). Enable with a reason once a platform AI key is configured. See [Deployment](../deployment.md#ai-background-jobs). |
 | Emails not arriving                       | `EmailJob` rows for the form (stuck `PENDING` = the drain isn't running — check the cron schedule / worker health; `FAILED` = provider error, read the job's error). Then the Resend dashboard.                                     |
 | Sign-in fails with 403                    | `BETTER_AUTH_URL` vs the request `Origin` (the api app's URL must match) and `TRUSTED_ORIGINS` (must include the dashboard and admin apps' URLs).                                                                                   |
 | Verification link lands on the wrong host | `NEXT_PUBLIC_DASHBOARD_URL` (the callback URL is built from it on the server).                                                                                                                                                      |

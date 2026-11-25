@@ -46,3 +46,18 @@ export const MCP_READ_TOOL_NAMES = [
 export function isMcpToolName(value: string): value is McpToolName {
   return (MCP_TOOL_NAMES as readonly string[]).includes(value)
 }
+
+// The tools a key of this scope may call (AIM-008): READ sees the
+// 9 read-only tools, FULL sees all 19. The ROUTE uses this for its
+// pre-execution refusal — a tool outside the key's scope (or an
+// unknown name) is refused BEFORE the rate limiter and the usage
+// recorder, exactly like the allowlist 404, so it consumes no quota
+// and writes no usage row. The scope gate used to live only in tool
+// registration (SDK-side), i.e. AFTER the limiter had already run.
+export function toolsForScope(scope: string): readonly string[] {
+  return scope === "READ" ? MCP_READ_TOOL_NAMES : MCP_TOOL_NAMES
+}
+
+export function isToolAvailableForScope(scope: string, tool: string): boolean {
+  return (toolsForScope(scope) as readonly string[]).includes(tool)
+}

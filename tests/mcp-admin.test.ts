@@ -236,6 +236,9 @@ const { store, mockDb } = vi.hoisted(() => {
     },
     mcpSettings: {
       findFirst: vi.fn(async () => store.globalSettings),
+      // SRC-235: the getter is a pure read (findUnique, schema
+      // default when no row) — it no longer upserts the singleton.
+      findUnique: vi.fn(async () => store.globalSettings),
       upsert: vi.fn(
         async ({
           create,
@@ -965,11 +968,49 @@ describe("usage recording", () => {
     expect(store.usage).toHaveLength(0)
   })
 
-  it("records nothing when the response cannot be matched to a request", async () => {
+  it("records an unmatched response as FAILED instead of dropping it (SRC-332)", async () => {
+    // A response whose id matches no request used to vanish from
+    // usage entirely (the failure was undercounted). It is now a
+    // FAILED row for the tool the response claims — only a
+    // notification (no id at all) is still dropped.
+    const outcomes = extractMcpCallOutcomes(requestBody, {
+      jsonrpc: "2.0",
+      id: 99,
+      result: {},
+    })
+    expect(outcomes).toHaveLength(1)
+    expect(outcomes[0].tool).toBe("list_domains")
+    expect(outcomes[0].ok).toBe(false)
     await recordMcpCallOutcomes(
       fullAuth,
       requestBody,
       { jsonrpc: "2.0", id: 99, result: {} },
+      1
+    )
+    expect(store.usage).toHaveLength(1)
+    expect(store.usage[0].status).toBe("FAILED")
+  })
+
+  it("still drops a notification request with no id (SRC-332)", async () => {
+    // A tools/call with no id is a notification: it expects no
+    // response by design, so no outcome can be established.
+    const notification = {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "list_domains", arguments: {} },
+    }
+    const outcomes = extractMcpCallOutcomes(notification, {
+      jsonrpc: "2.0",
+      result: {},
+    })
+    expect(outcomes).toEqual([])
+    await recordMcpCallOutcomes(
+      fullAuth,
+      notification,
+      {
+        jsonrpc: "2.0",
+        result: {},
+      },
       1
     )
     expect(store.usage).toHaveLength(0)
@@ -1003,11 +1044,17 @@ describe("usage recording", () => {
 // ─── Admin service: global kill-switch ────────────────────────────────
 
 describe("mcp-admin service — global settings", () => {
-  it("returns enabled by default and creates the singleton row", async () => {
+  it("returns enabled by default without creating the singleton row", async () => {
     await expect(getMcpSettings(ownerSession)).resolves.toEqual({
       globalEnabled: true,
     })
-    expect(store.globalSettings).toEqual({ globalEnabled: true })
+    // SRC-235: a read must not write — no row is created and the
+    // store stays empty; setMcpSettings creates the row on write.
+    expect(store.globalSettings).toBeNull()
+    expect(mockDb.mcpSettings.upsert).not.toHaveBeenCalled()
+    expect(mockDb.mcpSettings.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "platform" } })
+    )
   })
 
   it("flips the switch and audits old/new values with the reason", async () => {

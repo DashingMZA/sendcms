@@ -1,7 +1,18 @@
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
-import type { CheckoutArgs, CheckoutResult, VerifiedWebhook } from "./types"
-import { isRecurring, priceAsDecimal } from "./types"
+import type {
+  CheckoutArgs,
+  CheckoutResult,
+  ProviderCancelArgs,
+  ProviderCancelOutcome,
+  ProviderUpdateOutcome,
+  VerifiedWebhook,
+} from "./types"
+import {
+  BILLING_PROVIDER_TIMEOUT_MS,
+  isRecurring,
+  priceAsDecimal,
+} from "./types"
 
 const log = createLogger("billing:paypal")
 
@@ -36,15 +47,36 @@ async function paypalFetch(
   // creating a duplicate.
   requestId?: string
 ): Promise<unknown> {
-  const res = await fetch(`${baseUrl()}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  // SRC-233: bounded — a hung PayPal call used to hang the
+  // checkout/webhook route indefinitely. `AbortSignal.timeout`
+  // (the Turnstile/DoH precedent) aborts the fetch; the abort is
+  // mapped to the same generic 502 as any other PayPal failure, so
+  // no provider internals reach the customer.
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl()}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(BILLING_PROVIDER_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      log.warn("PayPal request timed out", {
+        path,
+        timeoutMs: BILLING_PROVIDER_TIMEOUT_MS,
+      })
+      throw new ApiError(
+        "The payment provider is unavailable. Please try again.",
+        502
+      )
+    }
+    throw err
+  }
   const json = (await res.json().catch(() => null)) as Record<
     string,
     unknown
@@ -74,14 +106,28 @@ function attemptRequestId(args: CheckoutArgs, suffix: string): string {
 
 async function getAccessToken(): Promise<string> {
   const { clientId, clientSecret } = credentials()
-  const res = await fetch(`${baseUrl()}/v1/oauth2/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-    },
-    body: "grant_type=client_credentials",
-  })
+  // SRC-233: bounded, same as paypalFetch — the token call is the
+  // first hop of every PayPal checkout/verification.
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl()}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(BILLING_PROVIDER_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      log.warn("PayPal token request timed out", {
+        timeoutMs: BILLING_PROVIDER_TIMEOUT_MS,
+      })
+      throw new ApiError("PayPal authentication failed", 502)
+    }
+    throw err
+  }
   const json = (await res.json().catch(() => null)) as Record<
     string,
     unknown
@@ -189,6 +235,10 @@ export async function createPayPalCheckoutSession(
   const { version, customer } = args
   const customId = `${customer.userId}:${version.id}`
   const currency = version.priceCurrency.toUpperCase()
+  // SRC-222: the catalog ids created by this checkout (only the
+  // ones that were not cached yet) — the service persists them on
+  // the plan version so the next checkout reuses them.
+  const catalog: NonNullable<CheckoutResult["catalog"]> = {}
 
   if (!isRecurring(version)) {
     const order = (await paypalFetch(
@@ -222,12 +272,23 @@ export async function createPayPalCheckoutSession(
     return { checkoutUrl: url, providerCheckoutId: order.id }
   }
 
-  const productId = await createProduct(
-    accessToken,
-    `${version.planName} plan`,
-    attemptRequestId(args, "product")
-  )
-  const planId = await createPlan(accessToken, productId, args)
+  // SRC-222: reuse the cached product + plan for this plan version
+  // when they exist — every checkout used to mint a new product and
+  // billing plan, including abandoned ones.
+  let productId = version.paypalProductId ?? null
+  if (!productId) {
+    productId = await createProduct(
+      accessToken,
+      `${version.planName} plan`,
+      attemptRequestId(args, "product")
+    )
+    catalog.paypalProductId = productId
+  }
+  let planId = version.paypalPlanId ?? null
+  if (!planId) {
+    planId = await createPlan(accessToken, productId, args)
+    catalog.paypalPlanId = planId
+  }
   const subscription = (await paypalFetch(
     "/v1/billing/subscriptions",
     "POST",
@@ -251,7 +312,46 @@ export async function createPayPalCheckoutSession(
   if (!subscription.id || !url) {
     throw new ApiError("PayPal did not return a checkout URL", 502)
   }
-  return { checkoutUrl: url, providerCheckoutId: subscription.id }
+  return {
+    checkoutUrl: url,
+    providerCheckoutId: subscription.id,
+    ...(Object.keys(catalog).length > 0 ? { catalog } : {}),
+  }
+}
+
+// BIL-015 / BIL-016: read a PayPal subscription (or one-time order)
+// back for the success-URL verification and the reconciliation
+// path — the resource carries the payment state and the SendCMS
+// custom_id, so a paid subscription whose webhook was lost can
+// still be proven and activated.
+export async function retrievePayPalSubscription(
+  subscriptionId: string
+): Promise<Record<string, unknown>> {
+  const accessToken = await getAccessToken()
+  const found = await paypalFetch(
+    `/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    "GET",
+    accessToken
+  )
+  if (!found || typeof found !== "object") {
+    throw new ApiError("PayPal subscription not found", 502)
+  }
+  return found as Record<string, unknown>
+}
+
+export async function retrievePayPalOrder(
+  orderId: string
+): Promise<Record<string, unknown>> {
+  const accessToken = await getAccessToken()
+  const found = await paypalFetch(
+    `/v2/checkout/orders/${encodeURIComponent(orderId)}`,
+    "GET",
+    accessToken
+  )
+  if (!found || typeof found !== "object") {
+    throw new ApiError("PayPal order not found", 502)
+  }
+  return found as Record<string, unknown>
 }
 
 // Verify the webhook with PayPal's verify-webhook-signature endpoint
@@ -262,7 +362,9 @@ export async function verifyPayPalWebhook(
   headers: Record<string, string>
 ): Promise<VerifiedWebhook> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID
-  if (!webhookId) throw new ApiError("PayPal is not configured", 422)
+  // BIL-101: 503, not 422 — a missing webhook id is a server-side
+  // misconfiguration PayPal must retry, not a permanent failure.
+  if (!webhookId) throw new ApiError("PayPal is not configured", 503)
   const authAlgo = headers["paypal-auth-algo"]
   const certUrl = headers["paypal-cert-url"]
   const transmissionId = headers["paypal-transmission-id"]
@@ -295,7 +397,18 @@ export async function verifyPayPalWebhook(
     throw new ApiError("Invalid PayPal webhook body", 400)
   }
 
-  const accessToken = await getAccessToken()
+  // BIL-101: missing PayPal credentials are the same retryable
+  // misconfiguration as a missing webhook id — a 422 here would
+  // make PayPal drop the event permanently.
+  let accessToken: string
+  try {
+    accessToken = await getAccessToken()
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 422) {
+      throw new ApiError("PayPal is not configured", 503)
+    }
+    throw error
+  }
   const verification = (await paypalFetch(
     "/v1/notifications/verify-webhook-signature",
     "POST",
@@ -328,9 +441,36 @@ export async function verifyPayPalWebhook(
     const customId =
       typeof resource.custom_id === "string" ? resource.custom_id : null
     const subscriptionId = typeof resource.id === "string" ? resource.id : null
-    if (!customId || !subscriptionId) return ignored
+    if (!customId || !subscriptionId) {
+      // BIL-100: a PAID subscription with no custom_id is not
+      // "ignored" — the customer paid and nothing can activate
+      // them. Unmapped-payment: recorded, left unprocessed, and
+      // visible in the admin reconciliation queue.
+      if (subscriptionId) {
+        return {
+          eventId: event.id,
+          eventType: event.event_type,
+          event: {
+            kind: "unmapped-payment",
+            providerCheckoutId: subscriptionId,
+            reason: "PayPal subscription has no SendCMS custom_id",
+          },
+        }
+      }
+      return ignored
+    }
     const [userId, planVersionId] = customId.split(":")
-    if (!userId || !planVersionId) return ignored
+    if (!userId || !planVersionId) {
+      return {
+        eventId: event.id,
+        eventType: event.event_type,
+        event: {
+          kind: "unmapped-payment",
+          providerCheckoutId: subscriptionId,
+          reason: "PayPal custom_id has no userId/planVersionId",
+        },
+      }
+    }
     return {
       eventId: event.id,
       eventType: event.event_type,
@@ -365,9 +505,49 @@ export async function verifyPayPalWebhook(
     const customId =
       typeof resource.custom_id === "string" ? resource.custom_id : null
     const orderId = typeof resource.id === "string" ? resource.id : null
-    if (!customId || !orderId) return ignored
+    if (!customId || !orderId) {
+      // BIL-100: a paid capture with no custom_id — same
+      // unmapped-payment treatment as ACTIVATED above.
+      if (orderId) {
+        return {
+          eventId: event.id,
+          eventType: event.event_type,
+          event: {
+            kind: "unmapped-payment",
+            providerCheckoutId: orderId,
+            reason: "PayPal capture has no SendCMS custom_id",
+          },
+        }
+      }
+      return ignored
+    }
     const [userId, planVersionId] = customId.split(":")
-    if (!userId || !planVersionId) return ignored
+    if (!userId || !planVersionId) {
+      return {
+        eventId: event.id,
+        eventType: event.event_type,
+        event: {
+          kind: "unmapped-payment",
+          providerCheckoutId: orderId,
+          reason: "PayPal custom_id has no userId/planVersionId",
+        },
+      }
+    }
+    // BIL-003: a one-time capture — the capture id is the
+    // refund-matchable reference; the PayPal order id rides as
+    // checkoutId when the payload carries it.
+    const supplementary =
+      resource.supplementary_data &&
+      typeof resource.supplementary_data === "object"
+        ? (resource.supplementary_data as Record<string, unknown>)
+        : null
+    const related =
+      supplementary?.related_ids &&
+      typeof supplementary.related_ids === "object"
+        ? (supplementary.related_ids as Record<string, unknown>)
+        : null
+    const checkoutId =
+      typeof related?.order_id === "string" ? related.order_id : null
     return {
       eventId: event.id,
       eventType: event.event_type,
@@ -377,6 +557,9 @@ export async function verifyPayPalWebhook(
         planVersionId,
         providerSubscriptionId: orderId,
         periodEnd: null,
+        isOneTime: true,
+        providerReference: orderId,
+        ...(checkoutId ? { checkoutId } : {}),
       },
     }
   }
@@ -409,5 +592,175 @@ export async function verifyPayPalWebhook(
     }
   }
 
+  // BIL-006: the rest of the PayPal lifecycle. CREATED activates
+  // from custom_id like ACTIVATED; UPDATED syncs status/period;
+  // SUSPENDED is a payment failure (PAST_DUE grace); EXPIRED
+  // cancels. `billing_info.next_billing_time` is the period end
+  // when PayPal sends it.
+  if (
+    event.event_type === "BILLING.SUBSCRIPTION.CREATED" ||
+    event.event_type === "BILLING.SUBSCRIPTION.UPDATED" ||
+    event.event_type === "BILLING.SUBSCRIPTION.SUSPENDED" ||
+    event.event_type === "BILLING.SUBSCRIPTION.EXPIRED"
+  ) {
+    const subscriptionId = typeof resource.id === "string" ? resource.id : null
+    if (!subscriptionId) return ignored
+    if (event.event_type === "BILLING.SUBSCRIPTION.EXPIRED") {
+      return {
+        eventId: event.id,
+        eventType: event.event_type,
+        event: {
+          kind: "subscription-canceled",
+          providerSubscriptionId: subscriptionId,
+        },
+      }
+    }
+    if (event.event_type === "BILLING.SUBSCRIPTION.SUSPENDED") {
+      return {
+        eventId: event.id,
+        eventType: event.event_type,
+        event: {
+          kind: "payment-failed",
+          providerSubscriptionId: subscriptionId,
+        },
+      }
+    }
+    if (event.event_type === "BILLING.SUBSCRIPTION.CREATED") {
+      const customId =
+        typeof resource.custom_id === "string" ? resource.custom_id : null
+      if (customId) {
+        const [userId, planVersionId] = customId.split(":")
+        if (userId && planVersionId) {
+          return {
+            eventId: event.id,
+            eventType: event.event_type,
+            event: {
+              kind: "checkout-completed",
+              userId,
+              planVersionId,
+              providerSubscriptionId: subscriptionId,
+              periodEnd: paypalPeriodEnd(resource),
+            },
+          }
+        }
+      }
+    }
+    const status =
+      typeof resource.status === "string" ? resource.status.toLowerCase() : null
+    return {
+      eventId: event.id,
+      eventType: event.event_type,
+      event: {
+        kind: "subscription-updated",
+        providerSubscriptionId: subscriptionId,
+        status,
+        periodEnd: paypalPeriodEnd(resource),
+      },
+    }
+  }
+
+  // BIL-004 / BIL-081 (owner decision 2026-11-25): refunds.
+  // PayPal's refund resource carries the refund amount but not the
+  // original sale amount, so full vs partial cannot be told apart
+  // from the payload — a PayPal refund is treated as FULL (cancel)
+  // and the assumption is recorded in the audit detail. Stripe and
+  // Polar carry exact amounts and distinguish properly.
+  if (
+    event.event_type === "PAYMENT.CAPTURE.REFUNDED" ||
+    event.event_type === "PAYMENT.SALE.REFUNDED"
+  ) {
+    const agreementId =
+      typeof resource.billing_agreement_id === "string"
+        ? resource.billing_agreement_id
+        : null
+    const saleId =
+      typeof resource.sale_id === "string" ? resource.sale_id : null
+    const amount =
+      resource.amount && typeof resource.amount === "object"
+        ? (resource.amount as Record<string, unknown>)
+        : null
+    const amountValue =
+      typeof amount?.value === "string" ? Number(amount.value) : null
+    return {
+      eventId: event.id,
+      eventType: event.event_type,
+      event: {
+        kind: "payment-refunded",
+        providerSubscriptionId: agreementId,
+        providerReference:
+          saleId ?? (typeof resource.id === "string" ? resource.id : null),
+        fullRefund: true,
+        amountMinor:
+          amountValue !== null && !Number.isNaN(amountValue)
+            ? Math.round(amountValue * 100)
+            : null,
+      },
+    }
+  }
+
   return ignored
+}
+
+// `billing_info.next_billing_time` (ISO string) is PayPal's period
+// end for a subscription resource; null when absent/unparseable.
+function paypalPeriodEnd(resource: Record<string, unknown>): Date | null {
+  const billingInfo =
+    resource.billing_info && typeof resource.billing_info === "object"
+      ? (resource.billing_info as Record<string, unknown>)
+      : null
+  const next =
+    typeof billingInfo?.next_billing_time === "string"
+      ? billingInfo.next_billing_time
+      : null
+  if (!next) return null
+  const parsed = new Date(next)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+// BIL-001 / BIL-082: cancel at the provider. PayPal has no
+// cancel-at-period-end: a cancel is immediate, and the outcome says
+// so — the caller mirrors it locally instead of recording a flag
+// PayPal will never honour. A provider failure is a 502, never a
+// silent local-only cancel.
+export async function cancelPayPalSubscription(
+  args: ProviderCancelArgs
+): Promise<ProviderCancelOutcome> {
+  const accessToken = await getAccessToken()
+  await paypalFetch(
+    `/v1/billing/subscriptions/${encodeURIComponent(args.providerSubscriptionId)}/cancel`,
+    "POST",
+    accessToken,
+    { reason: args.reason ?? "Canceled by SendCMS" }
+  )
+  return {
+    canceledAtProvider: true,
+    immediate: true,
+    note: args.cancelAtPeriodEnd
+      ? "PayPal cancels immediately; cancel-at-period-end is not supported by PayPal."
+      : undefined,
+  }
+}
+
+// BIL-089: move a PayPal subscription onto a new plan version's
+// billing plan (revise), so a migration changes what the customer
+// is actually billed. A fresh product + plan are created from the
+// target version, exactly as checkout does.
+export async function updatePayPalSubscriptionPlan(
+  providerSubscriptionId: string,
+  args: CheckoutArgs
+): Promise<ProviderUpdateOutcome> {
+  const accessToken = await getAccessToken()
+  const productId = await createProduct(
+    accessToken,
+    `${args.version.planName} plan`,
+    attemptRequestId(args, "product")
+  )
+  const planId = await createPlan(accessToken, productId, args)
+  await paypalFetch(
+    `/v1/billing/subscriptions/${encodeURIComponent(providerSubscriptionId)}/revise`,
+    "POST",
+    accessToken,
+    { plan_id: planId }
+  )
+  return { updated: true }
 }

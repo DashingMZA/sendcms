@@ -6,7 +6,10 @@ import {
   type AdminRole,
   type PlatformRole,
 } from "@sendcms/permissions"
-import { useAiUsage, useProviderConfigs } from "@sendcms/ai-settings/queries"
+import {
+  useAiUsageSummary,
+  useProviderConfigs,
+} from "@sendcms/ai-settings/queries"
 import {
   Button,
   Card,
@@ -38,17 +41,16 @@ function thirtyDaysAgoIso(): string {
 /**
  * The AI models page (Phase 5): per provider, the configured default
  * model + allowed models, and which models were actually used in the
- * last 30 days (derived from the usage list — the most recent 100
- * records, said plainly on the page). Editing lives on the providers
- * page; this page is read-only.
+ * last 30 days — full totals from the usage summary (ADM-065: the old
+ * 100-row sample could hide a model entirely). Editing lives on the
+ * providers page; this page is read-only.
  */
 export function AiModels({ actorRole }: Props) {
   const { t } = useTranslation("ai")
   const canViewUsage = adminCan(actorRole, "VIEW_AI_USAGE")
   const { data: configs, isLoading: configsLoading } = useProviderConfigs()
-  const { data: usage, isLoading: usageLoading } = useAiUsage({
+  const { data: summary, isLoading: summaryLoading } = useAiUsageSummary({
     from: thirtyDaysAgoIso(),
-    perPage: 100,
   })
 
   if (!canViewUsage) {
@@ -61,21 +63,9 @@ export function AiModels({ actorRole }: Props) {
     )
   }
 
-  // Calls per model in the sampled window (provider + model).
-  const callsByModel = new Map<string, { provider: string; calls: number }>()
-  for (const row of usage?.usage ?? []) {
-    const key = `${row.provider}:${row.model}`
-    const entry = callsByModel.get(key) ?? { provider: row.provider, calls: 0 }
-    entry.calls += 1
-    callsByModel.set(key, entry)
-  }
-  const modelsInUse = [...callsByModel.entries()]
-    .map(([key, entry]) => ({
-      model: key.slice(entry.provider.length + 1),
-      provider: entry.provider,
-      calls: entry.calls,
-    }))
-    .sort((a, b) => b.calls - a.calls)
+  // Full 30-day totals per model (provider + model), already sorted
+  // by calls desc by the summary service.
+  const modelsInUse = summary?.models ?? []
 
   return (
     <div className="flex flex-col gap-6">
@@ -131,7 +121,7 @@ export function AiModels({ actorRole }: Props) {
           <CardDescription>{t("modelsInUseDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {usageLoading ? (
+          {summaryLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : modelsInUse.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("noModelsUsed")}</p>

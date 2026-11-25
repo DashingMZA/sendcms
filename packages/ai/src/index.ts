@@ -1,4 +1,25 @@
 export {
+  AI_INTERACTIVE_TIMEOUT_MS,
+  AI_MAX_OUTPUT_TOKENS,
+  AI_MAX_RETRIES,
+  AI_WORKER_TIMEOUT_MS,
+  classifyAiCallError,
+  isAiAuthFailure,
+  mapAiCallError,
+} from "./errors"
+export type { AiCallFailureKind, ClassifiedAiCallError } from "./errors"
+export {
+  MODEL_PRICES_USD_PER_MILLION_TOKENS,
+  estimateAiCallCostMicros,
+} from "./pricing"
+export {
+  AI_MAX_DIGEST_SNIPPET_CHARS,
+  AI_MAX_DRAFT_EXCERPT_CHARS,
+  AI_MAX_FORM_DESCRIPTION_CHARS,
+  AI_MAX_SUBMISSION_CHARS,
+  truncateAiInput,
+} from "./limits"
+export {
   AI_PROVIDERS,
   DEFAULT_MODELS,
   PROVIDER_ENV_VARS,
@@ -6,11 +27,13 @@ export {
   getAiModel,
   getAiModelForKey,
   getAiModelId,
+  getLanguageModelId,
   isAiConfigured,
   normalizeAiEnv,
   pickAiEnvConfig,
   resolveAiProvider,
   toAiCallUsage,
+  toAiCallUsageWithCost,
 } from "./provider"
 export type {
   AiCallUsage,
@@ -24,6 +47,8 @@ export {
   encryptByokKey,
   fingerprintKey,
   getByokMasterKey,
+  getByokMasterKeyForVersion,
+  reencryptByokKey,
 } from "./byok-crypto"
 export type { EncryptedByokKey } from "./byok-crypto"
 export {

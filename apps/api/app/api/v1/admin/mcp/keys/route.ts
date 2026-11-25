@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { listMcpKeys } from "@sendcms/mcp-admin"
-import { McpPaginationQuerySchema } from "@sendcms/mcp-admin/validators"
+import { McpKeysListQuerySchema } from "@sendcms/mcp-admin/validators"
 import {
   handleApiError,
   ok,
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const session = await requireAdminApi("VIEW_MCP")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
-    const parsed = McpPaginationQuerySchema.safeParse(
+    const parsed = McpKeysListQuerySchema.safeParse(
       Object.fromEntries(req.nextUrl.searchParams)
     )
     if (!parsed.success) {
@@ -26,7 +26,13 @@ export async function GET(req: NextRequest) {
     const result = await listMcpKeys(
       session,
       parsed.data.page,
-      parsed.data.perPage
+      parsed.data.perPage,
+      {
+        search: parsed.data.search,
+        userId: parsed.data.userId,
+        scope: parsed.data.scope,
+        revoked: parsed.data.revoked,
+      }
     )
     return ok(result)
   } catch (err) {

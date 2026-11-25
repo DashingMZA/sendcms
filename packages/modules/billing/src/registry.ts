@@ -23,6 +23,11 @@ export type BillingProviderDefinition = {
   // service, 422 naming the missing vars).
   requiredEnvVars: string[]
   checkoutImplemented: boolean
+  // BIL-095: a human-readable note for providers that cannot sell
+  // through SendCMS checkout (Gumroad). Surfaced on the admin
+  // provider row so an admin sees WHY it is inert instead of
+  // toggling it and wondering why no checkout works.
+  note?: string
   feeNote: string
   docsUrl: string
 }
@@ -78,6 +83,14 @@ export const BILLING_PROVIDERS: readonly BillingProviderDefinition[] = [
     label: "Gumroad",
     requiredEnvVars: ["GUMROAD_APP_ID", "GUMROAD_APP_SECRET"],
     checkoutImplemented: false,
+    // BIL-095: Gumroad is registered but can never sell through
+    // SendCMS checkout — it has no API to create a payment or a
+    // subscription and no webhook signature verification, so there
+    // is no automated activation path. Manual activation only:
+    // create the membership in the Gumroad dashboard, then an
+    // admin assigns the plan (Admin → Subscriptions → Assign).
+    // Never fake a checkout for it.
+    note: "Gumroad cannot sell through SendCMS checkout (no payment-creation API, no webhook). Manual activation only: create the membership in the Gumroad dashboard, then assign the plan from Admin → Subscriptions → Assign.",
     feeNote: "10% + $0.50 per transaction (30% via Discover).",
     docsUrl: "https://gumroad.com/api",
   },

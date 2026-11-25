@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
   adminCan,
@@ -9,6 +10,7 @@ import {
   type PlatformRole,
 } from "@sendcms/permissions"
 import { useMcpKeys, useRevokeMcpKey } from "@sendcms/mcp-admin/queries"
+import type { McpKeysFilters } from "@sendcms/mcp-admin"
 import {
   Badge,
   Button,
@@ -20,7 +22,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Skeleton,
   Table,
   TableBody,
@@ -39,6 +47,7 @@ import { StepUpDialog } from "./step-up-dialog"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
+  initialFilters: McpKeysFilters & { page: number; perPage: number }
 }
 
 /**
@@ -48,14 +57,55 @@ type Props = {
  * revoke is audited). Key material never appears here: the list
  * selects metadata only, and only the prefix + last 4 are shown.
  */
-export function McpKeysTable({ actorRole }: Props) {
+export function McpKeysTable({ actorRole, initialFilters }: Props) {
   const { t } = useTranslation("mcp")
   const locale = useLocale()
   const canViewMcp = adminCan(actorRole, "VIEW_MCP")
   const canManageMcp = adminCan(actorRole, "MANAGE_MCP")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  const [page, setPage] = useState(1)
-  const { data, isLoading, isError, refetch } = useMcpKeys(page, 20)
+  const [page, setPage] = useState(initialFilters.page)
+  // ADM-064: search + revoked/active + scope filters, server-side.
+  const [search, setSearch] = useState(initialFilters.search ?? "")
+  const [scope, setScope] = useState<string>(initialFilters.scope ?? "all")
+  const [revoked, setRevoked] = useState<string>(
+    initialFilters.revoked === undefined
+      ? "all"
+      : initialFilters.revoked
+        ? "revoked"
+        : "active"
+  )
+  const { data, isLoading, isError, refetch } = useMcpKeys(page, 20, {
+    search: search || undefined,
+    scope: scope === "all" ? undefined : (scope as "READ" | "FULL"),
+    revoked: revoked === "all" ? undefined : revoked === "revoked",
+  })
+
+  // ADM-066: filters + pagination live in the URL, following the
+  // users table. Changing a filter resets to page 1.
+  function pushParams(next: URLSearchParams) {
+    const text = next.toString()
+    router.push(text ? `${pathname}?${text}` : pathname)
+  }
+
+  function applyFilter(key: string, value: string | null) {
+    const next = new URLSearchParams(searchParams.toString())
+    if (value === null || value === "" || value === "all") {
+      next.delete(key)
+    } else {
+      next.set(key, value)
+    }
+    next.delete("page")
+    pushParams(next)
+  }
+
+  function applyPage(nextPage: number) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("page", String(nextPage))
+    pushParams(next)
+  }
   const revokeKey = useRevokeMcpKey()
 
   const [revokeId, setRevokeId] = useState<string | null>(null)
@@ -102,6 +152,66 @@ export function McpKeysTable({ actorRole }: Props) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 pt-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="mcp-keys-search">{t("searchKeys")}</Label>
+            <Input
+              id="mcp-keys-search"
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPage(1)
+                applyFilter("search", e.target.value)
+              }}
+              placeholder={t("searchKeysPlaceholder")}
+              className="h-9 w-64"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="mcp-keys-scope">{t("filterScope")}</Label>
+            <Select
+              value={scope}
+              onValueChange={(v) => {
+                setScope(v)
+                setPage(1)
+                applyFilter("scope", v)
+              }}
+            >
+              <SelectTrigger id="mcp-keys-scope" className="h-9 w-36">
+                <SelectValue placeholder={t("allScopes")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allScopes")}</SelectItem>
+                <SelectItem value="READ">READ</SelectItem>
+                <SelectItem value="FULL">FULL</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="mcp-keys-status">{t("filterStatus")}</Label>
+            <Select
+              value={revoked}
+              onValueChange={(v) => {
+                setRevoked(v)
+                setPage(1)
+                applyFilter(
+                  "revoked",
+                  v === "all" ? null : v === "revoked" ? "true" : "false"
+                )
+              }}
+            >
+              <SelectTrigger id="mcp-keys-status" className="h-9 w-36">
+                <SelectValue placeholder={t("allStatuses")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allStatuses")}</SelectItem>
+                <SelectItem value="active">{t("statusActive")}</SelectItem>
+                <SelectItem value="revoked">{t("statusRevoked")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         {isLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : isError ? (
@@ -200,14 +310,20 @@ export function McpKeysTable({ actorRole }: Props) {
             <Button
               variant="outline"
               disabled={currentPage <= 1}
-              onClick={() => setPage(currentPage - 1)}
+              onClick={() => {
+                setPage(currentPage - 1)
+                applyPage(currentPage - 1)
+              }}
             >
               {t("prevPage")}
             </Button>
             <Button
               variant="outline"
               disabled={currentPage >= totalPages}
-              onClick={() => setPage(currentPage + 1)}
+              onClick={() => {
+                setPage(currentPage + 1)
+                applyPage(currentPage + 1)
+              }}
             >
               {t("nextPage")}
             </Button>

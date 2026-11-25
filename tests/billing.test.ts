@@ -43,6 +43,9 @@ const mockActivate = vi.hoisted(() => vi.fn(async () => null))
 const mockCancel = vi.hoisted(() => vi.fn(async () => null))
 const mockExtend = vi.hoisted(() => vi.fn(async () => null))
 const mockMarkPastDue = vi.hoisted(() => vi.fn(async () => null))
+// Wave 8: the webhook handler's new kinds.
+const mockApplyRefund = vi.hoisted(() => vi.fn(async () => null))
+const mockSync = vi.hoisted(() => vi.fn(async () => null))
 
 // A stateful in-memory fake DB. Prisma `select`/`include` args are
 // ignored — the code only reads the fields it needs.
@@ -346,6 +349,28 @@ const { store, mockDb } = vi.hoisted(() => {
           return store.users.get(where.id ?? "") ?? null
         }
       ),
+      // SRC-207 (Wave 8): the Freemius buyer lookup is
+      // case-insensitive — the service lowercases before querying.
+      findFirst: vi.fn(
+        async ({ where }: { where: { email?: string; id?: string } }) => {
+          if (where.email) {
+            return (
+              [...store.users.values()].find(
+                (u) => u.email.toLowerCase() === where.email?.toLowerCase()
+              ) ?? null
+            )
+          }
+          return store.users.get(where.id ?? "") ?? null
+        }
+      ),
+    },
+    // Wave 8: webhook attribution reads the subscription / one-time
+    // purchase behind a provider id. No rows seeded by default.
+    subscription: {
+      findFirst: vi.fn(async () => null),
+    },
+    oneTimePurchase: {
+      findFirst: vi.fn(async () => null),
     },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn(mockDb)
@@ -377,9 +402,11 @@ vi.mock("@sendcms/plans", async (importOriginal) => {
   return {
     ...actual,
     activateSubscriptionFromCheckout: mockActivate,
+    applyRefund: mockApplyRefund,
     cancelSubscriptionFromProvider: mockCancel,
     extendSubscriptionPeriod: mockExtend,
     markSubscriptionPastDue: mockMarkPastDue,
+    syncSubscriptionFromProvider: mockSync,
   }
 })
 
@@ -843,6 +870,11 @@ describe("Stripe webhook — signature + idempotency", () => {
       provider: "STRIPE",
       providerSubscriptionId: "sub_test",
       periodEnd: null,
+      // Wave 8: one-time fields are always passed (false/undefined
+      // for a recurring checkout).
+      isOneTime: false,
+      providerReference: undefined,
+      checkoutId: undefined,
     })
   })
 
@@ -926,6 +958,9 @@ describe("PayPal webhook — verification + activation", () => {
         provider: "PAYPAL",
         providerSubscriptionId: "I-TESTSUB",
         periodEnd: null,
+        isOneTime: false,
+        providerReference: undefined,
+        checkoutId: undefined,
       })
     } finally {
       vi.unstubAllGlobals()
@@ -954,9 +989,11 @@ describe("Freemius webhook — HMAC + plan mapping", () => {
     const result = await handleWebhook("FREEMIUS", payload, {
       "x-signature": signature,
     })
+    // Wave 8 (SRC-207): the Freemius checkout is its own kind now —
+    // the service resolves the buyer and activates from it.
     expect(result).toMatchObject({
       received: true,
-      kind: "checkout-completed",
+      kind: "freemius-checkout",
     })
     expect(mockActivate).toHaveBeenCalledWith({
       userId: "buyer-1",
@@ -964,6 +1001,11 @@ describe("Freemius webhook — HMAC + plan mapping", () => {
       provider: "FREEMIUS",
       providerSubscriptionId: "lic_1",
       periodEnd: null,
+      isOneTime: false,
+      // Wave 8: the Freemius license id is the refund-matchable
+      // reference for the purchase row.
+      providerReference: "lic_1",
+      checkoutId: undefined,
     })
   })
 
@@ -1090,6 +1132,9 @@ describe("Polar webhook — async verification + webhook-id event id (BIL-040 / 
       provider: "POLAR",
       providerSubscriptionId: "sub_polar_1",
       periodEnd: null,
+      isOneTime: false,
+      providerReference: undefined,
+      checkoutId: undefined,
     })
   })
 
@@ -1342,7 +1387,7 @@ describe("Freemius webhook — replay protection (BIL-088)", () => {
     const signature = createHmac("sha256", secret).update(payload).digest("hex")
 
     const first = await deliver(payload, signature)
-    expect(first).toMatchObject({ received: true, kind: "checkout-completed" })
+    expect(first).toMatchObject({ received: true, kind: "freemius-checkout" })
     const second = await deliver(payload, signature)
     expect(second).toMatchObject({ received: true, duplicate: true })
     expect(mockActivate).toHaveBeenCalledTimes(1)

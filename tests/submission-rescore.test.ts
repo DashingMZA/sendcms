@@ -10,6 +10,15 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
   },
   submissionEvent: { create: vi.fn() },
+  // SRC-202 (Stream A): resolveAiModelForUser reads the settings
+  // store first and fails closed when it is unreadable — the mock
+  // admits an ACTIVE user with no settings row (PLATFORM default)
+  // and no stored keys.
+  user: {
+    findUnique: vi.fn(async () => ({ id: "user-1", status: "ACTIVE" })),
+  },
+  userAiSettings: { findUnique: vi.fn(async () => null) },
+  userAiKey: { findMany: vi.fn(async () => []) },
   $transaction: vi.fn(),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
@@ -109,6 +118,14 @@ function makeTx() {
           return { calls: next }
         }
       ),
+    },
+    // Wave 8 (AIM-028): the shared claim also reads the interactive
+    // per-owner rows (AiDailyOwnerUsage). These tests never seed
+    // owner rows, so the fake admits every owner read ([]) — the
+    // form-row budgeting under test is unchanged.
+    aiDailyOwnerUsage: {
+      findMany: vi.fn(async () => []),
+      upsert: vi.fn(async () => ({ calls: 1 })),
     },
     $executeRaw: vi.fn(async () => []),
   }

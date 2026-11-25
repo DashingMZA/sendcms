@@ -31,6 +31,10 @@ const mockDb = vi.hoisted(() => ({
     })),
   },
   auditLog: { create: vi.fn() },
+  // SRC-219: createApiKeyForUser takes a per-user advisory lock
+  // inside its transaction (tx IS mockDb here, as in the other
+  // service tests that use $transaction).
+  $executeRaw: vi.fn(async () => []),
   $transaction: vi.fn(async (fn: unknown) =>
     typeof fn === "function"
       ? (fn as (tx: typeof mockDb) => unknown)(mockDb)

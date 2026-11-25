@@ -6,6 +6,8 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 
 import type { LanguageModel } from "ai"
 
+import { estimateAiCallCostMicros } from "./pricing"
+
 // AI provider plumbing (Phase 12, Step 1b). This package owns the
 // Vercel AI SDK wiring and nothing else: which provider to use, which
 // key it needs, and which model to call. No capability (spam
@@ -42,6 +44,9 @@ export type AiProvider = AiProviderName | "none"
 export type AiCallUsage = {
   promptTokens: number
   completionTokens: number
+  /** Micro-dollar cost from the price table (DB-033), or null when
+      the model has no price row — never an estimate. */
+  costMicros: number | null
 }
 
 /** Normalizes the SDK's usage object (or its absence) to AiCallUsage.
@@ -77,9 +82,38 @@ export function toAiCallUsage(
     return {
       promptTokens,
       completionTokens,
+      costMicros: null,
     }
   }
   return null
+}
+
+/** Like toAiCallUsage, but with the call's cost attached from the
+    per-model price table (DB-033) — the model id is what the price
+    lookup needs, and the capability functions are the ones that
+    have it. */
+export function toAiCallUsageWithCost(
+  modelId: string | null | undefined,
+  usage:
+    | {
+        inputTokens?: number
+        outputTokens?: number
+        promptTokens?: number
+        completionTokens?: number
+      }
+    | null
+    | undefined
+): AiCallUsage | null {
+  const base = toAiCallUsage(usage)
+  if (!base) return null
+  return {
+    ...base,
+    costMicros: estimateAiCallCostMicros(
+      modelId,
+      base.promptTokens,
+      base.completionTokens
+    ),
+  }
 }
 
 /** The API-key env var each provider reads. */
@@ -156,6 +190,18 @@ export function normalizeAiEnv(
   return isAiEnvConfig(env) ? aiEnvConfigToEnv(env) : env
 }
 
+/** The model id of a built LanguageModel, for usage/cost
+    attribution. The AI SDK's LanguageModel type does not expose
+    `modelId` as a plain property (it is a per-provider literal),
+    so this reads it structurally — the resolver in
+    @sendcms/ai-settings does the same cast. Null when the model
+    carries no id (a test double): the caller records the call with
+    null cost, never an estimate. */
+export function getLanguageModelId(model: LanguageModel): string | null {
+  const id = (model as { modelId?: unknown }).modelId
+  return typeof id === "string" && id.length > 0 ? id : null
+}
+
 /** Default model per provider. `AI_MODEL` overrides the default for
     whichever provider is selected.
     Google default (2026-11-20): `gemini-3.5-flash-lite`. Google retired
@@ -174,17 +220,26 @@ export const DEFAULT_MODELS: Record<AiProviderName, string> = {
 }
 
 /** Resolves the configured provider. Throws on an unknown explicit
-    `AI_PROVIDER` — that is a misconfiguration, not a missing key. */
+    `AI_PROVIDER` — that is a misconfiguration, not a missing key.
+    The explicit name is matched case-insensitively (SRC-325:
+    `AI_PROVIDER=Google` used to throw "Unknown AI_PROVIDER").
+    With no explicit provider, detection order is the AI_PROVIDERS
+    order — openai, anthropic, google, deepseek, openrouter — and
+    the FIRST provider whose key is set wins (SRC-325: the
+    precedence is documented here, not implicit). `AI_MODEL` is a
+    global override for whichever provider is selected; a model id
+    for one provider is never validated against another's list —
+    the admin allowlist (per provider) is the guard for that. */
 export function resolveAiProvider(
   env: NodeJS.ProcessEnv = process.env
 ): AiProvider {
-  const selected = env.AI_PROVIDER?.trim()
+  const selected = env.AI_PROVIDER?.trim().toLowerCase()
   if (selected) {
     if ((AI_PROVIDERS as readonly string[]).includes(selected)) {
       return selected as AiProviderName
     }
     throw new Error(
-      `Unknown AI_PROVIDER "${selected}" (expected one of: ${AI_PROVIDERS.join(", ")}).`
+      `Unknown AI_PROVIDER "${env.AI_PROVIDER?.trim()}" (expected one of: ${AI_PROVIDERS.join(", ")}).`
     )
   }
   for (const provider of AI_PROVIDERS) {

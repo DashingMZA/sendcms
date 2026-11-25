@@ -45,7 +45,7 @@ export function ApiKeysManager({
   const { data: keys = initialKeys } = useApiKeys(initialKeys)
   const createKey = useCreateApiKey()
   const [name, setName] = useState("")
-  const [scope, setScope] = useState<"READ" | "FULL">("FULL")
+  const [scope, setScope] = useState<"READ" | "FULL">("READ")
   const [error, setError] = useState<string | null>(null)
   // The plaintext of a just-created / just-rotated key — shown ONCE.
   // It lives only in this component's state, never in the query cache.

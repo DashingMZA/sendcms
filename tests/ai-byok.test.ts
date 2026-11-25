@@ -115,6 +115,7 @@ const { store, mockDb } = vi.hoisted(() => {
     isEnabled: boolean
     keyVersion: number
     masterKeyVersion: number
+    authFailureCount: number
     encryptedKey: string
     encryptedDek: string
     keyIv: string
@@ -247,6 +248,7 @@ const { store, mockDb } = vi.hoisted(() => {
           lastTestedAt: null,
           lastTestStatus: "UNTESTED",
           masterKeyVersion: 1,
+          authFailureCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
           ...(data as unknown as Omit<
@@ -257,6 +259,7 @@ const { store, mockDb } = vi.hoisted(() => {
             | "lastTestedAt"
             | "lastTestStatus"
             | "masterKeyVersion"
+            | "authFailureCount"
             | "createdAt"
             | "updatedAt"
           >),
@@ -309,6 +312,7 @@ const { store, mockDb } = vi.hoisted(() => {
             lastTestedAt: null,
             lastTestStatus: "UNTESTED",
             masterKeyVersion: 1,
+            authFailureCount: 0,
             createdAt: new Date(),
             updatedAt: new Date(),
             ...(create as unknown as Omit<
@@ -319,6 +323,7 @@ const { store, mockDb } = vi.hoisted(() => {
               | "lastTestedAt"
               | "lastTestStatus"
               | "masterKeyVersion"
+              | "authFailureCount"
               | "createdAt"
               | "updatedAt"
             >),
@@ -332,6 +337,59 @@ const { store, mockDb } = vi.hoisted(() => {
         if (row) store.keys.delete(keyId(row.userId, row.provider))
         return row ?? null
       }),
+      // AIM-003: recordByokAuthSuccess resets the counter for the
+      // (user, provider) row when it is > 0.
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>
+          data: Record<string, unknown>
+        }) => {
+          let count = 0
+          for (const row of store.keys.values()) {
+            let match = true
+            for (const [field, value] of Object.entries(where)) {
+              const current = (row as unknown as Record<string, unknown>)[field]
+              if (
+                value &&
+                typeof value === "object" &&
+                "gt" in (value as Record<string, unknown>)
+              ) {
+                if (!(
+                  typeof current === "number" &&
+                  current > (value as { gt: number }).gt
+                ))
+                  match = false
+              } else if (current !== value) {
+                match = false
+              }
+            }
+            if (match) {
+              applyData(row as unknown as Record<string, unknown>, data)
+              count++
+            }
+          }
+          return { count }
+        }
+      ),
+    },
+    // AIM-028 / SRC-218: the daily-budget claim reads the owner's
+    // forms and both daily counters under one advisory lock
+    // ($executeRaw), then increments the caller's row. The fake
+    // admits every claim (no usage recorded) — the cap behavior is
+    // covered by the Wave 8 claim tests with a stateful fake.
+    form: {
+      findMany: vi.fn(async () => []),
+    },
+    aiDailyUsage: {
+      findMany: vi.fn(async () => []),
+      upsert: vi.fn(async () => ({ calls: 1 })),
+    },
+    aiDailyOwnerUsage: {
+      findMany: vi.fn(async () => []),
+      upsert: vi.fn(async () => ({ calls: 1 })),
     },
     userAiSettings: {
       findUnique: vi.fn(
@@ -496,6 +554,7 @@ const { store, mockDb } = vi.hoisted(() => {
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn(mockDb)
     ),
+    $executeRaw: vi.fn(async () => undefined),
     // DB-051: the locked read in setBillingModeLocked. The template
     // tag arrives as (strings, ...values); values[0] is the userId.
     $queryRaw: vi.fn(
@@ -631,6 +690,7 @@ describe("saveUserAiKey", () => {
     const meta = await saveUserAiKey("user-1", {
       provider: "openai",
       apiKey: BYOK_KEY,
+      termsAcknowledged: true,
     })
     expect(meta.provider).toBe("openai")
     expect(meta.keyVersion).toBe(1)
@@ -654,10 +714,15 @@ describe("saveUserAiKey", () => {
   })
 
   it("replaces a key for the same provider and increments keyVersion", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     const second = await saveUserAiKey("user-1", {
       provider: "openai",
       apiKey: BYOK_KEY_2,
+      termsAcknowledged: true,
     })
     expect(second.keyVersion).toBe(2)
     expect(await listUserAiKeys("user-1")).toHaveLength(1)
@@ -665,7 +730,11 @@ describe("saveUserAiKey", () => {
   })
 
   it("audits the save with provider + fingerprint only", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "CREATE",
@@ -686,13 +755,21 @@ describe("saveUserAiKey", () => {
   it("refuses a key for a provider the plan forbids", async () => {
     mockGetEffective.mockResolvedValue(entitlementsWith({ aiProviders: [] }))
     await expect(
-      saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+      saveUserAiKey("user-1", {
+        provider: "openai",
+        apiKey: BYOK_KEY,
+        termsAcknowledged: true,
+      })
     ).rejects.toMatchObject({ status: 403 })
   })
 
   it("refuses to save a key for a suspended user", async () => {
     await expect(
-      saveUserAiKey("suspended-1", { provider: "openai", apiKey: BYOK_KEY })
+      saveUserAiKey("suspended-1", {
+        provider: "openai",
+        apiKey: BYOK_KEY,
+        termsAcknowledged: true,
+      })
     ).rejects.toMatchObject({ status: 403 })
   })
 
@@ -709,10 +786,15 @@ describe("saveUserAiKey", () => {
 
 describe("list/get/enable/disable/delete", () => {
   it("lists metadata only — never key material", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await saveUserAiKey("user-1", {
       provider: "anthropic",
       apiKey: "sk-ant-test-key-12345678",
+      termsAcknowledged: true,
     })
     const keys = await listUserAiKeys("user-1")
     expect(keys).toHaveLength(2)
@@ -727,7 +809,11 @@ describe("list/get/enable/disable/delete", () => {
   })
 
   it("gets one key's metadata and 404s when missing", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     expect((await getUserAiKey("user-1", "openai")).provider).toBe("openai")
     await expect(getUserAiKey("user-1", "google")).rejects.toMatchObject({
       status: 404,
@@ -735,13 +821,21 @@ describe("list/get/enable/disable/delete", () => {
   })
 
   it("disables and re-enables a key", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     expect((await disableUserAiKey("user-1", "openai")).isEnabled).toBe(false)
     expect((await enableUserAiKey("user-1", "openai")).isEnabled).toBe(true)
   })
 
   it("deletes a key and audits the delete", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await deleteUserAiKey("user-1", "openai")
     expect(await listUserAiKeys("user-1")).toHaveLength(0)
     expect(mockLogAudit).toHaveBeenCalledWith(
@@ -755,7 +849,11 @@ describe("list/get/enable/disable/delete", () => {
 
 describe("testUserAiKey", () => {
   it("tests a saved key live and records a BYOK usage row", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     const result = await testUserAiKey("user-1", "openai")
     expect(result.ok).toBe(true)
     expect(result.latencyMs).toBeGreaterThanOrEqual(0)
@@ -780,7 +878,11 @@ describe("testUserAiKey", () => {
   })
 
   it("records a FAILED test and never falls back to the platform key", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     mockGenerateText.mockRejectedValueOnce(
       new Error("Incorrect API key provided")
     )
@@ -810,7 +912,11 @@ describe("testUserAiKey", () => {
   // resolves a model for a live probe, so a DISABLED billing mode
   // refuses it — no probe call, no usage row.
   it("refuses to probe when the billing mode is DISABLED", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await setUserAiBillingMode("user-1", "DISABLED")
     await expect(testUserAiKey("user-1", "openai")).rejects.toMatchObject({
       status: 503,
@@ -824,7 +930,11 @@ describe("testUserAiKey", () => {
   // last 4 chars (OpenAI's own redaction). Neither the response nor
   // the structured log may carry any 4+ char fragment of the key.
   it("never echoes key fragments when the provider error quotes the key", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     mockGenerateText.mockRejectedValueOnce(
       new Error(
         `Incorrect API key provided: ${BYOK_KEY.slice(0, 8)}${"*".repeat(24)}${BYOK_KEY.slice(-4)}. You can find your API key at https://platform.openai.com/account/api-keys.`
@@ -1039,7 +1149,11 @@ describe("billing mode", () => {
 
 describe("resolveAiModelForUser", () => {
   it("uses the BYOK key first when the mode is BYOK", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await setUserAiBillingMode("user-1", "BYOK")
     const resolved = await resolveAiModelForUser("user-1", {
       purpose: "suggest-fields",
@@ -1075,7 +1189,11 @@ describe("resolveAiModelForUser", () => {
   })
 
   it("throws when the BYOK key is disabled — never falls back to platform", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await disableUserAiKey("user-1", "openai")
     await setUserAiBillingMode("user-1", "BYOK")
     await expect(
@@ -1085,7 +1203,11 @@ describe("resolveAiModelForUser", () => {
   })
 
   it("throws when a stored BYOK key cannot be decrypted — never falls back to platform", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await setUserAiBillingMode("user-1", "BYOK")
     // Tamper with the ciphertext: the GCM tag no longer verifies.
     storedKeyRow().encryptedKey = Buffer.from("tampered").toString("base64")
@@ -1099,6 +1221,7 @@ describe("resolveAiModelForUser", () => {
     await saveUserAiKey("user-1", {
       provider: "anthropic",
       apiKey: "sk-ant-test-key-12345678",
+      termsAcknowledged: true,
     })
     await setUserAiBillingMode("user-1", "BYOK")
     await expect(
@@ -1158,7 +1281,11 @@ describe("resolveAiModelForUser", () => {
   })
 
   it("DISABLED wins over a stored BYOK key (AIM-005 / AIM-020)", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await setUserAiBillingMode("user-1", "DISABLED")
     await expect(
       resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: ENV })
@@ -1221,11 +1348,41 @@ describe("resolveAiModelForUser", () => {
       resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: {} })
     ).rejects.toMatchObject({ status: 503 })
   })
+
+  it("fails CLOSED when the settings store is unreadable — no legacy platform fallback (SRC-202)", async () => {
+    // The mode cannot be determined, so there is no safe default:
+    // the old code fell back to the platform key here, silently
+    // serving AI to a user whose mode may have been DISABLED or
+    // BYOK-only. Now the call degrades (503) instead.
+    mockDb.user.findUnique.mockRejectedValueOnce(new Error("db down"))
+    await expect(
+      resolveAiModelForUser("user-1", { purpose: "suggest-fields", env: ENV })
+    ).rejects.toBeInstanceOf(AiNotAvailableError)
+    // No model was built from any key — platform or browser.
+    expect(mockGetAiModelForKey).not.toHaveBeenCalled()
+  })
+
+  it("fails CLOSED on a store error even with a browser-only key (SRC-202)", async () => {
+    mockDb.user.findUnique.mockRejectedValueOnce(new Error("db down"))
+    await expect(
+      resolveAiModelForUser("user-1", {
+        purpose: "suggest-fields",
+        provider: "openai",
+        browserKey: "<redacted>",
+        env: ENV,
+      })
+    ).rejects.toMatchObject({ status: 503 })
+    expect(mockGetAiModelForKey).not.toHaveBeenCalled()
+  })
 })
 
 describe("usage reporting", () => {
   it("separates BYOK and PLATFORM usage in the summary", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await testUserAiKey("user-1", "openai") // BYOK, SUCCESS, 5 in / 1 out
     await recordAiUsage({
       userId: "user-1",
@@ -1309,7 +1466,7 @@ describe("usage reporting", () => {
 })
 
 describe("admin provider config and user keys", () => {
-  it("auto-creates all five provider configs on first read", async () => {
+  it("returns all five provider configs from defaults on first read, without writing", async () => {
     const configs = await listProviderConfigs(ownerSession)
     expect(configs).toHaveLength(5)
     expect(configs.map((c) => c.provider).sort()).toEqual([
@@ -1320,7 +1477,10 @@ describe("admin provider config and user keys", () => {
       "openrouter",
     ])
     expect(configs.every((c) => c.isEnabled)).toBe(true)
-    // A second read does not duplicate them.
+    // SRC-235: the read is pure — no rows are created for the
+    // missing providers (they are seeded by migration); a second
+    // read still returns five.
+    expect(mockDb.aiProviderConfig.createMany).not.toHaveBeenCalled()
     expect((await listProviderConfigs(ownerSession)).length).toBe(5)
   })
 
@@ -1343,7 +1503,11 @@ describe("admin provider config and user keys", () => {
   })
 
   it("reports per-provider health with counts only", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     await testUserAiKey("user-1", "openai")
     const health = await getProviderHealth(ownerSession, ENV)
     const openai = health.find((h) => h.provider === "openai")
@@ -1358,7 +1522,11 @@ describe("admin provider config and user keys", () => {
   })
 
   it("shows an admin a user's key metadata only; a manager without MANAGE_AI cannot", async () => {
-    await saveUserAiKey("user-1", { provider: "openai", apiKey: BYOK_KEY })
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
     const keys = await listUserAiKeysForAdmin(ownerSession, "user-1")
     expect(keys).toHaveLength(1)
     expect(JSON.stringify(keys)).not.toContain(BYOK_KEY)

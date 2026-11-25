@@ -65,19 +65,22 @@ function toMcpSettingsRow(row: { globalEnabled: boolean }): McpSettingsRow {
   return { globalEnabled: row.globalEnabled }
 }
 
-/** The platform MCP switch. Missing row = enabled (first read
-    creates the row). Reads need VIEW_MCP. */
+/** The platform MCP switch. Missing row = enabled (the schema
+    default) — the read is pure: it no longer creates the row.
+    SRC-235: a GET path used to upsert the singleton row, so a read
+    could fail on a write error and hid a missing seed. The row is
+    seeded by migration
+    (`20261125091400_wave8d_seed_platform_settings`) and created by
+    `setMcpSettings` on the first write; this getter only reads. */
 export async function getMcpSettings(
   actor: AdminSession
 ): Promise<McpSettingsRow> {
   requireAdmin(actor, "VIEW_MCP")
-  const row = await db.mcpSettings.upsert({
+  const row = await db.mcpSettings.findUnique({
     where: { id: MCP_SETTINGS_ID },
-    update: {},
-    create: { id: MCP_SETTINGS_ID },
     select: { globalEnabled: true },
   })
-  return toMcpSettingsRow(row)
+  return toMcpSettingsRow(row ?? { globalEnabled: true })
 }
 
 /** Flips the global kill-switch. MANAGE_MCP, reason required, audited
@@ -486,6 +489,16 @@ export async function getMcpUsageSummary(
 
 // ─── Keys ─────────────────────────────────────────────────────────────
 
+export type McpKeysFilters = {
+  /** Matches the key name, the owner's name, or the owner's email
+      (case-insensitive substring). */
+  search?: string
+  userId?: string
+  scope?: "READ" | "FULL"
+  /** true = revoked only, false = active only, omitted = all. */
+  revoked?: boolean
+}
+
 export type McpKeyRow = {
   id: string
   name: string
@@ -530,11 +543,15 @@ function clampPagination(
 }
 
 /** Every API key with its owner and its 30-day call count (one
-    groupBy, no N+1). Reads need VIEW_MCP. */
+    groupBy, no N+1). Reads need VIEW_MCP. Filters (ADM-064): the
+    list used to be pagination-only — a revoked key could only be
+    found by paging through every key. `search` matches key name /
+    owner name / owner email; `revoked` splits active from revoked. */
 export async function listMcpKeys(
   actor: AdminSession,
   page = 1,
-  perPage = 20
+  perPage = 20,
+  filters: McpKeysFilters = {}
 ): Promise<{
   keys: McpKeyRow[]
   total: number
@@ -549,9 +566,25 @@ export async function listMcpKeys(
   const clamped = clampPagination(page, perPage)
   page = clamped.page
   perPage = clamped.perPage
+  const where: Prisma.ApiKeyWhereInput = {}
+  if (filters.userId) where.userId = filters.userId
+  if (filters.scope) where.scope = filters.scope
+  if (filters.revoked === true) where.revokedAt = { not: null }
+  if (filters.revoked === false) where.revokedAt = null
+  if (filters.search) {
+    const q = filters.search.trim()
+    if (q) {
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { user: { name: { contains: q, mode: "insensitive" } } },
+        { user: { email: { contains: q, mode: "insensitive" } } },
+      ]
+    }
+  }
   const [total, rows, callCounts] = await Promise.all([
-    db.apiKey.count(),
+    db.apiKey.count({ where }),
     db.apiKey.findMany({
+      where,
       select: {
         ...mcpKeySelect,
         user: { select: { id: true, name: true, email: true } },

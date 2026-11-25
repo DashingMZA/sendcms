@@ -18,9 +18,9 @@ import { useTranslation } from "@/components/dashboard/translation-provider"
 
 // BIL-122 / BIL-091 (Wave 6): the customer cancel button + confirm
 // dialog. Immediate cancel, or cancel at the end of the current
-// period. LOCAL ONLY until Wave 8 wires the provider cancel
-// (BIL-001 / BIL-082) — the dialog says so, so a paying customer is
-// not left thinking the provider billing stopped.
+// period. DSH-402 / BIL-001 (Wave 8): the cancel reaches the
+// provider too — the dialog says so, and a provider failure refuses
+// the cancel instead of leaving billing running.
 export function CancelSubscription() {
   const { t } = useTranslation("billing")
   const [open, setOpen] = useState(false)

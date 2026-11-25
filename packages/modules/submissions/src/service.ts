@@ -11,8 +11,8 @@ import type { FormField } from "@sendcms/database"
 
 import {
   ApiError,
+  aiSubmissionExcerpt,
   getSubmissionSender,
-  previewSubmissionText,
 } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
 import {
@@ -20,6 +20,7 @@ import {
   generateDigest,
   getDigestIntervalHours,
   getSpamThreshold,
+  isAiAuthFailure,
   isAiConfigured,
   rescoreSpam,
   type AiCallUsage,
@@ -27,7 +28,10 @@ import {
 } from "@sendcms/ai"
 import {
   anyByokKeyConfigured,
+  claimAiCall,
   recordAiUsage,
+  recordByokAuthFailure,
+  recordByokAuthSuccess,
   resolveAiModelForUserSafe,
   type ResolvedAiModel,
 } from "@sendcms/ai-settings"
@@ -746,51 +750,31 @@ export function startOfUtcDay(at: Date = new Date()): Date {
   return day
 }
 
-// AIM-021: claim one unit of an owner's daily AI budget BEFORE the
-// model call, atomically. The cap is per OWNER (aiRequestsPerDay),
-// but the counter rows stay per form (AiDailyUsage is keyed
-// form + day — no schema change), so the claim sums today's calls
-// across ALL of the owner's forms and increments this form's row.
-// The whole check + increment runs inside one transaction serialized
-// by a Postgres advisory lock on (owner, day): without it, two
-// concurrent polls (worker + cron) both read usage < cap and both
-// spend calls. A claimed unit is consumed even when the model call
-// then fails — a down provider cannot retry the same rows
-// unboundedly on every poll. Returns false when the owner's budget
-// is exhausted (or the cap is 0).
+// AIM-021 / SRC-218: claim one unit of an owner's daily AI budget
+// BEFORE the model call, atomically. The cap is per OWNER
+// (aiRequestsPerDay), but the counter rows stay per form
+// (AiDailyUsage is keyed form + day — no schema change), so the
+// claim sums today's calls across ALL of the owner's forms and
+// increments this form's row. The whole check + increment runs
+// inside one transaction serialized by a Postgres advisory lock on
+// (owner, day): without it, two concurrent polls (worker + cron)
+// both read usage < cap and both spend calls. A claimed unit is
+// consumed even when the model call then fails — a down provider
+// cannot retry the same rows unboundedly on every poll. Returns
+// false when the owner's budget is exhausted (or the cap is 0).
+// Wave 8 (AIM-028): the claim lives in @sendcms/ai-settings now
+// (claimAiCall) and the "used" sum ALSO includes the interactive
+// per-owner rows (AiDailyOwnerUsage), so the worker and the
+// interactive paths share one budget under the same lock key — the
+// old read-then-increment race SRC-218 describes is closed by the
+// same mechanism, not re-implemented here.
 async function claimOwnerAiCall(
   ownerId: string | undefined,
   formId: string,
   cap: number,
   today: Date
 ): Promise<boolean> {
-  if (cap <= 0) return false
-  const lockKey = `ai-daily:${ownerId ?? `form:${formId}`}:${today.toISOString().slice(0, 10)}`
-  return db.$transaction(async (tx) => {
-    await tx.$executeRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(727001, hashtext(${lockKey}))`
-    )
-    const formIds = ownerId
-      ? (
-          await tx.form.findMany({
-            where: { ownerId },
-            select: { id: true },
-          })
-        ).map((f) => f.id)
-      : [formId]
-    const rows = await tx.aiDailyUsage.findMany({
-      where: { formId: { in: formIds }, date: today },
-      select: { calls: true },
-    })
-    const used = rows.reduce((sum, r) => sum + r.calls, 0)
-    if (used >= cap) return false
-    await tx.aiDailyUsage.upsert({
-      where: { formId_date: { formId, date: today } },
-      create: { formId, date: today, calls: 1 },
-      update: { calls: { increment: 1 } },
-    })
-    return true
-  })
+  return claimAiCall(ownerId, { formId, cap, today })
 }
 
 export type RescoreResult = {
@@ -951,6 +935,14 @@ export async function rescoreNewSubmissions({
       // unscored) — it must not fail the batch or lose the submission.
       // The claimed budget unit stays consumed (AIM-021).
       logger.error("ai rescore failed", { error: err, formId })
+      // AIM-003: a provider-auth failure at call time feeds the BYOK
+      // key's auto-disable counter (transient failures never do).
+      // The worker path is the worst case for a bad key — it would
+      // otherwise retry the same key on every poll with no circuit
+      // breaker.
+      if (resolved.billingMode === "BYOK" && isAiAuthFailure(err)) {
+        await recordByokAuthFailure(submission.form.ownerId, resolved.provider)
+      }
       await recordAiUsage({
         userId: submission.form.ownerId,
         provider: resolved.provider,
@@ -966,17 +958,32 @@ export async function rescoreNewSubmissions({
     }
     // AIM-021: the budget unit was already claimed before the model
     // call (claimOwnerAiCall above) — no post-call increment here.
-    await recordAiUsage({
-      userId: submission.form.ownerId,
-      provider: resolved.provider,
-      model: resolved.modelId,
-      billingMode: resolved.billingMode,
-      status: "SUCCESS",
-      tokensIn: callUsage.current?.promptTokens ?? null,
-      tokensOut: callUsage.current?.completionTokens ?? null,
-      sourceEvent: "spam-rescore",
-      resourceId: submission.id,
-    })
+    // SRC-225: the usage write is guarded — a bookkeeping failure
+    // must never discard a good verdict (recordAiUsage never throws,
+    // but the guard is the contract).
+    try {
+      await recordAiUsage({
+        userId: submission.form.ownerId,
+        provider: resolved.provider,
+        model: resolved.modelId,
+        billingMode: resolved.billingMode,
+        status: "SUCCESS",
+        tokensIn: callUsage.current?.promptTokens ?? null,
+        tokensOut: callUsage.current?.completionTokens ?? null,
+        costMicros: callUsage.current?.costMicros ?? null,
+        sourceEvent: "spam-rescore",
+        resourceId: submission.id,
+      })
+    } catch (err) {
+      logger.error("ai usage record failed after successful rescore", {
+        error: err,
+        formId,
+        submissionId: submission.id,
+      })
+    }
+    if (resolved.billingMode === "BYOK") {
+      await recordByokAuthSuccess(submission.form.ownerId, resolved.provider)
+    }
     const isSpam = verdict.score >= threshold
     const now = new Date()
     await db.$transaction(async (tx) => {
@@ -1137,12 +1144,29 @@ export async function sendDueDigests({
       skipped++
       continue
     }
+    // SRC-203 / DB-031: the window is capped at 50 items per digest,
+    // but the cursor must NOT jump past the cap. When the cap was
+    // hit, count the whole window so the digest can say how many
+    // more there are — and the next run picks up where this one
+    // stopped instead of losing submissions 51+ forever.
+    const truncated = submissions.length === DIGEST_MAX_SUBMISSIONS
+    const totalCount = truncated
+      ? await db.submission.count({
+          where: {
+            formId: form.id,
+            status: SubmissionStatus.NEW,
+            createdAt: { gt: since },
+          },
+        })
+      : submissions.length
     const digestInputs = submissions.map((s) => {
       const sender = getSubmissionSender(s.data)
       return {
         senderName: sender.name,
         senderEmail: sender.email,
-        snippet: previewSubmissionText(s.data).slice(0, 200),
+        // AIM-019: the model sees a 500-char excerpt, not the
+        // 80-char UI preview sliced to 200 (a no-op).
+        snippet: aiSubmissionExcerpt(s.data, 500),
         receivedAt: s.createdAt,
       }
     })
@@ -1171,6 +1195,11 @@ export async function sendDueDigests({
         // A failed model call retries on a later poll (the window does
         // not advance) — it must not fail the batch.
         logger.error("ai digest failed", { error: err, formId: form.id })
+        // AIM-003: a provider-auth failure at call time feeds the
+        // BYOK key's auto-disable counter.
+        if (resolved.billingMode === "BYOK" && isAiAuthFailure(err)) {
+          await recordByokAuthFailure(form.ownerId, resolved.provider)
+        }
         await recordAiUsage({
           userId: form.ownerId,
           provider: resolved.provider,
@@ -1183,22 +1212,34 @@ export async function sendDueDigests({
         skipped++
         continue
       }
-      await recordAiUsage({
-        userId: form.ownerId,
-        provider: resolved.provider,
-        model: resolved.modelId,
-        billingMode: resolved.billingMode,
-        status: "SUCCESS",
-        tokensIn: callUsage.current?.promptTokens ?? null,
-        tokensOut: callUsage.current?.completionTokens ?? null,
-        sourceEvent: "digest",
-        resourceId: form.id,
-      })
+      // SRC-225: guarded like the rescore — a bookkeeping failure
+      // must never discard a good summary.
+      try {
+        await recordAiUsage({
+          userId: form.ownerId,
+          provider: resolved.provider,
+          model: resolved.modelId,
+          billingMode: resolved.billingMode,
+          status: "SUCCESS",
+          tokensIn: callUsage.current?.promptTokens ?? null,
+          tokensOut: callUsage.current?.completionTokens ?? null,
+          costMicros: callUsage.current?.costMicros ?? null,
+          sourceEvent: "digest",
+          resourceId: form.id,
+        })
+      } catch (err) {
+        logger.error("ai usage record failed after successful digest", {
+          error: err,
+          formId: form.id,
+        })
+      }
+      if (resolved.billingMode === "BYOK") {
+        await recordByokAuthSuccess(form.ownerId, resolved.provider)
+      }
       aiSummary = true
     } else {
       summary = buildPlainDigestSummary(form.name, digestInputs)
     }
-    const now = new Date()
     // Enqueue first, then advance the window: a failed enqueue must
     // not move the window (those submissions would be lost), while a
     // failed window update only re-sends the same digest on the next
@@ -1231,7 +1272,10 @@ export async function sendDueDigests({
           const sender = getSubmissionSender(s.data)
           return {
             senderName: sender.name,
-            snippet: previewSubmissionText(s.data).slice(0, 200),
+            // The owner-facing email snippet: a 200-char excerpt of
+            // the message (AIM-019's 80-char preview was a no-op
+            // slice here too).
+            snippet: aiSubmissionExcerpt(s.data, 200),
             receivedAt: s.createdAt,
           }
         }),
@@ -1239,6 +1283,9 @@ export async function sendDueDigests({
         accentColor: "#0891b2",
         footerText: t("digestFooter"),
         locale,
+        // SRC-203 / DB-031: the digest says when it was cut short.
+        truncated,
+        totalCount,
       },
     })
     if (enqueued === 0) {
@@ -1246,9 +1293,22 @@ export async function sendDueDigests({
       skipped++
       continue
     }
+    // SRC-203 / DB-031: the window advances to the createdAt of the
+    // LAST submission actually included — not `now`. Advancing to
+    // `now` silently dropped every submission past the 50-cap
+    // (submissions 51+ were newer than the last included item but
+    // older than `now`, so the next run's `since` skipped them
+    // forever). The next run starts right after the last item sent.
+    // (Same-instant edge: two submissions sharing one createdAt
+    // millisecond straddle the boundary — the later one is only
+    // picked up if its timestamp is strictly greater; createdAt
+    // carries millisecond precision, so this needs two submissions
+    // in the same millisecond.)
     await db.form.update({
       where: { id: form.id },
-      data: { lastDigestAt: now },
+      data: {
+        lastDigestAt: submissions[submissions.length - 1].createdAt,
+      },
     })
     // AIM-029: one audit row per digest sent (form, submission count)
     // so a sent digest is visible in the audit log, not only in the
@@ -1264,6 +1324,8 @@ export async function sendDueDigests({
         event: "digest-sent",
         submissionCount: submissions.length,
         aiSummary,
+        truncated,
+        totalCount,
       },
     })
     sent++

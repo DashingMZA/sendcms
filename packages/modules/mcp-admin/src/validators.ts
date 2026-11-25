@@ -90,6 +90,26 @@ export const McpUsageSummaryQuerySchema = z.object({
 
 export type McpUsageSummaryQuery = z.infer<typeof McpUsageSummaryQuerySchema>
 
+// ─── Key list (ADM-064) ────────────────────────────────────────────
+
+// Filters for the admin keys list: search (key name / owner name /
+// owner email), owner, scope, revoked/active. `revoked` arrives as
+// a query string ("true"/"false") and coerces to boolean.
+export const McpKeysListQuerySchema = McpPaginationQuerySchema.extend({
+  search: z.string().trim().min(1).max(200).optional(),
+  userId: z.string().trim().min(1).optional(),
+  scope: z.enum(["READ", "FULL"]).optional(),
+  revoked: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.enum(["true", "false"]))
+    .transform((v) => v === "true")
+    .optional(),
+})
+
+export type McpKeysListQuery = z.infer<typeof McpKeysListQuerySchema>
+
 // ─── Key revocation ───────────────────────────────────────────────────
 
 // `reason` is required — revoking a customer's key is a sensitive

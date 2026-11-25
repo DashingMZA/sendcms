@@ -52,6 +52,11 @@ type Props = {
 // pick a payment method (only providers enabled for that country),
 // then continue to the provider's hosted checkout. Free plans need
 // no payment and show a note instead of a button.
+//
+// BIL-121 (Wave 8): when the country was geo-detected, the select
+// is READ-ONLY — the server enforces the detected country, so
+// letting the customer pick another one would only produce a 422.
+// The manual select stays only when detection returned null.
 export function CheckoutManager({
   locale,
   detectedCountry,
@@ -187,7 +192,11 @@ export function CheckoutManager({
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="checkout-country">{t("countryLabel")}</Label>
-                <Select value={country} onValueChange={setCountry}>
+                <Select
+                  value={country}
+                  onValueChange={setCountry}
+                  disabled={detectedCountry !== null}
+                >
                   <SelectTrigger id="checkout-country">
                     <SelectValue placeholder={t("countryLabel")} />
                   </SelectTrigger>
@@ -200,7 +209,9 @@ export function CheckoutManager({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {t("countriesHint")}
+                  {detectedCountry !== null
+                    ? t("countryDetectedHint")
+                    : t("countriesHint")}
                 </p>
               </div>
             </CardContent>

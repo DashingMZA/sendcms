@@ -88,10 +88,13 @@ function rateWhereMatches(
       value !== null &&
       "lt" in (value as Record<string, unknown>)
     ) {
-      if (
-        typeof current !== "number" ||
-        current >= (value as { lt: number }).lt
-      ) {
+      // Counts (numbers) and window starts (Dates) both use lt —
+      // the reset is forward-only (SRC-310), so a Date lt is the
+      // rollover check.
+      const bound = (value as { lt: number | Date }).lt
+      if (current instanceof Date && bound instanceof Date) {
+        if (current.getTime() >= bound.getTime()) return false
+      } else if (typeof current !== "number" || current >= (bound as number)) {
         return false
       }
     } else if (

@@ -214,6 +214,12 @@ enum BillingInterval {
   ONE_TIME
 }
 
+enum OneTimePurchaseStatus {
+  ACTIVE
+  REFUNDED
+  EXPIRED
+}
+
 enum SubscriptionStatus {
   ACTIVE
   TRIALING
@@ -229,6 +235,15 @@ enum SubscriptionEventType {
   CANCELED
   EXPIRED
   REACTIVATED
+  // Phase 16, Wave 8 (Stream A): a cancel scheduled for the end of
+  // the current period (DB-045 — the flag alone was invisible in
+  // history), a failed renewal payment (BIL-002/BIL-006/BIL-047 —
+  // the timeline record for a PAST_DUE transition), and a refund
+  // (BIL-081 — a partial refund keeps the subscription but must
+  // still surface in the admin timeline).
+  CANCEL_SCHEDULED
+  PAYMENT_FAILED
+  REFUNDED
 }
 
 // What a UsageLedger row counts. One meter per resource family; the
@@ -334,6 +349,12 @@ model User {
   // two in sync. Stored so a language switch (en -> ur) survives across
   // browsers and sessions; the browser cookie is the fast path.
   locale        String?
+  // Phase 16, Wave 8 (BIL-017): the Stripe Customer id for this
+  // user, created on first Stripe checkout and reused afterwards —
+  // one customer per user (no new customer per purchase), and the
+  // id is what the Billing Portal needs. Null until the first
+  // Stripe checkout.
+  stripeCustomerId String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -358,6 +379,9 @@ model User {
   adminNotesWritten AdminNote[] @relation("AdminNotesWritten")
   // Admin Control Plane (Phase 4) — plans, subscriptions, usage.
   subscriptions         Subscription[]
+  // Phase 16, Wave 8 (BIL-003): one-time purchases, kept separate
+  // from subscriptions (see OneTimePurchase below).
+  oneTimePurchases      OneTimePurchase[]
   subscriptionEvents    SubscriptionEvent[] @relation("SubscriptionEventsByAdmin")
   planVersionsCreated   PlanVersion[] @relation("PlanVersionsCreatedBy")
   usageLedger           UsageLedger[]
@@ -367,9 +391,16 @@ model User {
   aiKeys                UserAiKey[]
   aiUsageRecords        AiUsageRecord[]
   aiSettings            UserAiSettings?
+  // Phase 16, Wave 8 (Stream C, AIM-028) — interactive AI daily
+  // budget units (suggest-fields / draft-reply / key-test).
+  aiDailyOwnerUsage     AiDailyOwnerUsage[]
   // Phase 16, Wave 6 (BIL-092 completion): webhook/billing events
   // attributed to this user — the customer payment-history view.
   billingEvents         BillingEvent[] @relation("BillingEventUser")
+  // Phase 16, Wave 8 (BIL-028): checkout attempts (see
+  // CheckoutAttempt below) — the support link between a user and
+  // a Stripe session / PayPal order id.
+  checkoutAttempts      CheckoutAttempt[]
   // Admin Control Plane (Phase 6) — MCP per-user controls + usage.
   mcpSettings           McpUserSettings?
   mcpUsageRecords       McpUsageRecord[]
@@ -919,6 +950,29 @@ model AiDailyUsage {
   @@index([date])
 }
 
+// Phase 16, Wave 8 (Stream C) — AIM-028: the interactive AI paths
+// (suggest-fields, draft-reply, key-test) have no form to count
+// against, so their daily-budget units live here, one row per owner
+// per day. The owner's budget is the SUM of this row and their
+// AiDailyUsage rows for the day (worker rescore counts per form);
+// both claims run under the same advisory lock, so the two paths
+// cannot both spend the last unit. Created lazily on the owner's
+// first interactive AI call of the day.
+model AiDailyOwnerUsage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The day this row counts, as a DATE (UTC midnight). One row per
+  // owner per day.
+  date   DateTime @db.Date
+  calls  Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+}
+
 // ─── Plans, subscriptions & usage (Admin Control Plane, Phase 4) ─────────────
 // Versioned plans: a Plan is the stable identity (slug); a PlanVersion is
 // one immutable snapshot of its price + entitlements. Editing a plan
@@ -949,6 +1003,7 @@ model Plan {
 
   versions      PlanVersion[] @relation("PlanVersions")
   subscriptions Subscription[]
+  oneTimePurchases OneTimePurchase[]
 
   // Phase 16 (DB-038): @@index([status]) dropped — a strict prefix of
   // [status, kind] below.
@@ -967,6 +1022,12 @@ model Plan {
 // increments per plan (1, 2, 3…). A DRAFT version is editable only by
 // creating a replacement draft — a PUBLISHED version is never updated
 // in place; publishing a newer version SUPERSEDES the previous one.
+// Enforced in the DB, not just by convention (DB-001, owner decision
+// 2026-11-24): the `prevent_published_plan_version_terms_change`
+// BEFORE UPDATE trigger (migration 20261125*_wave8a_billing_backstops)
+// rejects changes to priceAmount / priceCurrency / billingInterval /
+// trialDays / entitlements while OLD.status is PUBLISHED or SUPERSEDED;
+// status-only transitions (publish / supersede / archive) still pass.
 // `entitlements` is Json validated by Zod (PlanEntitlementsSchema in
 // @sendcms/plans) at the service boundary — never unchecked JSON.
 model PlanVersion {
@@ -976,6 +1037,13 @@ model PlanVersion {
   version        Int
   status         PlanVersionStatus @default(DRAFT)
   // Price in minor units (cents). Null = free.
+  // Phase 16, Wave 8 (DB-015): the format is enforced by a CHECK in
+  // migration 20261125091719_wave8b_billing_reconciliation
+  // (priceCurrency ~ '^[A-Z]{3}$') — Prisma cannot express a CHECK
+  // in schema, so the constraint lives in that migration (same
+  // precedent as the single-platform-owner partial index, DB-020).
+  // Drift check: `prisma migrate diff --from-migrations
+  // --to-schema` is expected to report exactly this CHECK as drift.
   priceAmount    Int?
   priceCurrency  String            @default("USD")
   billingInterval BillingInterval  @default(MONTHLY)
@@ -986,11 +1054,22 @@ model PlanVersion {
   publishedAt    DateTime?
   createdById    String?
   createdBy      User?             @relation("PlanVersionsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  // SRC-222: provider catalog objects cached per plan version, so a
+  // checkout reuses the Stripe Price / PayPal product + plan /
+  // Polar product instead of minting throwaway objects on every
+  // click. Null = not cached yet; the billing service persists the
+  // id after the first checkout that creates it.
+  stripePriceId   String?
+  paypalProductId String?
+  paypalPlanId    String?
+  polarProductId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   subscriptions      Subscription[]
+  oneTimePurchases  OneTimePurchase[]
+  checkoutAttempts  CheckoutAttempt[]
   currentForPlans    Plan[] @relation("PlanCurrentVersion")
   fromEvents         SubscriptionEvent[] @relation("SubscriptionEventFromVersion")
   toEvents           SubscriptionEvent[] @relation("SubscriptionEventToVersion")
@@ -1008,7 +1087,12 @@ model PlanVersion {
 // (planVersionId) changes ONLY via an admin-approved migration, recorded
 // in SubscriptionEvent. One ACTIVE subscription per user is enforced in
 // the service (transaction: cancel the old one before creating the new
-// one) — a DB partial unique index is not expressible in Prisma schema.
+// one) AND by the DB partial unique index
+// "Subscription_single_active_idx" (migration
+// 20261125*_wave8a_billing_backstops, DB-021/DB-009) — Prisma cannot
+// express a partial index in schema, so the index lives in that
+// hand-written migration (same precedent as the single-platform-owner
+// index, DB-020).
 model Subscription {
   id                 String             @id @default(cuid())
   userId             String
@@ -1032,10 +1116,22 @@ model Subscription {
 
   events SubscriptionEvent[]
 
+  // Phase 16, Wave 8 (BIL-003): one-time purchases linked to the
+  // subscription row that carries their entitlement window.
+  oneTimePurchases OneTimePurchase[]
+
   @@index([userId, status])
   @@index([planId])
   @@index([planVersionId])
   @@index([status, currentPeriodEnd])
+  // Phase 16, Wave 8 (DB-002/DB-024): the provider's subscription id
+  // is the key webhooks use to find the row — at most one
+  // subscription per (provider, providerSubscriptionId). Nullable
+  // columns do not collide in Postgres, so admin-assigned rows with
+  // NULL are unaffected. This is the DB backstop for the
+  // activateSubscriptionFromCheckout idempotency check (DB-024) and
+  // for unambiguous webhook resolution (DB-002).
+  @@unique([provider, providerSubscriptionId])
   // Phase 16 (DB-013): the webhook lookup filters
   // providerSubscriptionId + status IN (ACTIVE, TRIALING) ordered by
   // createdAt DESC — the bare [providerSubscriptionId] index cannot
@@ -1044,6 +1140,53 @@ model Subscription {
   @@index([providerSubscriptionId, status, createdAt])
   // Phase 16 (DB-038): @@index([userId]) dropped — a strict prefix of
   // [userId, status] above.
+}
+
+// ─── One-time purchases (Phase 16, Wave 8 — BIL-003, owner decision
+// 2026-11-25) ─────────────────────────────────────────────────────────
+// A one-time (ONE_TIME / CUSTOM) plan purchase is NOT a perpetual
+// subscription: it grants access for a FINITE window (accessStart →
+// accessEnd, default one year from purchase when the provider gives
+// no end date — see ONE_TIME_ACCESS_DAYS in @sendcms/plans) and is
+// recorded as its own row, separate from the Subscription row that
+// carries the entitlements for the window. There is deliberately NO
+// lifetime flag. `providerReference` is the refund-matchable payment
+// reference (Stripe payment_intent, PayPal capture id, Polar order
+// id, Freemius license id) — NOT the checkout session id, which no
+// provider event ever carries again; `checkoutId` keeps the session /
+// checkout id for support lookups. A full refund flips status to
+// REFUNDED and cancels the linked subscription; the expiry job flips
+// ACTIVE rows past accessEnd to EXPIRED.
+model OneTimePurchase {
+  id               String                @id @default(cuid())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId           String
+  plan             Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planVersionId    String
+  planVersion      PlanVersion           @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  subscriptionId   String?
+  subscription     Subscription?         @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  provider         BillingProvider
+  // Refund-matchable payment reference (see header comment).
+  providerReference String
+  // Checkout session / order id the purchase came from, when known.
+  checkoutId       String?
+  priceAmount      Int?
+  priceCurrency    String                @default("USD")
+  accessStart      DateTime
+  accessEnd        DateTime
+  status           OneTimePurchaseStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerReference])
+  @@index([userId, status])
+  @@index([planId])
+  @@index([planVersionId])
+  @@index([subscriptionId])
+  @@index([status, accessEnd])
 }
 
 // Append-only history of every version transition on a subscription.
@@ -1061,11 +1204,17 @@ model SubscriptionEvent {
   adminId           String?
   admin             User?                 @relation("SubscriptionEventsByAdmin", fields: [adminId], references: [id], onDelete: SetNull)
   reason            String?
+  // Phase 16, Wave 8 (DB-010): the provider webhook event id that
+  // caused this event, when the event came from a webhook. Renewal
+  // application checks it before extending, so a provider retry
+  // after a crash mid-apply cannot extend the period twice.
+  providerEventId String?
 
   createdAt DateTime @default(now())
 
   @@index([subscriptionId, createdAt])
   @@index([subscriptionId, type, createdAt])
+  @@index([providerEventId])
   // Phase 16 (DB-012): every FK gets an index — the version-transition
   // and admin lookups. Single-column indexes: no query filters
   // from+to together, so no pair composite is warranted.
@@ -1165,6 +1314,12 @@ model UserAiKey {
   keyVersion       Int             @default(1)
   // Which master key version encrypted this row's DEK.
   masterKeyVersion Int             @default(1)
+  // AIM-003: consecutive provider-AUTH failures at call time
+  // (bad/revoked key). Reset to 0 on any successful call with this
+  // key; at AI_BYOK_AUTO_DISABLE_AFTER (default 3) the key is
+  // auto-disabled (isEnabled=false) so it stops burning failed
+  // calls. Transient failures (429/5xx/timeout) never increment it.
+  authFailureCount Int             @default(0)
   lastTestedAt     DateTime?
   lastTestStatus   AiKeyTestStatus @default(UNTESTED)
 
@@ -1267,6 +1422,15 @@ enum McpUsageStatus {
 // change); the MCP switch flips from the admin UI with no restart.
 // It never touches form submission, the inbox, or any non-MCP
 // service. Changes are audited via AuditLog (MCP_SETTINGS).
+// The singleton is enforced by the DB, not just by convention:
+// migration 2026112509*_wave8c_stream_c adds CHECK (id =
+// 'platform'), so a second row cannot exist, and the hot read path
+// uses findUnique({ id: "platform" }) — never a bare findFirst
+// (DB-018 / DB-041 / SRC-323). A MISSING row means "enabled"
+// (documented default): the live platform has no row until an admin
+// first opens the MCP page, and flipping the default to disabled
+// would silently kill MCP. getMcpSettings creates the row on first
+// admin read.
 model McpSettings {
   id            String   @id @default(cuid())
   globalEnabled Boolean  @default(true)
@@ -1314,9 +1478,21 @@ model McpUsageRecord {
   apiKey     ApiKey         @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   userId     String
   user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The tool name — a closed set of 19 (packages/mcp/src/tools/
+  // names.ts, MCP_TOOL_NAMES). Enforced by a CHECK in migration
+  // 2026112509*_wave8c_stream_c (DB-018); the drift-guard test in
+  // tests/wave8-stream-c.test.ts asserts the CHECK list and the
+  // registry stay identical.
   tool       String
   status     McpUsageStatus
   durationMs Int?
+  // Phase 16, Wave 8 (DB-003): request-scoped idempotency key
+  // (supplied by the MCP endpoint per call). A retried call with
+  // the same key writes one row, never two — the write path catches
+  // P2002 and returns the existing row, mirroring `recordUsage`.
+  // Nullable: rows written before this column existed carry NULL
+  // (Postgres treats NULLs as distinct, so they never collide).
+  idempotencyKey String? @unique
 
   createdAt DateTime @default(now())
 
@@ -1454,6 +1630,35 @@ enum BillingProvider {
   POLAR
 }
 
+// Phase 16, Wave 8 (DB-015): the closed set of normalized webhook
+// kinds — what the billing handler switches over. The raw provider
+// event type stays in BillingEvent.eventType (open-ended per
+// provider); `kind` is the queryable, typo-proof side. Must stay in
+// sync with `billingEventKindFor` in
+// packages/modules/billing/src/providers/types.ts (the mapping is
+// unit-tested; a new kind needs the enum value AND the mapping).
+enum BillingEventKind {
+  CHECKOUT_COMPLETED
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  SUBSCRIPTION_CANCELED
+  SUBSCRIPTION_UPDATED
+  PAYMENT_REFUNDED
+  UNMAPPED_PAYMENT
+  IGNORED
+}
+
+// Phase 16, Wave 8 (BIL-028): a checkout attempt's lifecycle.
+// CREATED = recorded before the provider call (the provider
+// checkout id is null until the call returns); COMPLETED = the
+// provider returned a checkout URL; FAILED = the provider call
+// threw (the row is still the support record of the attempt).
+enum CheckoutAttemptStatus {
+  CREATED
+  COMPLETED
+  FAILED
+}
+
 // Support ticket lifecycle: OPEN → IN_PROGRESS → WAITING_ON_CUSTOMER →
 // RESOLVED → CLOSED. Reopening returns a ticket to OPEN. Every
 // transition is audited.
@@ -1506,6 +1711,11 @@ model BillingEvent {
   provider        BillingProvider
   providerEventId String
   eventType       String
+  // Phase 16, Wave 8 (DB-015): the normalized kind (see
+  // BillingEventKind) — the closed set the handler switches over.
+  // Null on rows written before this column existed; every new row
+  // sets it (see billingEventKindFor).
+  kind            BillingEventKind?
   userId          String?
   user            User?           @relation("BillingEventUser", fields: [userId], references: [id], onDelete: SetNull)
   processedAt     DateTime?
@@ -1518,6 +1728,39 @@ model BillingEvent {
   @@unique([provider, providerEventId])
   @@index([provider, createdAt])
   @@index([userId, createdAt])
+  @@index([kind, createdAt])
+}
+
+// ─── Checkout attempts (Phase 16, Wave 8 — BIL-028) ──────────────────────
+// One row per checkout creation: the support link between a user, a
+// plan version, and a Stripe session id / PayPal order id. Without
+// it, "I paid but nothing happened" has no record to look up — the
+// provider checkout id used to be computed and thrown away. The row
+// is written BEFORE the provider call (attemptId is the BIL-014
+// idempotency key the provider calls are keyed on) and updated with
+// the provider checkout id after it returns; a failed provider call
+// leaves the row FAILED instead of deleting it. Rows are never
+// physically deleted. `userId` is SetNull on user erasure (the
+// attempt history survives; the link does not).
+model CheckoutAttempt {
+  id                 String                @id @default(cuid())
+  attemptId          String                @unique
+  userId             String?
+  user               User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  planVersionId      String
+  planVersion        PlanVersion           @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  provider           BillingProvider
+  providerCheckoutId String?
+  priceAmount        Int?
+  priceCurrency      String                @default("USD")
+  status             CheckoutAttemptStatus @default(CREATED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([planVersionId, createdAt])
+  @@index([provider, providerCheckoutId])
 }
 
 // A support thread. Created by a signed-in user from /dashboard/support

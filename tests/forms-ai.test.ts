@@ -5,7 +5,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockDb = vi.hoisted(() => ({
-  form: { findFirst: vi.fn() },
+  form: { findFirst: vi.fn(), findMany: vi.fn(async () => []) },
+  // SRC-202 (Stream A): resolveAiModelForUser reads the settings
+  // store first and fails closed when it is unreadable — the mock
+  // admits an ACTIVE user with no settings row (PLATFORM default)
+  // and no stored keys.
+  user: {
+    findUnique: vi.fn(async () => ({ id: "user-1", status: "ACTIVE" })),
+  },
+  userAiSettings: { findUnique: vi.fn(async () => null) },
+  userAiKey: { findMany: vi.fn(async () => []) },
+  // AIM-028: the daily-budget claim runs under one advisory lock
+  // and increments the owner's row; the fake admits every claim.
+  aiDailyUsage: {
+    findMany: vi.fn(async () => []),
+    upsert: vi.fn(async () => ({ calls: 1 })),
+  },
+  aiDailyOwnerUsage: {
+    findMany: vi.fn(async () => []),
+    upsert: vi.fn(async () => ({ calls: 1 })),
+  },
+  $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn(mockDb)
+  ),
+  $executeRaw: vi.fn(async () => undefined),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
@@ -87,9 +110,13 @@ describe("suggestFieldsForForm", () => {
   })
 
   it("refuses with 503 when no provider is configured", async () => {
-    mockAi.isAiConfigured.mockReturnValue(false)
+    // SRC-202: the resolver derives availability from the actual
+    // env keys, not the isAiConfigured flag — an env with no keys
+    // is the "no provider configured" case now.
     await expect(
-      suggestFieldsForForm("user-1", "form-1", "ask for the company", AI_ENV)
+      suggestFieldsForForm("user-1", "form-1", "ask for the company", {
+        apiKeys: {},
+      })
     ).rejects.toMatchObject({ status: 503 })
     expect(mockAi.suggestFields).not.toHaveBeenCalled()
   })

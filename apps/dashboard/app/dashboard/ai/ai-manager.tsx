@@ -26,6 +26,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -171,6 +172,10 @@ export function AiManager({
     provider: AiProviderName
     kind: "server" | "browser"
   } | null>(null)
+  // DSH-301: a 503 from a server save is a platform-config problem,
+  // not the user's fault — keep a persistent notice up (the toast
+  // alone disappears) until a save succeeds.
+  const [storageUnavailable, setStorageUnavailable] = useState(false)
 
   // Browser-only keys live in localStorage — read after mount (never
   // during render, or hydration would mismatch).
@@ -206,20 +211,31 @@ export function AiManager({
     }
   }
 
-  /** The storage popup's "Both" choice: save encrypted on the server. */
-  async function saveToServer(action: PendingStorageAction) {
+  /** The storage popup's "Both" choice: save encrypted on the server.
+      AIM-025: the server enforces the provider-terms acknowledgement;
+      the popup only enables "Both" once the user checks it, and the
+      flag travels with the save. */
+  async function saveToServer(
+    action: PendingStorageAction,
+    termsAcknowledged: boolean
+  ) {
     try {
       await saveKey.mutateAsync({
         provider: action.provider,
         apiKey: action.apiKey,
         model: action.model.trim() || undefined,
+        termsAcknowledged,
       })
       toast.success(t("keySaved"))
+      setStorageUnavailable(false)
       setPending(null)
       if (action.action === "test") {
         await runServerTest(action.provider)
       }
     } catch (err) {
+      if (err instanceof ApiClientError && err.status === 503) {
+        setStorageUnavailable(true)
+      }
       toast.error(
         err instanceof ApiClientError ? err.message : t("actionFailed")
       )
@@ -426,6 +442,15 @@ export function AiManager({
         </CardContent>
       </Card>
 
+      {storageUnavailable && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+        >
+          {t("storageUnavailableNotice")}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>{t("keysTitle")}</CardTitle>
@@ -541,10 +566,17 @@ function StoragePopup({
   pending: PendingStorageAction | null
   onClose: () => void
   onBrowserOnly: (action: PendingStorageAction) => void
-  onBoth: (action: PendingStorageAction) => Promise<void>
+  onBoth: (
+    action: PendingStorageAction,
+    termsAcknowledged: boolean
+  ) => Promise<void>
 }) {
   const { t } = useTranslation("ai")
   const [busy, setBusy] = useState(false)
+  // AIM-025: saving a key on the server sends submission content to
+  // the provider under its data-processing terms — the user must
+  // acknowledge that before "Both" is enabled.
+  const [termsAcknowledged, setTermsAcknowledged] = useState(false)
 
   if (!pending) return null
   // Narrowed once here: function declarations are hoisted, so TS
@@ -554,7 +586,7 @@ function StoragePopup({
   async function chooseBoth() {
     setBusy(true)
     try {
-      await onBoth(action)
+      await onBoth(action, termsAcknowledged)
     } finally {
       setBusy(false)
     }
@@ -590,14 +622,29 @@ function StoragePopup({
           <button
             type="button"
             onClick={chooseBoth}
-            disabled={busy}
-            className="rounded-lg border p-4 text-start hover:bg-accent"
+            disabled={busy || !termsAcknowledged}
+            className="rounded-lg border p-4 text-start hover:bg-accent disabled:opacity-50"
           >
             <span className="block text-sm font-semibold">{t("both")}</span>
             <span className="block text-sm text-muted-foreground">
               {t("bothDescription")}
             </span>
           </button>
+          <div className="flex items-start gap-2 rounded-lg border p-3">
+            <Checkbox
+              id="ai-terms-acknowledgement"
+              checked={termsAcknowledged}
+              onCheckedChange={(checked) =>
+                setTermsAcknowledged(checked === true)
+              }
+            />
+            <Label
+              htmlFor="ai-terms-acknowledgement"
+              className="text-sm font-normal"
+            >
+              {t("termsAcknowledgement")}
+            </Label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -688,6 +735,14 @@ function ProviderKeyCard({
                 ? t("testFailed")
                 : t("neverTested")}
           </p>
+          {/* AIM-003: a key the server auto-disabled after repeated
+              provider rejections says so plainly, with the fix — the
+              user re-enables it after checking the key. */}
+          {!serverKey.isEnabled && serverKey.authFailureCount >= 3 && (
+            <p role="alert" className="text-sm text-destructive">
+              {t("keyAutoDisabled")}
+            </p>
+          )}
           {testResult && (
             <p
               className={

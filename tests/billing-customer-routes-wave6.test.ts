@@ -25,8 +25,13 @@ vi.mock("@sendcms/plans", () => ({
 }))
 
 const mockListMyBillingEvents = vi.hoisted(() => vi.fn())
+const mockCancelSubscriptionAtProvider = vi.hoisted(() => vi.fn())
 vi.mock("@sendcms/billing", () => ({
   listMyBillingEvents: mockListMyBillingEvents,
+  // DSH-402 / BIL-001 (Wave 8): the cancel route passes the
+  // provider-cancel dispatcher into cancelMySubscription, so the
+  // mock must export it or Vitest throws on the missing export.
+  cancelSubscriptionAtProvider: mockCancelSubscriptionAtProvider,
 }))
 
 const mockGetMyAiUsage = vi.hoisted(() => vi.fn())
@@ -136,9 +141,13 @@ describe("POST /api/v1/billing/subscription/cancel (BIL-122 / BIL-091)", () => {
       })
     )
     expect(res.status).toBe(200)
-    expect(mockCancelMySubscription).toHaveBeenCalledWith("user-1", {
-      cancelAtPeriodEnd: true,
-    })
+    expect(mockCancelMySubscription).toHaveBeenCalledWith(
+      "user-1",
+      {
+        cancelAtPeriodEnd: true,
+      },
+      { cancelAtProvider: mockCancelSubscriptionAtProvider }
+    )
   })
 
   it("defaults to an immediate cancel with an empty body", async () => {
@@ -146,9 +155,13 @@ describe("POST /api/v1/billing/subscription/cancel (BIL-122 / BIL-091)", () => {
       post(`${BASE}/api/v1/billing/subscription/cancel`, {})
     )
     expect(res.status).toBe(200)
-    expect(mockCancelMySubscription).toHaveBeenCalledWith("user-1", {
-      cancelAtPeriodEnd: false,
-    })
+    expect(mockCancelMySubscription).toHaveBeenCalledWith(
+      "user-1",
+      {
+        cancelAtPeriodEnd: false,
+      },
+      { cancelAtProvider: mockCancelSubscriptionAtProvider }
+    )
   })
 
   it("401s when unauthenticated without calling the service", async () => {

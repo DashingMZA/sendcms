@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
+import { cancelSubscriptionAtProvider } from "@sendcms/billing"
 import { cancelMySubscription } from "@sendcms/plans"
 import { CancelSubscriptionSchema } from "@sendcms/plans/validators"
 import {
@@ -15,10 +16,11 @@ import {
 // cancels the caller's own latest subscription only; there is no id
 // in the request to aim at another user's row.
 //
-// LOCAL ONLY: this cancels the SendCMS row, not the provider
-// subscription — provider-side cancellation is Wave 8's work
-// (BIL-001 / BIL-082). A paid subscription canceled here keeps
-// billing at the provider until then; the dashboard says so.
+// DSH-402 / BIL-001 (Wave 8): the cancel reaches the PROVIDER —
+// `cancelSubscriptionAtProvider` is passed in, so a paid
+// subscription actually stops billing. A provider failure stops
+// the cancel (502) instead of silently canceling only the SendCMS
+// row.
 export async function POST(req: NextRequest) {
   try {
     const session = await auth()
@@ -28,7 +30,11 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return validationErrorResponse(parsed.error)
     }
-    return ok(await cancelMySubscription(session.user.id, parsed.data))
+    return ok(
+      await cancelMySubscription(session.user.id, parsed.data, {
+        cancelAtProvider: cancelSubscriptionAtProvider,
+      })
+    )
   } catch (err) {
     return handleApiError(err)
   }

@@ -148,7 +148,16 @@ export const PlanVersionCompareQuerySchema = z.object({
 
 const PlanPriceSchema = z.object({
   priceAmount: z.number().int().min(0).nullable().optional(),
-  priceCurrency: z.string().trim().length(3).optional(),
+  // DB-015: ISO 4217 alpha-3, uppercase — matches the
+  // PlanVersion_priceCurrency_format CHECK in migration
+  // 20261125091719_wave8b_billing_reconciliation. A lowercase or
+  // non-3-letter code is rejected here instead of at the DB.
+  priceCurrency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, "Currency must be an ISO 4217 alpha-3 code, e.g. USD")
+    .optional(),
   billingInterval: z
     .enum(["MONTHLY", "ANNUAL", "CUSTOM", "ONE_TIME"])
     .optional(),

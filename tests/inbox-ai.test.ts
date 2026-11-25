@@ -12,6 +12,25 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
   },
   submissionEvent: { create: vi.fn() },
+  // SRC-202 (Stream A): resolveAiModelForUser reads the settings
+  // store first and fails closed when it is unreadable.
+  user: {
+    findUnique: vi.fn(async () => ({ id: "user-1", status: "ACTIVE" })),
+  },
+  userAiSettings: { findUnique: vi.fn(async () => null) },
+  userAiKey: { findMany: vi.fn(async () => []) },
+  form: { findMany: vi.fn(async () => []) },
+  // AIM-028: the daily-budget claim runs under one advisory lock
+  // and increments the owner's row; the fake admits every claim.
+  aiDailyUsage: {
+    findMany: vi.fn(async () => []),
+    upsert: vi.fn(async () => ({ calls: 1 })),
+  },
+  aiDailyOwnerUsage: {
+    findMany: vi.fn(async () => []),
+    upsert: vi.fn(async () => ({ calls: 1 })),
+  },
+  $executeRaw: vi.fn(async () => undefined),
   // AIM-011: bulkUpdate runs inside a callback transaction (tx IS
   // mockDb in this file).
   $transaction: vi.fn(async (arg: unknown) => {
@@ -110,9 +129,11 @@ describe("draftReplyForSubmission", () => {
   })
 
   it("refuses with 503 when no provider is configured", async () => {
-    mockAi.isAiConfigured.mockReturnValue(false)
+    // SRC-202: the resolver derives availability from the actual
+    // env keys, not the isAiConfigured flag — an env with no keys
+    // is the "no provider configured" case now.
     await expect(
-      draftReplyForSubmission("user-1", "sub-1", AI_ENV)
+      draftReplyForSubmission("user-1", "sub-1", { apiKeys: {} })
     ).rejects.toMatchObject({
       status: 503,
     })

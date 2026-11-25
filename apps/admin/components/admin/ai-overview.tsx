@@ -119,7 +119,8 @@ export function AiOverview({ actorRole }: Props) {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   {t("successCalls")}: {total?.success ?? 0} ·{" "}
-                  {t("failedCalls")}: {total?.failed ?? 0}
+                  {t("failedCalls")}: {total?.failed ?? 0} · {t("retryCalls")}:{" "}
+                  {total?.retry ?? 0}
                 </p>
               )}
             </CardContent>

@@ -3,7 +3,17 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
-import { toAiCallUsage, type AiCallUsage } from "./provider"
+import {
+  getLanguageModelId,
+  toAiCallUsageWithCost,
+  type AiCallUsage,
+} from "./provider"
+import {
+  AI_MAX_OUTPUT_TOKENS,
+  AI_MAX_RETRIES,
+  AI_WORKER_TIMEOUT_MS,
+} from "./errors"
+import { AI_MAX_DIGEST_SNIPPET_CHARS, truncateAiInput } from "./limits"
 import { wrapUntrustedData } from "./untrusted"
 
 // AI inbox digest (Phase 12, Step 3). The model call only — the
@@ -92,25 +102,34 @@ export function getDigestIntervalHours(
     summary and highlights. Throws when the provider call fails — the
     caller decides whether to retry on the next poll or skip the form.
     `onUsage` (optional) receives the token usage the provider
-    reported, for attribution. */
+    reported, for attribution. Snippets are truncated to
+    AI_MAX_DIGEST_SNIPPET_CHARS inside this function (SRC-325), so a
+    caller that forgets to truncate cannot blow the token budget.
+    The call aborts after AI_WORKER_TIMEOUT_MS (SRC-311) with one
+    retry (AIM-023). `timeoutMs` is test-only. */
 export async function generateDigest({
   model,
   formName,
   submissions,
   onUsage,
+  timeoutMs = AI_WORKER_TIMEOUT_MS,
 }: {
   model: LanguageModel
   formName: string
   submissions: DigestSubmissionInput[]
   onUsage?: (usage: AiCallUsage | null) => void
+  timeoutMs?: number
 }): Promise<DigestSummary> {
   const lines = submissions.map((s, i) => {
     const from = s.senderName ?? s.senderEmail ?? "Unknown sender"
-    return `${i + 1}. ${from} (${s.receivedAt.toISOString()}): ${s.snippet}`
+    return `${i + 1}. ${from} (${s.receivedAt.toISOString()}): ${truncateAiInput(s.snippet, AI_MAX_DIGEST_SNIPPET_CHARS)}`
   })
   const { object, usage } = await generateObject({
     model,
     schema: DigestSummaryModelSchema,
+    abortSignal: AbortSignal.timeout(timeoutMs),
+    maxRetries: AI_MAX_RETRIES,
+    maxOutputTokens: AI_MAX_OUTPUT_TOKENS.digest,
     prompt: [
       "You are writing a short digest email for a website owner about the new messages on their contact form.",
       "Summarize what the new submissions are about in two or three sentences, then list up to 5 short highlights (a notable sender, a recurring theme, an urgent request).",
@@ -124,7 +143,7 @@ export async function generateDigest({
       ),
     ].join("\n"),
   })
-  onUsage?.(toAiCallUsage(usage))
+  onUsage?.(toAiCallUsageWithCost(getLanguageModelId(model), usage))
   // Validate at the boundary too: a malformed model reply must never
   // reach the email.
   return DigestSummarySchema.parse(object)

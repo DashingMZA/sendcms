@@ -6,8 +6,21 @@ import {
 } from "@polar-sh/sdk/2026-10"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
-import type { CheckoutArgs, CheckoutResult, VerifiedWebhook } from "./types"
-import { isRecurring, priceInMinorUnits } from "./types"
+import type {
+  CheckoutArgs,
+  CheckoutResult,
+  ProviderCancelArgs,
+  ProviderCancelOutcome,
+  ProviderUpdateOutcome,
+  VerifiedWebhook,
+} from "./types"
+import {
+  BILLING_PROVIDER_TIMEOUT_MS,
+  fallbackEventId,
+  isPolarCurrencySupported,
+  isRecurring,
+  priceInMinorUnits,
+} from "./types"
 
 const log = createLogger("billing:polar")
 
@@ -23,7 +36,14 @@ function getClient() {
   if (!accessToken) throw new ApiError("Polar is not configured", 422)
   const environment: Environment =
     process.env.POLAR_ENVIRONMENT === "production" ? "production" : "sandbox"
-  return createPolar({ accessToken, environment })
+  // SRC-233: explicit timeout — the SDK default used to run
+  // unconfigured. Polar's `timeout` is in SECONDS (unlike Stripe's
+  // milliseconds).
+  return createPolar({
+    accessToken,
+    environment,
+    timeout: BILLING_PROVIDER_TIMEOUT_MS / 1000,
+  })
 }
 
 export async function createPolarCheckoutSession(
@@ -31,63 +51,179 @@ export async function createPolarCheckoutSession(
 ): Promise<CheckoutResult> {
   const polar = getClient()
   const { version, customer } = args
+  // BIL-056: the currency is validated against Polar's
+  // PresentmentCurrency set here — the old unchecked cast let an
+  // unsupported code (e.g. XXX) through to the Polar API call,
+  // surfacing as a generic 500. Now it is a clear 422.
+  if (!isPolarCurrencySupported(version.priceCurrency)) {
+    throw new ApiError(
+      `Currency ${version.priceCurrency.toUpperCase()} is not supported by Polar.`,
+      422
+    )
+  }
   const currency =
     version.priceCurrency.toLowerCase() as models.PresentmentCurrency
   const recurring = isRecurring(version)
   const interval: models.RecurringInterval =
     version.billingInterval === "ANNUAL" ? "year" : "month"
 
-  const product = await polar.products.create(
-    recurring
-      ? {
-          name: `${version.planName} plan`,
-          recurring_interval: interval,
-          recurring_interval_count: 1,
-          ...(version.trialDays > 0
-            ? {
-                trial_interval: "day" as models.TrialInterval,
-                trial_interval_count: version.trialDays,
-              }
-            : {}),
-          prices: [
-            {
-              amount_type: "fixed",
-              price_amount: priceInMinorUnits(version),
-              price_currency: currency,
-            },
-          ],
-        }
-      : {
-          name: `${version.planName} plan`,
-          prices: [
-            {
-              amount_type: "fixed",
-              price_amount: priceInMinorUnits(version),
-              price_currency: currency,
-            },
-          ],
-        }
-  )
+  // SRC-222: reuse the cached product for this plan version when
+  // one exists — every checkout used to mint a new product,
+  // including abandoned ones. A fresh product is created once and
+  // its id is returned (catalog) for the service to persist.
+  let productId = version.polarProductId ?? null
+  const catalog: NonNullable<CheckoutResult["catalog"]> = {}
+  if (!productId) {
+    const product = await polar.products.create(
+      recurring
+        ? {
+            name: `${version.planName} plan`,
+            recurring_interval: interval,
+            recurring_interval_count: 1,
+            ...(version.trialDays > 0
+              ? {
+                  trial_interval: "day" as models.TrialInterval,
+                  trial_interval_count: version.trialDays,
+                }
+              : {}),
+            prices: [
+              {
+                amount_type: "fixed",
+                price_amount: priceInMinorUnits(version),
+                price_currency: currency,
+              },
+            ],
+          }
+        : {
+            name: `${version.planName} plan`,
+            prices: [
+              {
+                amount_type: "fixed",
+                price_amount: priceInMinorUnits(version),
+                price_currency: currency,
+              },
+            ],
+          }
+    )
+    productId = product.id
+    catalog.polarProductId = product.id
+  }
 
   const checkout = await polar.checkouts.create({
-    products: [product.id],
+    products: [productId],
     customer_email: customer.email,
     external_customer_id: customer.userId,
     success_url: args.successUrl,
+    // BIL-048: the service-built cancel URL is the checkout's
+    // return URL — a customer who abandons the hosted checkout
+    // gets a SendCMS return path instead of only the browser
+    // back button.
+    return_url: args.cancelUrl,
+    // BIL-057: the customer's IP helps Polar's currency/tax
+    // detection on server-side checkouts (Polar cannot see it
+    // otherwise). Omitted when the route could not determine it.
+    ...(args.customerIpAddress
+      ? { customer_ip_address: args.customerIpAddress }
+      : {}),
     metadata: { user_id: customer.userId, plan_version_id: version.id },
   })
   if (!checkout.url) {
     throw new ApiError("Polar did not return a checkout URL", 502)
   }
-  return { checkoutUrl: checkout.url, providerCheckoutId: checkout.id }
+  return {
+    checkoutUrl: checkout.url,
+    providerCheckoutId: checkout.id,
+    ...(Object.keys(catalog).length > 0 ? { catalog } : {}),
+  }
 }
 
-// Verify the Polar webhook signature (validateEvent throws on a bad
-// signature) and translate the event. Activation comes from
-// `checkout.updated` with a confirmed/succeeded status: it carries
-// the checkout metadata (user + plan version) and the subscription
-// id. `subscription.created` is intentionally ignored — it carries
-// no SendCMS metadata of its own.
+// BIL-001 / BIL-082: cancel at the provider. Immediate = revoke;
+// at-period-end = update cancel_at_period_end (Polar supports it
+// natively). A provider failure is a 502, never a silent local-only
+// cancel.
+export async function cancelPolarSubscription(
+  args: ProviderCancelArgs
+): Promise<ProviderCancelOutcome> {
+  const polar = getClient()
+  try {
+    if (args.cancelAtPeriodEnd) {
+      await polar.subscriptions.update(args.providerSubscriptionId, {
+        cancel_at_period_end: true,
+      })
+      return { canceledAtProvider: true, immediate: false }
+    }
+    await polar.subscriptions.revoke(args.providerSubscriptionId)
+    return { canceledAtProvider: true, immediate: true }
+  } catch (error) {
+    log.warn("Polar subscription cancel failed", {
+      subscriptionId: args.providerSubscriptionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw new ApiError(
+      "The payment provider could not cancel the subscription. Please try again.",
+      502
+    )
+  }
+}
+
+// BIL-089: move a Polar subscription onto a new plan version's
+// product (with proration), so a migration changes what the
+// customer is actually billed. A fresh product is created from the
+// target version, exactly as checkout does, then the subscription
+// is updated onto it.
+export async function updatePolarSubscriptionPlan(
+  providerSubscriptionId: string,
+  args: CheckoutArgs
+): Promise<ProviderUpdateOutcome> {
+  const polar = getClient()
+  const { version } = args
+  const currency =
+    version.priceCurrency.toLowerCase() as models.PresentmentCurrency
+  const recurring = isRecurring(version)
+  const interval: models.RecurringInterval =
+    version.billingInterval === "ANNUAL" ? "year" : "month"
+  try {
+    const product = await polar.products.create(
+      recurring
+        ? {
+            name: `${version.planName} plan`,
+            recurring_interval: interval,
+            recurring_interval_count: 1,
+            prices: [
+              {
+                amount_type: "fixed",
+                price_amount: priceInMinorUnits(version),
+                price_currency: currency,
+              },
+            ],
+          }
+        : {
+            name: `${version.planName} plan`,
+            prices: [
+              {
+                amount_type: "fixed",
+                price_amount: priceInMinorUnits(version),
+                price_currency: currency,
+              },
+            ],
+          }
+    )
+    await polar.subscriptions.update(providerSubscriptionId, {
+      product_id: product.id,
+      proration_behavior: "invoice",
+    })
+    return { updated: true }
+  } catch (error) {
+    log.warn("Polar subscription plan update failed", {
+      subscriptionId: providerSubscriptionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw new ApiError(
+      "The payment provider could not change the subscription plan. Please try again.",
+      502
+    )
+  }
+}
 //
 // BIL-040: `webhooks.validateEvent` is ASYNC (SDK 1.3.2 returns
 // `Promise<WebhookPayload>` — WebCrypto). This function is async and
@@ -103,7 +239,10 @@ export async function verifyPolarWebhook(
   headers: Record<string, string>
 ): Promise<VerifiedWebhook> {
   const secret = process.env.POLAR_WEBHOOK_SECRET
-  if (!secret) throw new ApiError("Polar is not configured", 422)
+  // BIL-101: 503, not 422 — a missing webhook secret is a
+  // server-side misconfiguration Polar must retry, not a
+  // permanent failure.
+  if (!secret) throw new ApiError("Polar is not configured", 503)
   let payload: Awaited<ReturnType<typeof webhooks.validateEvent>>
   try {
     payload = await webhooks.validateEvent(rawBody, headers, secret)
@@ -116,10 +255,15 @@ export async function verifyPolarWebhook(
   const headerId = headers["webhook-id"]?.trim() || null
   const payloadId =
     "id" in payload && typeof payload.id === "string" ? payload.id : null
-  const eventId = headerId ?? payloadId ?? `${payload.type}:${Date.now()}`
+  // SRC-212: the fallback is a content hash, not Date.now() — two
+  // distinct no-id deliveries in the same millisecond no longer
+  // collide and drop each other as duplicates, while a redelivery
+  // of the same payload dedupes to the same id.
+  const eventId =
+    headerId ?? payloadId ?? fallbackEventId("polar", payload.type, rawBody)
   if (!headerId && !payloadId) {
     log.warn(
-      "Polar webhook without a webhook-id header; event id is unstable",
+      "Polar webhook without a webhook-id header; event id is a content hash",
       {
         eventType: payload.type,
       }
@@ -167,31 +311,167 @@ export async function verifyPolarWebhook(
         },
       }
     }
+    // BIL-042 (owner decision 2026-11-25): GRANT via order id. A
+    // one-time checkout completes WITHOUT a subscription
+    // (subscription_id is null) — the paid order still grants the
+    // plan, as a one-time purchase with a finite access window.
+    // The order id is the refund-matchable reference.
+    if (
+      (status === "confirmed" || status === "succeeded") &&
+      !subscriptionId &&
+      userId &&
+      planVersionId
+    ) {
+      const orderId =
+        typeof data.order_id === "string"
+          ? data.order_id
+          : typeof data.id === "string"
+            ? data.id
+            : null
+      if (!orderId) return ignored
+      return {
+        eventId,
+        eventType: payload.type,
+        event: {
+          kind: "checkout-completed",
+          userId,
+          planVersionId,
+          providerSubscriptionId: orderId,
+          periodEnd: null,
+          isOneTime: true,
+          providerReference: orderId,
+          checkoutId: typeof data.id === "string" ? data.id : orderId,
+        },
+      }
+    }
+    if (status === "confirmed" || status === "succeeded") {
+      // BIL-100: a PAID checkout that cannot be resolved (a
+      // subscription id with no metadata, or no metadata at all)
+      // is not "ignored" — the customer paid and nothing can
+      // activate them. Unmapped-payment: recorded, left
+      // unprocessed, visible in the admin reconciliation queue.
+      const checkoutId = typeof data.id === "string" ? data.id : null
+      return {
+        eventId,
+        eventType: payload.type,
+        event: {
+          kind: "unmapped-payment",
+          providerCheckoutId: checkoutId,
+          reason: "Polar checkout has no subscription id or SendCMS metadata",
+        },
+      }
+    }
     return ignored
   }
 
   if (payload.type === "order.paid") {
     const subscriptionId =
       typeof data.subscription_id === "string" ? data.subscription_id : null
+    if (subscriptionId) {
+      return {
+        eventId,
+        eventType: payload.type,
+        event: {
+          kind: "payment-succeeded",
+          providerSubscriptionId: subscriptionId,
+          periodEnd: null,
+        },
+      }
+    }
+    // BIL-042: a one-time order paid — no subscription id, but the
+    // order carries the checkout metadata, so it grants like a
+    // one-time checkout.updated.
+    const metadata =
+      data.metadata && typeof data.metadata === "object"
+        ? (data.metadata as Record<string, unknown>)
+        : null
+    const userId =
+      metadata && typeof metadata.user_id === "string" ? metadata.user_id : null
+    const planVersionId =
+      metadata && typeof metadata.plan_version_id === "string"
+        ? metadata.plan_version_id
+        : null
+    const orderId = typeof data.id === "string" ? data.id : null
+    if (!userId || !planVersionId || !orderId) return ignored
+    return {
+      eventId,
+      eventType: payload.type,
+      event: {
+        kind: "checkout-completed",
+        userId,
+        planVersionId,
+        providerSubscriptionId: orderId,
+        periodEnd: null,
+        isOneTime: true,
+        providerReference: orderId,
+        checkoutId:
+          typeof data.checkout_id === "string" ? data.checkout_id : orderId,
+      },
+    }
+  }
+
+  // BIL-047 / BIL-081 (owner decision 2026-11-25): refunds. The
+  // payload carries the order's total and the refunded amount when
+  // present; full vs partial is decided from them, defaulting to
+  // FULL when the amounts are absent (a refund with no amount data
+  // is treated as a full clawback, never silently kept).
+  if (payload.type === "order.refunded") {
+    const orderId =
+      typeof data.order_id === "string"
+        ? data.order_id
+        : typeof data.id === "string"
+          ? data.id
+          : null
+    const subscriptionId =
+      typeof data.subscription_id === "string" ? data.subscription_id : null
+    const total =
+      typeof data.total_amount === "number" ? data.total_amount : null
+    const refunded =
+      typeof data.refunded_amount === "number"
+        ? data.refunded_amount
+        : typeof data.amount === "number"
+          ? data.amount
+          : null
+    return {
+      eventId,
+      eventType: payload.type,
+      event: {
+        kind: "payment-refunded",
+        providerSubscriptionId: subscriptionId,
+        providerReference: orderId,
+        fullRefund:
+          total !== null && refunded !== null ? refunded >= total : true,
+        amountMinor: refunded,
+      },
+    }
+  }
+
+  // BIL-047: a past-due subscription is a payment failure, not an
+  // ignore — the service flips the subscription to PAST_DUE with a
+  // grace window. (subscription.updated with status past_due is
+  // handled the same way below.)
+  if (payload.type === "subscription.past_due") {
+    const subscriptionId = typeof data.id === "string" ? data.id : null
     if (!subscriptionId) return ignored
     return {
       eventId,
       eventType: payload.type,
       event: {
-        kind: "payment-succeeded",
+        kind: "payment-failed",
         providerSubscriptionId: subscriptionId,
-        periodEnd: null,
       },
     }
   }
 
   // BIL-080: a past-due subscription update is a payment failure,
   // not an ignore — the service flips the subscription to PAST_DUE
-  // with a grace window.
+  // with a grace window. Any other update syncs status / period /
+  // cancel-at-period-end instead of being ignored.
   if (payload.type === "subscription.updated") {
     const status = typeof data.status === "string" ? data.status : null
     const subscriptionId = typeof data.id === "string" ? data.id : null
-    if (status === "past_due" && subscriptionId) {
+    if (!subscriptionId) return ignored
+    if (status === "past_due") {
       return {
         eventId,
         eventType: payload.type,
@@ -201,7 +481,36 @@ export async function verifyPolarWebhook(
         },
       }
     }
-    return ignored
+    if (status === "canceled" || status === "revoked") {
+      return {
+        eventId,
+        eventType: payload.type,
+        event: {
+          kind: "subscription-canceled",
+          providerSubscriptionId: subscriptionId,
+        },
+      }
+    }
+    const periodEndRaw =
+      typeof data.current_period_end === "string"
+        ? data.current_period_end
+        : null
+    const periodEnd = periodEndRaw ? new Date(periodEndRaw) : null
+    return {
+      eventId,
+      eventType: payload.type,
+      event: {
+        kind: "subscription-updated",
+        providerSubscriptionId: subscriptionId,
+        status,
+        periodEnd:
+          periodEnd && !Number.isNaN(periodEnd.getTime()) ? periodEnd : null,
+        cancelAtPeriodEnd:
+          typeof data.cancel_at_period_end === "boolean"
+            ? data.cancel_at_period_end
+            : null,
+      },
+    }
   }
 
   if (

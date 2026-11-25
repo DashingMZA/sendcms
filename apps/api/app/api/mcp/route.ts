@@ -4,6 +4,7 @@ import {
   checkMcpAccess,
   checkMcpRateLimit,
   createMcpServer,
+  isToolAvailableForScope,
   recordMcpCallOutcomes,
   resolveMcpAuth,
   type McpAuthContext,
@@ -94,9 +95,14 @@ async function readMcpBody(req: Request): Promise<unknown> {
 
 // tools/call: the tool name is required, refusals happen BEFORE
 // execution (no quota consumed, no usage row written), and the
-// allowlist check 404s with the same "Tool X not found" a READ key
-// gets for a mutation. Usage is recorded from the CLONED response —
-// the original is returned untouched.
+// allowlist check 404s with "Tool X not found" when an admin-set
+// allowlist excludes the tool. That is NOT the READ-key path: a READ
+// key calling a FULL tool passes this check (no allowlist) and gets
+// an MCP tool error (HTTP 200, isError, "MCP error -32602: Tool X
+// not found") from the transport, because the tool was never
+// registered for that key — see docs/mcp.md (DOC-038). Usage is
+// recorded from the CLONED response — the original is returned
+// untouched.
 async function handleToolsCall(
   req: Request,
   auth: McpAuthContext,
@@ -109,6 +115,26 @@ async function handleToolsCall(
       : undefined
   if (typeof toolName !== "string" || !toolName) {
     throw new ApiError("A tool name is required.", 400)
+  }
+  // AIM-008: scope/unknown-tool refusal happens BEFORE the rate
+  // limiter and the usage recorder — a READ key calling a mutation
+  // (or any key calling an unknown tool) used to burn quota and
+  // write a FAILED usage row, because the scope gate lived only in
+  // tool registration (SDK-side, after the limiter). The response
+  // is byte-identical to what the server returns for the same call:
+  // HTTP 200 with a JSON-RPC -32602 error, `Tool <name> not found`
+  // (the message the SDK client renders as
+  // "MCP error -32602: Tool <name> not found") — so clients see no
+  // change, only the quota/usage side effects disappear.
+  if (!isToolAvailableForScope(auth.scope, toolName)) {
+    return NextResponse.json(
+      {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        error: { code: -32602, message: `Tool ${toolName} not found` },
+      },
+      { status: 200 }
+    )
   }
   const access = await checkMcpAccess({ auth, tool: toolName })
   // Rate-limit tool calls only — initialize / tools/list are cheap

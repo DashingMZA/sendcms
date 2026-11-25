@@ -18,17 +18,21 @@ export type McpAccess = {
 
 // The stored allowlist is Json — the admin service only ever writes
 // an array of real tool names, so anything else is corrupt data.
-// Treat it as "no allowlist" (fail-open to in-scope tools) and log,
-// rather than bricking the user's MCP with a confusing 404 per tool.
+// SRC-303: corrupt data fails CLOSED (deny all tools, `[]`) —
+// treating it as "no allowlist" failed OPEN to every in-scope tool,
+// so a corrupted row silently granted tools the user was never
+// allowed. Only null/undefined means "no allowlist configured".
+// A corrupt row is still logged (warn) so an admin can see the user
+// is locked out and fix the row.
 export function parseMcpAllowedTools(value: unknown): string[] | null {
   if (value === null || value === undefined) return null
   if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
     return value as string[]
   }
-  logger.warn("mcp allowlist has an unexpected shape; ignoring it", {
+  logger.warn("mcp allowlist has an unexpected shape; denying all tools", {
     value,
   })
-  return null
+  return []
 }
 
 // The enforcement point for admin MCP controls (Phase 6). The route
@@ -57,7 +61,15 @@ export async function checkMcpAccess(input: {
 }): Promise<McpAccess> {
   const { auth, tool } = input
 
-  const settings = await db.mcpSettings.findFirst({
+  // SRC-323 / DB-018 / DB-041: the singleton row is read by its
+  // fixed id, never a bare findFirst — with no orderBy, a stray
+  // second row made the kill-switch read nondeterministic. The
+  // table carries CHECK (id = 'platform'), so a second row cannot
+  // exist. A MISSING row means "enabled" (documented default — see
+  // the schema comment): the live platform has no row until an
+  // admin first opens the MCP page.
+  const settings = await db.mcpSettings.findUnique({
+    where: { id: "platform" },
     select: { globalEnabled: true },
   })
   if (settings && !settings.globalEnabled) {

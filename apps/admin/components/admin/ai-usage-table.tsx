@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   adminCan,
   type AdminRole,
@@ -66,6 +67,9 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
   const { t } = useTranslation("ai")
   const locale = useLocale()
   const canViewUsage = adminCan(actorRole, "VIEW_AI_USAGE")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   const [provider, setProvider] = useState<string>(
     initialFilters.provider ?? "all"
@@ -126,6 +130,31 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
 
   function resetPage() {
     setPage(1)
+  }
+
+  // ADM-066: filters + pagination live in the URL (shareable,
+  // back-button safe), following the users table. Changing a filter
+  // resets to page 1; "all"/empty removes the param.
+  function pushParams(next: URLSearchParams) {
+    const text = next.toString()
+    router.push(text ? `${pathname}?${text}` : pathname)
+  }
+
+  function applyFilter(key: string, value: string | null) {
+    const next = new URLSearchParams(searchParams.toString())
+    if (value === null || value === "" || value === "all") {
+      next.delete(key)
+    } else {
+      next.set(key, value)
+    }
+    next.delete("page")
+    pushParams(next)
+  }
+
+  function applyPage(nextPage: number) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("page", String(nextPage))
+    pushParams(next)
   }
 
   return (
@@ -202,6 +231,11 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
             <p className="text-sm text-muted-foreground">
               {t("costReported")}: {totalCost ?? "—"}
             </p>
+            <p className="text-sm text-muted-foreground">
+              {t("successCalls")}: {summary?.total.success ?? 0} ·{" "}
+              {t("failedCalls")}: {summary?.total.failed ?? 0} ·{" "}
+              {t("retryCalls")}: {summary?.total.retry ?? 0}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -220,6 +254,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                 onValueChange={(v) => {
                   setProvider(v)
                   resetPage()
+                  applyFilter("provider", v)
                 }}
               >
                 <SelectTrigger id="ai-usage-provider" className="h-9 w-44">
@@ -242,6 +277,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                 onValueChange={(v) => {
                   setBillingMode(v)
                   resetPage()
+                  applyFilter("billingMode", v)
                 }}
               >
                 <SelectTrigger id="ai-usage-mode" className="h-9 w-44">
@@ -264,6 +300,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                 onValueChange={(v) => {
                   setStatus(v)
                   resetPage()
+                  applyFilter("status", v)
                 }}
               >
                 <SelectTrigger id="ai-usage-status" className="h-9 w-44">
@@ -288,6 +325,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                 onChange={(e) => {
                   setFrom(e.target.value)
                   resetPage()
+                  applyFilter("from", e.target.value)
                 }}
                 className="h-9 w-44"
               />
@@ -301,6 +339,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                 onChange={(e) => {
                   setTo(e.target.value)
                   resetPage()
+                  applyFilter("to", e.target.value)
                 }}
                 className="h-9 w-44"
               />
@@ -386,14 +425,20 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
               <Button
                 variant="outline"
                 disabled={currentPage <= 1}
-                onClick={() => setPage(currentPage - 1)}
+                onClick={() => {
+                  setPage(currentPage - 1)
+                  applyPage(currentPage - 1)
+                }}
               >
                 {t("prevPage")}
               </Button>
               <Button
                 variant="outline"
                 disabled={currentPage >= totalPages}
-                onClick={() => setPage(currentPage + 1)}
+                onClick={() => {
+                  setPage(currentPage + 1)
+                  applyPage(currentPage + 1)
+                }}
               >
                 {t("nextPage")}
               </Button>

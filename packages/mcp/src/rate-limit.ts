@@ -11,6 +11,36 @@ import { getEffectiveEntitlementsSafe } from "@sendcms/plans"
 export const MCP_MINUTE_LIMIT = 120
 export const MCP_HOUR_LIMIT = 2000
 
+/** UTC window starts (SRC-310 remainder — Wave 1's AIM-007 fix
+    made the claim atomic, but the windows stayed local-time).
+    `setSeconds(0,0)` / `setMinutes(0,0,0)` use the server's local
+    timezone, so two instances in different timezones split one
+    wall-clock minute into different buckets. UTC getters make the
+    bucket identical on every instance, in every timezone. Pure,
+    so tests can pin the bucket for a fixed instant. */
+export function startOfUtcMinute(at: Date = new Date()): Date {
+  return new Date(
+    Date.UTC(
+      at.getUTCFullYear(),
+      at.getUTCMonth(),
+      at.getUTCDate(),
+      at.getUTCHours(),
+      at.getUTCMinutes()
+    )
+  )
+}
+
+export function startOfUtcHour(at: Date = new Date()): Date {
+  return new Date(
+    Date.UTC(
+      at.getUTCFullYear(),
+      at.getUTCMonth(),
+      at.getUTCDate(),
+      at.getUTCHours()
+    )
+  )
+}
+
 export async function checkMcpRateLimit(
   keyId: string,
   // Per-user quota overrides from the admin MCP controls (Phase 6).
@@ -48,11 +78,12 @@ export async function checkMcpRateLimit(
   }
   minuteLimit ??= MCP_MINUTE_LIMIT
   hourLimit ??= MCP_HOUR_LIMIT
+  // SRC-310: UTC window starts (see startOfUtcMinute/Hour above) —
+  // the old local-time starts split one wall-clock minute into two
+  // buckets across instances in different timezones.
   const now = new Date()
-  const minuteStart = new Date(now)
-  minuteStart.setSeconds(0, 0)
-  const hourStart = new Date(now)
-  hourStart.setMinutes(0, 0, 0)
+  const minuteStart = startOfUtcMinute(now)
+  const hourStart = startOfUtcHour(now)
 
   // AIM-007: the counter MUST be claimed atomically. The old code
   // read the row, computed count+1 in memory, then upserted — N
@@ -96,12 +127,23 @@ export async function checkMcpRateLimit(
       },
     })
     if (claimed.count === 1) return
+    // The reset is FORWARD-ONLY ({ lt: minuteStart }, never { not: }):
+    // a request whose `now` was captured in minute M but is processed
+    // after the rollover must NOT rewind the row to M. With { not: },
+    // such a stale request reset the counter to 0 mid-burst (live
+    // burst 2026-11-25: 61 calls admitted in wall-clock minute 10:07
+    // while minuteCount read 17 — the count had been zeroed by stale
+    // resets, so the 120/min cap stopped meaning anything and 21
+    // calls were denied that a correct per-minute cap would admit).
+    // With { lt: }, the stale request's retry claim still fails (its
+    // WHERE pins the old minute) and it is denied after its retries
+    // instead of corrupting the new window's count.
     const resetMinute = await db.apiKeyRateLimit.updateMany({
-      where: { apiKeyId: keyId, minuteWindowStart: { not: minuteStart } },
+      where: { apiKeyId: keyId, minuteWindowStart: { lt: minuteStart } },
       data: { minuteWindowStart: minuteStart, minuteCount: 0 },
     })
     const resetHour = await db.apiKeyRateLimit.updateMany({
-      where: { apiKeyId: keyId, hourWindowStart: { not: hourStart } },
+      where: { apiKeyId: keyId, hourWindowStart: { lt: hourStart } },
       data: { hourWindowStart: hourStart, hourCount: 0 },
     })
     if (resetMinute.count === 0 && resetHour.count === 0) {

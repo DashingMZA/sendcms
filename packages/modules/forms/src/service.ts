@@ -11,18 +11,27 @@ import {
 
 import { ApiError } from "@sendcms/shared"
 
+import { createLogger } from "@sendcms/observability"
 import { redactAuthEmailUrl, sendPlatformEmail } from "@sendcms/email"
 import { logAudit } from "@sendcms/security"
 import {
   getDigestIntervalHours,
   getNextDigestAt,
+  isAiAuthFailure,
+  mapAiCallError,
   suggestFields,
   type AiCallUsage,
   type AiEnvConfig,
   type AiProviderName,
   type FieldSuggestions,
 } from "@sendcms/ai"
-import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
+import {
+  claimInteractiveAiCall,
+  recordAiUsage,
+  recordByokAuthFailure,
+  recordByokAuthSuccess,
+  resolveAiModelForUser,
+} from "@sendcms/ai-settings"
 import { checkLimitStrict } from "@sendcms/plans"
 import { isTurnstileConfigured } from "@sendcms/submissions/turnstile"
 
@@ -35,6 +44,8 @@ import type {
   UpdateFormInput,
   UpdateNotificationEmailInput,
 } from "./validators"
+
+const logger = createLogger("forms")
 
 // Forms (Phase 4). A form's `id` IS its public `formId`, used together
 // with the owner's public `userId` (User.id) by the SDK / REST API
@@ -1072,6 +1083,17 @@ export async function suggestFieldsForForm(
     throw new ApiError("AI is not available right now. Try again later.", 503)
   }
   const usage: { current: AiCallUsage | null } = { current: null }
+  // AIM-028: an interactive call counts toward the owner's daily AI
+  // budget — claimed AFTER resolution (a resolution failure consumes
+  // nothing) and BEFORE the model call. At the cap the call is
+  // refused with 429 and no usage row is written. The per-minute
+  // route limiter caps bursts; this caps the day.
+  if (!(await claimInteractiveAiCall(userId))) {
+    throw new ApiError(
+      "You have reached your daily AI limit. Try again tomorrow.",
+      429
+    )
+  }
   let result
   try {
     result = await suggestFields({
@@ -1087,6 +1109,11 @@ export async function suggestFieldsForForm(
       },
     })
   } catch (err) {
+    // AIM-003: a provider-auth failure at call time feeds the BYOK
+    // key's auto-disable counter (transient failures never do).
+    if (resolved.billingMode === "BYOK" && isAiAuthFailure(err)) {
+      await recordByokAuthFailure(userId, resolved.provider)
+    }
     await recordAiUsage({
       userId,
       provider: resolved.provider,
@@ -1096,18 +1123,37 @@ export async function suggestFieldsForForm(
       sourceEvent: "suggest-fields",
       resourceId: formId,
     })
-    throw err
+    // AIM-004 / AIM-023 / SRC-225: the raw SDK error used to be
+    // rethrown and collapsed to a generic 500 — a bad key looked
+    // like a server bug. Map it to a 502/503 naming the failure
+    // class; the raw error stays server-side only.
+    throw mapAiCallError(err, resolved.provider)
   }
-  await recordAiUsage({
-    userId,
-    provider: resolved.provider,
-    model: resolved.modelId,
-    billingMode: resolved.billingMode,
-    status: "SUCCESS",
-    tokensIn: usage.current?.promptTokens ?? null,
-    tokensOut: usage.current?.completionTokens ?? null,
-    sourceEvent: "suggest-fields",
-    resourceId: formId,
-  })
+  // SRC-225: the usage write is best-effort by construction
+  // (recordAiUsage never throws), but it is still guarded — a
+  // bookkeeping failure must never discard a good result.
+  try {
+    await recordAiUsage({
+      userId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "SUCCESS",
+      tokensIn: usage.current?.promptTokens ?? null,
+      tokensOut: usage.current?.completionTokens ?? null,
+      costMicros: usage.current?.costMicros ?? null,
+      sourceEvent: "suggest-fields",
+      resourceId: formId,
+    })
+  } catch (err) {
+    logger.error("ai usage record failed after successful suggest-fields", {
+      error: err,
+      userId,
+      formId,
+    })
+  }
+  if (resolved.billingMode === "BYOK") {
+    await recordByokAuthSuccess(userId, resolved.provider)
+  }
   return result
 }

@@ -40,10 +40,12 @@ function formatPrice(
 export function BillingOverview({
   locale,
   checkoutSuccess,
+  checkoutPending,
   initialSubscription,
 }: {
   locale: string
   checkoutSuccess: boolean
+  checkoutPending?: boolean
   // SRC-110: server-fetched by the billing page so the plan renders
   // in the SSR HTML instead of after the client fetch.
   initialSubscription?: SubscriptionSummary | null
@@ -81,6 +83,13 @@ export function BillingOverview({
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm">{t("successNote")}</p>
+          </CardContent>
+        </Card>
+      )}
+      {checkoutPending && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm">{t("pendingNote")}</p>
           </CardContent>
         </Card>
       )}

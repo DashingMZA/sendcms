@@ -305,6 +305,8 @@ export type SubscriptionSummary = {
   planVersionId: string
   planVersion: PlanVersionIdentity
   status: SubscriptionStatus
+  provider: BillingProvider | null
+  providerSubscriptionId: string | null
   currentPeriodStart: Date | null
   currentPeriodEnd: Date | null
   cancelAtPeriodEnd: boolean
@@ -406,6 +408,15 @@ export type MigrationPreview = {
   users: MigrationPreviewUser[]
   previewTruncated: boolean
   skippedUserIds: string[]
+  // BIL-089: whether executing this migration also changes what the
+  // provider bills. `billingUnchanged` is true when at least one
+  // affected subscription is billed by a provider with no
+  // plan-change API (Freemius, Gumroad) or has no provider at all —
+  // the preview says so plainly instead of implying a price change
+  // that will never be charged.
+  billingUnchanged: boolean
+  providerUpdateSupported: boolean
+  providerUpdateNote?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -479,6 +490,8 @@ function toSubscriptionSummary(
     planVersionId: row.planVersionId,
     planVersion: toPlanVersionIdentity(row.planVersion),
     status: row.status,
+    provider: row.provider,
+    providerSubscriptionId: row.providerSubscriptionId,
     currentPeriodStart: row.currentPeriodStart,
     currentPeriodEnd: row.currentPeriodEnd,
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
@@ -496,6 +509,8 @@ type SubscriptionWithRelations = {
   planVersionId: string
   planVersion: PlanVersion & { plan: { name: string } }
   status: SubscriptionStatus
+  provider: BillingProvider | null
+  providerSubscriptionId: string | null
   currentPeriodStart: Date | null
   currentPeriodEnd: Date | null
   cancelAtPeriodEnd: boolean
@@ -582,20 +597,136 @@ async function getVersionOrThrow(versionId: string) {
 
 // The next period end for a billing interval. CUSTOM and ONE_TIME
 // have no automatic period (the admin sets dates, or none).
+// BIL-099: month/year arithmetic CLAMPS to the target month's last
+// day — the naive `setUTCMonth` overflows (31 Jan + 1 month used
+// to yield 3 Mar, not 28 Feb) and the drift compounded on every
+// renewal. 29 Feb + 1 year clamps to 28 Feb in non-leap years.
 export function periodEndFor(
   interval: BillingInterval,
   start: Date
 ): Date | null {
-  const end = new Date(start)
   if (interval === "MONTHLY") {
-    end.setUTCMonth(end.getUTCMonth() + 1)
-    return end
+    return addMonthsClamped(start, 1)
   }
   if (interval === "ANNUAL") {
-    end.setUTCFullYear(end.getUTCFullYear() + 1)
-    return end
+    return addYearsClamped(start, 1)
   }
   return null
+}
+
+// Add months, clamping the day to the target month's last day
+// (31 Jan + 1 mo -> 28 Feb, never 3 Mar). Time-of-day is preserved.
+export function addMonthsClamped(start: Date, months: number): Date {
+  const targetMonth = start.getUTCMonth() + months
+  const targetYear = start.getUTCFullYear() + Math.floor(targetMonth / 12)
+  const month = ((targetMonth % 12) + 12) % 12
+  const lastDay = new Date(Date.UTC(targetYear, month + 1, 0)).getUTCDate()
+  const end = new Date(start)
+  end.setUTCFullYear(targetYear, month, Math.min(start.getUTCDate(), lastDay))
+  return end
+}
+
+// Add years, clamping 29 Feb to 28 Feb in non-leap years.
+export function addYearsClamped(start: Date, years: number): Date {
+  const targetYear = start.getUTCFullYear() + years
+  const lastDay = new Date(
+    Date.UTC(targetYear, start.getUTCMonth() + 1, 0)
+  ).getUTCDate()
+  const end = new Date(start)
+  end.setUTCFullYear(
+    targetYear,
+    start.getUTCMonth(),
+    Math.min(start.getUTCDate(), lastDay)
+  )
+  return end
+}
+
+// BIL-003 (owner decision 2026-11-25): a one-time purchase grants
+// access for a FINITE window — one year from purchase when the
+// provider gives no end date. This is a documented default, not a
+// lifetime flag (there is deliberately no lifetime flag anywhere):
+// a one-time payment buys a year of the plan, then the subscription
+// expires via the expiry job unless renewed by a new purchase.
+export const ONE_TIME_ACCESS_DAYS = 365
+
+export function oneTimeAccessEnd(start: Date): Date {
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + ONE_TIME_ACCESS_DAYS)
+  return end
+}
+
+// BIL-001 / BIL-082: the provider-cancel callback the cancel
+// functions take. It lives in @sendcms/billing (the provider
+// modules), NOT here — @sendcms/billing already depends on
+// @sendcms/plans, so importing it here would be a cycle. The
+// routes pass the real implementation in; a caller that passes
+// none gets a 502 when a provider-billed row is canceled, never a
+// silent local-only cancel. The signature mirrors
+// `cancelSubscriptionAtProvider` in @sendcms/billing exactly
+// (provider first, then the cancel args), so the dispatcher can be
+// passed in directly.
+export type ProviderCancelOutcome = {
+  canceledAtProvider: boolean
+  immediate: boolean
+  note?: string
+}
+export type ProviderCancelFn = (
+  provider: BillingProvider,
+  args: {
+    providerSubscriptionId: string
+    cancelAtPeriodEnd: boolean
+    reason?: string | null
+  }
+) => Promise<ProviderCancelOutcome>
+
+// BIL-089: the provider plan-change callback the migration takes
+// (same layering reason as ProviderCancelFn). The signature mirrors
+// `updateSubscriptionAtProvider` in @sendcms/billing exactly —
+// provider, provider subscription id, then the checkout args for
+// the TARGET version (built by executeMigration from the target
+// version + the user's email/name). `updated: false` means the
+// provider has no plan-change API — the migration proceeds as an
+// explicitly SendCMS-only change.
+export type ProviderUpdateOutcome = {
+  updated: boolean
+  reason?: string
+}
+export type ProviderUpdateFn = (
+  provider: BillingProvider,
+  providerSubscriptionId: string,
+  args: {
+    version: {
+      id: string
+      planId: string
+      planName: string
+      priceAmount: number | null
+      priceCurrency: string
+      billingInterval: BillingInterval
+      trialDays: number
+    }
+    customer: { userId: string; email: string; name: string | null }
+    successUrl: string
+    cancelUrl: string
+    idempotencyKey?: string
+  }
+) => Promise<ProviderUpdateOutcome>
+
+export type OneTimePurchaseSummary = {
+  id: string
+  userId: string
+  planId: string
+  planVersionId: string
+  subscriptionId: string | null
+  provider: BillingProvider
+  providerReference: string
+  checkoutId: string | null
+  priceAmount: number | null
+  priceCurrency: string
+  accessStart: Date
+  accessEnd: Date
+  status: "ACTIVE" | "REFUNDED" | "EXPIRED"
+  createdAt: Date
+  updatedAt: Date
 }
 
 // Human labels for the version-diff fields.
@@ -869,16 +1000,33 @@ export async function publishPlanVersion(
     throw new ApiError("An archived plan cannot publish a version.", 409)
   }
   const now = new Date()
+  // SRC-211: the DRAFT check + publish happen inside the
+  // transaction as a CONDITIONAL update — two concurrent publishes
+  // of the same draft cannot both pass the check. The loser's
+  // updateMany matches zero rows and gets a 409 instead of
+  // superseding the winner's just-published version. The previous
+  // version is superseded conditionally too (only when it is still
+  // PUBLISHED), for the same reason. The pre-transaction DRAFT
+  // check above stays as the fast path for the common error.
   const published = await db.$transaction(async (tx) => {
-    if (plan.currentVersionId) {
-      await tx.planVersion.update({
-        where: { id: plan.currentVersionId },
+    const claimed = await tx.planVersion.updateMany({
+      where: { id: versionId, status: "DRAFT" },
+      data: { status: "PUBLISHED", publishedAt: now },
+    })
+    if (claimed.count !== 1) {
+      throw new ApiError(
+        "This plan version was already published by another request.",
+        409
+      )
+    }
+    if (plan.currentVersionId && plan.currentVersionId !== versionId) {
+      await tx.planVersion.updateMany({
+        where: { id: plan.currentVersionId, status: "PUBLISHED" },
         data: { status: "SUPERSEDED" },
       })
     }
-    const updated = await tx.planVersion.update({
+    const updated = await tx.planVersion.findUniqueOrThrow({
       where: { id: versionId },
-      data: { status: "PUBLISHED", publishedAt: now },
       include: { plan: { select: { name: true } } },
     })
     await tx.plan.update({
@@ -1226,9 +1374,14 @@ export function isSubscriptionPeriodLive(
 // `isSubscriptionPeriodLive`), which keeps its paid entitlements
 // until the grace ends.
 async function findActiveSubscription(
-  userId: string
+  userId: string,
+  // DB-035: the migration re-reads inside its per-user transaction,
+  // so the read sees the latest committed assignment instead of the
+  // possibly-stale pre-transaction one. Defaults to the shared
+  // client for every other caller.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<SubscriptionWithRelations | null> {
-  const row = await db.subscription.findFirst({
+  const row = await client.subscription.findFirst({
     where: { userId, status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] } },
     include: subscriptionInclude,
     orderBy: { createdAt: "desc" },
@@ -1242,6 +1395,16 @@ async function findActiveSubscription(
 // existing active subscription (if any) is canceled with a CANCELED
 // event and the new one is created with a CREATED event — the user is
 // never left with two active subscriptions or none at all.
+//
+// DB-009 / DB-021: the one-active invariant is enforced three ways —
+// a transaction-scoped advisory lock on the user serializes
+// concurrent assigns, the supersede is a conditional updateMany
+// (only while the row is still live), and the DB partial unique
+// index "Subscription_single_active_idx" is the backstop (a P2002
+// from it is a 409, not a 500). PAST_DUE rows are superseded too:
+// a past-due subscription is the same live subscription in its
+// grace window, and leaving it live beside the new ACTIVE row
+// would violate the index.
 export async function assignSubscription(
   actor: AdminSession,
   input: AssignSubscriptionInput
@@ -1257,56 +1420,78 @@ export async function assignSubscription(
     throw new ApiError("Only a published plan version can be assigned.", 409)
   }
   const now = new Date()
-  const created = await db.$transaction(async (tx) => {
-    const previous = await tx.subscription.findFirst({
-      where: {
-        userId: input.userId,
-        status: { in: ["ACTIVE", "TRIALING"] },
-      },
-      orderBy: { createdAt: "desc" },
-    })
-    if (previous) {
-      await tx.subscription.update({
-        where: { id: previous.id },
-        data: { status: "CANCELED" },
+  let created
+  try {
+    created = await db.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${"assign:" + input.userId}))`
+      )
+      const previous = await tx.subscription.findFirst({
+        where: {
+          userId: input.userId,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+      if (previous) {
+        const canceled = await tx.subscription.updateMany({
+          where: {
+            id: previous.id,
+            status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+          },
+          data: { status: "CANCELED" },
+        })
+        if (canceled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId: previous.id,
+              type: "CANCELED",
+              fromPlanVersionId: previous.planVersionId,
+              toPlanVersionId: null,
+              adminId: actor.user.id,
+              reason: input.reason,
+            },
+          })
+        }
+      }
+      const next = await tx.subscription.create({
+        data: {
+          userId: input.userId,
+          planId: version.planId,
+          planVersionId: version.id,
+          status: "ACTIVE",
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEndFor(version.billingInterval, now),
+          cancelAtPeriodEnd: false,
+        },
       })
       await tx.subscriptionEvent.create({
         data: {
-          subscriptionId: previous.id,
-          type: "CANCELED",
-          fromPlanVersionId: previous.planVersionId,
-          toPlanVersionId: null,
+          subscriptionId: next.id,
+          type: "CREATED",
+          fromPlanVersionId: previous?.planVersionId ?? null,
+          toPlanVersionId: version.id,
           adminId: actor.user.id,
           reason: input.reason,
         },
       })
+      return tx.subscription.findUniqueOrThrow({
+        where: { id: next.id },
+        include: subscriptionInclude,
+      })
+    })
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError(
+        "Another subscription was created for this user at the same time. Please try again.",
+        409
+      )
     }
-    const next = await tx.subscription.create({
-      data: {
-        userId: input.userId,
-        planId: version.planId,
-        planVersionId: version.id,
-        status: "ACTIVE",
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEndFor(version.billingInterval, now),
-        cancelAtPeriodEnd: false,
-      },
-    })
-    await tx.subscriptionEvent.create({
-      data: {
-        subscriptionId: next.id,
-        type: "CREATED",
-        fromPlanVersionId: previous?.planVersionId ?? null,
-        toPlanVersionId: version.id,
-        adminId: actor.user.id,
-        reason: input.reason,
-      },
-    })
-    return tx.subscription.findUniqueOrThrow({
-      where: { id: next.id },
-      include: subscriptionInclude,
-    })
-  })
+    throw err
+  }
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.ASSIGN,
@@ -1401,16 +1586,38 @@ export type ActivateSubscriptionFromCheckoutInput = {
   provider: BillingProvider
   providerSubscriptionId: string
   periodEnd?: Date | null
+  // BIL-003 / BIL-042: a one-time purchase (the provider event
+  // carries no subscription). `providerReference` is the
+  // refund-matchable payment reference; `checkoutId` the checkout
+  // session / order id.
+  isOneTime?: boolean
+  providerReference?: string
+  checkoutId?: string
+  // BIL-049 / BIL-096: the trial end the provider reports for this
+  // checkout (e.g. Polar's subscription trial_end). When present
+  // the subscription is created TRIALING ending then; when absent
+  // and the version has trialDays, the trial end is now +
+  // trialDays. Never set for non-trial checkouts.
+  trialEnd?: Date | null
 }
 
 // Activate (or re-activate) a subscription from a verified checkout
 // webhook. Same one-active-per-user transaction as
-// assignSubscription: the previous ACTIVE/TRIALING subscription is
-// canceled, the new one is created ACTIVE on the webhook's plan
-// version with the provider subscription id stored. Idempotent per
-// provider subscription: a repeated delivery for the same provider
-// subscription id returns the existing row instead of creating a
-// second subscription.
+// assignSubscription: the previous ACTIVE/TRIALING/PAST_DUE
+// subscription is canceled, the new one is created ACTIVE on the
+// webhook's plan version with the provider subscription id stored.
+// Idempotent per provider subscription: a repeated delivery for the
+// same provider subscription id returns the existing row instead of
+// creating a second subscription (advisory lock + the unique
+// (provider, providerSubscriptionId) index, DB-002/DB-024).
+//
+// BIL-003 / BIL-042: a one-time purchase creates a OneTimePurchase
+// row (the separate purchase record) AND a subscription whose
+// period end is the finite access date — never a perpetual ACTIVE
+// row. BIL-007: a remaining paid period on the superseded
+// subscription is carried forward — the new period end is at least
+// the old period end, so a re-checkout never silently discards
+// time already paid for.
 export async function activateSubscriptionFromCheckout(
   input: ActivateSubscriptionFromCheckoutInput
 ): Promise<SubscriptionSummary> {
@@ -1424,83 +1631,200 @@ export async function activateSubscriptionFromCheckout(
   })
   if (!target) throw new ApiError("User not found", 404)
   const now = new Date()
-  const created = await db.$transaction(async (tx) => {
-    // BIL-090: the duplicate guard is atomic — a transaction-scoped
-    // advisory lock on (provider, providerSubscriptionId) serializes
-    // concurrent deliveries of the same checkout event, so two
-    // deliveries cannot both pass the `findFirst` below and create two
-    // ACTIVE subscriptions. (No unique index on
-    // providerSubscriptionId exists — schema changes are out of scope
-    // for this fix — so the lock, plus the BillingEvent guard in the
-    // webhook handler, is the serialization point.)
-    await tx.$executeRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.provider}:${input.providerSubscriptionId}`}))`
-    )
-    const duplicate = await tx.subscription.findFirst({
-      where: {
-        provider: input.provider,
-        providerSubscriptionId: input.providerSubscriptionId,
-        status: { in: ["ACTIVE", "TRIALING"] },
-      },
-    })
-    if (duplicate) {
-      return tx.subscription.findUniqueOrThrow({
-        where: { id: duplicate.id },
-        include: subscriptionInclude,
+  const isOneTime =
+    input.isOneTime === true ||
+    version.billingInterval === "ONE_TIME" ||
+    version.billingInterval === "CUSTOM"
+  const providerReference =
+    input.providerReference ?? input.providerSubscriptionId
+  // BIL-049 / BIL-096: a trial checkout is TRIALING, not ACTIVE.
+  // The old code created ACTIVE with a full paid period from now
+  // and the first payment then extended it again — the customer
+  // got the trial PLUS a full paid period. The trial end comes
+  // from the provider when it reports one, else from the version's
+  // trialDays (only when the provider gave no period end — an
+  // explicit periodEnd is trusted as the paid end). One-time
+  // purchases never trial. The first renewal flips TRIALING back
+  // to ACTIVE via extendSubscriptionPeriod.
+  const trialEnd =
+    !isOneTime && input.trialEnd
+      ? input.trialEnd
+      : !isOneTime && version.trialDays > 0 && !input.periodEnd
+        ? new Date(now.getTime() + version.trialDays * 24 * 60 * 60 * 1000)
+        : null
+  let created
+  try {
+    created = await db.$transaction(async (tx) => {
+      // BIL-090: the duplicate guard is atomic — a transaction-scoped
+      // advisory lock on (provider, providerSubscriptionId) serializes
+      // concurrent deliveries of the same checkout event, so two
+      // deliveries cannot both pass the `findFirst` below and create two
+      // ACTIVE subscriptions. The unique (provider,
+      // providerSubscriptionId) index (DB-002/DB-024) is the backstop.
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.provider}:${input.providerSubscriptionId}`}))`
+      )
+      const duplicate = await tx.subscription.findFirst({
+        where: {
+          provider: input.provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        },
       })
-    }
-    const previous = await tx.subscription.findFirst({
-      where: {
-        userId: input.userId,
-        status: { in: ["ACTIVE", "TRIALING"] },
-      },
-      orderBy: { createdAt: "desc" },
-    })
-    if (previous) {
-      await tx.subscription.update({
-        where: { id: previous.id },
-        data: { status: "CANCELED" },
+      if (duplicate) {
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: duplicate.id },
+          include: subscriptionInclude,
+        })
+      }
+      const previous = await tx.subscription.findFirst({
+        where: {
+          userId: input.userId,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+      // BIL-007: the remaining paid period is preserved — the new
+      // period end never falls before the old one.
+      const preservedUntil =
+        previous?.currentPeriodEnd && previous.currentPeriodEnd > now
+          ? previous.currentPeriodEnd
+          : null
+      const computedEnd =
+        trialEnd ??
+        input.periodEnd ??
+        periodEndFor(version.billingInterval, now)
+      const accessEnd = isOneTime
+        ? (input.periodEnd ?? oneTimeAccessEnd(now))
+        : null
+      let nextEnd = accessEnd ?? computedEnd
+      if (nextEnd && preservedUntil && preservedUntil > nextEnd) {
+        nextEnd = preservedUntil
+      } else if (!nextEnd) {
+        nextEnd = preservedUntil
+      }
+      if (previous) {
+        const canceled = await tx.subscription.updateMany({
+          where: {
+            id: previous.id,
+            status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+          },
+          data: { status: "CANCELED" },
+        })
+        if (canceled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId: previous.id,
+              type: "CANCELED",
+              fromPlanVersionId: previous.planVersionId,
+              toPlanVersionId: null,
+              adminId: null,
+              reason: `Superseded by checkout via ${input.provider}${
+                preservedUntil
+                  ? ` — remaining paid period preserved until ${preservedUntil.toISOString()}`
+                  : ""
+              }`,
+            },
+          })
+        }
+      }
+      const next = await tx.subscription.create({
+        data: {
+          userId: input.userId,
+          planId: version.planId,
+          planVersionId: version.id,
+          status: trialEnd ? "TRIALING" : "ACTIVE",
+          currentPeriodStart: now,
+          currentPeriodEnd: nextEnd,
+          cancelAtPeriodEnd: false,
+          provider: input.provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+        },
       })
       await tx.subscriptionEvent.create({
         data: {
-          subscriptionId: previous.id,
-          type: "CANCELED",
-          fromPlanVersionId: previous.planVersionId,
-          toPlanVersionId: null,
+          subscriptionId: next.id,
+          type: "CREATED",
+          fromPlanVersionId: previous?.planVersionId ?? null,
+          toPlanVersionId: version.id,
           adminId: null,
-          reason: `Superseded by checkout via ${input.provider}`,
+          reason: isOneTime
+            ? `One-time purchase via ${input.provider} — access until ${nextEnd?.toISOString() ?? "unknown"}`
+            : `Checkout completed via ${input.provider}${
+                trialEnd ? ` — trial until ${trialEnd.toISOString()}` : ""
+              }${
+                preservedUntil
+                  ? ` — remaining paid period preserved until ${preservedUntil.toISOString()}`
+                  : ""
+              }`,
         },
       })
+      // BIL-003: the separate purchase record for a one-time buy.
+      // Idempotent per (provider, providerReference): a redelivery
+      // that got past the subscription duplicate guard still writes
+      // exactly one purchase row.
+      if (isOneTime && nextEnd) {
+        try {
+          await tx.oneTimePurchase.create({
+            data: {
+              userId: input.userId,
+              planId: version.planId,
+              planVersionId: version.id,
+              subscriptionId: next.id,
+              provider: input.provider,
+              providerReference,
+              checkoutId: input.checkoutId ?? null,
+              priceAmount: version.priceAmount,
+              priceCurrency: version.priceCurrency,
+              accessStart: now,
+              accessEnd: nextEnd,
+              status: "ACTIVE",
+            },
+          })
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === "P2002"
+          ) {
+            // Already recorded — the purchase row from the first
+            // delivery stands; the subscription above is the same
+            // grant.
+          } else {
+            throw err
+          }
+        }
+      }
+      return tx.subscription.findUniqueOrThrow({
+        where: { id: next.id },
+        include: subscriptionInclude,
+      })
+    })
+  } catch (err) {
+    // DB-024: the unique (provider, providerSubscriptionId) backstop
+    // fired — a concurrent delivery already created the row. Return
+    // it instead of a second ACTIVE subscription (or a 500).
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      const existing = await db.subscription.findFirst({
+        where: {
+          provider: input.provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        },
+        include: subscriptionInclude,
+      })
+      if (existing) {
+        return toSubscriptionSummary(existing as SubscriptionWithRelations)
+      }
+      throw new ApiError(
+        "This checkout was already processed. Please try again.",
+        409
+      )
     }
-    const next = await tx.subscription.create({
-      data: {
-        userId: input.userId,
-        planId: version.planId,
-        planVersionId: version.id,
-        status: "ACTIVE",
-        currentPeriodStart: now,
-        currentPeriodEnd:
-          input.periodEnd ?? periodEndFor(version.billingInterval, now),
-        cancelAtPeriodEnd: false,
-        provider: input.provider,
-        providerSubscriptionId: input.providerSubscriptionId,
-      },
-    })
-    await tx.subscriptionEvent.create({
-      data: {
-        subscriptionId: next.id,
-        type: "CREATED",
-        fromPlanVersionId: previous?.planVersionId ?? null,
-        toPlanVersionId: version.id,
-        adminId: null,
-        reason: `Checkout completed via ${input.provider}`,
-      },
-    })
-    return tx.subscription.findUniqueOrThrow({
-      where: { id: next.id },
-      include: subscriptionInclude,
-    })
-  })
+    throw err
+  }
   await logAudit({
     userId: input.userId,
     action: AuditAction.ASSIGN,
@@ -1512,6 +1836,19 @@ export async function activateSubscriptionFromCheckout(
       planVersionId: version.id,
       provider: input.provider,
       providerSubscriptionId: input.providerSubscriptionId,
+      ...(isOneTime
+        ? {
+            oneTime: true,
+            providerReference,
+            accessEnd: created.currentPeriodEnd?.toISOString() ?? null,
+          }
+        : {}),
+      ...(trialEnd
+        ? {
+            trial: true,
+            trialEnd: trialEnd.toISOString(),
+          }
+        : {}),
     },
   })
   return toSubscriptionSummary(created as SubscriptionWithRelations)
@@ -1524,6 +1861,11 @@ export async function activateSubscriptionFromCheckout(
 // BIL-090: the lookup is scoped to (provider,
 // providerSubscriptionId) — provider id formats differ, and an id
 // alone is not globally unique.
+//
+// DB-025: the cancel is a CONDITIONAL updateMany inside the
+// transaction — two concurrent cancels cannot both write a
+// CANCELED event. The loser finds zero rows to cancel and gets the
+// already-canceled row back with no second event.
 export async function cancelSubscriptionFromProvider(
   provider: BillingProvider,
   providerSubscriptionId: string,
@@ -1537,22 +1879,42 @@ export async function cancelSubscriptionFromProvider(
     },
     orderBy: { createdAt: "desc" },
   })
-  if (!existing) return null
-  const updated = await db.$transaction(async (tx) => {
-    await tx.subscription.update({
-      where: { id: existing.id },
-      data: { status: "CANCELED" },
-    })
-    await tx.subscriptionEvent.create({
-      data: {
-        subscriptionId: existing.id,
-        type: "CANCELED",
-        fromPlanVersionId: existing.planVersionId,
-        toPlanVersionId: null,
-        adminId: null,
-        reason,
+  if (!existing) {
+    // Already canceled by a concurrent delivery? Return the row
+    // without writing a second event.
+    const canceled = await db.subscription.findFirst({
+      where: {
+        provider,
+        providerSubscriptionId,
+        status: { in: ["CANCELED", "EXPIRED"] },
       },
+      include: subscriptionInclude,
+      orderBy: { createdAt: "desc" },
     })
+    return canceled
+      ? toSubscriptionSummary(canceled as SubscriptionWithRelations)
+      : null
+  }
+  const updated = await db.$transaction(async (tx) => {
+    const canceled = await tx.subscription.updateMany({
+      where: {
+        id: existing.id,
+        status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+      },
+      data: { status: "CANCELED", cancelAtPeriodEnd: false },
+    })
+    if (canceled.count === 1) {
+      await tx.subscriptionEvent.create({
+        data: {
+          subscriptionId: existing.id,
+          type: "CANCELED",
+          fromPlanVersionId: existing.planVersionId,
+          toPlanVersionId: null,
+          adminId: null,
+          reason,
+        },
+      })
+    }
     return tx.subscription.findUniqueOrThrow({
       where: { id: existing.id },
       include: subscriptionInclude,
@@ -1580,12 +1942,20 @@ export async function cancelSubscriptionFromProvider(
 // already extended the subscription) is a no-op that returns the
 // existing row, never moves the period end backwards, and writes no
 // event. A successful extension writes a RENEWED event in the same
-// transaction as the update, and revives a PAST_DUE subscription
-// back to ACTIVE.
+// transaction as the update (SRC-226 — renewals are visible in
+// history), and revives a PAST_DUE subscription back to ACTIVE.
+// BIL-086: a renewal for a `cancelAtPeriodEnd` subscription does
+// NOT extend it — the period ended as scheduled, so the row flips
+// to CANCELED with a CANCELED event instead.
+// DB-010: `providerEventId` makes the extension idempotent per
+// webhook event — a provider retry after a crash between the apply
+// and the BillingEvent processedAt stamp finds the RENEWED event
+// for that event id and no-ops instead of extending a second time.
 export async function extendSubscriptionPeriod(
   provider: BillingProvider,
   providerSubscriptionId: string,
-  periodEnd: Date | null
+  periodEnd: Date | null,
+  providerEventId?: string | null
 ): Promise<SubscriptionSummary | null> {
   const existing = await db.subscription.findFirst({
     where: {
@@ -1599,6 +1969,68 @@ export async function extendSubscriptionPeriod(
     orderBy: { createdAt: "desc" },
   })
   if (!existing) return null
+  if (providerEventId) {
+    const alreadyApplied = await db.subscriptionEvent.findFirst({
+      where: {
+        subscriptionId: existing.id,
+        type: "RENEWED",
+        providerEventId,
+      },
+      select: { id: true },
+    })
+    if (alreadyApplied) {
+      const unchanged = await db.subscription.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: subscriptionInclude,
+      })
+      return toSubscriptionSummary(unchanged as SubscriptionWithRelations)
+    }
+  }
+  // BIL-086: the customer asked for this subscription to end at the
+  // period boundary — a renewal landing on it ends the subscription
+  // instead of silently extending it past the boundary.
+  if (existing.cancelAtPeriodEnd) {
+    const canceled = await db.$transaction(async (tx) => {
+      const claimed = await tx.subscription.updateMany({
+        where: {
+          id: existing.id,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+          cancelAtPeriodEnd: true,
+        },
+        data: { status: "CANCELED", cancelAtPeriodEnd: false },
+      })
+      if (claimed.count === 1) {
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: existing.id,
+            type: "CANCELED",
+            fromPlanVersionId: existing.planVersionId,
+            toPlanVersionId: null,
+            adminId: null,
+            reason: `Period ended after cancel-at-period-end; renewal via ${provider} not applied`,
+            ...(providerEventId ? { providerEventId } : {}),
+          },
+        })
+      }
+      return tx.subscription.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: subscriptionInclude,
+      })
+    })
+    await logAudit({
+      userId: existing.userId,
+      action: AuditAction.CANCEL,
+      resourceType: AuditResource.SUBSCRIPTION,
+      resourceId: existing.id,
+      detail: {
+        event: "subscription-canceled-at-period-end",
+        provider,
+        providerSubscriptionId,
+        renewalNotApplied: true,
+      },
+    })
+    return toSubscriptionSummary(canceled as SubscriptionWithRelations)
+  }
   const now = new Date()
   const base =
     existing.currentPeriodEnd && existing.currentPeriodEnd > now
@@ -1636,6 +2068,7 @@ export async function extendSubscriptionPeriod(
         toPlanVersionId: existing.planVersionId,
         adminId: null,
         reason: `Renewed via ${provider}`,
+        ...(providerEventId ? { providerEventId } : {}),
       },
     })
     return renewed
@@ -1655,15 +2088,253 @@ export async function extendSubscriptionPeriod(
   return toSubscriptionSummary(updated as SubscriptionWithRelations)
 }
 
+// Sync a subscription from a provider-side update (BIL-005 /
+// BIL-006 / BIL-045): status / period end / cancel-at-period-end /
+// plan version. Returns null when no row matches — a provider-side
+// change for a subscription SendCMS never activated is not an
+// error. A "canceled" status cancels (one CANCELED event, DB-025
+// conditional); "past_due"/"unpaid"/"suspended" marks PAST_DUE;
+// "plan-changed" moves the version with a MIGRATED event; anything
+// else only syncs the period end / cancel flag.
+export async function syncSubscriptionFromProvider(
+  provider: BillingProvider,
+  providerSubscriptionId: string,
+  update: {
+    status?: string | null
+    periodEnd?: Date | null
+    cancelAtPeriodEnd?: boolean | null
+    planVersionId?: string | null
+  }
+): Promise<SubscriptionSummary | null> {
+  const existing = await db.subscription.findFirst({
+    where: {
+      provider,
+      providerSubscriptionId,
+      status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  if (!existing) return null
+  const status = update.status?.toLowerCase() ?? null
+  if (status === "canceled" || status === "revoked" || status === "expired") {
+    return cancelSubscriptionFromProvider(
+      provider,
+      providerSubscriptionId,
+      `Canceled by ${provider} (${status})`
+    )
+  }
+  if (status === "past_due" || status === "unpaid" || status === "suspended") {
+    return markSubscriptionPastDue(provider, providerSubscriptionId)
+  }
+  const data: {
+    currentPeriodEnd?: Date
+    cancelAtPeriodEnd?: boolean
+    planId?: string
+    planVersionId?: string
+  } = {}
+  if (update.periodEnd) data.currentPeriodEnd = update.periodEnd
+  if (
+    update.cancelAtPeriodEnd !== null &&
+    update.cancelAtPeriodEnd !== undefined
+  ) {
+    data.cancelAtPeriodEnd = update.cancelAtPeriodEnd
+  }
+  let eventType: SubscriptionEventType | null = null
+  let fromVersionId: string | null = null
+  if (update.planVersionId && update.planVersionId !== existing.planVersionId) {
+    const target = await getVersionOrThrow(update.planVersionId)
+    if (target.status !== "PUBLISHED") {
+      throw new ApiError("Only a published plan version can be assigned.", 409)
+    }
+    data.planId = target.planId
+    data.planVersionId = target.id
+    eventType = "MIGRATED"
+    fromVersionId = existing.planVersionId
+  }
+  if (Object.keys(data).length === 0) {
+    const unchanged = await db.subscription.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: subscriptionInclude,
+    })
+    return toSubscriptionSummary(unchanged as SubscriptionWithRelations)
+  }
+  const updated = await db.$transaction(async (tx) => {
+    const synced = await tx.subscription.update({
+      where: { id: existing.id },
+      data,
+      include: subscriptionInclude,
+    })
+    if (eventType) {
+      await tx.subscriptionEvent.create({
+        data: {
+          subscriptionId: existing.id,
+          type: eventType,
+          fromPlanVersionId: fromVersionId,
+          toPlanVersionId: update.planVersionId ?? null,
+          adminId: null,
+          reason: `Plan changed at ${provider}`,
+        },
+      })
+    }
+    return synced
+  })
+  await logAudit({
+    userId: existing.userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: existing.id,
+    detail: {
+      event: "subscription-synced-from-provider",
+      provider,
+      providerSubscriptionId,
+      ...(status ? { status } : {}),
+      ...(update.periodEnd
+        ? { currentPeriodEnd: update.periodEnd.toISOString() }
+        : {}),
+      ...(update.cancelAtPeriodEnd !== null &&
+      update.cancelAtPeriodEnd !== undefined
+        ? { cancelAtPeriodEnd: update.cancelAtPeriodEnd }
+        : {}),
+      ...(update.planVersionId ? { planVersionId: update.planVersionId } : {}),
+    },
+  })
+  return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// Apply a provider refund / chargeback (BIL-081 / BIL-004 / BIL-047,
+// owner decision 2026-11-25). Resolution order: the subscription
+// behind `providerSubscriptionId`, then the one-time purchase behind
+// `providerReference`. FULL refund → cancel the matching
+// subscription (downgrade to Free is automatic — the resolver falls
+// back to the Free plan) + CANCELED event + audit, and flip the
+// linked one-time purchase to REFUNDED. PARTIAL refund → KEEP the
+// subscription and write a REFUNDED event so the refund surfaces in
+// the admin subscription timeline. Returns null when nothing
+// matches — an unmatched refund is recorded by the billing service
+// on the BillingEvent row instead.
+export async function applyRefund(
+  provider: BillingProvider,
+  input: {
+    providerSubscriptionId: string | null
+    providerReference?: string | null
+    fullRefund: boolean
+    amountMinor?: number | null
+  }
+): Promise<SubscriptionSummary | null> {
+  if (input.providerSubscriptionId) {
+    const existing = await db.subscription.findFirst({
+      where: {
+        provider,
+        providerSubscriptionId: input.providerSubscriptionId,
+        status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    if (existing) {
+      if (input.fullRefund) {
+        const canceled = await cancelSubscriptionFromProvider(
+          provider,
+          input.providerSubscriptionId,
+          `Refunded in full by ${provider}${
+            input.amountMinor !== null && input.amountMinor !== undefined
+              ? ` (${input.amountMinor})`
+              : ""
+          }`
+        )
+        await db.oneTimePurchase.updateMany({
+          where: { subscriptionId: existing.id, status: "ACTIVE" },
+          data: { status: "REFUNDED" },
+        })
+        return canceled
+      }
+      const kept = await db.$transaction(async (tx) => {
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: existing.id,
+            type: "REFUNDED",
+            fromPlanVersionId: existing.planVersionId,
+            toPlanVersionId: existing.planVersionId,
+            adminId: null,
+            reason: `Partial refund by ${provider}${
+              input.amountMinor !== null && input.amountMinor !== undefined
+                ? ` (${input.amountMinor})`
+                : ""
+            } — subscription kept`,
+          },
+        })
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: existing.id },
+          include: subscriptionInclude,
+        })
+      })
+      await logAudit({
+        userId: existing.userId,
+        action: AuditAction.UPDATE,
+        resourceType: AuditResource.SUBSCRIPTION,
+        resourceId: existing.id,
+        detail: {
+          event: "subscription-partial-refund",
+          provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+          amountMinor: input.amountMinor ?? null,
+        },
+      })
+      return toSubscriptionSummary(kept as SubscriptionWithRelations)
+    }
+  }
+  if (input.providerReference) {
+    const purchase = await db.oneTimePurchase.findFirst({
+      where: {
+        provider,
+        providerReference: input.providerReference,
+        status: "ACTIVE",
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    if (purchase) {
+      await db.oneTimePurchase.update({
+        where: { id: purchase.id },
+        data: { status: "REFUNDED" },
+      })
+      if (input.fullRefund && purchase.subscriptionId) {
+        const sub = await db.subscription.findUnique({
+          where: { id: purchase.subscriptionId },
+          select: { provider: true, providerSubscriptionId: true },
+        })
+        if (sub?.provider && sub.providerSubscriptionId) {
+          return cancelSubscriptionFromProvider(
+            sub.provider,
+            sub.providerSubscriptionId,
+            `One-time purchase refunded in full by ${provider}`
+          )
+        }
+      }
+      if (purchase.subscriptionId) {
+        const row = await db.subscription.findUnique({
+          where: { id: purchase.subscriptionId },
+          include: subscriptionInclude,
+        })
+        return row
+          ? toSubscriptionSummary(row as SubscriptionWithRelations)
+          : null
+      }
+      return null
+    }
+  }
+  return null
+}
+
 // BIL-080: mark the subscription behind a provider subscription id
 // PAST_DUE after a failed renewal payment. Entitlements survive
 // through the grace window (see `isSubscriptionPeriodLive`); the
 // expiry job flips it to EXPIRED once the grace ends, and a
 // successful renewal revives it via `extendSubscriptionPeriod`.
 // Returns null when nothing matches — a payment failure for a
-// subscription SendCMS never activated is not an error. No
-// SubscriptionEvent is written: the event enum has no PAST_DUE type;
-// the audit row is the record.
+// subscription SendCMS never activated is not an error. The
+// PAYMENT_FAILED SubscriptionEvent (Wave 8) is the timeline record;
+// the audit row is the second record. The transition is conditional
+// (only while still ACTIVE/TRIALING), so a retried failure event
+// cannot write a second PAYMENT_FAILED event.
 export async function markSubscriptionPastDue(
   provider: BillingProvider,
   providerSubscriptionId: string
@@ -1677,10 +2348,30 @@ export async function markSubscriptionPastDue(
     orderBy: { createdAt: "desc" },
   })
   if (!existing) return null
-  const updated = await db.subscription.update({
-    where: { id: existing.id },
-    data: { status: "PAST_DUE" },
-    include: subscriptionInclude,
+  const updated = await db.$transaction(async (tx) => {
+    const claimed = await tx.subscription.updateMany({
+      where: {
+        id: existing.id,
+        status: { in: ["ACTIVE", "TRIALING"] },
+      },
+      data: { status: "PAST_DUE" },
+    })
+    if (claimed.count === 1) {
+      await tx.subscriptionEvent.create({
+        data: {
+          subscriptionId: existing.id,
+          type: "PAYMENT_FAILED",
+          fromPlanVersionId: existing.planVersionId,
+          toPlanVersionId: existing.planVersionId,
+          adminId: null,
+          reason: `Payment failed via ${provider} — grace window of ${PAST_DUE_GRACE_DAYS} days`,
+        },
+      })
+    }
+    return tx.subscription.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: subscriptionInclude,
+    })
   })
   await logAudit({
     userId: existing.userId,
@@ -1757,6 +2448,12 @@ export async function expireSubscriptions(
               : "Period ended without renewal",
           },
         })
+        // BIL-003: a one-time purchase tied to this subscription
+        // expires with it — its finite access date is enforced here.
+        await tx.oneTimePurchase.updateMany({
+          where: { subscriptionId: row.id, status: "ACTIVE" },
+          data: { status: "EXPIRED" },
+        })
       })
       await logAudit({
         userId: row.userId,
@@ -1777,6 +2474,17 @@ export async function expireSubscriptions(
       fromStatus: row.status,
       toStatus,
       dryRun: opts.dryRun ?? false,
+    })
+  }
+  // BIL-003: a one-time purchase whose access date passed expires
+  // even if its subscription row was already ended another way (or
+  // the purchase outlives the subscription row). No separate
+  // subscription flip here — the subscription side is handled by
+  // the loop above; this only flips the purchase record itself.
+  if (!opts.dryRun) {
+    await db.oneTimePurchase.updateMany({
+      where: { status: "ACTIVE", accessEnd: { lt: now } },
+      data: { status: "EXPIRED" },
     })
   }
   return results
@@ -1809,21 +2517,45 @@ export async function getMigrationPreview(
 
   // The affected set: either the listed users' active subscriptions, or
   // every active subscription on the given version.
-  let subscriptions: (SubscriptionWithRelations & {
-    user: { id: string; name: string | null; email: string }
-  })[]
+  //
+  // SRC-223: the preview window is 100 rows, but `affectedCount` is
+  // the size of the WHOLE affected set — the admin decides on that
+  // number, so it comes from a separate count(), never from the
+  // window's length (the old code derived it from a `take: 101`
+  // window and capped it at 101). The `as never` casts on both
+  // branches are gone: the query shape (subscriptionInclude) IS the
+  // declared row type, so the rows assign directly.
+  let subscriptions: SubscriptionWithRelations[]
   let skippedUserIds: string[] = []
+  // Set only by the allOnVersionId branch (its window is capped, so
+  // the exact total needs the count below); the userIds branch is
+  // uncapped and counts its affected rows directly.
+  let totalAffected: number | null = null
   if (input.allOnVersionId) {
-    const rows = await db.subscription.findMany({
-      where: {
-        planVersionId: input.allOnVersionId,
-        status: { in: ["ACTIVE", "TRIALING"] },
-      },
-      include: subscriptionInclude,
-      orderBy: { createdAt: "asc" },
-      take: 101,
-    })
-    subscriptions = rows as never
+    const [rows, total] = await Promise.all([
+      db.subscription.findMany({
+        where: {
+          planVersionId: input.allOnVersionId,
+          status: { in: ["ACTIVE", "TRIALING"] },
+        },
+        include: subscriptionInclude,
+        orderBy: { createdAt: "asc" },
+        take: 101,
+      }),
+      // A migration onto the version the rows already sit on affects
+      // nobody; otherwise every ACTIVE/TRIALING row on the version
+      // is affected (the window query's filter, without its cap).
+      input.allOnVersionId === input.planVersionId
+        ? Promise.resolve(0)
+        : db.subscription.count({
+            where: {
+              planVersionId: input.allOnVersionId,
+              status: { in: ["ACTIVE", "TRIALING"] },
+            },
+          }),
+    ])
+    subscriptions = rows
+    totalAffected = total
   } else {
     const userIds = input.userIds ?? []
     const rows = await db.subscription.findMany({
@@ -1836,20 +2568,21 @@ export async function getMigrationPreview(
     })
     const foundUserIds = new Set(rows.map((r) => r.userId))
     skippedUserIds = userIds.filter((id) => !foundUserIds.has(id))
-    subscriptions = rows as never
+    subscriptions = rows
   }
 
   // Users already on the target version are not affected.
   const affected = subscriptions.filter(
     (row) => row.planVersionId !== input.planVersionId
   )
+  const affectedCount = totalAffected ?? affected.length
   skippedUserIds = [
     ...skippedUserIds,
     ...subscriptions
       .filter((row) => row.planVersionId === input.planVersionId)
       .map((row) => row.userId),
   ]
-  const previewTruncated = affected.length > 100
+  const previewTruncated = affectedCount > 100
   const previewRows = affected.slice(0, 100)
   const users: MigrationPreviewUser[] = previewRows.map((row) => {
     const fromFull = {
@@ -1878,13 +2611,49 @@ export async function getMigrationPreview(
       limitsChange: diffValues(fromFull, targetFull),
     }
   })
+  // BIL-089: whether executing this migration also changes what
+  // the provider bills. A migration is provider-synced where the
+  // provider supports a plan-change API (Stripe, PayPal, Polar);
+  // Freemius and Gumroad have no plan-change API, and a
+  // provider-less row bills nowhere, so those stay SendCMS-only and
+  // the preview says so plainly instead of implying a price change
+  // that will never be charged. The execute step records exactly
+  // which subscriptions were provider-synced and which were not.
+  const affectedProviders = new Set(
+    affected
+      .map((row) => row.provider)
+      .filter((p): p is BillingProvider => p != null)
+  )
+  const unsupportedProviders = [...affectedProviders].filter(
+    (p) => p === "FREEMIUS" || p === "GUMROAD"
+  )
+  const hasLocalOnlyRows = affected.some((row) => row.provider == null)
+  const billingUnchanged = unsupportedProviders.length > 0 || hasLocalOnlyRows
+  const providerUpdateSupported = affected.length > 0 && !billingUnchanged
+  const providerUpdateNote = billingUnchanged
+    ? [
+        ...(unsupportedProviders.length > 0
+          ? [
+              `Subscriptions on ${unsupportedProviders.join(", ")} will NOT be updated at the provider — ${unsupportedProviders.join("/")} has no subscription plan-change API, so those customers keep billing on their old plan until they re-subscribe.`,
+            ]
+          : []),
+        ...(hasLocalOnlyRows
+          ? [
+              "Some subscriptions have no provider attached — they are SendCMS-only and billing is unaffected.",
+            ]
+          : []),
+      ].join(" ")
+    : undefined
   return {
     targetPlanVersionId: target.id,
     targetPlan,
-    affectedCount: affected.length,
+    affectedCount,
     users,
     previewTruncated,
     skippedUserIds,
+    billingUnchanged,
+    providerUpdateSupported,
+    ...(providerUpdateNote ? { providerUpdateNote } : {}),
   }
 }
 
@@ -1894,12 +2663,41 @@ export async function getMigrationPreview(
 // version change is never recorded without its event. Rollback is a
 // new migration back to the previous version — history is never
 // rewritten.
+//
+// SRC-224: the migration reports per-user results instead of
+// throwing on the first failure — a mid-loop failure used to leave
+// earlier users migrated, later users not, with no audit row at all.
+// One giant transaction over the whole (up to 1000-user, or
+// unbounded allOnVersionId) set would risk statement timeouts, so
+// each user is attempted in turn: a failure is recorded in
+// `failedUserIds` and the rest continue, and the audit row is
+// written even on partial failure, naming migrated/skipped/failed.
+// DB-035: the version is re-checked INSIDE the per-user transaction
+// (see below) — a concurrent re-assignment is reported as skipped,
+// never silently overwritten.
+//
+// BIL-089: when `opts.updateAtProvider` is given (the billing
+// dispatcher — Stripe/PayPal/Polar support a plan change), the
+// provider subscription is updated BEFORE the local row moves, so
+// the provider and SendCMS never disagree about what is billed.
+// A provider failure (502) fails that user — the local row is left
+// untouched — and the rest continue. A provider that reports
+// `updated: false` (Freemius/Gumroad — no plan-change API) migrates
+// SendCMS-only and the reason is recorded in the audit detail.
+// Without a callback the migration is SendCMS-only and the audit
+// says so. Judgment call (2026-11-25, Wave 8 Stream A): provider-
+// synced where the provider supports it, SendCMS-only recorded
+// otherwise — the alternative (refusing to migrate any
+// provider-billed subscription) would block admin operations on
+// plans whose providers simply have no API for this.
 export async function executeMigration(
   actor: AdminSession,
-  input: ExecuteMigrationInput
+  input: ExecuteMigrationInput,
+  opts: { updateAtProvider?: ProviderUpdateFn } = {}
 ): Promise<{
   migratedUserIds: string[]
   skippedUserIds: string[]
+  failedUserIds: string[]
   count: number
 }> {
   requireAdmin(actor, "MIGRATE_SUBSCRIPTIONS")
@@ -1926,30 +2724,143 @@ export async function executeMigration(
     : (input.userIds ?? [])
   const migratedUserIds: string[] = []
   const skippedUserIds: string[] = []
+  const failedUserIds: string[] = []
+  const providerUpdateNotes: Record<string, string> = {}
   for (const userId of userIds) {
     const current = await findActiveSubscription(userId)
     if (!current || current.planVersionId === input.planVersionId) {
       skippedUserIds.push(userId)
       continue
     }
-    await db.$transaction(async (tx) => {
-      await tx.subscription.update({
-        where: { id: current.id },
-        data: { planId: target.planId, planVersionId: target.id },
+    // BIL-089: provider first, local second. A provider failure
+    // fails this user before anything local changes.
+    if (
+      opts.updateAtProvider &&
+      current.provider &&
+      current.providerSubscriptionId
+    ) {
+      try {
+        // The provider plan-change needs the target version's
+        // billing terms and the customer's email/name (the
+        // dispatcher builds the provider's product/plan from them).
+        // The success/cancel URLs are checkout-session fields the
+        // plan-change path never uses — the dashboard billing URL
+        // is passed as a neutral value.
+        const customer = await db.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true },
+        })
+        if (!customer) {
+          failedUserIds.push(userId)
+          continue
+        }
+        const dashboardUrl =
+          process.env.NEXT_PUBLIC_DASHBOARD_URL ??
+          "https://dashboard.sendcms.bond"
+        const outcome = await opts.updateAtProvider(
+          current.provider,
+          current.providerSubscriptionId,
+          {
+            version: {
+              id: target.id,
+              planId: target.planId,
+              planName: target.plan.name,
+              priceAmount: target.priceAmount,
+              priceCurrency: target.priceCurrency,
+              billingInterval: target.billingInterval,
+              trialDays: target.trialDays,
+            },
+            customer: {
+              userId,
+              email: customer.email,
+              name: customer.name,
+            },
+            successUrl: `${dashboardUrl}/dashboard/billing`,
+            cancelUrl: `${dashboardUrl}/dashboard/billing`,
+            // BIL-014: one migration attempt per user+version, so a
+            // retried migration cannot mint duplicate provider
+            // objects at the provider.
+            idempotencyKey: `migration:${target.id}:${userId}`,
+          }
+        )
+        if (!outcome.updated) {
+          providerUpdateNotes[userId] =
+            outcome.reason ?? "Provider plan change not supported"
+        }
+      } catch (err) {
+        logger.warn("migration provider update failed, skipping user", {
+          userId,
+          provider: current.provider,
+          error: err,
+        })
+        failedUserIds.push(userId)
+        continue
+      }
+    } else if (current.provider && current.providerSubscriptionId) {
+      providerUpdateNotes[userId] =
+        "Provider subscription not updated — no provider callback supplied (SendCMS-only migration)"
+    }
+    // SRC-224: a failure for one user is recorded, not thrown — the
+    // remaining users still migrate and the audit below still runs.
+    try {
+      const moved = await db.$transaction(async (tx) => {
+        // DB-035: the read above is outside this transaction, so a
+        // concurrent assignment (admin assign, checkout webhook)
+        // between the read and this write would be silently
+        // reverted by an unconditional update. Re-read inside the
+        // transaction and re-check the version; the conditional
+        // update below is the second guard — it only matches while
+        // the row still sits on the previewed version.
+        const fresh = await findActiveSubscription(userId, tx)
+        if (!fresh || fresh.planVersionId !== current.planVersionId) {
+          return false
+        }
+        const updated = await tx.subscription.updateMany({
+          where: {
+            id: current.id,
+            planVersionId: current.planVersionId,
+          },
+          data: { planId: target.planId, planVersionId: target.id },
+        })
+        if (updated.count !== 1) return false
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: current.id,
+            type: "MIGRATED",
+            fromPlanVersionId: current.planVersionId,
+            toPlanVersionId: target.id,
+            adminId: actor.user.id,
+            reason: input.reason,
+          },
+        })
+        return true
       })
-      await tx.subscriptionEvent.create({
-        data: {
-          subscriptionId: current.id,
-          type: "MIGRATED",
-          fromPlanVersionId: current.planVersionId,
-          toPlanVersionId: target.id,
-          adminId: actor.user.id,
-          reason: input.reason,
-        },
+      if (moved) migratedUserIds.push(userId)
+      else {
+        // The provider was already updated above but the local row
+        // moved concurrently — the admin can see the note in the
+        // audit row and re-run the migration for this user.
+        if (
+          opts.updateAtProvider &&
+          current.provider &&
+          current.providerSubscriptionId &&
+          !providerUpdateNotes[userId]
+        ) {
+          providerUpdateNotes[userId] =
+            "Provider plan was updated but the local subscription moved concurrently — re-run the migration for this user"
+        }
+        skippedUserIds.push(userId)
+      }
+    } catch (err) {
+      logger.warn("migration failed for user, continuing with the rest", {
+        userId,
+        error: err,
       })
-    })
-    migratedUserIds.push(userId)
+      failedUserIds.push(userId)
+    }
   }
+  // SRC-224: the audit row is written even on partial failure, so a
+  // partial migration always has a record.
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.MIGRATE,
@@ -1960,12 +2871,19 @@ export async function executeMigration(
       planVersionId: target.id,
       migratedCount: migratedUserIds.length,
       skippedCount: skippedUserIds.length,
+      failedCount: failedUserIds.length,
+      failedUserIds,
       reason: input.reason,
+      // BIL-089: per-user provider-sync record — which users'
+      // providers were updated and which stayed SendCMS-only (and
+      // why). Empty when every migrated row was provider-synced.
+      providerUpdateNotes,
     },
   })
   return {
     migratedUserIds,
     skippedUserIds,
+    failedUserIds,
     count: migratedUserIds.length,
   }
 }
@@ -1974,10 +2892,27 @@ export async function executeMigration(
 // stays ACTIVE until its period ends (the flag is the record — the
 // actual expiry is a later job's concern); otherwise it is canceled
 // immediately with a CANCELED event.
+//
+// BIL-001 / BIL-082: a provider-attached subscription is canceled
+// at the PROVIDER first (via `opts.cancelAtProvider`, the billing
+// dispatcher). The provider call is the gate: a provider failure
+// (502) stops the cancel — the local row is never canceled while
+// the provider keeps billing. A provider row with no callback is a
+// hard 502, never a silent local-only cancel (the old behavior that
+// let billing continue invisibly). When the provider reports the
+// cancel as scheduled-at-period-end (`immediate: false`), the
+// local row takes the same state. A provider that cancels
+// immediately even when period-end was requested (PayPal/Freemius
+// have no at-period-end) is mirrored as an immediate local cancel
+// with an audit note, so the two sides never disagree.
+// DB-045: a cancel-at-period-end writes a CANCEL_SCHEDULED event
+// (it used to write nothing). DB-025: the immediate cancel is a
+// conditional updateMany — exactly one CANCELED event.
 export async function cancelSubscription(
   actor: AdminSession,
   subscriptionId: string,
-  input: CancelSubscriptionInput
+  input: CancelSubscriptionInput,
+  opts: { cancelAtProvider?: ProviderCancelFn } = {}
 ): Promise<SubscriptionSummary> {
   requireAdmin(actor, "MANAGE_SUBSCRIPTIONS")
   const row = await db.subscription.findUnique({
@@ -1988,29 +2923,88 @@ export async function cancelSubscription(
   if (row.status === "CANCELED" || row.status === "EXPIRED") {
     throw new ApiError("This subscription is already canceled.", 409)
   }
-  const updated = input.cancelAtPeriodEnd
-    ? await db.subscription.update({
-        where: { id: subscriptionId },
-        data: { cancelAtPeriodEnd: true },
-        include: subscriptionInclude,
-      })
-    : await db.$transaction(async (tx) => {
-        const canceled = await tx.subscription.update({
-          where: { id: subscriptionId },
+  const cancelAtPeriodEnd = input.cancelAtPeriodEnd ?? false
+  // BIL-001: provider first. Nothing local changes until the
+  // provider confirms the cancel (or the row has no provider).
+  let providerOutcome: ProviderCancelOutcome | null = null
+  if (row.provider && row.providerSubscriptionId) {
+    if (!opts.cancelAtProvider) {
+      throw new ApiError(
+        "This subscription is billed by a provider. Provider cancellation is not available in this context — the subscription was NOT canceled.",
+        502
+      )
+    }
+    providerOutcome = await opts.cancelAtProvider(row.provider, {
+      providerSubscriptionId: row.providerSubscriptionId,
+      cancelAtPeriodEnd,
+    })
+    if (!providerOutcome.canceledAtProvider) {
+      throw new ApiError(
+        "The provider did not confirm the cancellation. The subscription was NOT canceled.",
+        502
+      )
+    }
+  }
+  // A provider that only cancels immediately (PayPal/Freemius) turns
+  // a period-end request into an immediate cancel — mirror it
+  // locally rather than pretending the period still runs.
+  const immediate =
+    !cancelAtPeriodEnd ||
+    (providerOutcome?.canceledAtProvider && providerOutcome.immediate)
+  const updated = immediate
+    ? await db.$transaction(async (tx) => {
+        const canceled = await tx.subscription.updateMany({
+          where: {
+            id: subscriptionId,
+            status: { notIn: ["CANCELED", "EXPIRED"] },
+          },
           data: { status: "CANCELED", cancelAtPeriodEnd: false },
+        })
+        if (canceled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId,
+              type: "CANCELED",
+              fromPlanVersionId: row.planVersionId,
+              toPlanVersionId: null,
+              adminId: actor.user.id,
+              reason:
+                input.reason ??
+                (cancelAtPeriodEnd
+                  ? "Canceled immediately — provider has no cancel-at-period-end"
+                  : null),
+            },
+          })
+        }
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: subscriptionId },
           include: subscriptionInclude,
         })
-        await tx.subscriptionEvent.create({
-          data: {
-            subscriptionId,
-            type: "CANCELED",
-            fromPlanVersionId: row.planVersionId,
-            toPlanVersionId: null,
-            adminId: actor.user.id,
-            reason: input.reason ?? null,
+      })
+    : await db.$transaction(async (tx) => {
+        const scheduled = await tx.subscription.updateMany({
+          where: {
+            id: subscriptionId,
+            status: { notIn: ["CANCELED", "EXPIRED"] },
           },
+          data: { cancelAtPeriodEnd: true },
         })
-        return canceled
+        if (scheduled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId,
+              type: "CANCEL_SCHEDULED",
+              fromPlanVersionId: row.planVersionId,
+              toPlanVersionId: row.planVersionId,
+              adminId: actor.user.id,
+              reason: input.reason ?? "Cancel scheduled at period end",
+            },
+          })
+        }
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: subscriptionId },
+          include: subscriptionInclude,
+        })
       })
   await logAudit({
     userId: actor.user.id,
@@ -2019,8 +3013,19 @@ export async function cancelSubscription(
     resourceId: subscriptionId,
     detail: {
       event: "subscription-canceled",
-      cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+      cancelAtPeriodEnd: !immediate,
       ...(input.reason ? { reason: input.reason } : {}),
+      ...(providerOutcome
+        ? {
+            provider: row.provider,
+            providerSubscriptionId: row.providerSubscriptionId,
+            providerCanceled: true,
+            providerImmediate: providerOutcome.immediate,
+            ...(providerOutcome.note
+              ? { providerNote: providerOutcome.note }
+              : {}),
+          }
+        : {}),
     },
   })
   return toSubscriptionSummary(updated as SubscriptionWithRelations)
@@ -2070,25 +3075,30 @@ export async function subscribeToFreePlan(
     const previous = await tx.subscription.findFirst({
       where: {
         userId,
-        status: { in: ["ACTIVE", "TRIALING"] },
+        status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
       },
       orderBy: { createdAt: "desc" },
     })
     if (previous) {
-      await tx.subscription.update({
-        where: { id: previous.id },
+      const canceled = await tx.subscription.updateMany({
+        where: {
+          id: previous.id,
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        },
         data: { status: "CANCELED" },
       })
-      await tx.subscriptionEvent.create({
-        data: {
-          subscriptionId: previous.id,
-          type: "CANCELED",
-          fromPlanVersionId: previous.planVersionId,
-          toPlanVersionId: null,
-          adminId: null,
-          reason: "Replaced by a free-plan subscribe.",
-        },
-      })
+      if (canceled.count === 1) {
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: previous.id,
+            type: "CANCELED",
+            fromPlanVersionId: previous.planVersionId,
+            toPlanVersionId: null,
+            adminId: null,
+            reason: "Replaced by a free-plan subscribe.",
+          },
+        })
+      }
     }
     const next = await tx.subscription.create({
       data: {
@@ -2135,18 +3145,18 @@ export async function subscribeToFreePlan(
 // own latest subscription can be canceled — there is no id in the
 // request to confuse with another user's row. The transition mirrors
 // cancelSubscription (immediate CANCELED + event, or the
-// cancelAtPeriodEnd flag alone), with the customer as the actor.
+// cancelAtPeriodEnd flag + CANCEL_SCHEDULED event), with the customer
+// as the actor.
 //
-// LOCAL ONLY: this cancels the SendCMS row, NOT the provider
-// subscription. Provider-side cancellation is Wave 8's work
-// (BIL-001 / BIL-082 — cancelSubscriptionAtProvider does not exist
-// yet), so a paid subscription canceled here keeps billing at the
-// provider until Wave 8 wires it. The audit detail records that the
-// provider cancel is still pending, and the dashboard says so, so
-// the gap is visible instead of silent.
+// DSH-402 / BIL-001: a provider-attached subscription is canceled
+// at the PROVIDER first (via `opts.cancelAtProvider`). A provider
+// failure stops the cancel; a provider row with no callback is a
+// hard 502 — the old LOCAL ONLY behavior (cancel the SendCMS row
+// and keep billing at the provider) is gone.
 export async function cancelMySubscription(
   userId: string,
-  input: CancelSubscriptionInput
+  input: CancelSubscriptionInput,
+  opts: { cancelAtProvider?: ProviderCancelFn } = {}
 ): Promise<SubscriptionSummary> {
   const row = await db.subscription.findFirst({
     where: { userId },
@@ -2161,29 +3171,83 @@ export async function cancelMySubscription(
   if (cancelAtPeriodEnd && row.cancelAtPeriodEnd) {
     return toSubscriptionSummary(row as SubscriptionWithRelations)
   }
-  const updated = cancelAtPeriodEnd
-    ? await db.subscription.update({
-        where: { id: row.id },
-        data: { cancelAtPeriodEnd: true },
-        include: subscriptionInclude,
-      })
-    : await db.$transaction(async (tx) => {
-        const canceled = await tx.subscription.update({
-          where: { id: row.id },
+  let providerOutcome: ProviderCancelOutcome | null = null
+  if (row.provider && row.providerSubscriptionId) {
+    if (!opts.cancelAtProvider) {
+      throw new ApiError(
+        "This subscription is billed by a provider. Provider cancellation is not available in this context — the subscription was NOT canceled.",
+        502
+      )
+    }
+    providerOutcome = await opts.cancelAtProvider(row.provider, {
+      providerSubscriptionId: row.providerSubscriptionId,
+      cancelAtPeriodEnd,
+    })
+    if (!providerOutcome.canceledAtProvider) {
+      throw new ApiError(
+        "The provider did not confirm the cancellation. The subscription was NOT canceled.",
+        502
+      )
+    }
+  }
+  const immediate =
+    !cancelAtPeriodEnd ||
+    (providerOutcome?.canceledAtProvider && providerOutcome.immediate)
+  const updated = immediate
+    ? await db.$transaction(async (tx) => {
+        const canceled = await tx.subscription.updateMany({
+          where: {
+            id: row.id,
+            status: { notIn: ["CANCELED", "EXPIRED"] },
+          },
           data: { status: "CANCELED", cancelAtPeriodEnd: false },
+        })
+        if (canceled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId: row.id,
+              type: "CANCELED",
+              fromPlanVersionId: row.planVersionId,
+              toPlanVersionId: null,
+              adminId: null,
+              reason:
+                input.reason ??
+                (cancelAtPeriodEnd
+                  ? "Canceled immediately — provider has no cancel-at-period-end"
+                  : "Canceled by customer."),
+            },
+          })
+        }
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: row.id },
           include: subscriptionInclude,
         })
-        await tx.subscriptionEvent.create({
-          data: {
-            subscriptionId: row.id,
-            type: "CANCELED",
-            fromPlanVersionId: row.planVersionId,
-            toPlanVersionId: null,
-            adminId: null,
-            reason: input.reason ?? "Canceled by customer.",
+      })
+    : await db.$transaction(async (tx) => {
+        const scheduled = await tx.subscription.updateMany({
+          where: {
+            id: row.id,
+            status: { notIn: ["CANCELED", "EXPIRED"] },
           },
+          data: { cancelAtPeriodEnd: true },
         })
-        return canceled
+        if (scheduled.count === 1) {
+          await tx.subscriptionEvent.create({
+            data: {
+              subscriptionId: row.id,
+              type: "CANCEL_SCHEDULED",
+              fromPlanVersionId: row.planVersionId,
+              toPlanVersionId: row.planVersionId,
+              adminId: null,
+              reason:
+                input.reason ?? "Cancel scheduled at period end by customer.",
+            },
+          })
+        }
+        return tx.subscription.findUniqueOrThrow({
+          where: { id: row.id },
+          include: subscriptionInclude,
+        })
       })
   await logAudit({
     userId,
@@ -2192,15 +3256,22 @@ export async function cancelMySubscription(
     resourceId: row.id,
     detail: {
       event: "subscription-canceled-by-customer",
-      cancelAtPeriodEnd,
+      cancelAtPeriodEnd: !immediate,
       ...(input.reason ? { reason: input.reason } : {}),
-      // Wave 8 (BIL-001/BIL-082) still has to cancel this at the
-      // provider when one is attached; until then the provider keeps
-      // billing. Null provider = a locally-assigned/free row, nothing
-      // to cancel anywhere else.
-      provider: row.provider ?? null,
-      providerSubscriptionId: row.providerSubscriptionId ?? null,
-      providerCancelPending: row.providerSubscriptionId != null,
+      ...(providerOutcome
+        ? {
+            provider: row.provider,
+            providerSubscriptionId: row.providerSubscriptionId,
+            providerCanceled: true,
+            providerImmediate: providerOutcome.immediate,
+            ...(providerOutcome.note
+              ? { providerNote: providerOutcome.note }
+              : {}),
+          }
+        : {
+            provider: row.provider ?? null,
+            providerSubscriptionId: row.providerSubscriptionId ?? null,
+          }),
     },
   })
   return toSubscriptionSummary(updated as SubscriptionWithRelations)
@@ -2538,7 +3609,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// DB-018: the unit is implied by the meter — it must never drift
+// ("forms" vs "form"). The canonical unit per meter lives here, in
+// one place; recordUsage refuses any other unit for the meter, so a
+// typo'd unit can never reach the ledger. The values are the ones
+// the callers already use (SUBMISSIONS "submission", FORMS "form").
+export const UNIT_BY_METER: Record<UsageMeter, string> = {
+  FORMS: "form",
+  DOMAINS: "domain",
+  SUBMISSIONS: "submission",
+  API_KEYS: "api-key",
+  MCP_REQUESTS: "request",
+  AI_REQUESTS: "request",
+}
+
+export function assertUsageUnit(meter: UsageMeter, unit: string): void {
+  if (UNIT_BY_METER[meter] !== unit) {
+    throw new ApiError(
+      `Invalid unit "${unit}" for meter ${meter} (expected "${UNIT_BY_METER[meter]}").`,
+      422
+    )
+  }
+}
+
 function toUsageLedgerData(input: RecordUsageInput) {
+  assertUsageUnit(input.meter, input.unit)
   return {
     userId: input.userId,
     meter: input.meter,
@@ -2795,15 +3890,27 @@ async function getUsedForMeter(
       where: { ownerId: userId },
       select: { id: true },
     })
-    if (forms.length === 0) return 0
-    const total = await db.aiDailyUsage.aggregate({
-      _sum: { calls: true },
-      where: {
-        formId: { in: forms.map((f) => f.id) },
-        date: startOfUtcDay(at),
-      },
-    })
-    return total._sum.calls ?? 0
+    // Wave 8 (AIM-028): the daily budget is ONE budget — the worker
+    // rescore counts per form (AiDailyUsage) AND the interactive
+    // paths count per owner (AiDailyOwnerUsage). Both sums count
+    // here, or the allowance shown to the user would undercount
+    // interactive spend.
+    const [formUsage, ownerUsage] = await Promise.all([
+      forms.length === 0
+        ? Promise.resolve({ _sum: { calls: null } })
+        : db.aiDailyUsage.aggregate({
+            _sum: { calls: true },
+            where: {
+              formId: { in: forms.map((f) => f.id) },
+              date: startOfUtcDay(at),
+            },
+          }),
+      db.aiDailyOwnerUsage.aggregate({
+        _sum: { calls: true },
+        where: { userId, date: startOfUtcDay(at) },
+      }),
+    ])
+    return (formUsage._sum.calls ?? 0) + (ownerUsage._sum.calls ?? 0)
   }
   // MCP_REQUESTS: the current hour's counted calls across the user's keys.
   const keys = await db.apiKey.findMany({

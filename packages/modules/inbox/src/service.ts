@@ -9,19 +9,30 @@ import {
 import { logAudit } from "@sendcms/security"
 import {
   ApiError,
+  aiSubmissionExcerpt,
   getSubmissionSender,
-  previewSubmissionText,
 } from "@sendcms/shared"
+import { createLogger } from "@sendcms/observability"
 import {
   draftReply,
+  isAiAuthFailure,
+  mapAiCallError,
   type AiCallUsage,
   type AiEnvConfig,
   type AiProviderName,
   type ReplyDraft,
 } from "@sendcms/ai"
-import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
+import {
+  claimInteractiveAiCall,
+  recordAiUsage,
+  recordByokAuthFailure,
+  recordByokAuthSuccess,
+  resolveAiModelForUser,
+} from "@sendcms/ai-settings"
 import { enqueueReply } from "@sendcms/notifications"
 import { isValidCalendarDate } from "./validators"
+
+const logger = createLogger("inbox")
 
 // ---------------------------------------------------------------------------
 // Inbox dashboard. Admin-side reads and status changes.
@@ -540,6 +551,14 @@ export async function draftReplyForSubmission(
   }
   const sender = getSubmissionSender(submission.data)
   const usage: { current: AiCallUsage | null } = { current: null }
+  // AIM-028: same daily-budget claim as suggest-fields — claimed
+  // after resolution, before the model call; 429 at the cap.
+  if (!(await claimInteractiveAiCall(userId))) {
+    throw new ApiError(
+      "You have reached your daily AI limit. Try again tomorrow.",
+      429
+    )
+  }
   let draft
   try {
     draft = await draftReply({
@@ -548,7 +567,9 @@ export async function draftReplyForSubmission(
       submission: {
         senderName: sender.name,
         senderEmail: sender.email,
-        content: previewSubmissionText(submission.data),
+        // AIM-019: the model sees a real excerpt (up to 2000
+        // chars), not the 80-char UI preview.
+        content: aiSubmissionExcerpt(submission.data, 2000),
         receivedAt: submission.createdAt,
       },
       onUsage: (u) => {
@@ -556,6 +577,11 @@ export async function draftReplyForSubmission(
       },
     })
   } catch (err) {
+    // AIM-003: a provider-auth failure at call time feeds the BYOK
+    // key's auto-disable counter (transient failures never do).
+    if (resolved.billingMode === "BYOK" && isAiAuthFailure(err)) {
+      await recordByokAuthFailure(userId, resolved.provider)
+    }
     await recordAiUsage({
       userId,
       provider: resolved.provider,
@@ -565,19 +591,35 @@ export async function draftReplyForSubmission(
       sourceEvent: "draft-reply",
       resourceId: submissionId,
     })
-    throw err
+    // AIM-004 / AIM-023 / SRC-225: map the raw SDK error to a
+    // 502/503 naming the failure class instead of a generic 500.
+    throw mapAiCallError(err, resolved.provider)
   }
-  await recordAiUsage({
-    userId,
-    provider: resolved.provider,
-    model: resolved.modelId,
-    billingMode: resolved.billingMode,
-    status: "SUCCESS",
-    tokensIn: usage.current?.promptTokens ?? null,
-    tokensOut: usage.current?.completionTokens ?? null,
-    sourceEvent: "draft-reply",
-    resourceId: submissionId,
-  })
+  // SRC-225: guarded like suggest-fields — a bookkeeping failure
+  // must never discard a good draft.
+  try {
+    await recordAiUsage({
+      userId,
+      provider: resolved.provider,
+      model: resolved.modelId,
+      billingMode: resolved.billingMode,
+      status: "SUCCESS",
+      tokensIn: usage.current?.promptTokens ?? null,
+      tokensOut: usage.current?.completionTokens ?? null,
+      costMicros: usage.current?.costMicros ?? null,
+      sourceEvent: "draft-reply",
+      resourceId: submissionId,
+    })
+  } catch (err) {
+    logger.error("ai usage record failed after successful draft-reply", {
+      error: err,
+      userId,
+      submissionId,
+    })
+  }
+  if (resolved.billingMode === "BYOK") {
+    await recordByokAuthSuccess(userId, resolved.provider)
+  }
   return draft
 }
 

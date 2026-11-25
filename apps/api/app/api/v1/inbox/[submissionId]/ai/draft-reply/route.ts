@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
+import { enforceCustomerAiRateLimit } from "@/lib/rate-limit"
 import { pickAiEnvConfig } from "@sendcms/ai"
 import { draftReplyForSubmission } from "@sendcms/inbox"
 import { DraftReplySchema } from "@sendcms/inbox/validators"
@@ -21,6 +22,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
+    // AIM-028: per-user/per-minute rate limit (60/min) on top of
+    // the service's daily-budget claim — the interactive AI routes
+    // used to carry no rate limiter at all.
+    const rateLimited = await enforceCustomerAiRateLimit(req, session.user.id)
+    if (rateLimited) return rateLimited
     const { submissionId } = await params
     const body = await req.json().catch(() => ({}))
     // SRC-104: the body is exactly the shared browser-only key trio

@@ -67,12 +67,16 @@ audited with the old/new values (`flag-toggled`,
 409, never an upsert. Removing an override makes the global flag
 apply again.
 
-There are NO seed flags. Phase 7 shipped the registry + API with no
-consumer wiring, by design — the wiring landed in Phase 8:
-`ai-spam-rescore` gates `rescoreNewSubmissions` and `ai-digest`
-gates `sendDueDigests` in `@sendcms/submissions` (flag
+The two system flags are seeded (disabled) by migration
+`20261125091400_wave8d_seed_platform_settings`, so they are visible
+in `/admin/features` on a fresh deploy. Phase 7 shipped the registry
++ API with no consumer wiring, by design — the wiring landed in
+Phase 8: `ai-spam-rescore` gates `rescoreNewSubmissions` and
+`ai-digest` gates `sendDueDigests` in `@sendcms/submissions` (flag
 missing/disabled = job off). See
-[ai-byok](./ai-byok.md#wiring-the-existing-capabilities).
+[ai-byok](./ai-byok.md#wiring-the-existing-capabilities) and
+[Deployment](../deployment.md#ai-background-jobs) for the
+post-deploy enable step.
 
 ## Announcements
 

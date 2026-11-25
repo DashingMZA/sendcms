@@ -18,6 +18,7 @@
     "@sendcms/ai-settings": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/notifications": "workspace:*",
+    "@sendcms/observability": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"

@@ -10,9 +10,25 @@ function requiredString(message: string) {
     error: (issue) => (issue.code === "invalid_type" ? message : undefined),
   })
 }
-import { BillingProvider } from "@sendcms/database"
 
-const providerSchema = z.nativeEnum(BillingProvider)
+// SRC-230: this file used to import the Prisma `BillingProvider`
+// enum as a VALUE (`z.nativeEnum`), so importing
+// `@sendcms/billing/validators` (or the `@sendcms/billing` barrel,
+// which re-exports these schemas) pulled the Prisma client runtime
+// into the bundle. Validators must stay framework-agnostic and safe
+// to import anywhere (routes + client hooks), so the provider list
+// is a local string enum. The registry
+// (`./registry`, BILLING_PROVIDERS) stays the single source of truth
+// for what each provider needs — the drift-guard test
+// (tests/wave8-stream-d.test.ts) asserts this list, the registry
+// ids, and the Prisma enum stay identical.
+const providerSchema = z.enum([
+  "STRIPE",
+  "PAYPAL",
+  "POLAR",
+  "FREEMIUS",
+  "GUMROAD",
+])
 
 const isoCountryCode = z
   .string()
@@ -76,3 +92,33 @@ export type SetProviderConfigBodyInput = z.infer<
   typeof setProviderConfigBodySchema
 >
 export type CheckoutSessionInput = z.infer<typeof checkoutSessionSchema>
+
+// BIL-028: the admin checkout-attempts list — paginated, filterable
+// by provider / user / status. Same pagination shape as the
+// billing-events list.
+const checkoutAttemptStatusSchema = z.enum(["CREATED", "COMPLETED", "FAILED"])
+
+export const CheckoutAttemptsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.coerce.number().int().min(1).max(100).default(20),
+  provider: providerSchema.optional(),
+  userId: z.string().trim().min(1).max(50).optional(),
+  status: checkoutAttemptStatusSchema.optional(),
+})
+
+export type CheckoutAttemptsQuery = z.infer<typeof CheckoutAttemptsQuerySchema>
+
+// BIL-016 / BIL-052: the customer/admin reconciliation body —
+// which provider checkout to verify and activate. The id is the
+// provider's checkout id (Stripe session id, PayPal subscription
+// or order id), never a SendCMS id.
+export const reconcileCheckoutSchema = z.object({
+  provider: providerSchema,
+  providerCheckoutId: z
+    .string()
+    .trim()
+    .min(1, "providerCheckoutId is required")
+    .max(200),
+})
+
+export type ReconcileCheckoutInput = z.infer<typeof reconcileCheckoutSchema>

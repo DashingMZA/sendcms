@@ -9,7 +9,12 @@ const mockDb = vi.hoisted(() => ({
     findMany: vi.fn(),
     update: vi.fn(),
   },
-  submission: { findMany: vi.fn() },
+  submission: {
+    findMany: vi.fn(),
+    // SRC-203 (Wave 8): the whole-window count, read only when the
+    // 50-cap was hit.
+    count: vi.fn(async () => 0),
+  },
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()

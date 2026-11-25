@@ -27,7 +27,11 @@ export const MCP_ADMIN_KEYS = {
     ["mcp-usage", filters] as const,
   usageSummary: (filters: Record<string, string | number | undefined>) =>
     ["mcp-usage-summary", filters] as const,
-  keys: (page: number, perPage: number) => ["mcp-keys", page, perPage] as const,
+  keys: (
+    page: number,
+    perPage: number,
+    filters: Record<string, string | number | boolean | undefined> = {}
+  ) => ["mcp-keys", page, perPage, filters] as const,
 }
 
 // ─── Global kill-switch ───────────────────────────────────────────────
@@ -135,17 +139,33 @@ export function useMcpUsageSummary(filters: {
 
 // ─── Keys ─────────────────────────────────────────────────────────────
 
-export function useMcpKeys(page = 1, perPage = 20) {
+export function useMcpKeys(
+  page = 1,
+  perPage = 20,
+  filters: {
+    search?: string
+    userId?: string
+    scope?: "READ" | "FULL"
+    revoked?: boolean
+  } = {}
+) {
   return useQuery({
-    queryKey: MCP_ADMIN_KEYS.keys(page, perPage),
-    queryFn: () =>
-      apiFetch<{
+    queryKey: MCP_ADMIN_KEYS.keys(page, perPage, filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      params.set("page", String(page))
+      params.set("perPage", String(perPage))
+      for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined) params.set(key, String(value))
+      }
+      return apiFetch<{
         keys: McpKeyRow[]
         total: number
         page: number
         perPage: number
         totalPages: number
-      }>(`/api/v1/admin/mcp/keys?page=${page}&perPage=${perPage}`),
+      }>(`/api/v1/admin/mcp/keys?${params.toString()}`)
+    },
   })
 }
 

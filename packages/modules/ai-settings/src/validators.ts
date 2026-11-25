@@ -36,10 +36,15 @@ export const AiPaginationQuerySchema = z.object({
 // deliberately loose (non-empty, min 8 chars) — per-provider prefixes
 // are NOT hardcoded. `model` is the user's chosen model for this
 // provider (null/omitted = the provider default).
+// `termsAcknowledged` (AIM-025, ADR 0010 Decision 4): saving a key
+// on the server requires acknowledging the provider's
+// data-processing terms — the dashboard's storage popup carries the
+// checkbox; the service refuses the save without it (422).
 export const SaveAiKeySchema = z.object({
   provider: AiProviderNameSchema,
   apiKey: z.string().trim().min(8, "The API key looks too short.").max(500),
   model: z.string().trim().min(1).max(200).optional(),
+  termsAcknowledged: z.boolean().optional(),
 })
 
 export type SaveAiKeyInput = z.infer<typeof SaveAiKeySchema>

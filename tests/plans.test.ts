@@ -19,9 +19,12 @@ const mockDb = vi.hoisted(() => ({
     findFirst: vi.fn(),
     findMany: vi.fn(),
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
-    updateMany: vi.fn(),
+    // SRC-211 (Wave 8): publish claims the DRAFT with a conditional
+    // updateMany; the default is "claimed" (count 1).
+    updateMany: vi.fn(async () => ({ count: 1 })),
   },
   subscription: {
     findFirst: vi.fn(),
@@ -31,8 +34,26 @@ const mockDb = vi.hoisted(() => ({
     count: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    // SRC-224 / DB-035: the migration's in-transaction write is a
+    // conditional updateMany (only while the row still sits on the
+    // previewed version).
+    updateMany: vi.fn(async () => ({ count: 1 })),
   },
-  subscriptionEvent: { create: vi.fn(), findMany: vi.fn() },
+  subscriptionEvent: {
+    create: vi.fn(),
+    findMany: vi.fn(),
+    // DB-010 (Wave 8): the renewal idempotency check reads the
+    // RENEWED event for a webhook event id; default "not applied".
+    findFirst: vi.fn(async () => null),
+  },
+  // BIL-003 / BIL-081 (Wave 8): one-time purchase rows.
+  oneTimePurchase: {
+    create: vi.fn(),
+    findFirst: vi.fn(async () => null),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(async () => ({ count: 0 })),
+  },
   usageLedger: {
     create: vi.fn(),
     findUnique: vi.fn(),
@@ -412,7 +433,7 @@ describe("publishPlanVersion", () => {
       makeVersion({ id: "version-2", version: 2, status: "DRAFT" })
     )
     mockDb.plan.findUnique.mockResolvedValue(makePlan())
-    mockDb.planVersion.update.mockResolvedValue(
+    mockDb.planVersion.findUniqueOrThrow.mockResolvedValue(
       makeVersion({ id: "version-2", version: 2, status: "PUBLISHED" })
     )
 
@@ -425,17 +446,20 @@ describe("publishPlanVersion", () => {
       }
     )
 
-    const updateCalls = mockDb.planVersion.update.mock.calls
-    expect(updateCalls).toContainEqual([
+    // SRC-211 (Wave 8): the publish is a conditional updateMany on
+    // the DRAFT row, and the supersede is a conditional updateMany
+    // on the still-PUBLISHED previous row — never a blind update.
+    const updateManyCalls = mockDb.planVersion.updateMany.mock.calls
+    expect(updateManyCalls).toContainEqual([
       expect.objectContaining({
-        where: { id: "version-1" },
-        data: { status: "SUPERSEDED" },
+        where: { id: "version-2", status: "DRAFT" },
+        data: expect.objectContaining({ status: "PUBLISHED" }),
       }),
     ])
-    expect(updateCalls).toContainEqual([
+    expect(updateManyCalls).toContainEqual([
       expect.objectContaining({
-        where: { id: "version-2" },
-        data: expect.objectContaining({ status: "PUBLISHED" }),
+        where: { id: "version-1", status: "PUBLISHED" },
+        data: { status: "SUPERSEDED" },
       }),
     ])
     expect(mockDb.plan.update).toHaveBeenCalledWith(
@@ -452,6 +476,20 @@ describe("publishPlanVersion", () => {
         detail: expect.objectContaining({ reason: "Ship the new limits" }),
       })
     )
+  })
+
+  it("rejects a concurrent publish of the same draft with 409 (SRC-211)", async () => {
+    mockDb.planVersion.findUnique.mockResolvedValue(
+      makeVersion({ id: "version-2", version: 2, status: "DRAFT" })
+    )
+    mockDb.plan.findUnique.mockResolvedValue(makePlan())
+    // The other publish won the conditional update first.
+    mockDb.planVersion.updateMany.mockResolvedValueOnce({ count: 0 })
+    await expect(
+      publishPlanVersion(ownerActor(), "plan-1", "version-2", {
+        reason: "Race",
+      })
+    ).rejects.toMatchObject({ status: 409 })
   })
 
   it("rejects publishing a non-draft version with 409", async () => {
@@ -587,9 +625,16 @@ describe("assignSubscription", () => {
       reason: "Upgrade to Pro",
     })
 
-    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+    // DB-009 / DB-021 (Wave 8): the supersede is a CONDITIONAL
+    // updateMany — only while the previous row is still live — so a
+    // concurrent assign cannot cancel the same row twice, and the
+    // CANCELED event is written only when the claim lands.
+    expect(mockDb.subscription.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "sub-1" },
+        where: expect.objectContaining({
+          id: "sub-1",
+          status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
+        }),
         data: { status: "CANCELED" },
       })
     )
@@ -733,6 +778,9 @@ describe("getMigrationPreview", () => {
         user: { id: "user-2", name: "Two", email: "two@example.com" },
       }),
     ])
+    // SRC-223: the exact total comes from a separate count(), not
+    // from the 100-row preview window.
+    mockDb.subscription.count.mockResolvedValue(2)
 
     const preview = await getMigrationPreview(ownerActor(), {
       planVersionId: "version-2",
@@ -740,6 +788,12 @@ describe("getMigrationPreview", () => {
     })
 
     expect(preview.affectedCount).toBe(2)
+    expect(mockDb.subscription.count).toHaveBeenCalledWith({
+      where: {
+        planVersionId: "version-1",
+        status: { in: ["ACTIVE", "TRIALING"] },
+      },
+    })
   })
 })
 
@@ -765,15 +819,23 @@ describe("executeMigration", () => {
     expect(result).toMatchObject({
       migratedUserIds: [userId],
       skippedUserIds: [],
+      failedUserIds: [],
       count: 1,
     })
-    expect(mockDb.subscription.update).toHaveBeenCalledTimes(1)
-    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+    // SRC-224 / DB-035: the in-transaction write is conditional —
+    // it only matches while the row still sits on the previewed
+    // version, so a concurrent re-assignment cannot be overwritten.
+    expect(mockDb.subscription.updateMany).toHaveBeenCalledTimes(1)
+    expect(mockDb.subscription.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "sub-1" },
+        where: {
+          id: "sub-1",
+          planVersionId: "version-1",
+        },
         data: { planId: "plan-2", planVersionId: "version-2" },
       })
     )
+    expect(mockDb.subscription.update).not.toHaveBeenCalled()
     expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -823,13 +885,19 @@ describe("executeMigration", () => {
 describe("cancelSubscription", () => {
   it("cancels immediately with a CANCELED event", async () => {
     mockDb.subscription.findUnique.mockResolvedValue(makeSubscription())
-    mockDb.subscription.update.mockResolvedValue(
+    mockDb.subscription.findUniqueOrThrow.mockResolvedValue(
       makeSubscription({ status: "CANCELED" })
     )
 
     const canceled = await cancelSubscription(ownerActor(), "sub-1", {})
 
     expect(canceled.status).toBe("CANCELED")
+    expect(mockDb.subscription.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "sub-1" }),
+        data: { status: "CANCELED", cancelAtPeriodEnd: false },
+      })
+    )
     expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ type: "CANCELED" }),
@@ -837,9 +905,9 @@ describe("cancelSubscription", () => {
     )
   })
 
-  it("keeps the subscription ACTIVE when cancelAtPeriodEnd is set", async () => {
+  it("keeps the subscription ACTIVE when cancelAtPeriodEnd is set, with a CANCEL_SCHEDULED event", async () => {
     mockDb.subscription.findUnique.mockResolvedValue(makeSubscription())
-    mockDb.subscription.update.mockResolvedValue(
+    mockDb.subscription.findUniqueOrThrow.mockResolvedValue(
       makeSubscription({ cancelAtPeriodEnd: true })
     )
 
@@ -849,6 +917,27 @@ describe("cancelSubscription", () => {
 
     expect(canceled.status).toBe("ACTIVE")
     expect(canceled.cancelAtPeriodEnd).toBe(true)
+    // DB-045 (Wave 8): a scheduled cancel writes a CANCEL_SCHEDULED
+    // event — the old code wrote nothing for this branch.
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "CANCEL_SCHEDULED" }),
+      })
+    )
+  })
+
+  it("refuses a provider-attached subscription with no provider callback (BIL-001)", async () => {
+    mockDb.subscription.findUnique.mockResolvedValue(
+      makeSubscription({
+        provider: "STRIPE",
+        providerSubscriptionId: "sub_123",
+      })
+    )
+
+    await expect(
+      cancelSubscription(ownerActor(), "sub-1", {})
+    ).rejects.toMatchObject({ status: 502 })
+    expect(mockDb.subscription.updateMany).not.toHaveBeenCalled()
     expect(mockDb.subscriptionEvent.create).not.toHaveBeenCalled()
   })
 })
@@ -1431,19 +1520,26 @@ describe("subscription period liveness (BIL-080 belt-and-braces)", () => {
 })
 
 describe("markSubscriptionPastDue (BIL-080)", () => {
-  it("flips ACTIVE to PAST_DUE and audits the failure", async () => {
+  it("flips ACTIVE to PAST_DUE, writes a PAYMENT_FAILED event, and audits the failure", async () => {
     const row = makeSubscription({ status: "ACTIVE" })
     mockDb.subscription.findFirst.mockResolvedValue(row)
-    mockDb.subscription.update.mockResolvedValue({
+    mockDb.subscription.findUniqueOrThrow.mockResolvedValue({
       ...row,
       status: "PAST_DUE",
     })
     const result = await markSubscriptionPastDue("STRIPE", "sub_1")
     expect(result?.status).toBe("PAST_DUE")
-    expect(mockDb.subscription.update).toHaveBeenCalledWith(
+    expect(mockDb.subscription.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "sub-1" },
+        where: expect.objectContaining({ id: "sub-1" }),
         data: { status: "PAST_DUE" },
+      })
+    )
+    // Wave 8: the failure is a timeline event now (the enum gained
+    // PAYMENT_FAILED), not just an audit row.
+    expect(mockDb.subscriptionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "PAYMENT_FAILED" }),
       })
     )
     expect(mockLogAudit).toHaveBeenCalledWith(

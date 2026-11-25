@@ -150,6 +150,32 @@ const { store, mockDb } = vi.hoisted(() => {
           return toRow(found)
         }
       ),
+      // Wave 8 (DB-025): cancels + supersedes are conditional
+      // updateMany calls — only while the row still holds a live
+      // status. The store applies the data when the status matches.
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string; status?: { in?: string[]; notIn?: string[] } }
+          data: Record<string, unknown>
+        }) => {
+          const found = store.subscriptions.find((s) => s.id === where.id)
+          if (!found) return { count: 0 }
+          if (where.status?.in && !where.status.in.includes(found.status)) {
+            return { count: 0 }
+          }
+          if (
+            where.status?.notIn &&
+            where.status.notIn.includes(found.status)
+          ) {
+            return { count: 0 }
+          }
+          Object.assign(found, data, { updatedAt: new Date() })
+          return { count: 1 }
+        }
+      ),
     },
     subscriptionEvent: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -173,6 +199,12 @@ const { store, mockDb } = vi.hoisted(() => {
     },
     submission: { count: vi.fn(async () => 0) },
     aiDailyUsage: { aggregate: vi.fn(async () => ({ _sum: { calls: 0 } })) },
+    // Wave 8 (AIM-028, Stream C): getMyUsage also sums the
+    // per-owner interactive usage — the mock needs the model or
+    // the meter read crashes on `db.aiDailyOwnerUsage.aggregate`.
+    aiDailyOwnerUsage: {
+      aggregate: vi.fn(async () => ({ _sum: { calls: 0 } })),
+    },
     apiKeyRateLimit: {
       aggregate: vi.fn(async () => ({ _sum: { hourCount: 0 } })),
     },
@@ -352,30 +384,76 @@ describe("cancelMySubscription (BIL-122 / BIL-091)", () => {
       expect.objectContaining({
         detail: expect.objectContaining({
           event: "subscription-canceled-by-customer",
-          providerCancelPending: false,
+          // Wave 8 (DSH-402): the audit no longer carries
+          // providerCancelPending — a provider row with no callback
+          // is a 502, and a provider cancel is recorded as
+          // providerCanceled below.
+          provider: null,
+          providerSubscriptionId: null,
         }),
       })
     )
   })
 
-  it("records providerCancelPending when a provider subscription is attached", async () => {
+  it("cancels at the provider first when a provider subscription is attached (DSH-402 / BIL-001)", async () => {
     await seedActive()
     const row = store.subscriptions[0]
     row.provider = "STRIPE"
     row.providerSubscriptionId = "sub_123"
-    await cancelMySubscription(userId, {})
+    const cancelAtProvider = vi.fn(async () => ({
+      canceledAtProvider: true,
+      immediate: true,
+    }))
+    const canceled = await cancelMySubscription(
+      userId,
+      {},
+      { cancelAtProvider }
+    )
+    expect(canceled.status).toBe("CANCELED")
+    expect(cancelAtProvider).toHaveBeenCalledWith("STRIPE", {
+      providerSubscriptionId: "sub_123",
+      cancelAtPeriodEnd: false,
+    })
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({
           provider: "STRIPE",
           providerSubscriptionId: "sub_123",
-          providerCancelPending: true,
+          providerCanceled: true,
+          providerImmediate: true,
         }),
       })
     )
   })
 
-  it("sets cancelAtPeriodEnd without canceling, and repeats idempotently", async () => {
+  it("refuses the cancel when the provider cancel fails (BIL-001)", async () => {
+    await seedActive()
+    const row = store.subscriptions[0]
+    row.provider = "STRIPE"
+    row.providerSubscriptionId = "sub_123"
+    const cancelAtProvider = vi.fn(async () => {
+      throw new ApiError("Stripe cancel failed: timeout", 502)
+    })
+    await expectApiError(
+      cancelMySubscription(userId, {}, { cancelAtProvider }),
+      502
+    )
+    // The local row is untouched — billing continues at the provider
+    // until the cancel actually lands there.
+    expect(store.subscriptions[0].status).toBe("ACTIVE")
+    expect(store.events.filter((e) => e.type === "CANCELED")).toHaveLength(0)
+  })
+
+  it("refuses a provider-attached cancel with no provider callback (BIL-001)", async () => {
+    await seedActive()
+    const row = store.subscriptions[0]
+    row.provider = "STRIPE"
+    row.providerSubscriptionId = "sub_123"
+    await expectApiError(cancelMySubscription(userId, {}), 502)
+    expect(store.subscriptions[0].status).toBe("ACTIVE")
+  })
+
+  it("sets cancelAtPeriodEnd without canceling, writes a CANCEL_SCHEDULED event, and repeats idempotently", async () => {
     await seedActive()
     const flagged = await cancelMySubscription(userId, {
       cancelAtPeriodEnd: true,
@@ -383,6 +461,10 @@ describe("cancelMySubscription (BIL-122 / BIL-091)", () => {
     expect(flagged.status).toBe("ACTIVE")
     expect(flagged.cancelAtPeriodEnd).toBe(true)
     expect(store.events.filter((e) => e.type === "CANCELED")).toHaveLength(0)
+    // DB-045 (Wave 8): a scheduled cancel is a timeline event now.
+    expect(
+      store.events.filter((e) => e.type === "CANCEL_SCHEDULED")
+    ).toHaveLength(1)
     const again = await cancelMySubscription(userId, {
       cancelAtPeriodEnd: true,
     })

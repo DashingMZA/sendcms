@@ -207,6 +207,35 @@ header. Without the header the route answers 401; without
 `CRON_SECRET` set at all it answers 503. (The same rule applies on
 every platform — see [Email notifications](email-notifications.md).)
 
+### AI background jobs
+
+The same cron hit also runs the two AI background jobs
+(`apps/api/app/api/cron/email-outbox/route.ts`; the standalone
+email worker runs them too):
+
+- **AI spam re-scoring** — `rescoreNewSubmissions` re-scores
+  unscored NEW submissions on AI-enabled forms.
+- **AI inbox digest** — `sendDueDigests` sends due per-form digests.
+
+Both jobs are gated on DB-backed feature flags
+(`packages/modules/platform-ops/src/flags.ts`, `SYSTEM_FLAGS`):
+
+| Flag key         | Job                    | Seeded state |
+| ---------------- | ---------------------- | ------------ |
+| `ai-spam-rescore` | AI spam re-scoring    | disabled     |
+| `ai-digest`       | AI inbox digest       | disabled     |
+
+The flags are seeded (disabled) by migration
+`20261125091400_wave8d_seed_platform_settings`, so they are visible
+in `/admin/features` on a fresh deploy. **Post-deploy step:** enable
+each flag there (with a reason — toggling is audited) once a platform
+AI key is configured; until then the jobs return zero-count no-ops by
+design (a missing or disabled flag turns its job off, fail-closed),
+which is why "AI is on but nothing is re-scored and no digest
+arrives" means "the flag is still off", not a broken cron. The flags
+are system flags — they cannot be deleted, only disabled (deleting
+one would silently disable its job).
+
 ## Vercel notes
 
 - One project per app (see [deployment/platforms.md](deployment/platforms.md)

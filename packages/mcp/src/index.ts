@@ -6,6 +6,8 @@ export {
   MCP_HOUR_LIMIT,
   MCP_MINUTE_LIMIT,
   checkMcpRateLimit,
+  startOfUtcHour,
+  startOfUtcMinute,
 } from "./rate-limit"
 export { createMcpServer } from "./server"
 export {
@@ -18,6 +20,8 @@ export {
   MCP_READ_TOOL_NAMES,
   MCP_TOOL_NAMES,
   isMcpToolName,
+  isToolAvailableForScope,
+  toolsForScope,
 } from "./tools/names"
 export type { McpToolName } from "./tools/names"
 export { isToolAllowed } from "./tools/shared"

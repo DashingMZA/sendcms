@@ -231,6 +231,15 @@ export function BillingOverview({ actorRole }: Props) {
                             ? t("checkoutAvailable")
                             : t("checkoutNotAvailable")}
                         </Badge>
+                        {/* BIL-095: Gumroad has no checkout API and no
+                            webhook route — the note explains the
+                            manual-activation flow instead of leaving
+                            a bare "not available" badge. */}
+                        {row.note && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {row.note}
+                          </p>
+                        )}
                       </TableCell>
                     </TableRow>
                   )

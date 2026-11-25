@@ -3,7 +3,17 @@ import { z } from "zod"
 
 import type { LanguageModel } from "ai"
 
-import { toAiCallUsage, type AiCallUsage } from "./provider"
+import {
+  getLanguageModelId,
+  toAiCallUsageWithCost,
+  type AiCallUsage,
+} from "./provider"
+import {
+  AI_MAX_OUTPUT_TOKENS,
+  AI_MAX_RETRIES,
+  AI_WORKER_TIMEOUT_MS,
+} from "./errors"
+import { AI_MAX_SUBMISSION_CHARS, truncateAiInput } from "./limits"
 import { neutraliseUntrustedJson, wrapUntrustedData } from "./untrusted"
 
 // AI spam re-scoring (Phase 12, Step 2). The model call only — the
@@ -48,21 +58,29 @@ export function getSpamThreshold(env: NodeJS.ProcessEnv = process.env): number {
     short reason. Throws when the provider call fails — the caller
     decides whether to retry later or skip the submission. `onUsage`
     (optional) receives the token usage the provider reported, so the
-    caller can attribute the call without changing this return value. */
+    caller can attribute the call without changing this return value.
+    The submission JSON is truncated to AI_MAX_SUBMISSION_CHARS
+    (SRC-325) and the call aborts after AI_WORKER_TIMEOUT_MS
+    (SRC-311) with one retry (AIM-023). `timeoutMs` is test-only. */
 export async function rescoreSpam({
   model,
   formName,
   data,
   onUsage,
+  timeoutMs = AI_WORKER_TIMEOUT_MS,
 }: {
   model: LanguageModel
   formName: string
   data: Record<string, unknown>
   onUsage?: (usage: AiCallUsage | null) => void
+  timeoutMs?: number
 }): Promise<SpamVerdict> {
   const { object, usage } = await generateObject({
     model,
     schema: SpamVerdictModelSchema,
+    abortSignal: AbortSignal.timeout(timeoutMs),
+    maxRetries: AI_MAX_RETRIES,
+    maxOutputTokens: AI_MAX_OUTPUT_TOKENS.spam,
     prompt: [
       "You are a spam filter for a website contact form.",
       "Score this submission from 0 (definitely a genuine message from a real person) to 100 (definitely spam).",
@@ -75,12 +93,19 @@ export async function rescoreSpam({
       // that keeps spam out of the inbox.
       wrapUntrustedData(
         "Submission",
-        JSON.stringify(neutraliseUntrustedJson(data))
+        truncateAiInput(
+          JSON.stringify(neutraliseUntrustedJson(data)),
+          AI_MAX_SUBMISSION_CHARS
+        )
       ),
       "Reply with a spam score and a one-sentence reason.",
+      // AIM-026: the schema promises the reason never copies
+      // submission content — the model has to be told that, not
+      // just the schema comment.
+      "Do not copy any submission content into the reason.",
     ].join("\n"),
   })
-  onUsage?.(toAiCallUsage(usage))
+  onUsage?.(toAiCallUsageWithCost(getLanguageModelId(model), usage))
   // Validate at the boundary too: the SDK validates against the
   // relaxed model schema, but a malformed model reply must never
   // reach the status change. Round + clamp first — the model may
