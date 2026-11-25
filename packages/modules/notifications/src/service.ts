@@ -1,4 +1,6 @@
 import {
+  AuditAction,
+  AuditResource,
   EmailJobStatus,
   EmailJobType,
   Prisma,
@@ -9,6 +11,8 @@ import {
   type Submission,
 } from "@sendcms/database"
 import { ApiError, getSubmissionSender } from "@sendcms/shared"
+import { getDigestIntervalHours, getNextDigestAt } from "@sendcms/ai"
+import { logAudit } from "@sendcms/security"
 import {
   notificationDeps,
   type DigestProps,
@@ -18,6 +22,7 @@ import {
 import { createLogger } from "@sendcms/observability"
 import {
   MAX_EMAIL_ATTEMPTS,
+  STALE_CLAIM_LEASE_MINUTES,
   claimDueEmailJobs,
   claimEmailJob,
   enqueueEmailJobs,
@@ -457,6 +462,15 @@ export async function processEmailOutbox({
 
 export type EmailJobListItem = EmailJob & {
   formName: string | null
+  /** Minutes since the job was claimed (SENDING only, from
+      `updatedAt` — the claim is the last write a SENDING row gets).
+      Null for every other status. EML-094. */
+  claimAgeMinutes: number | null
+  /** Whether the delivery log may offer a requeue for this row:
+      FAILED always, SENDING only once it is stuck past the lease
+      (EML-094/095). Computed server-side — the client never imports
+      the queue's lease constant. */
+  canRequeue: boolean
 }
 
 export type EmailJobListResult = {
@@ -464,13 +478,18 @@ export type EmailJobListResult = {
   total: number
   page: number
   pageSize: number
-  counts: Record<"all" | "pending" | "sent" | "failed", number>
+  counts: Record<"all" | "pending" | "sending" | "sent" | "failed", number>
+}
+
+/** Minutes since `date`, rounded down, never negative. */
+function ageMinutesSince(date: Date): number {
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000))
 }
 
 export async function listEmailJobsForUser(
   userId: string,
   filters: {
-    status?: "PENDING" | "SENT" | "FAILED"
+    status?: "PENDING" | "SENDING" | "SENT" | "FAILED"
     formId?: string
     page?: number
   }
@@ -507,10 +526,23 @@ export async function listEmailJobsForUser(
   const byStatus = new Map(counts.map((c) => [c.status, c._count]))
   const at = (status: EmailJobStatus) => byStatus.get(status) ?? 0
   return {
-    items: items.map((item) => ({
-      ...item,
-      formName: item.form?.name ?? null,
-    })),
+    items: items.map((item) => {
+      // EML-094: a SENDING row carries its claim age so a stuck job
+      // is visible, not just present.
+      const claimAgeMinutes =
+        item.status === EmailJobStatus.SENDING
+          ? ageMinutesSince(item.updatedAt)
+          : null
+      return {
+        ...item,
+        formName: item.form?.name ?? null,
+        claimAgeMinutes,
+        canRequeue:
+          item.status === EmailJobStatus.FAILED ||
+          (item.status === EmailJobStatus.SENDING &&
+            (claimAgeMinutes ?? 0) >= STALE_CLAIM_LEASE_MINUTES),
+      }
+    }),
     total,
     page,
     pageSize: EMAIL_JOB_PAGE_SIZE,
@@ -521,10 +553,117 @@ export async function listEmailJobsForUser(
         at(EmailJobStatus.FAILED) +
         at(EmailJobStatus.SENDING),
       pending: at(EmailJobStatus.PENDING),
+      sending: at(EmailJobStatus.SENDING),
       sent: at(EmailJobStatus.SENT),
       failed: at(EmailJobStatus.FAILED),
     },
   }
+}
+
+/** Requeues a FAILED job, or a SENDING job stuck past the claim
+    lease, back to PENDING (Phase 16, EML-094/095). Owner-scoped:
+    the job must belong to the caller. The retry ladder restarts
+    (`attempts` reset, `nextAttemptAt = now`) so the owner gets a
+    full set of attempts after fixing the cause; `lastError` is kept
+    so the failure that prompted the retry stays visible. A SENDING
+    job inside the lease is refused (409) — its processor may still
+    be alive, and requeueing it could double-send. The automatic
+    reclaim of stuck claims is Wave 9's (EML-031); this is the
+    manual path from the delivery log. Audit-logged. */
+export async function requeueEmailJob(
+  userId: string,
+  jobId: string
+): Promise<EmailJob> {
+  const job = await db.emailJob.findUnique({ where: { id: jobId } })
+  if (!job || job.ownerId !== userId) {
+    throw new ApiError("Email job not found.", 404)
+  }
+  if (job.status === EmailJobStatus.FAILED) {
+    // FAILED is terminal — requeue restarts the ladder.
+  } else if (job.status === EmailJobStatus.SENDING) {
+    const claimAgeMinutes = ageMinutesSince(job.updatedAt)
+    if (claimAgeMinutes < STALE_CLAIM_LEASE_MINUTES) {
+      throw new ApiError(
+        `This email is still being sent (claimed ${claimAgeMinutes} minute${claimAgeMinutes === 1 ? "" : "s"} ago). Wait until it is stuck past the ${STALE_CLAIM_LEASE_MINUTES}-minute lease, then retry.`,
+        409
+      )
+    }
+  } else {
+    throw new ApiError(
+      `Only failed or stuck emails can be requeued (this one is ${job.status.toLowerCase()}).`,
+      409
+    )
+  }
+  const previousStatus = job.status
+  const previousAttempts = job.attempts
+  const requeued = await db.emailJob.update({
+    where: { id: job.id },
+    data: {
+      status: EmailJobStatus.PENDING,
+      attempts: 0,
+      nextAttemptAt: new Date(),
+    },
+  })
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: job.formId ? AuditResource.FORM : AuditResource.USER,
+    resourceId: job.formId ?? userId,
+    detail: {
+      event: "email-job-requeued",
+      emailJobId: job.id,
+      previousStatus,
+      previousAttempts,
+    },
+  })
+  return requeued
+}
+
+export type DigestState = {
+  formId: string
+  formName: string
+  digestEnabled: boolean
+  /** Hours between digests (the form's own value, else the platform
+      default). Null only when the platform default itself is unset —
+      it never is; kept nullable for the caller's fallback. */
+  digestIntervalHours: number
+  lastDigestAt: Date | null
+  /** When the next digest is due, or null when none has ever been
+      sent (the first digest is due on the next run). */
+  nextDigestAt: Date | null
+}
+
+/** Per-form digest state for the notifications page (Phase 16,
+    EML-093/096): the toggle, the interval, and last/next digest —
+    one consistent shape with the form detail page's digest section,
+    which reads the same fields from `getFormForUser`. */
+export async function listDigestStatesForUser(
+  userId: string,
+  { env = process.env }: { env?: NodeJS.ProcessEnv } = {}
+): Promise<DigestState[]> {
+  const defaultInterval = getDigestIntervalHours(env)
+  const forms = await db.form.findMany({
+    where: { ownerId: userId, deletedAt: null },
+    select: {
+      id: true,
+      name: true,
+      digestEnabled: true,
+      digestIntervalHours: true,
+      lastDigestAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+  })
+  return forms.map((form) => {
+    const intervalHours = form.digestIntervalHours ?? defaultInterval
+    return {
+      formId: form.id,
+      formName: form.name,
+      digestEnabled: form.digestEnabled,
+      digestIntervalHours: intervalHours,
+      lastDigestAt: form.lastDigestAt,
+      nextDigestAt: getNextDigestAt(form.lastDigestAt, intervalHours),
+    }
+  })
 }
 
 /** Sends a sample notification for a form straight through the
@@ -570,6 +709,30 @@ export async function sendTestSubmissionEmail(
       html,
       text,
     })
+    // EML-096: a test send leaves a trace — a SENT row in the
+    // delivery log (type TEST_EMAIL), so the owner can see recent
+    // test sends alongside real ones. Best-effort: the email is
+    // already sent, so a failed record must not turn a success into
+    // an error — it is logged instead.
+    try {
+      await db.emailJob.create({
+        data: {
+          type: EmailJobType.TEST_EMAIL,
+          to,
+          subject: `Test notification from ${form.name}`,
+          status: EmailJobStatus.SENT,
+          providerMessageId: messageId,
+          formId: form.id,
+          ownerId: userId,
+        },
+      })
+    } catch (err) {
+      logger.error("test email history record failed", {
+        error: err,
+        formId,
+        to,
+      })
+    }
     return { messageId, provider }
   } catch (err) {
     // AIM-010: the provider's message names the platform's email

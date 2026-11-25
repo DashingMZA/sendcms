@@ -44,6 +44,34 @@ vi.mock("@sendcms/submissions/turnstile", () => ({
 }))
 const mockLogAudit = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock("@sendcms/security", () => ({ logAudit: mockLogAudit }))
+// Phase 16 (EML-093): the model resolution is mocked so the
+// AI-summary vs plain-digest branch is deterministic — the real
+// resolver would read env/DB through the partial Prisma mock.
+// The resolved type mirrors the real `resolveAiModelForUserSafe`
+// contract (`ResolvedAiModel | null`): the fake model shape below
+// stands in for a resolved model, and `null` means "no model
+// resolves" (no provider configured / AI off for the owner).
+const mockResolveAiModel = vi.hoisted(() =>
+  vi.fn(
+    async (): Promise<{
+      model: { modelId: string }
+      provider: string
+      modelId: string
+      billingMode: string
+    } | null> => ({
+      model: { modelId: "test-model" },
+      provider: "openai",
+      modelId: "test-model",
+      billingMode: "PLATFORM",
+    })
+  )
+)
+const mockRecordAiUsage = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock("@sendcms/ai-settings", () => ({
+  anyByokKeyConfigured: vi.fn(async () => false),
+  recordAiUsage: mockRecordAiUsage,
+  resolveAiModelForUserSafe: mockResolveAiModel,
+}))
 
 import { AuditResource } from "@sendcms/database"
 import { sendDueDigests } from "@sendcms/submissions"
@@ -55,6 +83,9 @@ function makeForm(overrides: Record<string, unknown> = {}) {
     id: "form-1",
     name: "Contact us",
     aiEnabled: true,
+    // EML-093: the digest gate is this flag, not `aiEnabled`.
+    digestEnabled: true,
+    digestIntervalHours: null,
     lastDigestAt: null,
     owner: { email: "owner@example.com" },
     ...overrides,
@@ -81,6 +112,16 @@ beforeEach(() => {
     summary: "Two customers asked about orders.",
     highlights: ["Ali needs help with an order."],
   })
+  // The default resolver outcome: a model resolves. Tests that need
+  // "no model" override it per test — `mockResolvedValue` persists
+  // across tests (clearAllMocks only clears calls), so the default
+  // is re-established here every time.
+  mockResolveAiModel.mockResolvedValue({
+    model: { modelId: "test-model" },
+    provider: "openai",
+    modelId: "test-model",
+    billingMode: "PLATFORM",
+  })
   mockDb.form.findMany.mockResolvedValue([makeForm()])
   mockDb.submission.findMany.mockResolvedValue([makeSubmission()])
   mockDb.form.update.mockResolvedValue(makeForm())
@@ -97,21 +138,84 @@ describe("sendDueDigests", () => {
     expect(mockAi.generateDigest).not.toHaveBeenCalled()
   })
 
-  it("does nothing when no AI provider is configured", async () => {
+  it("still sends a plain digest when no AI provider is configured (EML-093)", async () => {
     mockAi.isAiConfigured.mockReturnValue(false)
+    // "No provider configured" means no model resolves for the owner.
+    mockResolveAiModel.mockResolvedValue(null)
     const result = await sendDueDigests({ env: ENV })
-    expect(result).toEqual({ sent: 0, skipped: 0 })
-    expect(mockDb.form.findMany).not.toHaveBeenCalled()
+    expect(result).toEqual({ sent: 1, skipped: 0 })
+    // No model call — the digest is a notification, not an AI feature.
     expect(mockAi.generateDigest).not.toHaveBeenCalled()
+    expect(mockEnqueueDigest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          summary: "1 new submission on Contact us.",
+        }),
+      })
+    )
   })
 
-  it("only asks for AI-enabled forms whose digest is due", async () => {
+  it("only asks for digest-enabled forms (EML-093)", async () => {
     await sendDueDigests({ env: ENV })
     expect(mockDb.form.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ digestEnabled: true }),
+      })
+    )
+    expect(mockDb.form.findMany).not.toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ aiEnabled: true }),
       })
     )
+  })
+
+  it("sends a plain digest when AI is off for the form (EML-093)", async () => {
+    mockDb.form.findMany.mockResolvedValue([makeForm({ aiEnabled: false })])
+    const result = await sendDueDigests({ env: ENV })
+    expect(result).toEqual({ sent: 1, skipped: 0 })
+    expect(mockAi.generateDigest).not.toHaveBeenCalled()
+    expect(mockResolveAiModel).not.toHaveBeenCalled()
+    expect(mockEnqueueDigest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          summary: "1 new submission on Contact us.",
+        }),
+      })
+    )
+  })
+
+  it("sends a plain digest when no model resolves for the owner (EML-093)", async () => {
+    mockResolveAiModel.mockResolvedValue(null)
+    const result = await sendDueDigests({ env: ENV })
+    expect(result).toEqual({ sent: 1, skipped: 0 })
+    expect(mockAi.generateDigest).not.toHaveBeenCalled()
+    expect(mockEnqueueDigest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          summary: "1 new submission on Contact us.",
+        }),
+      })
+    )
+  })
+
+  it("skips a form whose digest is not due yet (per-form interval)", async () => {
+    mockDb.form.findMany.mockResolvedValue([
+      makeForm({
+        lastDigestAt: new Date(Date.now() - 60 * 60 * 1000),
+        digestIntervalHours: 168,
+      }),
+    ])
+    const result = await sendDueDigests({ env: ENV })
+    expect(result).toEqual({ sent: 0, skipped: 1 })
+    expect(mockEnqueueDigest).not.toHaveBeenCalled()
+    expect(mockDb.form.update).not.toHaveBeenCalled()
+  })
+
+  it("leaves the window alone when the enqueue creates no job (EML-093)", async () => {
+    mockEnqueueDigest.mockResolvedValue(0)
+    const result = await sendDueDigests({ env: ENV })
+    expect(result).toEqual({ sent: 0, skipped: 1 })
+    expect(mockDb.form.update).not.toHaveBeenCalled()
   })
 
   it("enqueues a digest to the form owner and advances the window", async () => {
@@ -177,8 +281,11 @@ describe("sendDueDigests", () => {
         resourceType: AuditResource.FORM,
         resourceId: "form-1",
         detail: expect.objectContaining({
-          event: "ai-digest-sent",
+          // Renamed from `ai-digest-sent` in Phase 16 (EML-093):
+          // plain digests carry no AI summary.
+          event: "digest-sent",
           submissionCount: 1,
+          aiSummary: true,
         }),
       })
     )

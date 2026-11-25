@@ -23,7 +23,14 @@ export default async function SupportPage({
   const session = await auth()
   if (!session?.user) redirect("/sign-in")
 
-  const filters = MyTicketsQuerySchema.parse(await searchParams)
+  // DSH-405: one invalid-input policy for list pages (SRC-119) — an
+  // invalid query param falls back to the schema defaults, never
+  // throws. `.parse()` here used to 500 on `?status=BOGUS` or
+  // `?page=abc` (the error boundary), while the API underneath 422s
+  // the same input correctly.
+  const raw = await searchParams
+  const parsed = MyTicketsQuerySchema.safeParse(raw)
+  const filters = parsed.success ? parsed.data : MyTicketsQuerySchema.parse({})
   const initialData = await listMyTickets(session.user.id, filters)
 
   const locale = await getRequestLocale(session.user.id)

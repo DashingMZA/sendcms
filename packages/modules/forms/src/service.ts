@@ -14,6 +14,8 @@ import { ApiError } from "@sendcms/shared"
 import { redactAuthEmailUrl, sendPlatformEmail } from "@sendcms/email"
 import { logAudit } from "@sendcms/security"
 import {
+  getDigestIntervalHours,
+  getNextDigestAt,
   suggestFields,
   type AiCallUsage,
   type AiEnvConfig,
@@ -221,6 +223,14 @@ export async function getFormForUser(userId: string, formId: string) {
   }
   return {
     ...form,
+    // EML-093/DSH-304: the digest state the form detail page shows —
+    // when the next digest is due (null = none sent yet, first digest
+    // due on the next run). Same shape as the notifications module's
+    // `listDigestStatesForUser`, so both surfaces agree.
+    digestNextAt: getNextDigestAt(
+      form.lastDigestAt,
+      form.digestIntervalHours ?? getDigestIntervalHours()
+    ),
     notificationSettings: form.notificationSettings.map((row) => ({
       ...row,
       confirmed: !pendingIds.has(recipientConfirmIdentifier(row.id)),
@@ -361,6 +371,14 @@ export async function updateFormForUser(
         ? { turnstileEnabled: input.turnstileEnabled }
         : {}),
       ...(input.aiEnabled !== undefined ? { aiEnabled: input.aiEnabled } : {}),
+      // EML-093: the digest preference rides the same update as the
+      // rest of the form settings — no separate endpoint.
+      ...(input.digestEnabled !== undefined
+        ? { digestEnabled: input.digestEnabled }
+        : {}),
+      ...(input.digestIntervalHours !== undefined
+        ? { digestIntervalHours: input.digestIntervalHours }
+        : {}),
       ...(input.dailyLimit !== undefined
         ? { dailyLimit: input.dailyLimit }
         : {}),

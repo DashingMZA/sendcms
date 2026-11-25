@@ -1422,6 +1422,9 @@ importers:
 
   packages/modules/notifications:
     dependencies:
+      '@sendcms/ai':
+        specifier: workspace:*
+        version: link:../../ai
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
@@ -1434,6 +1437,9 @@ importers:
       '@sendcms/queue':
         specifier: workspace:*
         version: link:../../queue
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared

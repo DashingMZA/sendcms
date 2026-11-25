@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
+import { ListSearchInput } from "@/components/dashboard/list-search-input"
 
 const STATUS_KEYS: Record<TicketStatus, string> = {
   OPEN: "statusOpen",
@@ -52,6 +53,7 @@ const PRIORITY_KEYS = {
 
 type Filters = {
   status?: TicketStatus
+  search?: string
   page: number
   perPage: number
 }
@@ -84,6 +86,13 @@ export function SupportList({ initialData, filters }: Props) {
     const params = new URLSearchParams()
     const status = next.status ?? filters.status
     if (status) params.set("status", status)
+    // DSH-410: keep the subject search and page size in the URL
+    // across status/page changes (the old version rebuilt the params
+    // from status + page only, silently dropping both).
+    const search = next.search ?? filters.search
+    if (search) params.set("search", search)
+    const perPage = next.perPage ?? filters.perPage
+    if (perPage !== 20) params.set("perPage", String(perPage))
     const pageValue = next.page ?? 1
     if (pageValue > 1) params.set("page", String(pageValue))
     const query = params.toString()
@@ -92,7 +101,8 @@ export function SupportList({ initialData, filters }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ListSearchInput domain="support" defaultValue={filters.search ?? ""} />
         <Select
           value={filters.status ?? "all"}
           onValueChange={(value) =>
@@ -121,7 +131,26 @@ export function SupportList({ initialData, filters }: Props) {
             ))}
           </SelectContent>
         </Select>
-        <Button asChild>
+        {/* DSH-410: page size (10/20/50) — the API already supports
+            ?perPage= up to 100; the customer list never exposed it. */}
+        <Select
+          value={String(filters.perPage)}
+          onValueChange={(value) =>
+            pushFilters({ perPage: Number(value), page: 1 })
+          }
+        >
+          <SelectTrigger className="h-9 w-36" aria-label={t("perPageLabel")}>
+            <SelectValue placeholder={t("perPageLabel")} />
+          </SelectTrigger>
+          <SelectContent>
+            {[10, 20, 50].map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} / {t("perPageLabel")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button asChild className="ms-auto">
           <Link href="/dashboard/support/new">{t("newTicket")}</Link>
         </Button>
       </div>

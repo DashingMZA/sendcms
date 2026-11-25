@@ -6,6 +6,7 @@ import { authClient } from "@sendcms/auth/client"
 
 import { useTheme } from "next-themes"
 import config from "@/config/config.json"
+import { docsUrl } from "@/lib/app-links"
 import { Logo } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
 import { LanguageSelector } from "@/components/dashboard/language-selector"
@@ -27,6 +28,7 @@ import {
   RiMoonLine,
   RiUserLine,
   RiWalletLine,
+  RiBookOpenLine,
 } from "@remixicon/react"
 import {
   Avatar,
@@ -244,6 +246,25 @@ export function AppSidebar({
       {/* ── Footer / user ───────────────────────────────── */}
       <SidebarFooter>
         <SidebarMenu className="gap-1">
+          {/* DSH-006: the dashboard's help/docs link — the docs site
+              lives on its own origin (NEXT_PUBLIC_DOCS_URL), so this
+              is an absolute external link, opened in a new tab. */}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip={{ children: t("docs"), side: tooltipSide }}
+            >
+              <Link href={docsUrl()} target="_blank" rel="noopener noreferrer">
+                <RiBookOpenLine
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="group-data-[collapsible=icon]:hidden">
+                  {t("docs")}
+                </span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={{

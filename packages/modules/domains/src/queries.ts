@@ -7,6 +7,7 @@ import type {
 } from "./service"
 import type { DomainListQueryInput } from "./validators"
 import type {
+  DomainStatus,
   DomainVerification,
   DomainVerificationMethod,
 } from "@sendcms/database"
@@ -119,6 +120,20 @@ export function useReverifyDomain(id: string) {
   })
 }
 
+/**
+ * SRC-214 — pure: the status a suspend/reactivate lands on, mirroring
+ * `setDomainStatusForUser` in the service (reactivate restores
+ * VERIFIED when the domain was verified, else PENDING). Client-safe:
+ * this file must not import the service (it imports `@sendcms/database`).
+ */
+export function optimisticDomainStatus(
+  action: "suspend" | "reactivate",
+  verifiedAt: Date | string | null
+): DomainStatus {
+  if (action === "suspend") return "SUSPENDED"
+  return verifiedAt ? "VERIFIED" : "PENDING"
+}
+
 export function useSetDomainStatus(id: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -127,9 +142,68 @@ export function useSetDomainStatus(id: string) {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: domainKeys.detail(id) })
+      await qc.cancelQueries({ queryKey: domainKeys.list })
+      const previousDetail = qc.getQueryData<DomainDetail>(
+        domainKeys.detail(id)
+      )
+      const previousLists = qc.getQueriesData({
+        queryKey: domainKeys.list,
+      })
+      const status = optimisticDomainStatus(
+        body.action,
+        previousDetail?.verifiedAt ?? null
+      )
+      if (previousDetail) {
+        qc.setQueryData<DomainDetail>(domainKeys.detail(id), {
+          ...previousDetail,
+          status,
+        })
+      }
+      // Every cached list under ["domains"] (the plain list and the
+      // paged lists) gets the same status applied to the row; the
+      // detail entry itself is skipped here — it was patched above.
+      for (const [key, data] of previousLists) {
+        if (key[1] === id) continue
+        if (Array.isArray(data)) {
+          qc.setQueryData(
+            key,
+            data.map((row: DomainWithVerification) =>
+              row.id === id ? { ...row, status } : row
+            )
+          )
+        } else if (
+          data &&
+          typeof data === "object" &&
+          "items" in data &&
+          Array.isArray((data as DomainListResult).items)
+        ) {
+          qc.setQueryData(key, {
+            ...(data as DomainListResult),
+            items: (data as DomainListResult).items.map((row) =>
+              row.id === id ? { ...row, status } : row
+            ),
+          })
+        }
+      }
+      return { previousDetail, previousLists }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return
+      if (ctx.previousDetail) {
+        qc.setQueryData(domainKeys.detail(id), ctx.previousDetail)
+      }
+      for (const [key, data] of ctx.previousLists) {
+        qc.setQueryData(key, data)
+      }
+    },
     onSuccess: (updated) => {
       qc.setQueryData(domainKeys.detail(id), updated)
       qc.invalidateQueries({ queryKey: domainKeys.list })
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: domainKeys.detail(id) })
     },
   })
 }

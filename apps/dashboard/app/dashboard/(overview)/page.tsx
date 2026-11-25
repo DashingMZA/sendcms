@@ -121,12 +121,18 @@ export default async function OverviewPage() {
                     {t("spamLabel")}
                   </p>
                   <p className="text-sm">
+                    <span className="font-medium">{overview.readCount}</span>{" "}
+                    {t("statusRead")}
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-medium">{overview.starredCount}</span>{" "}
+                    {t("statusStarred")}
+                  </p>
+                  <p className="text-sm">
                     <span className="font-medium">
-                      {overview.submissionCount -
-                        overview.unreadCount -
-                        overview.spamCount}
+                      {overview.archivedCount}
                     </span>{" "}
-                    {t("readLabel")}
+                    {t("statusArchived")}
                   </p>
                   <Button
                     asChild

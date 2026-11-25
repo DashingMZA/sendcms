@@ -115,13 +115,15 @@ the six apps.
 
 On a form's detail page (Notifications section), "Send a test
 notification" sends a sample email straight through the provider —
-not via the outbox, since there is no submission to render from. It
-returns the provider and message id, or the provider's error.
+not via the outbox queue, since there is no submission to render from.
+It returns the provider and message id, or the provider's error. The
+send is recorded in the delivery log as a SENT test email, so recent
+test sends are visible on the notifications page.
 
 ## Failure modes
 
-| Situation                                          | What happens                                                                                                                                                            |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No provider configured                             | The job stays PENDING with `lastError` set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 5 attempts it becomes FAILED. Fix the config, the next cron run sends it. |
-| Provider rejects (bad key, unverified From domain) | Same, with the provider's message in `lastError`.                                                                                                                       |
-| Submission deleted before delivery                 | Job FAILED, "Submission or form no longer exists", no retry (unrecoverable).                                                                                            |
+| Situation                                          | What happens                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No provider configured                             | The job stays PENDING with `lastError` set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 5 attempts it becomes FAILED. FAILED is terminal — the next cron run does not send it; fix the config, then requeue the job from the delivery log (Requeue button on the FAILED tab). |
+| Provider rejects (bad key, unverified From domain) | Same, with the provider's message in `lastError`.                                                                                                                                                                                                                                   |
+| Submission deleted before delivery                 | Job FAILED, "Submission or form no longer exists", no retry (unrecoverable).                                                                                                                                                                                                        |

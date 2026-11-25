@@ -167,6 +167,12 @@ export const UpdateFormSchema = z.object({
   // submission content reaches a model provider unless the owner
   // enables AI for this form.
   aiEnabled: z.boolean().optional(),
+  // Phase 16 (EML-093): per-form digest opt-in, decoupled from
+  // `aiEnabled` — the digest is a notification preference. Interval
+  // in hours (24 = daily, 168 = weekly); null resets to the platform
+  // default. Bounded 1–720 (one hour to thirty days).
+  digestEnabled: z.boolean().optional(),
+  digestIntervalHours: z.number().int().min(1).max(720).optional().nullable(),
   dailyLimit: z.number().int().min(1).max(100000).optional().nullable(),
 })
 

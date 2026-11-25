@@ -164,6 +164,50 @@ export function useSuggestFields(formId: string) {
   })
 }
 
+export type FormEmbedWarning = "no-domain" | "paused"
+
+/** DSH-102 — pure: which embed warnings apply to a form. A form
+    with no linked domain rejects every submission (the submit path
+    requires a linked verified domain), and a paused form is not
+    accepting submissions — the Embed section must say so plainly
+    instead of presenting the snippet as ready to paste. The snippet
+    itself stays visible: the customer may be preparing it. This
+    lives in queries.ts (client-safe), not the service — the
+    form-detail client component renders it, and importing the
+    service there would drag `@sendcms/database` into the browser
+    bundle. */
+export function getFormEmbedWarnings(form: {
+  domainLinks: Array<unknown>
+  active: boolean
+}): FormEmbedWarning[] {
+  const warnings: FormEmbedWarning[] = []
+  if (form.domainLinks.length === 0) warnings.push("no-domain")
+  if (!form.active) warnings.push("paused")
+  return warnings
+}
+
+/**
+ * SRC-214 — pure: apply a field patch to a cached form detail, for
+ * the optimistic update in `useUpdateField`. Only defined patch
+ * values are merged (an `undefined` optional must not clobber the
+ * stored value).
+ */
+export function applyFieldPatch(
+  detail: FormDetailResponse,
+  fieldId: string,
+  patch: UpdateFieldInput
+): FormDetailResponse {
+  const clean = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined)
+  )
+  return {
+    ...detail,
+    fields: detail.fields.map((field) =>
+      field.id === fieldId ? { ...field, ...clean } : field
+    ),
+  }
+}
+
 export function useUpdateField(formId: string, fieldId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -172,7 +216,25 @@ export function useUpdateField(formId: string, fieldId: string) {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => invalidateForm(qc, formId),
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: formKeys.detail(formId) })
+      const previous = qc.getQueryData<FormDetailResponse>(
+        formKeys.detail(formId)
+      )
+      if (previous) {
+        qc.setQueryData(
+          formKeys.detail(formId),
+          applyFieldPatch(previous, fieldId, body)
+        )
+      }
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        qc.setQueryData(formKeys.detail(formId), ctx.previous)
+      }
+    },
+    onSettled: () => invalidateForm(qc, formId),
   })
 }
 

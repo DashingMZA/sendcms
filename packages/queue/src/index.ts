@@ -19,6 +19,14 @@ import {
 
 export const MAX_EMAIL_ATTEMPTS = 5
 
+/** Stale-claim lease (Phase 16, EML-031/EML-094): a job still
+    SENDING this many minutes after its claim is treated as stuck —
+    its processor died mid-send (SIGKILL, crash, deploy kill). The
+    owner may requeue it from the delivery log. The automatic reaper
+    that reclaims such jobs is Wave 9's (EML-031); this constant is
+    the shared threshold so the manual requeue and the reaper agree. */
+export const STALE_CLAIM_LEASE_MINUTES = 10
+
 /** Backoff between attempts: 1m, 5m, 15m, 1h, 4h. Pure — tested. */
 export function nextAttemptDelayMs(attempts: number): number {
   const delays = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 4 * 60 * 60_000]

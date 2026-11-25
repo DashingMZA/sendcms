@@ -8,16 +8,22 @@ import {
   getTranslator,
 } from "@/lib/i18n"
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
+import { getUserAiBillingMode, listUserAiKeys } from "@sendcms/ai-settings"
 import { AiManager } from "./ai-manager"
 
-// The customer's AI page (Phase 5 — BYOK). The server only loads
-// the translation dictionaries for the request locale; the keys and
-// billing mode are read client-side through the api app, so the
-// platform-key flag and the saved keys always come from the live
-// service. Browser-only keys never reach this server at all.
+// The customer's AI page (Phase 5 — BYOK). AIM-013 / SRC-110: the
+// server fetches the saved keys and billing mode and passes them as
+// initialData, so the mode selector and key cards render in the SSR
+// HTML instead of after the client fetch. Browser-only keys never
+// reach this server at all.
 export default async function AiPage() {
   const session = await auth()
   if (!session?.user) redirect("/sign-in")
+
+  const [initialKeys, initialBillingMode] = await Promise.all([
+    listUserAiKeys(session.user.id),
+    getUserAiBillingMode(session.user.id),
+  ])
 
   const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_AI_DOMAINS)
@@ -29,7 +35,10 @@ export default async function AiPage() {
 
       <div className="p-4 sm:p-6">
         <TranslationProvider dictionaries={dictionaries}>
-          <AiManager />
+          <AiManager
+            initialKeys={initialKeys}
+            initialBillingMode={initialBillingMode}
+          />
         </TranslationProvider>
       </div>
     </div>

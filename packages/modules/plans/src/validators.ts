@@ -255,6 +255,14 @@ export const CancelSubscriptionSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 })
 
+// BIL-120 (Wave 6): the customer free-plan subscribe body — the plan
+// version only. The service re-reads the version and refuses anything
+// that is not a published free version; the price is never trusted
+// from the client.
+export const SubscribeFreePlanSchema = z.object({
+  planVersionId: z.string().trim().min(1, "planVersionId is required"),
+})
+
 // ─── Override bodies ──────────────────────────────────────────────────
 
 export const SetEntitlementOverrideSchema = z.object({
@@ -302,6 +310,7 @@ export type ExecuteMigrationInput = z.infer<typeof ExecuteMigrationSchema>
 // its input type is the pre-default one: `cancelAtPeriodEnd` is optional
 // and defaults to false in the service.
 export type CancelSubscriptionInput = z.input<typeof CancelSubscriptionSchema>
+export type SubscribeFreePlanInput = z.infer<typeof SubscribeFreePlanSchema>
 export type SetEntitlementOverrideInput = z.infer<
   typeof SetEntitlementOverrideSchema
 >

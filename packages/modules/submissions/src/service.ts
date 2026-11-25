@@ -16,12 +16,14 @@ import {
 } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
 import {
+  buildPlainDigestSummary,
   generateDigest,
   getDigestIntervalHours,
   getSpamThreshold,
   isAiConfigured,
   rescoreSpam,
   type AiCallUsage,
+  type DigestSummary,
 } from "@sendcms/ai"
 import {
   anyByokKeyConfigured,
@@ -1023,15 +1025,20 @@ export async function rescoreNewSubmissions({
 }
 
 // ---------------------------------------------------------------------------
-// AI inbox digest (Phase 12, Step 3)
+// Inbox digest (Phase 12, Step 3; decoupled from AI in Phase 16, EML-093)
 // ---------------------------------------------------------------------------
-// Once per interval (AI_DIGEST_INTERVAL_HOURS, default 24 = daily),
-// the worker emails each AI-enabled form's owner a summary of the
-// form's NEW submissions since the last digest. The model writes the
-// summary; the email goes through the outbox (EmailJobType.DIGEST)
-// so delivery is retried like any other notification. A form with no
-// new submissions gets no email, and the window only advances when a
-// digest is actually sent.
+// Once per interval (the form's `digestIntervalHours`, else
+// AI_DIGEST_INTERVAL_HOURS, default 24 = daily), the worker emails
+// each digest-enabled form's owner a summary of the form's NEW
+// submissions since the last digest. The digest is a notification
+// preference (`Form.digestEnabled`), not an AI feature: when AI is
+// on for the form and a model resolves, the model writes the
+// summary; otherwise the digest is a plain list of the new
+// submissions (no content ever reaches a model provider unless the
+// owner opted into AI). The email goes through the outbox
+// (EmailJobType.DIGEST) so delivery is retried like any other
+// notification. A form with no new submissions gets no email, and
+// the window only advances when a digest is actually enqueued.
 
 /** New submissions in a digest, most recent last. */
 export const DIGEST_MAX_SUBMISSIONS = 50
@@ -1064,17 +1071,20 @@ export async function sendDueDigests({
   if (!(await isFeatureEnabled(AI_DIGEST_FLAG))) {
     return { sent: 0, skipped: 0 }
   }
-  if (!isAiConfigured(env) && !(await anyByokKeyConfigured())) {
-    return { sent: 0, skipped: 0 }
-  }
-  const intervalMs = getDigestIntervalHours(env) * 3_600_000
-  const dueAt = new Date(Date.now() - intervalMs)
+  // EML-093: the digest is NOT gated on AI being configured anywhere
+  // — a form with `digestEnabled` and no AI gets a plain digest (see
+  // below). There is deliberately no `isAiConfigured` early return
+  // here; the rescore job keeps its own.
+  const defaultIntervalMs = getDigestIntervalHours(env) * 3_600_000
 
+  // EML-093: the gate is the digest preference, not `aiEnabled`.
+  // The due check is per form (each form has its own interval), so
+  // the query only narrows to digest-enabled forms and the due
+  // comparison runs in code below.
   const forms = await db.form.findMany({
     where: {
-      aiEnabled: true,
+      digestEnabled: true,
       deletedAt: null,
-      OR: [{ lastDigestAt: null }, { lastDigestAt: { lte: dueAt } }],
     },
     include: { owner: { select: { email: true } } },
     orderBy: { createdAt: "asc" },
@@ -1098,6 +1108,19 @@ export async function sendDueDigests({
   let sent = 0
   let skipped = 0
   for (const form of forms) {
+    // Per-form due check (EML-093): `digestIntervalHours` overrides
+    // the platform default; a form that never sent one is due.
+    const intervalMs =
+      form.digestIntervalHours != null
+        ? form.digestIntervalHours * 3_600_000
+        : defaultIntervalMs
+    if (
+      form.lastDigestAt !== null &&
+      form.lastDigestAt.getTime() + intervalMs > Date.now()
+    ) {
+      skipped++
+      continue
+    }
     const since = form.lastDigestAt ?? new Date(0)
     const submissions = await db.submission.findMany({
       where: {
@@ -1112,64 +1135,77 @@ export async function sendDueDigests({
       skipped++
       continue
     }
-    const resolved = await getOwnerModel(form.ownerId)
-    if (!resolved) {
-      skipped++
-      continue
-    }
-    let summary
-    const callUsage: { current: AiCallUsage | null } = { current: null }
-    try {
-      summary = await generateDigest({
-        model: resolved.model,
-        formName: form.name,
-        submissions: submissions.map((s) => {
-          const sender = getSubmissionSender(s.data)
-          return {
-            senderName: sender.name,
-            senderEmail: sender.email,
-            snippet: previewSubmissionText(s.data).slice(0, 200),
-            receivedAt: s.createdAt,
-          }
-        }),
-        onUsage: (u) => {
-          callUsage.current = u
-        },
-      })
-    } catch (err) {
-      // A failed model call retries on a later poll (the window does
-      // not advance) — it must not fail the batch.
-      logger.error("ai digest failed", { error: err, formId: form.id })
+    const digestInputs = submissions.map((s) => {
+      const sender = getSubmissionSender(s.data)
+      return {
+        senderName: sender.name,
+        senderEmail: sender.email,
+        snippet: previewSubmissionText(s.data).slice(0, 200),
+        receivedAt: s.createdAt,
+      }
+    })
+    // EML-093: the AI summary is an enhancement, not a gate. AI
+    // runs only when the form opted into it AND a model resolves
+    // for the owner; otherwise the digest is plain (the owner still
+    // gets notified — submission content goes to the owner, never
+    // to a model provider, unless they opted in). A model call that
+    // starts and then fails still skips the form (retry next run)
+    // instead of silently downgrading a summary the owner expected.
+    let summary: DigestSummary
+    let aiSummary = false
+    const resolved = form.aiEnabled ? await getOwnerModel(form.ownerId) : null
+    if (resolved) {
+      const callUsage: { current: AiCallUsage | null } = { current: null }
+      try {
+        summary = await generateDigest({
+          model: resolved.model,
+          formName: form.name,
+          submissions: digestInputs,
+          onUsage: (u) => {
+            callUsage.current = u
+          },
+        })
+      } catch (err) {
+        // A failed model call retries on a later poll (the window does
+        // not advance) — it must not fail the batch.
+        logger.error("ai digest failed", { error: err, formId: form.id })
+        await recordAiUsage({
+          userId: form.ownerId,
+          provider: resolved.provider,
+          model: resolved.modelId,
+          billingMode: resolved.billingMode,
+          status: "FAILED",
+          sourceEvent: "digest",
+          resourceId: form.id,
+        })
+        skipped++
+        continue
+      }
       await recordAiUsage({
         userId: form.ownerId,
         provider: resolved.provider,
         model: resolved.modelId,
         billingMode: resolved.billingMode,
-        status: "FAILED",
+        status: "SUCCESS",
+        tokensIn: callUsage.current?.promptTokens ?? null,
+        tokensOut: callUsage.current?.completionTokens ?? null,
         sourceEvent: "digest",
         resourceId: form.id,
       })
-      skipped++
-      continue
+      aiSummary = true
+    } else {
+      summary = buildPlainDigestSummary(form.name, digestInputs)
     }
-    await recordAiUsage({
-      userId: form.ownerId,
-      provider: resolved.provider,
-      model: resolved.modelId,
-      billingMode: resolved.billingMode,
-      status: "SUCCESS",
-      tokensIn: callUsage.current?.promptTokens ?? null,
-      tokensOut: callUsage.current?.completionTokens ?? null,
-      sourceEvent: "digest",
-      resourceId: form.id,
-    })
     const now = new Date()
     // Enqueue first, then advance the window: a failed enqueue must
     // not move the window (those submissions would be lost), while a
     // failed window update only re-sends the same digest on the next
     // poll. (Same rule as the submission notifications: enqueue after
-    // the save, never inside its transaction.)
-    await enqueueDigest({
+    // the save, never inside its transaction.) EML-093: the advance
+    // is conditional on the enqueue actually creating the job — an
+    // enqueue that reports 0 leaves the window (and the submissions)
+    // for the next run.
+    const enqueued = await enqueueDigest({
       formId: form.id,
       to: form.owner.email,
       subject: `${submissions.length} new submission${submissions.length === 1 ? "" : "s"} on ${form.name}`,
@@ -1192,21 +1228,29 @@ export async function sendDueDigests({
           "You're receiving this because you get digests for this form.",
       },
     })
+    if (enqueued === 0) {
+      logger.error("digest enqueue created no job", { formId: form.id })
+      skipped++
+      continue
+    }
     await db.form.update({
       where: { id: form.id },
       data: { lastDigestAt: now },
     })
     // AIM-029: one audit row per digest sent (form, submission count)
     // so a sent digest is visible in the audit log, not only in the
-    // outbox EmailJob row.
+    // outbox EmailJob row. Renamed from `ai-digest-sent` in Phase 16
+    // (EML-093): plain digests carry no AI summary — `aiSummary`
+    // says which kind this one was.
     await logAudit({
       userId: form.ownerId,
       action: AuditAction.CREATE,
       resourceType: AuditResource.FORM,
       resourceId: form.id,
       detail: {
-        event: "ai-digest-sent",
+        event: "digest-sent",
         submissionCount: submissions.length,
+        aiSummary,
       },
     })
     sent++

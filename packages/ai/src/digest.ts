@@ -47,6 +47,39 @@ export type DigestSubmissionInput = {
     AI_DIGEST_INTERVAL_HOURS (24 = daily, 168 = weekly). */
 export const DEFAULT_DIGEST_INTERVAL_HOURS = 24
 
+/** When the next digest is due for a form: `lastDigestAt` plus the
+    interval, or null when no digest has ever been sent (the first
+    digest is due on the next run, so there is no meaningful date to
+    show — callers render "due on the next run" instead). Pure. */
+export function getNextDigestAt(
+  lastDigestAt: Date | null,
+  intervalHours: number
+): Date | null {
+  if (!lastDigestAt) return null
+  return new Date(lastDigestAt.getTime() + intervalHours * 3_600_000)
+}
+
+/** The plain (no-model) digest summary (Phase 16, EML-093): the
+    digest is a notification feature, so a form without AI — or
+    whose model cannot be resolved — still gets a digest, just
+    without an AI-written summary. The summary states the count and
+    the highlights name the senders; nothing is invented. Pure. */
+export function buildPlainDigestSummary(
+  formName: string,
+  submissions: DigestSubmissionInput[]
+): DigestSummary {
+  const count = submissions.length
+  const summary =
+    count === 1
+      ? `1 new submission on ${formName}.`
+      : `${count} new submissions on ${formName}.`
+  const highlights = submissions.slice(0, 5).map((s) => {
+    const from = s.senderName ?? s.senderEmail ?? "Unknown sender"
+    return `${from}: ${s.snippet}`
+  })
+  return { summary, highlights }
+}
+
 export function getDigestIntervalHours(
   env: NodeJS.ProcessEnv = process.env
 ): number {

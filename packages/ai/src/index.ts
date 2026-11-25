@@ -36,8 +36,10 @@ export type { SpamVerdict } from "./spam"
 export {
   DEFAULT_DIGEST_INTERVAL_HOURS,
   DigestSummarySchema,
+  buildPlainDigestSummary,
   generateDigest,
   getDigestIntervalHours,
+  getNextDigestAt,
 } from "./digest"
 export type { DigestSubmissionInput, DigestSummary } from "./digest"
 export {

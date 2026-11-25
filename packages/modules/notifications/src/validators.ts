@@ -2,7 +2,12 @@ import { z } from "zod"
 
 // Email notifications (Phase 8) — delivery log filters and test email.
 
-export const EmailJobStatusFilterSchema = z.enum(["PENDING", "SENT", "FAILED"])
+export const EmailJobStatusFilterSchema = z.enum([
+  "PENDING",
+  "SENDING",
+  "SENT",
+  "FAILED",
+])
 
 export const EmailJobListQuerySchema = z.object({
   status: EmailJobStatusFilterSchema.optional(),

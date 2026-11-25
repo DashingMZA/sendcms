@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiFetch } from "@sendcms/shared"
 import type { BillingProvider } from "@sendcms/database"
-import type { PublicPlan, SubscriptionSummary } from "@sendcms/plans"
+import type {
+  MyUsageSummary,
+  PublicPlan,
+  SubscriptionSummary,
+} from "@sendcms/plans"
+import type { CancelSubscriptionInput } from "@sendcms/plans/validators"
 import type {
   BillingEventRow,
   BillingProviderConfigRow,
@@ -11,22 +17,12 @@ import type { CheckoutSessionInput, SetProviderConfigInput } from "./validators"
 // React Query hooks for the admin billing pages and the dashboard
 // checkout page. Same pattern as @sendcms/mcp-admin/queries: the
 // hook key names the resource, the fetcher hits the API (proxied to
-// the api app), and errors surface as Error objects. Never fetch raw
-// in a component.
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      error?: string
-    } | null
-    throw new Error(body?.error ?? `Request failed (${res.status})`)
-  }
-  return (await res.json()) as T
-}
+// the api app), and errors surface as ApiClientError objects with
+// status. Never fetch raw in a component.
+//
+// SRC-214: the fetcher is the shared `@sendcms/shared` apiFetch —
+// the local raw-`fetch` copy used to throw a plain Error without
+// status, so callers could not tell a 401 from a 500.
 
 export function useBillingProviders() {
   return useQuery<BillingProviderConfigRow[]>({
@@ -121,11 +117,84 @@ export function useEnabledBillingProviders(
 
 // ─── Customer checkout (dashboard) ────────────────────────────────────
 
-export function useMySubscription() {
+export type { SubscriptionSummary } from "@sendcms/plans"
+
+export function useMySubscription(initialData?: SubscriptionSummary | null) {
   return useQuery<SubscriptionSummary | null>({
     queryKey: ["billing", "my-subscription"],
     queryFn: () =>
       apiFetch<SubscriptionSummary | null>("/api/v1/billing/subscription"),
+    initialData,
+  })
+}
+
+// BIL-120 (Wave 6): take the Free plan — POST /api/v1/billing/subscription
+// with the free version id. On success the subscription + usage queries
+// refetch so the billing page shows the new plan at once.
+export function useSubscribeFreePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { planVersionId: string }) =>
+      apiFetch<SubscriptionSummary>("/api/v1/billing/subscription", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["billing", "my-subscription"],
+      })
+      queryClient.invalidateQueries({ queryKey: ["billing", "usage"] })
+    },
+  })
+}
+
+// BIL-122 / BIL-091 (Wave 6): cancel the caller's own subscription.
+// Local-only until Wave 8 wires the provider cancel (BIL-001/BIL-082)
+// — see cancelMySubscription in @sendcms/plans.
+export function useCancelMySubscription() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CancelSubscriptionInput) =>
+      apiFetch<SubscriptionSummary>("/api/v1/billing/subscription/cancel", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["billing", "my-subscription"],
+      })
+      queryClient.invalidateQueries({ queryKey: ["billing", "usage"] })
+    },
+  })
+}
+
+// BIL-124 (Wave 6): the caller's own plan, limits, and remaining quota
+// per meter — the billing page's limits/usage section.
+export function useMyUsage() {
+  return useQuery<MyUsageSummary>({
+    queryKey: ["billing", "usage"],
+    queryFn: () => apiFetch<MyUsageSummary>("/api/v1/billing/usage"),
+  })
+}
+
+// BIL-092 completion (Wave 6): the caller's own payment history —
+// webhook/billing events attributed to them. Same filters as the
+// admin list; the server scopes every query to the caller.
+export function useMyBillingEvents(filters: BillingEventsFilters) {
+  const params = new URLSearchParams()
+  if (filters.provider) params.set("provider", filters.provider)
+  if (filters.eventType) params.set("eventType", filters.eventType)
+  if (filters.processed !== undefined)
+    params.set("processed", String(filters.processed))
+  if (filters.from) params.set("from", filters.from)
+  if (filters.to) params.set("to", filters.to)
+  params.set("page", String(filters.page ?? 1))
+  params.set("perPage", String(filters.perPage ?? 20))
+  const query = params.toString()
+  return useQuery<BillingEventsPage>({
+    queryKey: ["billing", "my-events", filters],
+    queryFn: () =>
+      apiFetch<BillingEventsPage>(`/api/v1/billing/events?${query}`),
   })
 }
 

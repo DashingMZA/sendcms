@@ -6,6 +6,7 @@ import {
   useAiBillingMode,
   useAiKeys,
   useDeleteAiKey,
+  useMyAiUsage,
   useSaveAiKey,
   useSetAiBillingMode,
   useSetAiKeyEnabled,
@@ -126,11 +127,28 @@ type PendingStorageAction = {
  * (encrypted in the database, works from any device). A saved key's
  * value is never displayed — only its fingerprint's last 4 chars.
  */
-export function AiManager() {
+export function AiManager({
+  initialKeys,
+  initialBillingMode,
+}: {
+  // AIM-013 / SRC-110: server-fetched by the AI page so the mode
+  // selector and key cards render in the SSR HTML.
+  initialKeys?: UserAiKeyMeta[]
+  initialBillingMode?: AiBillingMode
+}) {
   const { t } = useTranslation("ai")
 
-  const { data: serverKeys, isLoading: keysLoading } = useAiKeys()
-  const { data: billingMode, isLoading: modeLoading } = useAiBillingMode()
+  const {
+    data: serverKeys,
+    isLoading: keysLoading,
+    isError: keysError,
+  } = useAiKeys(initialKeys)
+  const {
+    data: billingMode,
+    isLoading: modeLoading,
+    isError: modeError,
+  } = useAiBillingMode(initialBillingMode)
+  const { data: myAiUsage, isLoading: aiUsageLoading } = useMyAiUsage()
   const saveKey = useSaveAiKey()
   const testKey = useTestAiKey()
   const testBrowserKey = useTestBrowserAiKey()
@@ -264,7 +282,20 @@ export function AiManager() {
     }
   }
 
-  const mode = billingMode ?? "PLATFORM"
+  // AIM-018: no guessed mode. `billingMode` stays undefined until
+  // the query resolves — the selector must show a skeleton while
+  // loading and an error when the fetch fails, never PLATFORM as a
+  // placeholder for an unknown mode.
+  const mode = billingMode
+  // AIM-014: warn when BYOK is selected but no key exists anywhere
+  // (server or this browser) — AI calls will fail until one is saved.
+  const hasAnyKey =
+    (serverKeys ?? []).length > 0 || Object.keys(browserKeys).length > 0
+
+  // Provider-reported costs only, in micro-units — never an estimate.
+  function formatCost(costMicros: number): string {
+    return `$${(costMicros / 1_000_000).toFixed(4)}`
+  }
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -276,6 +307,10 @@ export function AiManager() {
         <CardContent className="flex flex-col gap-3">
           {modeLoading ? (
             <Skeleton className="h-24 w-full" />
+          ) : modeError || !mode ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("billingModeLoadFailed")}
+            </p>
           ) : (
             ALL_MODES.map((m) => {
               const selected = mode === m
@@ -319,6 +354,74 @@ export function AiManager() {
         </CardContent>
       </Card>
 
+      {/* AIM-014 (Wave 6): what the mode entitles the customer to —
+          remaining AI allowance for today, today's BYOK/platform
+          calls, and provider-reported cost. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("usageTitle")}</CardTitle>
+          <CardDescription>{t("usageDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {aiUsageLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : myAiUsage ? (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("remainingToday")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {myAiUsage.allowance.limit === null
+                    ? t("allowanceUnlimited")
+                    : (myAiUsage.allowance.remaining ?? 0)}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("usedToday")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {myAiUsage.allowance.used}
+                  {myAiUsage.allowance.limit !== null &&
+                    ` / ${myAiUsage.allowance.limit}`}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("byokCallsToday")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {myAiUsage.today.byok.calls}
+                  {myAiUsage.today.byok.failed > 0 &&
+                    ` (${myAiUsage.today.byok.failed} ${t("callsFailed")})`}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("platformCallsToday")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {myAiUsage.today.platform.calls}
+                  {myAiUsage.today.platform.failed > 0 &&
+                    ` (${myAiUsage.today.platform.failed} ${t("callsFailed")})`}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("costToday")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCost(myAiUsage.today.total.costMicros)}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">{t("totalCost")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatCost(myAiUsage.totalCostMicros)}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("costNote")}</p>
+              {mode === "BYOK" && !hasAnyKey && (
+                <p className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
+                  {t("byokNoKeyWarning")}
+                </p>
+              )}
+            </>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>{t("keysTitle")}</CardTitle>
@@ -327,6 +430,10 @@ export function AiManager() {
         <CardContent className="flex flex-col gap-4">
           {keysLoading ? (
             <Skeleton className="h-64 w-full" />
+          ) : keysError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("keysLoadFailed")}
+            </p>
           ) : (
             AI_PROVIDER_NAMES.map((provider) => {
               const serverKey = (serverKeys ?? []).find(

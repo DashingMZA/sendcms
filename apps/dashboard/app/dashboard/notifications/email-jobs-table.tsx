@@ -1,12 +1,16 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
+import { toast } from "sonner"
 import {
   type EmailJobListParams,
   type EmailJobListResult,
   useEmailJobs,
+  useRequeueEmailJob,
 } from "@sendcms/notifications/queries"
+import { ApiClientError } from "@sendcms/shared"
 
 import {
   Badge,
@@ -27,11 +31,14 @@ import {
 import { useTranslation } from "@/components/dashboard/translation-provider"
 
 const TABS: {
-  key: "all" | "PENDING" | "SENT" | "FAILED"
+  key: "all" | "PENDING" | "SENDING" | "SENT" | "FAILED"
   labelKey: string
 }[] = [
   { key: "all", labelKey: "tabAll" },
   { key: "PENDING", labelKey: "tabPending" },
+  // EML-094: SENDING is a real state, not a transient — it gets its
+  // own tab so a stuck job is filterable, not just visible in All.
+  { key: "SENDING", labelKey: "tabSending" },
   { key: "SENT", labelKey: "tabSent" },
   { key: "FAILED", labelKey: "tabFailed" },
 ]
@@ -71,6 +78,25 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
 
   const { data } = useEmailJobs(params, initialData)
   const list = data ?? initialData
+  const requeue = useRequeueEmailJob()
+  const [requeueingId, setRequeueingId] = useState<string | null>(null)
+
+  async function onRequeue(jobId: string) {
+    setRequeueingId(jobId)
+    try {
+      await requeue.mutateAsync(jobId)
+      toast.success(t("requeueSuccess"))
+    } catch (err) {
+      // The server's message names the reason (e.g. a SENDING job
+      // still inside its lease); the generic string is only the
+      // fallback for non-API errors.
+      toast.error(
+        err instanceof ApiClientError ? err.message : t("requeueFailed")
+      )
+    } finally {
+      setRequeueingId(null)
+    }
+  }
 
   const tab = params.status ?? "all"
   const pageCount = Math.max(1, Math.ceil(list.total / list.pageSize))
@@ -106,7 +132,9 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
           const count =
             key === "all"
               ? list.counts.all
-              : list.counts[key.toLowerCase() as "pending" | "sent" | "failed"]
+              : list.counts[
+                  key.toLowerCase() as "pending" | "sending" | "sent" | "failed"
+                ]
           return (
             <Button
               key={key}
@@ -160,13 +188,15 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
               <TableHead>{t("colStatus")}</TableHead>
               <TableHead>{t("colAttempts")}</TableHead>
               <TableHead>{t("colCreated")}</TableHead>
+              <TableHead>{t("colClaimAge")}</TableHead>
               <TableHead>{t("colLastError")}</TableHead>
+              <TableHead>{t("colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center">
+                <TableCell colSpan={9} className="py-12 text-center">
                   <p className="font-medium">{t("emptyTitle")}</p>
                   <p className="text-sm text-muted-foreground">
                     {tab !== "all" ? t("emptyFiltered") : t("emptyDescription")}
@@ -197,12 +227,39 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                       addSuffix: true,
                     })}
                   </TableCell>
+                  <TableCell>
+                    {/* EML-094: claim age is shown for SENDING rows
+                        (time since the claim, from `updatedAt`); every
+                        other status has no claim to age. */}
+                    {job.status === "SENDING" && job.claimAgeMinutes !== null
+                      ? formatDistanceToNow(new Date(job.updatedAt), {
+                          addSuffix: true,
+                        })
+                      : "—"}
+                  </TableCell>
                   <TableCell className="max-w-64 truncate text-sm text-muted-foreground">
                     {job.lastError ?? "—"}
                     {job.providerMessageId && (
                       <span className="block font-mono text-xs">
                         {job.providerMessageId}
                       </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {/* EML-094/095: FAILED jobs, and SENDING jobs
+                        stuck past the lease, can be requeued from
+                        here. `canRequeue` is computed server-side. */}
+                    {job.canRequeue && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={requeueingId === job.id}
+                        onClick={() => onRequeue(job.id)}
+                      >
+                        {requeueingId === job.id
+                          ? t("requeuing")
+                          : t("requeue")}
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>

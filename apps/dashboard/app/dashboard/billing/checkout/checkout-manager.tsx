@@ -7,6 +7,7 @@ import {
   useEnabledBillingProviders,
   usePublicCountries,
   usePublishedPlans,
+  useSubscribeFreePlan,
 } from "@sendcms/billing/queries"
 import type { BillingProvider } from "@sendcms/database"
 import type { PublicPlan } from "@sendcms/plans"
@@ -70,6 +71,7 @@ export function CheckoutManager({
   const { data: providers, isLoading: providersLoading } =
     useEnabledBillingProviders(country || null, { enabled: Boolean(country) })
   const createCheckout = useCreateCheckoutSession()
+  const subscribeFree = useSubscribeFreePlan()
 
   const selectedPlan = (plans ?? []).find(
     (p) => p.version.id === selectedPlanVersionId
@@ -95,6 +97,18 @@ export function CheckoutManager({
       return t("priceFree")
     }
     return `${formatPrice(locale, plan.version.priceAmount, plan.version.priceCurrency)} ${intervalLabel(plan.version.billingInterval)}`
+  }
+
+  async function takeFreePlan() {
+    if (!selectedPlanVersionId) return
+    try {
+      await subscribeFree.mutateAsync({
+        planVersionId: selectedPlanVersionId,
+      })
+      window.location.href = "/dashboard/billing"
+    } catch {
+      // The error is shown inline below; the page stays put.
+    }
   }
 
   async function continueToPayment() {
@@ -239,8 +253,21 @@ export function CheckoutManager({
 
           {isFree ? (
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="flex flex-col gap-4 pt-6">
                 <p className="text-sm">{t("freePlanNote")}</p>
+                <div>
+                  <Button
+                    onClick={takeFreePlan}
+                    disabled={subscribeFree.isPending}
+                  >
+                    {t("takeFreePlan")}
+                  </Button>
+                  {subscribeFree.isError && (
+                    <p className="mt-2 text-sm text-destructive">
+                      {t("subscribeFailed")}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ) : (

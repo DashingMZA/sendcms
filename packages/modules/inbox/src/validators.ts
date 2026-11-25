@@ -88,3 +88,64 @@ export const InboxListQuerySchema = z.object({
   to: dateString,
   page: z.coerce.number().int().min(1).default(1).catch(1),
 })
+
+export type InboxListQuery = z.infer<typeof InboxListQuerySchema>
+
+// SRC-124: resolve the inbox list query string to canonical params.
+// The schema's `.catch()` fallbacks silently correct a bad `?tab=`
+// or `?page=` (and unknown keys are stripped) — the page must not
+// silently show the corrected list. Instead it redirects to the
+// canonical URL: `needsRedirect` is true whenever the raw query
+// differs from what the schema produced (an invalid value corrected,
+// an unknown key dropped, a repeated key, or a wholly invalid query
+// such as a bad `?from=` date). `canonicalSearch` is the corrected
+// query string (defaults omitted), so the redirect target parses
+// back to exactly these params — no redirect loop.
+export function resolveInboxListParams(
+  raw: Record<string, string | string[] | undefined>
+): {
+  params: InboxListQuery
+  needsRedirect: boolean
+  canonicalSearch: string
+} {
+  const flat: Record<string, string> = {}
+  let droppedRepeated = false
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string") flat[key] = value
+    else if (value !== undefined) droppedRepeated = true
+  }
+  const parsed = InboxListQuerySchema.safeParse(flat)
+  const params = parsed.success ? parsed.data : InboxListQuerySchema.parse({})
+  let needsRedirect = droppedRepeated || !parsed.success
+  if (parsed.success && !needsRedirect) {
+    const known = [
+      "tab",
+      "formId",
+      "originDomain",
+      "search",
+      "from",
+      "to",
+      "page",
+    ]
+    for (const [key, value] of Object.entries(flat)) {
+      if (!known.includes(key)) {
+        needsRedirect = true
+        break
+      }
+      const corrected = params[key as keyof InboxListQuery]
+      if (corrected === undefined || String(corrected) !== value) {
+        needsRedirect = true
+        break
+      }
+    }
+  }
+  const canonical = new URLSearchParams()
+  if (params.tab !== "all") canonical.set("tab", params.tab)
+  if (params.formId) canonical.set("formId", params.formId)
+  if (params.originDomain) canonical.set("originDomain", params.originDomain)
+  if (params.search) canonical.set("search", params.search)
+  if (params.from) canonical.set("from", params.from)
+  if (params.to) canonical.set("to", params.to)
+  if (params.page !== 1) canonical.set("page", String(params.page))
+  return { params, needsRedirect, canonicalSearch: canonical.toString() }
+}

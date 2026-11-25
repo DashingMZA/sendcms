@@ -49,6 +49,12 @@ export type DashboardOverview = {
   submissionCount: number
   unreadCount: number
   spamCount: number
+  // DSH-004: READ / STARRED / ARCHIVED counted separately — the old
+  // overview derived "read" as total − NEW − SPAM, which lumped
+  // STARRED and ARCHIVED under "read".
+  readCount: number
+  starredCount: number
+  archivedCount: number
   recentSubmissions: RecentSubmission[]
   activity: DayCount[]
 }
@@ -69,6 +75,9 @@ export async function getDashboardOverview(
     submissionCount,
     unreadCount,
     spamCount,
+    readCount,
+    starredCount,
+    archivedCount,
     recent,
     recentDates,
   ] = await Promise.all([
@@ -84,6 +93,15 @@ export async function getDashboardOverview(
     }),
     db.submission.count({
       where: { ownerId: userId, status: SubmissionStatus.SPAM },
+    }),
+    db.submission.count({
+      where: { ownerId: userId, status: SubmissionStatus.READ },
+    }),
+    db.submission.count({
+      where: { ownerId: userId, status: SubmissionStatus.STARRED },
+    }),
+    db.submission.count({
+      where: { ownerId: userId, status: SubmissionStatus.ARCHIVED },
     }),
     db.submission.findMany({
       where: { ownerId: userId },
@@ -110,6 +128,9 @@ export async function getDashboardOverview(
     submissionCount,
     unreadCount,
     spamCount,
+    readCount,
+    starredCount,
+    archivedCount,
     recentSubmissions: recent.map((submission) => {
       const sender = getSubmissionSender(submission.data)
       return {
@@ -150,7 +171,13 @@ export async function getSubmissionAnalytics(
   const clampedDays = Number.isFinite(days)
     ? Math.min(365, Math.max(1, Math.floor(days)))
     : 30
+  // DSH-407: align `since` to UTC start of day (clampedDays - 1) days
+  // ago. The old rolling instant (now − 29d) excluded the early hours
+  // of the first calendar day that `bucketByDay`'s first bucket
+  // covers, so the headline total disagreed with the chart. With the
+  // start-of-day bound, total == sum(byDay).
   const since = new Date(Date.now() - (clampedDays - 1) * 24 * 60 * 60 * 1000)
+  since.setUTCHours(0, 0, 0, 0)
   const [total, rows, byFormRaw, byDomainRaw, byStatusRaw] = await Promise.all([
     db.submission.count({
       where: { ownerId: userId, createdAt: { gte: since } },

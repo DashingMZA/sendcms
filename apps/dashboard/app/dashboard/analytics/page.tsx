@@ -20,9 +20,17 @@ import {
   RiSpamLine,
 } from "@remixicon/react"
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>
+}) {
   const session = await requireDashboardSession()
-  const analytics = await getSubmissionAnalytics(session.user.id, 30)
+  // DSH-407: the range comes from `?days=` (7 / 30 / 90); anything
+  // else falls back to the 30-day default.
+  const rawDays = (await searchParams).days
+  const days = rawDays === "7" || rawDays === "90" ? Number(rawDays) : 30
+  const analytics = await getSubmissionAnalytics(session.user.id, days)
 
   const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "analytics")
@@ -32,12 +40,15 @@ export default async function AnalyticsPage() {
 
   return (
     <div>
-      <PageHeader title={t("title")} description={t("description")} />
+      <PageHeader
+        title={t("title")}
+        description={t("descriptionDays", { days })}
+      />
 
       <div className="flex flex-col gap-8 p-8">
         <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title={t("statTotal")}
+            title={t("statTotalDays", { days })}
             value={analytics.total}
             icon={RiInboxLine}
           />
@@ -52,7 +63,7 @@ export default async function AnalyticsPage() {
             icon={RiLinksLine}
           />
           <StatCard
-            title={t("statSpam")}
+            title={t("statSpamDays", { days })}
             value={statusCount("SPAM")}
             icon={RiSpamLine}
             variant="destructive"
@@ -64,8 +75,22 @@ export default async function AnalyticsPage() {
             <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
               {t("chartTitle")}
             </h2>
-            <span className="text-xs text-muted-foreground">
-              {t("chartRange")}
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{t("rangeLabel")}</span>
+              {[7, 30, 90].map((range) => (
+                <Link
+                  key={range}
+                  href={`/dashboard/analytics?days=${range}`}
+                  aria-current={range === days ? "true" : undefined}
+                  className={`rounded-md border px-2 py-1 ${
+                    range === days
+                      ? "border-primary bg-accent font-medium text-foreground"
+                      : "hover:bg-accent"
+                  }`}
+                >
+                  {t("rangeDays", { days: range })}
+                </Link>
+              ))}
             </span>
           </div>
           <Separator />
@@ -73,6 +98,9 @@ export default async function AnalyticsPage() {
             data={analytics.byDay}
             seriesLabel={t("chartSeriesLabel")}
           />
+          <p className="text-xs text-muted-foreground">
+            {t("chartRangeDays", { days })}
+          </p>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
@@ -83,7 +111,7 @@ export default async function AnalyticsPage() {
             <Separator />
             {analytics.byForm.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">
-                {t("noSubmissions")}
+                {t("noSubmissionsDays", { days })}
               </p>
             ) : (
               <div className="flex flex-col">
@@ -114,7 +142,7 @@ export default async function AnalyticsPage() {
             <Separator />
             {analytics.byDomain.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">
-                {t("noSubmissions")}
+                {t("noSubmissionsDays", { days })}
               </p>
             ) : (
               <div className="flex flex-col">
@@ -145,7 +173,7 @@ export default async function AnalyticsPage() {
           <Separator />
           {analytics.byStatus.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">
-              {t("noSubmissions")}
+              {t("noSubmissionsDays", { days })}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">

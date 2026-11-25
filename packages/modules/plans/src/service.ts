@@ -37,6 +37,7 @@ import type {
   PublishPlanVersionInput,
   RecordUsageInput,
   SetEntitlementOverrideInput,
+  SubscribeFreePlanInput,
   SubscriptionListQuery,
 } from "./validators"
 
@@ -2023,6 +2024,234 @@ export async function cancelSubscription(
     },
   })
   return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// ─── Customer: subscribe to the Free plan (BIL-120) ──────────────────
+
+// The customer self-service subscribe for free versions only — the
+// DSH-403 decision (a). Same one-active-per-user transaction as
+// assignSubscription: any previous ACTIVE/TRIALING row is canceled
+// with a CANCELED event before the new ACTIVE row is created, so the
+// user is never left with two active subscriptions. Paid versions
+// refuse with 422 (they go through checkout); subscribing while on a
+// different active plan refuses with 409 (cancel that plan first —
+// silently replacing a paid plan with Free would drop entitlements);
+// subscribing again to the version already held is an idempotent
+// no-op returning the existing row.
+export async function subscribeToFreePlan(
+  userId: string,
+  input: SubscribeFreePlanInput
+): Promise<SubscriptionSummary> {
+  const version = await getVersionOrThrow(input.planVersionId)
+  if (version.status !== "PUBLISHED") {
+    throw new ApiError(
+      "Only a published plan version can be subscribed to.",
+      409
+    )
+  }
+  if (version.priceAmount != null && version.priceAmount > 0) {
+    throw new ApiError(
+      "This plan is not free — subscribe to it through checkout instead.",
+      422
+    )
+  }
+  const existing = await findActiveSubscription(userId)
+  if (existing) {
+    if (existing.planVersionId === version.id) {
+      return toSubscriptionSummary(existing)
+    }
+    throw new ApiError(
+      "You already have an active subscription. Cancel it before taking the Free plan.",
+      409
+    )
+  }
+  const now = new Date()
+  const created = await db.$transaction(async (tx) => {
+    const previous = await tx.subscription.findFirst({
+      where: {
+        userId,
+        status: { in: ["ACTIVE", "TRIALING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    if (previous) {
+      await tx.subscription.update({
+        where: { id: previous.id },
+        data: { status: "CANCELED" },
+      })
+      await tx.subscriptionEvent.create({
+        data: {
+          subscriptionId: previous.id,
+          type: "CANCELED",
+          fromPlanVersionId: previous.planVersionId,
+          toPlanVersionId: null,
+          adminId: null,
+          reason: "Replaced by a free-plan subscribe.",
+        },
+      })
+    }
+    const next = await tx.subscription.create({
+      data: {
+        userId,
+        planId: version.planId,
+        planVersionId: version.id,
+        status: "ACTIVE",
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEndFor(version.billingInterval, now),
+        cancelAtPeriodEnd: false,
+      },
+    })
+    await tx.subscriptionEvent.create({
+      data: {
+        subscriptionId: next.id,
+        type: "CREATED",
+        fromPlanVersionId: previous?.planVersionId ?? null,
+        toPlanVersionId: version.id,
+        adminId: null,
+        reason: "Subscribed to the Free plan.",
+      },
+    })
+    return tx.subscription.findUniqueOrThrow({
+      where: { id: next.id },
+      include: subscriptionInclude,
+    })
+  })
+  await logAudit({
+    userId,
+    action: AuditAction.ASSIGN,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: created.id,
+    detail: {
+      event: "subscription-subscribed-free",
+      planVersionId: version.id,
+    },
+  })
+  return toSubscriptionSummary(created as SubscriptionWithRelations)
+}
+
+// ─── Customer: cancel own subscription (BIL-122 / BIL-091) ─────────────
+
+// The customer cancel path. Ownership is the check: only the caller's
+// own latest subscription can be canceled — there is no id in the
+// request to confuse with another user's row. The transition mirrors
+// cancelSubscription (immediate CANCELED + event, or the
+// cancelAtPeriodEnd flag alone), with the customer as the actor.
+//
+// LOCAL ONLY: this cancels the SendCMS row, NOT the provider
+// subscription. Provider-side cancellation is Wave 8's work
+// (BIL-001 / BIL-082 — cancelSubscriptionAtProvider does not exist
+// yet), so a paid subscription canceled here keeps billing at the
+// provider until Wave 8 wires it. The audit detail records that the
+// provider cancel is still pending, and the dashboard says so, so
+// the gap is visible instead of silent.
+export async function cancelMySubscription(
+  userId: string,
+  input: CancelSubscriptionInput
+): Promise<SubscriptionSummary> {
+  const row = await db.subscription.findFirst({
+    where: { userId },
+    include: subscriptionInclude,
+    orderBy: { createdAt: "desc" },
+  })
+  if (!row) throw new ApiError("No subscription found.", 404)
+  if (row.status === "CANCELED" || row.status === "EXPIRED") {
+    throw new ApiError("This subscription is already canceled.", 409)
+  }
+  const cancelAtPeriodEnd = input.cancelAtPeriodEnd ?? false
+  if (cancelAtPeriodEnd && row.cancelAtPeriodEnd) {
+    return toSubscriptionSummary(row as SubscriptionWithRelations)
+  }
+  const updated = cancelAtPeriodEnd
+    ? await db.subscription.update({
+        where: { id: row.id },
+        data: { cancelAtPeriodEnd: true },
+        include: subscriptionInclude,
+      })
+    : await db.$transaction(async (tx) => {
+        const canceled = await tx.subscription.update({
+          where: { id: row.id },
+          data: { status: "CANCELED", cancelAtPeriodEnd: false },
+          include: subscriptionInclude,
+        })
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: row.id,
+            type: "CANCELED",
+            fromPlanVersionId: row.planVersionId,
+            toPlanVersionId: null,
+            adminId: null,
+            reason: input.reason ?? "Canceled by customer.",
+          },
+        })
+        return canceled
+      })
+  await logAudit({
+    userId,
+    action: AuditAction.CANCEL,
+    resourceType: AuditResource.SUBSCRIPTION,
+    resourceId: row.id,
+    detail: {
+      event: "subscription-canceled-by-customer",
+      cancelAtPeriodEnd,
+      ...(input.reason ? { reason: input.reason } : {}),
+      // Wave 8 (BIL-001/BIL-082) still has to cancel this at the
+      // provider when one is attached; until then the provider keeps
+      // billing. Null provider = a locally-assigned/free row, nothing
+      // to cancel anywhere else.
+      provider: row.provider ?? null,
+      providerSubscriptionId: row.providerSubscriptionId ?? null,
+      providerCancelPending: row.providerSubscriptionId != null,
+    },
+  })
+  return toSubscriptionSummary(updated as SubscriptionWithRelations)
+}
+
+// ─── Customer: own usage + entitlements (BIL-124 / AIM-014) ─────────────
+
+// The customer usage surface. Owner-scoped by construction: the only
+// input is the caller's userId, so no other user's rows can ever be
+// returned. This MUST NOT reuse the admin getUsage (SEC-101 — that
+// route is admin-only for a reason); the per-meter numbers come from
+// checkLimit, the same live counts enforcement uses, so the dashboard
+// shows what the quota checks actually see.
+export type MyUsageSummary = {
+  subscription: SubscriptionSummary | null
+  entitlements: PlanEntitlements | null
+  source: EffectiveEntitlements["source"]
+  planVersionId: string | null
+  denied?: string
+  emergency: boolean
+  meters: Record<UsageMeter, LimitCheck>
+}
+
+const MY_USAGE_METERS: UsageMeter[] = [
+  "FORMS",
+  "DOMAINS",
+  "SUBMISSIONS",
+  "API_KEYS",
+  "MCP_REQUESTS",
+  "AI_REQUESTS",
+]
+
+export async function getMyUsage(userId: string): Promise<MyUsageSummary> {
+  const effective = await getEffectiveEntitlements(userId)
+  const [subscription, meterEntries] = await Promise.all([
+    getMySubscription(userId),
+    Promise.all(
+      MY_USAGE_METERS.map(
+        async (meter) => [meter, await checkLimit(userId, meter)] as const
+      )
+    ),
+  ])
+  return {
+    subscription,
+    entitlements: effective.entitlements,
+    source: effective.source,
+    planVersionId: effective.planVersionId,
+    ...(effective.denied ? { denied: effective.denied } : {}),
+    emergency: effective.emergency,
+    meters: Object.fromEntries(meterEntries) as Record<UsageMeter, LimitCheck>,
+  }
 }
 
 // ─── Entitlements resolution ──────────────────────────────────────────

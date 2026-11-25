@@ -102,6 +102,11 @@ enum EmailJobType {
   // reply to one submission, emailed to the submitter. The body is
   // stored in EmailJob.payload.
   SUBMISSION_REPLY
+  // Phase 16 (EML-096): a test notification sent from a form's
+  // detail page. Recorded as a SENT row (never PENDING) so the
+  // delivery log shows test sends alongside real ones — the send
+  // itself still goes straight through the provider, not the outbox.
+  TEST_EMAIL
 }
 
 enum EmailJobStatus {
@@ -362,6 +367,9 @@ model User {
   aiKeys                UserAiKey[]
   aiUsageRecords        AiUsageRecord[]
   aiSettings            UserAiSettings?
+  // Phase 16, Wave 6 (BIL-092 completion): webhook/billing events
+  // attributed to this user — the customer payment-history view.
+  billingEvents         BillingEvent[] @relation("BillingEventUser")
   // Admin Control Plane (Phase 6) — MCP per-user controls + usage.
   mcpSettings           McpUserSettings?
   mcpUsageRecords       McpUsageRecord[]
@@ -521,6 +529,18 @@ model Form {
   // enables AI for this form. No AI capability reads this field until
   // its own step ships; it is only the privacy gate.
   aiEnabled        Boolean  @default(false)
+  // Phase 16 (EML-093): per-form digest opt-in, decoupled from
+  // `aiEnabled` — the digest is a notification preference, not an AI
+  // feature. Default OFF for new forms; the migration backfills TRUE
+  // for forms that already had `aiEnabled` on, so no existing digest
+  // stops. When AI is on for the form (and a model resolves) the
+  // digest carries an AI summary; otherwise it is a plain list of
+  // the new submissions.
+  digestEnabled    Boolean  @default(false)
+  // Phase 16 (EML-093/096): hours between digests for this form.
+  // NULL = the platform default (AI_DIGEST_INTERVAL_HOURS, 24).
+  // The dashboard offers daily (24) and weekly (168).
+  digestIntervalHours Int?
   // Phase 12 (AI digest): when the last digest email was sent for this
   // form. NULL = never. The digest covers NEW submissions created after
   // this timestamp; the worker sends a new digest once the interval
@@ -1472,11 +1492,22 @@ model BillingProviderConfig {
 // Webhook idempotency: one row per provider event id. The webhook
 // handler skips an event it has already processed, so a provider retry
 // can never double-activate a subscription.
+//
+// Phase 16, Wave 6 (BIL-092 completion): `userId` links the event to
+// the customer it belongs to, so the customer payment-history view can
+// be owner-scoped. Set by the webhook handler — from the event for
+// checkout-completed (it carries the buyer), from the subscription row
+// for renewals/failures/cancels (resolved via providerSubscriptionId);
+// null when the payload cannot identify a user (ignored events, or an
+// event for a subscription SendCMS never activated). SetNull on user
+// erasure: billing history survives erasure, the link does not.
 model BillingEvent {
   id              String          @id @default(cuid())
   provider        BillingProvider
   providerEventId String
   eventType       String
+  userId          String?
+  user            User?           @relation("BillingEventUser", fields: [userId], references: [id], onDelete: SetNull)
   processedAt     DateTime?
   createdAt       DateTime        @default(now())
   // Phase 16 (DB-037): the row is updated after creation
@@ -1486,6 +1517,7 @@ model BillingEvent {
 
   @@unique([provider, providerEventId])
   @@index([provider, createdAt])
+  @@index([userId, createdAt])
 }
 
 // A support thread. Created by a signed-in user from /dashboard/support

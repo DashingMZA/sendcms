@@ -265,6 +265,9 @@ export async function listMyTickets(
 ): Promise<MyTicketsPage> {
   const where: Prisma.SupportTicketWhereInput = { userId }
   if (filters.status) where.status = filters.status
+  if (filters.search) {
+    where.subject = { contains: filters.search, mode: "insensitive" }
+  }
   const [total, rows] = await Promise.all([
     db.supportTicket.count({ where }),
     db.supportTicket.findMany({

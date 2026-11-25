@@ -20,3 +20,13 @@ export function marketingUrl(): string {
 export function marketingTermsURL(): string {
   return `${marketingUrl()}/terms`
 }
+
+// DSH-006: the docs site's origin, env-driven (NEXT_PUBLIC_DOCS_URL)
+// like the other sibling-app URLs. The dashboard sidebar links here
+// so a signed-in user always has an in-app path to the docs.
+export function docsUrl(): string {
+  return (process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3003").replace(
+    /\/$/,
+    ""
+  )
+}

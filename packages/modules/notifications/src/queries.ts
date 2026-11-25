@@ -5,7 +5,7 @@ import type { EmailJobListResult } from "./service"
 export type { EmailJobListResult }
 
 export type EmailJobListParams = {
-  status?: "PENDING" | "SENT" | "FAILED"
+  status?: "PENDING" | "SENDING" | "SENT" | "FAILED"
   formId?: string
   page?: number
 }
@@ -46,6 +46,24 @@ export function useSendTestEmail(formId: string) {
       apiFetch<{ messageId: string; provider: string }>(
         `/api/v1/forms/${formId}/test-email`,
         { method: "POST", body: JSON.stringify({ to }) }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["email-jobs"] })
+    },
+  })
+}
+
+/** Requeues a FAILED or stuck-SENDING job from the delivery log
+    (Phase 16, EML-094/095). The error message is the server's (a
+    within-lease SENDING refusal names the lease), so the call site
+    should surface `err.message` — see the inbox ReplySection. */
+export function useRequeueEmailJob() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<{ id: string; status: string }>(
+        `/api/v1/email-jobs/${jobId}/requeue`,
+        { method: "POST" }
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["email-jobs"] })

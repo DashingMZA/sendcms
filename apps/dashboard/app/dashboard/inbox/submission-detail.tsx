@@ -13,7 +13,7 @@ import {
   useSubmission,
   useUpdateSubmissionStatus,
 } from "@sendcms/inbox/queries"
-import { getSubmissionSender } from "@sendcms/shared"
+import { getSubmissionSender, ApiClientError } from "@sendcms/shared"
 
 import {
   SUBMISSION_STATUS_LABEL_KEYS,
@@ -346,9 +346,13 @@ export function SubmissionDetail({
   )
 }
 
-/** Auto-reply drafts (Phase 12, Step 4). The owner asks the AI for a
-    draft, reviews and edits it here, and only then sends it. Nothing
-    is sent until the owner clicks "Send reply". */
+/** Reply composer (Phase 12, Step 4; decoupled from AI in Phase 16,
+    EML-091). The composer is the owner's way to answer a visitor:
+    it renders for any form with a sender email, and the owner writes
+    the reply directly. AI is an enhancement inside it ("Suggest
+    with AI"), not a gate — the draft-then-send flow is unchanged
+    for AI-enabled forms. Nothing is sent until the owner clicks
+    "Send reply". */
 function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
   const { t } = useTranslation("inbox")
   const sender = getSubmissionSender(submission.data)
@@ -358,7 +362,11 @@ function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
   const [body, setBody] = useState("")
   const [sent, setSent] = useState(false)
 
-  if (!submission.form.aiEnabled || !sender.email) return null
+  // EML-091: only a missing sender email hides the composer — a
+  // form without AI still gets a reply box. (Hooks above stay
+  // unconditional: the early return must never sit above them.)
+  if (!sender.email) return null
+  const aiEnabled = submission.form.aiEnabled
 
   const onDraft = async () => {
     setSent(false)
@@ -366,8 +374,14 @@ function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
       const result = await draft.mutateAsync()
       setSubject(result.subject)
       setBody(result.body)
-    } catch {
-      toast.error(t("draftFailed"))
+    } catch (err) {
+      // DSH-303: mirror AiFieldsPanel — the server's reason (in
+      // particular the expected 503s: no provider configured, AI
+      // disabled) reaches the toast; the generic string is only the
+      // fallback for non-API errors.
+      toast.error(
+        err instanceof ApiClientError ? err.message : t("draftFailed")
+      )
     }
   }
 
@@ -376,56 +390,61 @@ function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
       await send.mutateAsync({ subject, body })
       setSent(true)
       toast.success(t("replyQueued"))
-    } catch {
-      toast.error(t("sendFailed"))
+    } catch (err) {
+      // DSH-303: same as onDraft — surface the server's reason.
+      toast.error(err instanceof ApiClientError ? err.message : t("sendFailed"))
     }
   }
 
-  const hasDraft = subject !== "" || body !== ""
   return (
     <section className="rounded-lg border p-4 sm:p-6">
       <h3 className="mb-2 text-base font-semibold">{t("replySection")}</h3>
       <p className="text-sm text-muted-foreground">
         {t("replyDescription", { email: sender.email })}
       </p>
-      <div className="mt-3">
-        <Button
-          variant="outline"
-          onClick={onDraft}
-          disabled={draft.isPending || send.isPending}
-        >
-          {draft.isPending ? t("drafting") : t("draftReply")}
-        </Button>
-      </div>
-      {hasDraft && (
-        <div className="mt-4 flex flex-col gap-3">
-          <div className="grid gap-1.5">
-            <Label htmlFor="reply-subject">{t("subjectLabel")}</Label>
-            <Input
-              id="reply-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="reply-body">{t("bodyLabel")}</Label>
-            <Textarea
-              id="reply-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={6}
-            />
-          </div>
-          <div>
-            <Button
-              onClick={onSend}
-              disabled={!subject.trim() || !body.trim() || send.isPending}
-            >
-              {send.isPending ? t("sending") : t("sendReply")}
-            </Button>
-          </div>
+      <div className="mt-3 flex flex-col gap-1.5">
+        <div>
+          <Button
+            variant="outline"
+            onClick={onDraft}
+            disabled={!aiEnabled || draft.isPending || send.isPending}
+          >
+            {draft.isPending ? t("drafting") : t("suggestWithAi")}
+          </Button>
         </div>
-      )}
+        {!aiEnabled && (
+          <p className="text-sm text-muted-foreground">
+            {t("suggestAiDisabled")}
+          </p>
+        )}
+      </div>
+      <div className="mt-4 flex flex-col gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor="reply-subject">{t("subjectLabel")}</Label>
+          <Input
+            id="reply-subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="reply-body">{t("bodyLabel")}</Label>
+          <Textarea
+            id="reply-body"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={6}
+          />
+        </div>
+        <div>
+          <Button
+            onClick={onSend}
+            disabled={!subject.trim() || !body.trim() || send.isPending}
+          >
+            {send.isPending ? t("sending") : t("sendReply")}
+          </Button>
+        </div>
+      </div>
       {sent && (
         <p className="mt-2 text-sm text-muted-foreground">
           {t("replyQueuedNote")}

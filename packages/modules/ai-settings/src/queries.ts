@@ -8,6 +8,7 @@ import type {
   AiProviderHealth,
   AiUsageRow,
   AiUsageSummary,
+  MyAiUsage,
   UserAiKeyMeta,
 } from "./service"
 import type { AiBillingMode } from "@sendcms/database"
@@ -37,23 +38,36 @@ export const AI_SETTINGS_KEYS = {
 
 // ─── Customer (dashboard) ─────────────────────────────────────────────
 
-export function useAiKeys() {
+export function useAiKeys(initialData?: UserAiKeyMeta[]) {
   return useQuery({
     queryKey: AI_SETTINGS_KEYS.keys,
     queryFn: () =>
       apiFetch<{ keys: UserAiKeyMeta[] }>("/api/v1/ai/keys").then(
         (r) => r.keys
       ),
+    initialData,
   })
 }
 
-export function useAiBillingMode() {
+export function useAiBillingMode(initialData?: AiBillingMode) {
   return useQuery({
     queryKey: AI_SETTINGS_KEYS.billingMode,
     queryFn: () =>
       apiFetch<{ billingMode: AiBillingMode }>("/api/v1/ai/billing-mode").then(
         (r) => r.billingMode
       ),
+    initialData,
+  })
+}
+
+// AIM-014 (Wave 6): the caller's own AI usage — billing mode,
+// remaining AI allowance for today, today's BYOK/platform calls,
+// and provider-reported cost. Customer-scoped; never the admin
+// summary endpoint.
+export function useMyAiUsage() {
+  return useQuery<MyAiUsage>({
+    queryKey: ["ai-usage", "my"],
+    queryFn: () => apiFetch<MyAiUsage>("/api/v1/ai/usage"),
   })
 }
 
@@ -72,11 +86,19 @@ export function useSaveAiKey() {
 }
 
 export function useTestAiKey() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (provider: AiProviderName) =>
       apiFetch<AiKeyTestResult>(`/api/v1/ai/keys/${provider}/test`, {
         method: "POST",
       }),
+    // DSH-302: testing a saved key updates its lastTestedAt /
+    // lastTestStatus server-side — invalidate the key list so the
+    // card's "Last tested" line reflects the just-run test without a
+    // manual refresh (same onSuccess as the sibling key mutations).
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: AI_SETTINGS_KEYS.keys })
+    },
   })
 }
 

@@ -148,12 +148,19 @@ describe("email-jobs validators", () => {
 
   it("list query defaults to page 1 and rejects a bad status", () => {
     expect(EmailJobListQuerySchema.parse({})).toEqual({ page: 1 })
-    expect(
-      EmailJobListQuerySchema.safeParse({ status: "SENDING" }).success
-    ).toBe(false)
+    expect(EmailJobListQuerySchema.safeParse({ status: "BOGUS" }).success).toBe(
+      false
+    )
     expect(
       EmailJobListQuerySchema.parse({ status: "FAILED", page: "2" })
     ).toEqual({ status: "FAILED", page: 2 })
+  })
+
+  it("list query accepts SENDING as a filter (EML-094)", () => {
+    expect(EmailJobListQuerySchema.parse({ status: "SENDING" })).toEqual({
+      status: "SENDING",
+      page: 1,
+    })
   })
 })
 

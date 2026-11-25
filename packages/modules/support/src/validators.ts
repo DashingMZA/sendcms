@@ -56,6 +56,9 @@ export type ReplyToTicketInput = z.infer<typeof ReplyToTicketSchema>
 
 export const MyTicketsQuerySchema = SupportPaginationQuerySchema.extend({
   status: TicketStatusSchema.optional(),
+  // DSH-410: free-text search over the subject (case-insensitive),
+  // mirroring the admin list's `search` in AdminTicketsQuerySchema.
+  search: z.string().trim().min(1).max(200).optional(),
 })
 
 export type MyTicketsQuery = z.infer<typeof MyTicketsQuerySchema>

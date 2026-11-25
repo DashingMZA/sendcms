@@ -45,6 +45,7 @@ export function useMyTickets(
   filters: {
     status?:
       "OPEN" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "RESOLVED" | "CLOSED"
+    search?: string
     page?: number
     perPage?: number
   },

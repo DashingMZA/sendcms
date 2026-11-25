@@ -298,6 +298,21 @@ describe("updateFormForUser", () => {
     )
   })
 
+  it("passes the digest preference through to the update (EML-093)", async () => {
+    await updateFormForUser("user-1", "form-1", {
+      digestEnabled: true,
+      digestIntervalHours: 168,
+    })
+    expect(mockDb.form.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          digestEnabled: true,
+          digestIntervalHours: 168,
+        }),
+      })
+    )
+  })
+
   it("throws 404 for a form owned by someone else", async () => {
     mockDb.form.findFirst.mockResolvedValue(null)
     await expectApiError(
@@ -737,6 +752,26 @@ describe("updateNotificationEmailForUser (EML-004 guard)", () => {
     )
     expect(updated.enabled).toBe(true)
   })
+
+  it("writes a notification-updated audit row on toggle (DSH-206)", async () => {
+    mockRow()
+    mockDb.verification.findFirst.mockResolvedValue(null)
+    await updateNotificationEmailForUser("user-1", "form-1", "notif-1", {
+      enabled: true,
+    })
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resourceId: "form-1",
+          detail: expect.objectContaining({
+            event: "notification-updated",
+            email: "owner@example.com",
+            enabled: true,
+          }),
+        }),
+      })
+    )
+  })
 })
 
 describe("resendNotificationConfirmation", () => {
@@ -810,6 +845,26 @@ describe("getFormForUser (EML-004 surfacing)", () => {
       { id: "n-1", email: "a@example.com", enabled: false, confirmed: false },
       { id: "n-2", email: "b@example.com", enabled: true, confirmed: true },
     ])
+  })
+
+  it("exposes the next digest due date (DSH-304)", async () => {
+    const lastDigestAt = new Date("2026-11-20T10:00:00Z")
+    mockDb.form.findFirst.mockResolvedValue(
+      makeForm({
+        lastDigestAt,
+        digestIntervalHours: 24,
+      })
+    )
+    const form = await getFormForUser("user-1", "form-1")
+    expect(form.digestNextAt).toEqual(new Date("2026-11-21T10:00:00Z"))
+  })
+
+  it("reports no next digest when none was ever sent (DSH-304)", async () => {
+    mockDb.form.findFirst.mockResolvedValue(
+      makeForm({ lastDigestAt: null, digestIntervalHours: null })
+    )
+    const form = await getFormForUser("user-1", "form-1")
+    expect(form.digestNextAt).toBeNull()
   })
 })
 

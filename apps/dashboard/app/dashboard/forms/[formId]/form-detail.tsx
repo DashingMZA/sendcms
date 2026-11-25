@@ -16,6 +16,7 @@ import {
   useUpdateNotificationEmail,
 } from "@sendcms/forms/queries"
 import type { FormDetail, FormDetailResponse } from "@sendcms/forms/queries"
+import { getFormEmbedWarnings } from "@sendcms/forms/queries"
 import { useSendTestEmail } from "@sendcms/notifications/queries"
 import { ApiClientError } from "@sendcms/shared"
 
@@ -33,6 +34,7 @@ import {
   Textarea,
 } from "@sendcms/ui"
 
+import { format } from "date-fns"
 import { CopyField } from "../../domains/copy-field"
 import { DomainStatusBadge } from "../../domains/domain-status-badge"
 import { FieldsSection } from "./fields-section"
@@ -56,6 +58,12 @@ function Section({
       {children}
     </section>
   )
+}
+
+/** Digest timestamps arrive as Dates from the server render and as
+    ISO strings after a client refetch — normalize either way. */
+function formatDigestDate(value: Date | string): string {
+  return format(new Date(value), "PPpp")
 }
 
 export function FormDetail({
@@ -90,6 +98,13 @@ export function FormDetail({
     form.turnstileEnabled
   )
   const [aiEnabled, setAiEnabled] = useState(form.aiEnabled)
+  // EML-093: the digest preference lives here with the AI toggle —
+  // the digest is a notification preference, not an AI feature.
+  // Interval is the form's own value, else the platform default (24).
+  const [digestEnabled, setDigestEnabled] = useState(form.digestEnabled)
+  const [digestIntervalHours, setDigestIntervalHours] = useState(
+    form.digestIntervalHours ?? 24
+  )
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -106,6 +121,8 @@ export function FormDetail({
         honeypotEnabled,
         turnstileEnabled,
         aiEnabled,
+        digestEnabled,
+        digestIntervalHours,
       })
     } catch (err) {
       setSettingsError(
@@ -293,6 +310,62 @@ export function FormDetail({
               onCheckedChange={setAiEnabled}
             />
           </div>
+          {/* EML-093/DSH-304: the digest controls + state. The toggle
+              is independent of AI; the frequency picks the per-form
+              interval; last/next come from the server (same shape as
+              the notifications page's digest summary). */}
+          <div className="flex flex-col gap-3 rounded-lg border p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="settings-digest">{t("digestLabel")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("digestDescription")}
+                </p>
+              </div>
+              <Switch
+                id="settings-digest"
+                checked={digestEnabled}
+                onCheckedChange={setDigestEnabled}
+              />
+            </div>
+            {digestEnabled && (
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="settings-digest-frequency">
+                    {t("digestFrequencyLabel")}
+                  </Label>
+                  <Select
+                    value={String(digestIntervalHours)}
+                    onValueChange={(value) =>
+                      setDigestIntervalHours(Number(value))
+                    }
+                  >
+                    <SelectTrigger
+                      id="settings-digest-frequency"
+                      className="w-48"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="24">{t("digestDaily")}</SelectItem>
+                      <SelectItem value="168">{t("digestWeekly")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              {t("digestLast")}{" "}
+              {form.lastDigestAt
+                ? formatDigestDate(form.lastDigestAt)
+                : t("digestNever")}
+              {" · "}
+              {t("digestNext")}{" "}
+              {form.digestNextAt
+                ? formatDigestDate(form.digestNextAt)
+                : t("digestNextPending")}
+            </p>
+          </div>
           {settingsError && (
             <p role="alert" className="text-sm text-destructive">
               {settingsError}
@@ -311,6 +384,21 @@ export function FormDetail({
       </Section>
 
       <Section title={t("embedTitle")} description={t("embedDescription")}>
+        {/* DSH-102: the snippet is shown even when the form cannot
+            receive submissions — say so plainly, above the snippet. */}
+        {getFormEmbedWarnings(form).map((warning) => (
+          <p
+            key={warning}
+            role="alert"
+            className="mb-3 rounded-lg border border-amber-500/50 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            {t(
+              warning === "no-domain"
+                ? "embedNoDomainWarning"
+                : "embedPausedWarning"
+            )}
+          </p>
+        ))}
         {form.turnstileEnabled && !turnstileSiteKey ? (
           // No site key, no working snippet: without
           // data-turnstile-site-key the SDK sends no token and the
@@ -535,8 +623,13 @@ function NotificationsSection({ form }: { form: FormDetail }) {
               <Badge variant={row.enabled ? "default" : "secondary"}>
                 {row.enabled ? t("recipientOn") : t("recipientOff")}
               </Badge>
-              {row.confirmed === false && (
+              {/* EML-096: verification state is visible both ways —
+                  the unconfirmed badge existed; a confirmed recipient
+                  now shows Verified instead of nothing. */}
+              {row.confirmed === false ? (
                 <Badge variant="outline">{t("recipientUnconfirmed")}</Badge>
+              ) : (
+                <Badge variant="outline">{t("recipientVerified")}</Badge>
               )}
               <span className="ml-auto flex items-center gap-2">
                 {row.confirmed === false && (

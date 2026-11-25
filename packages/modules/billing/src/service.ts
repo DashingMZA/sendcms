@@ -28,7 +28,7 @@ import {
   getFreemiusPlanMapCount,
   verifyWebhookForProvider,
 } from "./providers"
-import type { PlanVersionForCheckout } from "./providers/types"
+import type { PlanVersionForCheckout, VerifiedWebhook } from "./providers/types"
 import type {
   BillingEventsQuery,
   CheckoutSessionInput,
@@ -103,6 +103,10 @@ export type BillingEventRow = {
   provider: BillingProvider
   providerEventId: string
   eventType: string
+  // Phase 16, Wave 6 (BIL-092 completion): the customer the event
+  // belongs to, when the webhook payload identifies one; null for
+  // ignored events and events for subscriptions SendCMS never saw.
+  userId: string | null
   // processedAt set = the webhook was applied; null = the event was
   // received but never applied (failed apply, or a duplicate that
   // arrived while the first delivery was still in flight).
@@ -194,6 +198,55 @@ export async function listPublicCountries(): Promise<
 
 // ─── Admin: billing events (webhook / transaction history) ────────────────
 
+// The shared filter shape for both billing-event lists (admin +
+// customer): provider / event type / processed state / date bounds.
+// The customer list adds `userId` — the owner scope — and nothing
+// else can widen it.
+function billingEventsWhere(
+  filters: BillingEventsQuery,
+  userId?: string
+): Prisma.BillingEventWhereInput {
+  const where: Prisma.BillingEventWhereInput = {}
+  if (userId) where.userId = userId
+  if (filters.provider) where.provider = filters.provider
+  if (filters.eventType) where.eventType = filters.eventType
+  if (filters.processed !== undefined) {
+    where.processedAt = filters.processed === true ? { not: null } : null
+  }
+  const createdAt: Prisma.DateTimeFilter = {}
+  if (filters.from) {
+    const d = new Date(filters.from)
+    if (!Number.isNaN(d.getTime())) createdAt.gte = d
+  }
+  if (filters.to) {
+    const d = new Date(filters.to)
+    if (!Number.isNaN(d.getTime())) createdAt.lte = d
+  }
+  if (Object.keys(createdAt).length > 0) where.createdAt = createdAt
+  return where
+}
+
+function toBillingEventRow(row: {
+  id: string
+  provider: BillingProvider
+  providerEventId: string
+  eventType: string
+  userId: string | null
+  processedAt: Date | null
+  createdAt: Date
+}): BillingEventRow {
+  return {
+    id: row.id,
+    provider: row.provider,
+    providerEventId: row.providerEventId,
+    eventType: row.eventType,
+    userId: row.userId,
+    processed: row.processedAt !== null,
+    processedAt: row.processedAt,
+    createdAt: row.createdAt,
+  }
+}
+
 // ADM-123 / BIL-123 / BIL-092: the read side BillingEvent never had.
 // Webhook receipts + payment events, newest first, paginated, filterable
 // by provider / event type / processed state / date. An unprocessed row
@@ -213,22 +266,7 @@ export async function listBillingEvents(
   totalPages: number
 }> {
   requireBillingAdmin(actor, "VIEW_BILLING")
-  const where: Prisma.BillingEventWhereInput = {}
-  if (filters.provider) where.provider = filters.provider
-  if (filters.eventType) where.eventType = filters.eventType
-  if (filters.processed !== undefined) {
-    where.processedAt = filters.processed === true ? { not: null } : null
-  }
-  const createdAt: Prisma.DateTimeFilter = {}
-  if (filters.from) {
-    const d = new Date(filters.from)
-    if (!Number.isNaN(d.getTime())) createdAt.gte = d
-  }
-  if (filters.to) {
-    const d = new Date(filters.to)
-    if (!Number.isNaN(d.getTime())) createdAt.lte = d
-  }
-  if (Object.keys(createdAt).length > 0) where.createdAt = createdAt
+  const where = billingEventsWhere(filters)
   const [total, rows] = await Promise.all([
     db.billingEvent.count({ where }),
     db.billingEvent.findMany({
@@ -239,15 +277,42 @@ export async function listBillingEvents(
     }),
   ])
   return {
-    events: rows.map((row) => ({
-      id: row.id,
-      provider: row.provider,
-      providerEventId: row.providerEventId,
-      eventType: row.eventType,
-      processed: row.processedAt !== null,
-      processedAt: row.processedAt,
-      createdAt: row.createdAt,
-    })),
+    events: rows.map(toBillingEventRow),
+    total,
+    page: filters.page,
+    perPage: filters.perPage,
+    totalPages: Math.max(1, Math.ceil(total / filters.perPage)),
+  }
+}
+
+// ─── Customer: own billing events (BIL-092 completion, Wave 6) ────────────
+
+// The customer payment-history view. Owner-scoped by construction:
+// the only user id is the caller's, so a customer sees only their own
+// events — another customer's rows are never in the result, whatever
+// filters are passed. Same pagination/filter shape as the admin list.
+export async function listMyBillingEvents(
+  userId: string,
+  filters: BillingEventsQuery
+): Promise<{
+  events: BillingEventRow[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}> {
+  const where = billingEventsWhere(filters, userId)
+  const [total, rows] = await Promise.all([
+    db.billingEvent.count({ where }),
+    db.billingEvent.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (filters.page - 1) * filters.perPage,
+      take: filters.perPage,
+    }),
+  ])
+  return {
+    events: rows.map(toBillingEventRow),
     total,
     page: filters.page,
     perPage: filters.perPage,
@@ -460,7 +525,7 @@ export async function createCheckoutSession(
   }
   if (version.priceAmount == null || version.priceAmount <= 0) {
     throw new ApiError(
-      "This plan is free and needs no payment — subscribe from the plan page instead.",
+      "This plan is free and needs no payment — take it from the checkout page instead.",
       422
     )
   }
@@ -503,6 +568,42 @@ export async function createCheckoutSession(
 
 // ─── Webhooks ─────────────────────────────────────────────────────────
 
+// BIL-092 completion (Wave 6): attribute the webhook event to the
+// customer it belongs to, so the customer payment-history view can be
+// owner-scoped. Checkout-completed carries the buyer; renewals,
+// failures, and cancels carry only the provider subscription id, so
+// the user is resolved through the subscription row; ignored events
+// carry no identity at all. Null when nothing resolves — the event
+// is still recorded, it just belongs to no customer view.
+async function resolveWebhookUserId(
+  provider: BillingProvider,
+  verified: VerifiedWebhook
+): Promise<string | null> {
+  // Attribution is best-effort: a failed lookup must NEVER stop the
+  // webhook from being applied — the event is recorded unattributed
+  // instead of being dropped or misreported as a duplicate.
+  try {
+    const event = verified.event
+    if (event.kind === "checkout-completed") return event.userId
+    if (event.kind === "ignored") return null
+    const subscription = await db.subscription.findFirst({
+      where: {
+        provider,
+        providerSubscriptionId: event.providerSubscriptionId,
+      },
+      select: { userId: true },
+      orderBy: { createdAt: "desc" },
+    })
+    return subscription?.userId ?? null
+  } catch (err) {
+    log.warn("Billing webhook user attribution failed", {
+      provider,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
 // Verify the signature, skip already-processed event ids, then apply
 // the event to subscriptions. `received` is true even for duplicates
 // and ignored events — the provider still gets a 2xx so it stops
@@ -534,12 +635,24 @@ export async function handleWebhook(
           provider,
           providerEventId: verified.eventId,
           eventType: verified.eventType,
+          userId: await resolveWebhookUserId(provider, verified),
         },
       })
     } catch {
       // Lost a race with a concurrent delivery of the same event —
       // the other delivery applies it; this one only acknowledges.
       return { received: true, duplicate: true, kind: verified.event.kind }
+    }
+  } else if (!eventRow.userId) {
+    // A duplicate that arrived while the first delivery was still in
+    // flight: the row exists but was never attributed — fill the link
+    // in now instead of leaving the event ownerless.
+    const userId = await resolveWebhookUserId(provider, verified)
+    if (userId) {
+      eventRow = await db.billingEvent.update({
+        where: { id: eventRow.id },
+        data: { userId },
+      })
     }
   }
 

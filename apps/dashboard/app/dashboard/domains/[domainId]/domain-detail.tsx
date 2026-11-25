@@ -150,7 +150,12 @@ export function DomainDetail({
     try {
       const result = await verify.mutateAsync()
       setCheck(result)
-      if (result.verified) router.refresh()
+      // DSH-103: refresh after EVERY verify result, not only on
+      // success — a failed check increments the attempt count
+      // server-side, and this component reads `initialDomain`
+      // directly, so without the refresh "attempts remaining" stays
+      // at the pre-attempt count until manual navigation.
+      router.refresh()
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : t("verifyFailed"))
     }

@@ -26,7 +26,8 @@ import type {
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
 import { requireAdmin } from "@sendcms/permissions"
-import { getEffectiveEntitlementsSafe } from "@sendcms/plans"
+import { checkLimit, getEffectiveEntitlementsSafe } from "@sendcms/plans"
+import type { LimitCheck } from "@sendcms/plans"
 import {
   FREE_PLAN_V1_ENTITLEMENTS,
   type PlanEntitlements,
@@ -1468,20 +1469,22 @@ function emptyModeSummary(): AiUsageModeSummary {
   }
 }
 
-/** BYOK vs PLATFORM totals, separated — never mixed. costMicros only
-    counts provider-reported costs; it is never an estimate. */
-export async function getAiUsageSummary(
-  actor: AdminSession,
-  filters: AiUsageSummaryQuery
-): Promise<AiUsageSummary> {
-  requireAdmin(actor, "VIEW_AI_USAGE")
-  const where = usageWhere(filters)
-  const grouped = await db.aiUsageRecord.groupBy({
-    by: ["billingMode", "status"],
-    where,
-    _count: { _all: true },
-    _sum: { tokensIn: true, tokensOut: true, costMicros: true },
-  })
+type AiUsageGroupRow = {
+  billingMode: AiBillingMode
+  status: AiUsageStatus
+  _count: { _all: number }
+  _sum: {
+    tokensIn: number | null
+    tokensOut: number | null
+    costMicros: number | null
+  }
+}
+
+// One summarizer for the admin getAiUsageSummary and the customer
+// getMyAiUsage below: BYOK vs PLATFORM totals, separated — never
+// mixed. costMicros only counts provider-reported costs; it is never
+// an estimate.
+function toAiUsageSummary(grouped: AiUsageGroupRow[]): AiUsageSummary {
   const byMode = new Map<AiBillingMode, AiUsageModeSummary>()
   for (const g of grouped) {
     const bucket = byMode.get(g.billingMode) ?? emptyModeSummary()
@@ -1505,6 +1508,71 @@ export async function getAiUsageSummary(
     costMicros: byok.costMicros + platform.costMicros + disabled.costMicros,
   }
   return { byok, platform, total }
+}
+
+/** BYOK vs PLATFORM totals, separated — never mixed. costMicros only
+    counts provider-reported costs; it is never an estimate. */
+export async function getAiUsageSummary(
+  actor: AdminSession,
+  filters: AiUsageSummaryQuery
+): Promise<AiUsageSummary> {
+  requireAdmin(actor, "VIEW_AI_USAGE")
+  const where = usageWhere(filters)
+  const grouped = await db.aiUsageRecord.groupBy({
+    by: ["billingMode", "status"],
+    where,
+    _count: { _all: true },
+    _sum: { tokensIn: true, tokensOut: true, costMicros: true },
+  })
+  return toAiUsageSummary(grouped)
+}
+
+// ─── Customer: own AI usage (AIM-014, Wave 6) ─────────────────────────────
+
+// What the customer sees on /dashboard/ai: their AI billing mode, the
+// remaining AI allowance for today (the same live count the quota
+// check enforces), today's calls split BYOK vs platform, and the
+// provider-reported cost. Owner-scoped by construction — the only
+// input is the caller's userId. This MUST NOT reuse the admin
+// getAiUsageSummary (SEC-101 — that route is admin-only); the
+// BYOK/platform split is recomputed here for one user only.
+export type MyAiUsage = {
+  billingMode: AiBillingMode
+  allowance: LimitCheck
+  // Today's calls (UTC day), split BYOK vs platform.
+  today: AiUsageSummary
+  // All-time provider-reported cost, in micro-units.
+  totalCostMicros: number
+}
+
+export async function getMyAiUsage(userId: string): Promise<MyAiUsage> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  })
+  if (!user) throw new ApiError("User not found", 404)
+  const dayStart = new Date()
+  dayStart.setUTCHours(0, 0, 0, 0)
+  const [billingMode, allowance, grouped, cost] = await Promise.all([
+    getUserAiBillingMode(userId),
+    checkLimit(userId, "AI_REQUESTS"),
+    db.aiUsageRecord.groupBy({
+      by: ["billingMode", "status"],
+      where: { userId, createdAt: { gte: dayStart } },
+      _count: { _all: true },
+      _sum: { tokensIn: true, tokensOut: true, costMicros: true },
+    }),
+    db.aiUsageRecord.aggregate({
+      _sum: { costMicros: true },
+      where: { userId },
+    }),
+  ])
+  return {
+    billingMode,
+    allowance,
+    today: toAiUsageSummary(grouped),
+    totalCostMicros: cost._sum.costMicros ?? 0,
+  }
 }
 
 // ─── Admin: a user's keys ──────────────────────────────────────────────
