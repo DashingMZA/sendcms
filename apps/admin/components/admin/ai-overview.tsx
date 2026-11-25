@@ -11,6 +11,7 @@ import {
 } from "@sendcms/ai-settings/queries"
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -46,8 +47,18 @@ export function AiOverview({ actorRole }: Props) {
   const canViewUsage = adminCan(actorRole, "VIEW_AI_USAGE")
   const canManageAi = adminCan(actorRole, "MANAGE_AI")
 
-  const { data: summary, isLoading: summaryLoading } = useAiUsageSummary({})
-  const { data: health, isLoading: healthLoading } = useProviderHealth()
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useAiUsageSummary({})
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isError: healthError,
+    refetch: refetchHealth,
+  } = useProviderHealth()
 
   if (!canViewUsage) {
     return (
@@ -66,82 +77,115 @@ export function AiOverview({ actorRole }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* AIM-012: a failed summary fetch shows an error state instead
+          of literal zeros; the breakdown lines skeleton while loading
+          (only the headline total had a skeleton before). The provider
+          health section below still renders. */}
+      {summaryError ? (
         <Card>
-          <CardHeader>
-            <CardTitle>{t("totalCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {total?.calls ?? 0}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {t("successCalls")}: {total?.success ?? 0} · {t("failedCalls")}:{" "}
-              {total?.failed ?? 0}
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 py-10">
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
             </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refetchSummary()}
+            >
+              {t("retry")}
+            </Button>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("byokCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {byok?.calls ?? 0}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {t("tokensIn")}: {byok?.tokensIn ?? 0} · {t("tokensOut")}:{" "}
-              {byok?.tokensOut ?? 0}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("platformCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {platform?.calls ?? 0}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {t("tokensIn")}: {platform?.tokensIn ?? 0} · {t("tokensOut")}:{" "}
-              {platform?.tokensOut ?? 0}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("costReported")}</CardTitle>
-            <CardDescription>{t("costNote")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {totalCost ?? "—"}
-              </p>
-            )}
-            {!summaryLoading && totalCost === null && (
-              <p className="text-sm text-muted-foreground">
-                {t("costNotReported")}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("totalCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {total?.calls ?? 0}
+                </p>
+              )}
+              {summaryLoading ? (
+                <Skeleton className="mt-2 h-4 w-32" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("successCalls")}: {total?.success ?? 0} ·{" "}
+                  {t("failedCalls")}: {total?.failed ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("byokCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {byok?.calls ?? 0}
+                </p>
+              )}
+              {summaryLoading ? (
+                <Skeleton className="mt-2 h-4 w-32" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("tokensIn")}: {byok?.tokensIn ?? 0} · {t("tokensOut")}:{" "}
+                  {byok?.tokensOut ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("platformCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {platform?.calls ?? 0}
+                </p>
+              )}
+              {summaryLoading ? (
+                <Skeleton className="mt-2 h-4 w-32" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("tokensIn")}: {platform?.tokensIn ?? 0} · {t("tokensOut")}:{" "}
+                  {platform?.tokensOut ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("costReported")}</CardTitle>
+              <CardDescription>{t("costNote")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {totalCost ?? "—"}
+                </p>
+              )}
+              {!summaryLoading && totalCost === null && (
+                <p className="text-sm text-muted-foreground">
+                  {t("costNotReported")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {canManageAi && (
         <Card>
@@ -152,6 +196,20 @@ export function AiOverview({ actorRole }: Props) {
           <CardContent>
             {healthLoading ? (
               <Skeleton className="h-32 w-full" />
+            ) : healthError ? (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+              >
+                <span>{t("loadError")}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetchHealth()}
+                >
+                  {t("retry")}
+                </Button>
+              </div>
             ) : !health || health.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("noCalls")}</p>
             ) : (

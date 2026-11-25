@@ -105,12 +105,16 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
     router.push(pathname)
   }
 
-  const hasFilters = Boolean(filters.status || filters.planId)
+  const hasFilters = Boolean(filters.status || filters.planId || filters.q)
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
+          {/* ADM-032: the search box — debounced, URL-as-state (`q`),
+              now actually filtering server-side by subscriber
+              name/email instead of refetching the same list. */}
+          <SubscriptionsSearchInput defaultValue={filters.q ?? ""} />
           <div className="space-y-1">
             <Label htmlFor="subscriptions-status-filter">
               {t("statusFilterLabel")}
@@ -316,6 +320,76 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
           subscriptionId={cancelId}
           onClose={() => setCancelId(null)}
         />
+      )}
+    </div>
+  )
+}
+
+/** Debounced search over subscriber name/email (URL param `q`), same
+    shape as the users table's search input. Resets to page 1. */
+function SubscriptionsSearchInput({
+  defaultValue = "",
+}: {
+  defaultValue?: string
+}) {
+  const { t } = useTranslation("subscriptions")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const [value, setValue] = useState(defaultValue)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function updateSearch(search: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (search.trim()) {
+      params.set("q", search.trim())
+    } else {
+      params.delete("q")
+    }
+    params.delete("page")
+    const text = params.toString()
+    router.push(text ? `${pathname}?${text}` : pathname)
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.value
+    setValue(next)
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    debounceRef.current = setTimeout(() => {
+      updateSearch(next)
+    }, DEBOUNCE_MS)
+  }
+
+  function handleClear() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    setValue("")
+    updateSearch("")
+  }
+
+  return (
+    <div className="relative">
+      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="text"
+        placeholder={t("searchPlaceholder")}
+        value={value}
+        onChange={handleChange}
+        className="h-9 w-64 pr-9 pl-9 text-sm"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={t("clearFilters")}
+        >
+          <X className="size-4" />
+        </button>
       )}
     </div>
   )

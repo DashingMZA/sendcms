@@ -51,7 +51,7 @@ export function McpKeysTable({ actorRole }: Props) {
   const canManageMcp = adminCan(actorRole, "MANAGE_MCP")
 
   const [page, setPage] = useState(1)
-  const { data, isLoading } = useMcpKeys(page, 20)
+  const { data, isLoading, isError, refetch } = useMcpKeys(page, 20)
   const revokeKey = useRevokeMcpKey()
 
   const [revokeId, setRevokeId] = useState<string | null>(null)
@@ -100,6 +100,16 @@ export function McpKeysTable({ actorRole }: Props) {
       <CardContent className="flex flex-col gap-4 pt-6">
         {isLoading ? (
           <Skeleton className="h-64 w-full" />
+        ) : isError ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+          >
+            <span>{t("loadError")}</span>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              {t("retry")}
+            </Button>
+          </div>
         ) : keys.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
             <h3 className="mb-1 text-lg font-semibold text-balance">

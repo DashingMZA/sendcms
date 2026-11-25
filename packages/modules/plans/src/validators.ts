@@ -99,6 +99,10 @@ export const PlanListQuerySchema = AdminPaginationQuerySchema.extend({
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
   kind: z.enum(["FREE", "PAID"]).optional(),
   q: z.string().trim().max(200).optional(),
+  // ADM-038: exact-slug lookup — the usage page resolves the Free
+  // plan by slug instead of paging the list (which breaks past 100
+  // plans). Exact match: slugs are unique.
+  slug: z.string().trim().min(1).max(200).optional(),
   sort: z
     .enum(["createdAt:desc", "createdAt:asc", "name:asc", "name:desc"])
     .optional()
@@ -111,6 +115,10 @@ export const SubscriptionListQuerySchema = AdminPaginationQuerySchema.extend({
   status: z
     .enum(["ACTIVE", "TRIALING", "PAST_DUE", "CANCELED", "EXPIRED"])
     .optional(),
+  // ADM-032: free-text search over the subscriber's name/email
+  // (contains, case-insensitive) — the subscriptions table's search
+  // box promises this and previously filtered nothing.
+  q: z.string().trim().max(200).optional(),
   sort: z
     .enum(["createdAt:desc", "createdAt:asc"])
     .optional()

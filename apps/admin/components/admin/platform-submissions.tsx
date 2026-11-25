@@ -83,6 +83,12 @@ export function PlatformSubmissions({ actorRole }: Props) {
   >("all")
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
+  // ADM-099: the formId / userId / date filters the API already
+  // supports (same shape as the audit explorer's filters).
+  const [formId, setFormId] = useState("")
+  const [userId, setUserId] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [pendingStatus, setPendingStatus] = useState<{
@@ -94,6 +100,10 @@ export function PlatformSubmissions({ actorRole }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { data, isLoading } = usePlatformSubmissions({
     status: status === "all" ? undefined : status,
+    formId: formId.trim() || undefined,
+    userId: userId.trim() || undefined,
+    from: from || undefined,
+    to: to || undefined,
     search: debouncedSearch || undefined,
     page,
     perPage: 20,
@@ -266,6 +276,58 @@ export function PlatformSubmissions({ actorRole }: Props) {
                 value={search}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={t("searchPlaceholder")}
+              />
+            </div>
+            <div className="w-48 space-y-1">
+              <Label htmlFor="submission-form-id">
+                {t("formIdFilterLabel")}
+              </Label>
+              <Input
+                id="submission-form-id"
+                value={formId}
+                onChange={(e) => {
+                  setFormId(e.target.value)
+                  setPage(1)
+                }}
+                placeholder={t("formIdFilterPlaceholder")}
+              />
+            </div>
+            <div className="w-48 space-y-1">
+              <Label htmlFor="submission-user-id">
+                {t("userIdFilterLabel")}
+              </Label>
+              <Input
+                id="submission-user-id"
+                value={userId}
+                onChange={(e) => {
+                  setUserId(e.target.value)
+                  setPage(1)
+                }}
+                placeholder={t("userIdFilterPlaceholder")}
+              />
+            </div>
+            <div className="w-44 space-y-1">
+              <Label htmlFor="submission-from">{t("fromLabel")}</Label>
+              <Input
+                id="submission-from"
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value)
+                  setPage(1)
+                }}
+              />
+            </div>
+            <div className="w-44 space-y-1">
+              <Label htmlFor="submission-to">{t("toLabel")}</Label>
+              <Input
+                id="submission-to"
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value)
+                  setPage(1)
+                }}
               />
             </div>
           </div>

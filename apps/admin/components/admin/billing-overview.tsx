@@ -96,7 +96,7 @@ export function BillingOverview({ actorRole }: Props) {
   async function confirmSwitch() {
     if (!pendingProvider) return
     try {
-      await setConfig.mutateAsync({
+      const row = await setConfig.mutateAsync({
         provider: pendingProvider,
         input: {
           isEnabled: pendingEnabled,
@@ -105,6 +105,10 @@ export function BillingOverview({ actorRole }: Props) {
         },
       })
       toast.success(t("updated"))
+      // BIL-053: the enable succeeded, but with an empty Freemius
+      // plan map no Freemius checkout can work — surface the
+      // service's warning instead of leaving a silent trap.
+      if (row.warning) toast.warning(row.warning)
       setPendingProvider(null)
       setReason("")
     } catch {
@@ -122,6 +126,9 @@ export function BillingOverview({ actorRole }: Props) {
   const pendingDefinition = pendingProvider
     ? BILLING_PROVIDERS.find((p) => p.id === pendingProvider)
     : null
+  const pendingRow = pendingProvider
+    ? providers?.find((p) => p.provider === pendingProvider)
+    : undefined
 
   return (
     <div className="flex flex-col gap-6">
@@ -156,6 +163,16 @@ export function BillingOverview({ actorRole }: Props) {
                         <p className="text-xs text-muted-foreground">
                           {definition?.feeNote}
                         </p>
+                        {/* BIL-053: the Freemius plan map is env JSON,
+                            not DB rows — surface how many versions it
+                            maps so an empty map is visible here. */}
+                        {row.planMapCount !== null && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t("freemiusPlansMapped")}: {row.planMapCount}
+                            {row.planMapCount === 0 &&
+                              ` — ${t("freemiusNoPlansMapped")}`}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -174,7 +191,15 @@ export function BillingOverview({ actorRole }: Props) {
                       <TableCell>
                         <Switch
                           checked={row.isEnabled}
-                          disabled={!canManageBilling}
+                          // BIL-127: an unconfigured provider cannot be
+                          // enabled — the switch is disabled instead of
+                          // inviting a doomed dialog flow. Disabling an
+                          // already-enabled provider stays possible.
+                          // The service's 422 stays as defence in depth.
+                          disabled={
+                            !canManageBilling ||
+                            (!row.configured && !row.isEnabled)
+                          }
                           onCheckedChange={() =>
                             openSwitchDialog(
                               row.provider,
@@ -184,6 +209,12 @@ export function BillingOverview({ actorRole }: Props) {
                           }
                           aria-label={definition?.label}
                         />
+                        {!row.configured && !row.isEnabled && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t("enableDisabledHint")}:{" "}
+                            {row.missingEnvVars.join(", ")}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
                         {row.allCountries
@@ -225,6 +256,16 @@ export function BillingOverview({ actorRole }: Props) {
             <DialogDescription>{pendingDefinition?.feeNote}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            {/* BIL-053: warn before the save, not only after it —
+                enabling Freemius with no mapped plan version leaves
+                a provider that cannot sell. */}
+            {pendingProvider === "FREEMIUS" &&
+              pendingEnabled &&
+              pendingRow?.planMapCount === 0 && (
+                <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  {t("freemiusEmptyMapWarning")}
+                </p>
+              )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="billing-reason">{t("reasonLabel")}</Label>
               <Textarea

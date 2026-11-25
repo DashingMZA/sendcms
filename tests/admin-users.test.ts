@@ -10,6 +10,9 @@ const mockDb = vi.hoisted(() => ({
     findMany: vi.fn(),
     count: vi.fn(),
     update: vi.fn(),
+    // DB-027: status actions use a conditional updateMany (only
+    // applies while the row still holds the expected status).
+    updateMany: vi.fn(),
     // DB-005: erasure must never hard-delete the user row — the spy
     // in the erasure test below proves executeErasure never calls this.
     delete: vi.fn(),
@@ -345,6 +348,11 @@ describe("getUserDetail", () => {
     expect(detail.apiKeys[0]).not.toHaveProperty("keyHash")
     const keySelect = mockDb.apiKey.findMany.mock.calls[0][0].select
     expect(keySelect).not.toHaveProperty("keyHash")
+    // PRF-015: every list on the detail page is capped at 20, like
+    // the notes/audit lists already were.
+    expect(mockDb.form.findMany.mock.calls[0][0].take).toBe(20)
+    expect(mockDb.domain.findMany.mock.calls[0][0].take).toBe(20)
+    expect(mockDb.apiKey.findMany.mock.calls[0][0].take).toBe(20)
   })
 
   it("404s for an unknown user", async () => {
@@ -429,26 +437,31 @@ describe("suspendUser / reactivateUser", () => {
     await expect(
       suspendUser(ownerActor(), userId, { reason: "  " })
     ).rejects.toThrowError("Reason is required")
-    expect(mockDb.user.update).not.toHaveBeenCalled()
+    expect(mockDb.user.updateMany).not.toHaveBeenCalled()
   })
 
   it("sets SUSPENDED, revokes sessions, and audits", async () => {
     const now = new Date()
-    mockDb.user.update.mockResolvedValue({
-      id: userId,
-      status: "SUSPENDED",
-      statusReason: "Spam",
-      statusChangedAt: now,
-    })
+    mockDb.user.updateMany.mockResolvedValue({ count: 1 })
+    // Guard read (ACTIVE target) then the in-transaction re-read,
+    // which returns the row the conditional update just wrote.
+    mockDb.user.findUnique
+      .mockResolvedValueOnce(makeTargetUser())
+      .mockResolvedValue({
+        id: userId,
+        status: "SUSPENDED",
+        statusReason: "Spam",
+        statusChangedAt: now,
+      })
     mockDb.session.deleteMany.mockResolvedValue({ count: 2 })
     const updated = await suspendUser(ownerActor(), userId, {
       reason: "Spam",
     })
     expect(updated.status).toBe("SUSPENDED")
     expect(mockDb.$transaction).toHaveBeenCalled()
-    expect(mockDb.user.update).toHaveBeenCalledWith(
+    expect(mockDb.user.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: userId },
+        where: { id: userId, status: "ACTIVE" },
         data: expect.objectContaining({
           status: "SUSPENDED",
           statusReason: "Spam",
@@ -469,6 +482,19 @@ describe("suspendUser / reactivateUser", () => {
         }),
       })
     )
+  })
+
+  // DB-027: the conditional update is the enforcement — when another
+  // action already moved the user off ACTIVE, the update matches
+  // zero rows and the suspend is refused with a 409, with no session
+  // wipe and no audit row for an action that never applied.
+  it("409s when the conditional update matches zero rows (lost race)", async () => {
+    mockDb.user.updateMany.mockResolvedValue({ count: 0 })
+    await expect(
+      suspendUser(ownerActor(), userId, { reason: "Spam" })
+    ).rejects.toThrowError("status changed while the request was in flight")
+    expect(mockDb.session.deleteMany).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
   })
 
   it("409s when already suspended or disabled", async () => {
@@ -504,17 +530,23 @@ describe("suspendUser / reactivateUser", () => {
   })
 
   it("reactivates only from SUSPENDED", async () => {
-    mockDb.user.findUnique.mockResolvedValue(
-      makeTargetUser({ status: "SUSPENDED" })
-    )
-    mockDb.user.update.mockResolvedValue({
-      id: userId,
-      status: "ACTIVE",
-      statusReason: null,
-      statusChangedAt: new Date(),
-    })
+    mockDb.user.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.user.findUnique
+      .mockResolvedValueOnce(makeTargetUser({ status: "SUSPENDED" }))
+      .mockResolvedValue({
+        id: userId,
+        status: "ACTIVE",
+        statusReason: null,
+        statusChangedAt: new Date(),
+      })
     const updated = await reactivateUser(superAdminActor(), userId, {})
     expect(updated.status).toBe("ACTIVE")
+    expect(mockDb.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userId, status: "SUSPENDED" },
+        data: expect.objectContaining({ status: "ACTIVE" }),
+      })
+    )
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "REACTIVATE",
@@ -536,17 +568,26 @@ describe("suspendUser / reactivateUser", () => {
 
 describe("disableUser / restoreUser", () => {
   it("disables from ACTIVE, revokes sessions, and audits", async () => {
-    mockDb.user.update.mockResolvedValue({
-      id: userId,
-      status: "DISABLED",
-      statusReason: "Abuse",
-      statusChangedAt: new Date(),
-    })
+    mockDb.user.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.user.findUnique
+      .mockResolvedValueOnce(makeTargetUser())
+      .mockResolvedValue({
+        id: userId,
+        status: "DISABLED",
+        statusReason: "Abuse",
+        statusChangedAt: new Date(),
+      })
     mockDb.session.deleteMany.mockResolvedValue({ count: 1 })
     const updated = await disableUser(ownerActor(), userId, {
       reason: "Abuse",
     })
     expect(updated.status).toBe("DISABLED")
+    expect(mockDb.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userId, status: "ACTIVE" },
+        data: expect.objectContaining({ status: "DISABLED" }),
+      })
+    )
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "UPDATE",
@@ -577,17 +618,23 @@ describe("disableUser / restoreUser", () => {
   })
 
   it("restores only from DISABLED", async () => {
-    mockDb.user.findUnique.mockResolvedValue(
-      makeTargetUser({ status: "DISABLED" })
-    )
-    mockDb.user.update.mockResolvedValue({
-      id: userId,
-      status: "ACTIVE",
-      statusReason: null,
-      statusChangedAt: new Date(),
-    })
+    mockDb.user.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.user.findUnique
+      .mockResolvedValueOnce(makeTargetUser({ status: "DISABLED" }))
+      .mockResolvedValue({
+        id: userId,
+        status: "ACTIVE",
+        statusReason: null,
+        statusChangedAt: new Date(),
+      })
     const updated = await restoreUser(ownerActor(), userId, {})
     expect(updated.status).toBe("ACTIVE")
+    expect(mockDb.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userId, status: "DISABLED" },
+        data: expect.objectContaining({ status: "ACTIVE" }),
+      })
+    )
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({ event: "user-restored" }),
@@ -788,6 +835,24 @@ describe("addAdminNote / listAdminNotes", () => {
         }),
       })
     )
+    // ADM-010: note creation is audited — event only, never the
+    // note body in the audit detail.
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "UPDATE",
+        resourceType: "USER",
+        resourceId: userId,
+        detail: expect.objectContaining({ event: "admin-note-added" }),
+      })
+    )
+    const auditCalls = mockLogAudit.mock.calls as unknown as Array<
+      [{ detail: Record<string, unknown> }]
+    >
+    const auditDetail = auditCalls[0]?.[0].detail
+    expect(auditDetail).toBeDefined()
+    expect(auditDetail).not.toHaveProperty("body")
+    expect(auditDetail).not.toHaveProperty("body")
+    expect(JSON.stringify(auditDetail)).not.toContain("Called the customer.")
   })
 
   it("paginates notes with the admin name", async () => {

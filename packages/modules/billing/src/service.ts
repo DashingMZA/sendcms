@@ -5,6 +5,7 @@ import {
   AuditResource,
   db,
   type BillingProvider,
+  type Prisma,
 } from "@sendcms/database"
 import { requireAdmin, type PlatformCapability } from "@sendcms/permissions"
 import { logAudit } from "@sendcms/security"
@@ -24,10 +25,15 @@ import {
 } from "./registry"
 import {
   createCheckoutForProvider,
+  getFreemiusPlanMapCount,
   verifyWebhookForProvider,
 } from "./providers"
 import type { PlanVersionForCheckout } from "./providers/types"
-import type { CheckoutSessionInput, SetProviderConfigInput } from "./validators"
+import type {
+  BillingEventsQuery,
+  CheckoutSessionInput,
+  SetProviderConfigInput,
+} from "./validators"
 
 const log = createLogger("billing")
 
@@ -81,6 +87,28 @@ export type BillingProviderConfigRow = {
   // ISO alpha-2 codes the provider is restricted to; empty = everywhere.
   countries: string[]
   allCountries: boolean
+  // BIL-053: Freemius only — how many plan versions FREEMIUS_PLAN_MAP
+  // maps (null for the other providers, which have no plan map). The
+  // map itself is env JSON, not DB rows, so the row only surfaces the
+  // count; the mapping stays in the env var.
+  planMapCount: number | null
+  // BIL-053: set only by setProviderConfig when Freemius is enabled
+  // with an empty plan map — the enable succeeds, but no Freemius
+  // checkout can work until a version is mapped.
+  warning?: string
+}
+
+export type BillingEventRow = {
+  id: string
+  provider: BillingProvider
+  providerEventId: string
+  eventType: string
+  // processedAt set = the webhook was applied; null = the event was
+  // received but never applied (failed apply, or a duplicate that
+  // arrived while the first delivery was still in flight).
+  processed: boolean
+  processedAt: Date | null
+  createdAt: Date
 }
 
 export type EnabledBillingProvider = {
@@ -106,6 +134,8 @@ function toConfigRow(
     checkoutImplemented: definition.checkoutImplemented,
     countries,
     allCountries: countries.length === 0,
+    planMapCount:
+      config.provider === "FREEMIUS" ? getFreemiusPlanMapCount(env) : null,
   }
 }
 
@@ -160,6 +190,69 @@ export async function listPublicCountries(): Promise<
     select: { code: true, name: true },
     orderBy: { name: "asc" },
   })
+}
+
+// ─── Admin: billing events (webhook / transaction history) ────────────────
+
+// ADM-123 / BIL-123 / BIL-092: the read side BillingEvent never had.
+// Webhook receipts + payment events, newest first, paginated, filterable
+// by provider / event type / processed state / date. An unprocessed row
+// (processedAt null) is one the webhook handler received but never
+// applied — a failed apply, or a duplicate that arrived while the first
+// delivery was still in flight. Duplicate deliveries never create a
+// second row (unique (provider, providerEventId)), so the single row
+// and its processed state are the record of the delivery.
+export async function listBillingEvents(
+  actor: AdminSession,
+  filters: BillingEventsQuery
+): Promise<{
+  events: BillingEventRow[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}> {
+  requireBillingAdmin(actor, "VIEW_BILLING")
+  const where: Prisma.BillingEventWhereInput = {}
+  if (filters.provider) where.provider = filters.provider
+  if (filters.eventType) where.eventType = filters.eventType
+  if (filters.processed !== undefined) {
+    where.processedAt = filters.processed === true ? { not: null } : null
+  }
+  const createdAt: Prisma.DateTimeFilter = {}
+  if (filters.from) {
+    const d = new Date(filters.from)
+    if (!Number.isNaN(d.getTime())) createdAt.gte = d
+  }
+  if (filters.to) {
+    const d = new Date(filters.to)
+    if (!Number.isNaN(d.getTime())) createdAt.lte = d
+  }
+  if (Object.keys(createdAt).length > 0) where.createdAt = createdAt
+  const [total, rows] = await Promise.all([
+    db.billingEvent.count({ where }),
+    db.billingEvent.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (filters.page - 1) * filters.perPage,
+      take: filters.perPage,
+    }),
+  ])
+  return {
+    events: rows.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      providerEventId: row.providerEventId,
+      eventType: row.eventType,
+      processed: row.processedAt !== null,
+      processedAt: row.processedAt,
+      createdAt: row.createdAt,
+    })),
+    total,
+    page: filters.page,
+    perPage: filters.perPage,
+    totalPages: Math.max(1, Math.ceil(total / filters.perPage)),
+  }
 }
 
 // Enable/disable a provider and/or set its countries, in one call.
@@ -240,6 +333,19 @@ export async function setProviderConfig(
   })
 
   const newRow = toConfigRow(updated)
+  // BIL-053: enabling Freemius with no mapped plan version succeeds,
+  // but every Freemius checkout will 422 until a version is mapped —
+  // say so in the response instead of failing silently at a
+  // customer's checkout attempt.
+  const warning =
+    provider === "FREEMIUS" &&
+    input.isEnabled === true &&
+    newRow.planMapCount === 0
+      ? "No Freemius plan is mapped yet — Freemius checkout will refuse every plan version until FREEMIUS_PLAN_MAP maps at least one."
+      : undefined
+  const row: BillingProviderConfigRow = warning
+    ? { ...newRow, warning }
+    : newRow
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -252,9 +358,10 @@ export async function setProviderConfig(
         ? { isEnabled: oldRow.isEnabled, countries: oldRow.countries }
         : null,
       new: { isEnabled: newRow.isEnabled, countries: newRow.countries },
+      ...(warning ? { warning } : {}),
     },
   })
-  return newRow
+  return row
 }
 
 // ─── Customer: enabled providers + checkout ───────────────────────────

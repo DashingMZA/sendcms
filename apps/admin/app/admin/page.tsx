@@ -26,7 +26,12 @@ export default async function AdminOverviewPage({
   if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
 
   const parsed = OverviewQuerySchema.safeParse(await searchParams)
-  const query = parsed.success ? parsed.data : { range: "7d" as const }
+  // ADM-008: an invalid range in the URL used to render 7d data while
+  // the URL still said `range=bogus` (or `custom`) — the highlighted
+  // button and the URL disagreed. Redirect to the defaulted URL so
+  // the URL always describes the rendered range.
+  if (!parsed.success) redirect("/admin")
+  const query = parsed.data
   const overview = await getAdminOverview(session, query)
 
   const locale = await getRequestLocale()

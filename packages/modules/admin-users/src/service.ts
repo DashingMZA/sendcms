@@ -295,11 +295,15 @@ export async function getUserDetail(
       where: { ownerId: userId },
       select: { id: true, name: true, aiEnabled: true, createdAt: true },
       orderBy: { createdAt: "desc" },
+      // PRF-015: the detail page shows the newest 20, like the
+      // notes/audit lists below — the full lists were unbounded.
+      take: 20,
     }),
     db.domain.findMany({
       where: { ownerId: userId },
       select: { id: true, domain: true, status: true, createdAt: true },
       orderBy: { createdAt: "desc" },
+      take: 20,
     }),
     db.apiKey.findMany({
       where: { userId },
@@ -314,6 +318,7 @@ export async function getUserDetail(
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
+      take: 20,
     }),
     db.adminNote.findMany({
       where: { userId },
@@ -445,6 +450,52 @@ const statusSelect = {
   statusChangedAt: true,
 } as const
 
+// DB-027: the atomic status transition every status action funnels
+// through. The update is conditional on the row still holding the
+// expected status, so two mutually exclusive actions racing on the
+// same user cannot both apply: the loser's update matches zero rows
+// and gets a 409, and its audit row is never written (the audit
+// happens after this returns). The session wipe (suspend/disable)
+// rides in the same transaction as the status write, so a lost race
+// cannot wipe sessions for an action that did not apply. The
+// pre-read guards in each caller stay — they give the friendly
+// "already suspended" / "only a suspended user" messages; this is
+// the enforcement underneath them.
+async function transitionUserStatus(
+  userId: string,
+  expectedStatus: UserStatus,
+  data: Prisma.UserUpdateManyMutationInput,
+  wipeSessions: boolean
+) {
+  return db.$transaction(
+    async (tx) => {
+      const result = await tx.user.updateMany({
+        where: { id: userId, status: expectedStatus },
+        data,
+      })
+      if (result.count !== 1) {
+        throw new ApiError(
+          "This user's status changed while the request was in flight. Please reload and try again.",
+          409
+        )
+      }
+      if (wipeSessions) {
+        await tx.session.deleteMany({ where: { userId } })
+      }
+      const row = await tx.user.findUnique({
+        where: { id: userId },
+        select: statusSelect,
+      })
+      if (!row) throw new ApiError("User not found", 404)
+      return row
+    },
+    // Same headroom as the flag toggles (platform-ops/src/flags.ts):
+    // the loser of a race on one user's row needs more than Prisma's
+    // 2s default start window.
+    { maxWait: 20000, timeout: 30000 }
+  )
+}
+
 export async function suspendUser(
   actor: AdminSession,
   userId: string,
@@ -471,18 +522,16 @@ export async function suspendUser(
   const now = new Date()
   // Status change + session wipe in one transaction: suspension locks
   // the account out immediately (auth() also rejects non-ACTIVE users).
-  const [updated] = await db.$transaction([
-    db.user.update({
-      where: { id: userId },
-      data: {
-        status: "SUSPENDED",
-        statusReason: input.reason,
-        statusChangedAt: now,
-      },
-      select: statusSelect,
-    }),
-    db.session.deleteMany({ where: { userId } }),
-  ])
+  const updated = await transitionUserStatus(
+    userId,
+    "ACTIVE",
+    {
+      status: "SUSPENDED",
+      statusReason: input.reason,
+      statusChangedAt: now,
+    },
+    true
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.SUSPEND,
@@ -504,11 +553,12 @@ export async function reactivateUser(
     throw new ApiError("Only a suspended user can be reactivated.", 409)
   }
   const now = new Date()
-  const updated = await db.user.update({
-    where: { id: userId },
-    data: { status: "ACTIVE", statusReason: null, statusChangedAt: now },
-    select: statusSelect,
-  })
+  const updated = await transitionUserStatus(
+    userId,
+    "SUSPENDED",
+    { status: "ACTIVE", statusReason: null, statusChangedAt: now },
+    false
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.REACTIVATE,
@@ -548,18 +598,16 @@ export async function disableUser(
   // cheap guard, immediately before the write.
   await requireStepUp(actor)
   const now = new Date()
-  const [updated] = await db.$transaction([
-    db.user.update({
-      where: { id: userId },
-      data: {
-        status: "DISABLED",
-        statusReason: input.reason,
-        statusChangedAt: now,
-      },
-      select: statusSelect,
-    }),
-    db.session.deleteMany({ where: { userId } }),
-  ])
+  const updated = await transitionUserStatus(
+    userId,
+    "ACTIVE",
+    {
+      status: "DISABLED",
+      statusReason: input.reason,
+      statusChangedAt: now,
+    },
+    true
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -581,11 +629,12 @@ export async function restoreUser(
     throw new ApiError("Only a disabled user can be restored.", 409)
   }
   const now = new Date()
-  const updated = await db.user.update({
-    where: { id: userId },
-    data: { status: "ACTIVE", statusReason: null, statusChangedAt: now },
-    select: statusSelect,
-  })
+  const updated = await transitionUserStatus(
+    userId,
+    "DISABLED",
+    { status: "ACTIVE", statusReason: null, statusChangedAt: now },
+    false
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -767,12 +816,23 @@ export async function addAdminNote(
     throw new ApiError("Note is required", 400)
   }
   await getTargetUserOrThrow(userId)
-  return db.adminNote.create({
+  const note = await db.adminNote.create({
     data: { userId, adminId: actor.user.id, body: input.body },
     include: {
       admin: { select: { id: true, name: true, email: true } },
     },
   })
+  // ADM-010: a note is part of the account's admin history, so its
+  // creation is audited like every sibling action — the note body
+  // itself never goes in the audit detail.
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.USER,
+    resourceId: userId,
+    detail: { event: "admin-note-added", noteId: note.id },
+  })
+  return note
 }
 
 export async function listAdminNotes(

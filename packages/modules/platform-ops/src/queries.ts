@@ -19,6 +19,7 @@ import type { TranslationLocaleCompletion } from "./translations"
 import type {
   CreateAnnouncementInput,
   CreateFlagInput,
+  DeleteFlagInput,
   ExecuteErasureInput,
   OverviewQuery,
   ReviewDeletionRequestInput,
@@ -103,6 +104,22 @@ export function useSetFeatureFlag(key: string) {
   })
 }
 
+export function useDeleteFeatureFlag(key: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    // SRC-121: the DELETE route returns 204 with an empty body;
+    // apiFetch resolves that as undefined.
+    mutationFn: (input: DeleteFlagInput) =>
+      apiFetch<void>(`/api/v1/admin/features/${key}`, {
+        method: "DELETE",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PLATFORM_OPS_KEYS.flags })
+    },
+  })
+}
+
 export function useFlagOverrides(key: string) {
   return useQuery({
     queryKey: PLATFORM_OPS_KEYS.flagOverrides(key),
@@ -151,9 +168,33 @@ export function useRemoveFlagOverride(key: string) {
 
 // ─── Announcements ────────────────────────────────────────────────────
 
-export function useAnnouncements() {
+export type AnnouncementsFilters = {
+  page?: number
+  perPage?: number
+  isActive?: boolean
+  audience?: "ALL" | "ADMIN_ONLY"
+}
+
+// ADM-093: the list API's page/perPage + isActive/audience filters
+// are threaded through the hook (same shape as the audit explorer's
+// useAuditLogs) so the page can page and filter instead of only
+// ever fetching page 1. The query key carries the filters, so each
+// page/filter has its own cache entry; the mutations below
+// invalidate the base key, which covers every filtered variant.
+export function useAnnouncements(filters: AnnouncementsFilters = {}) {
+  const query = toQueryString({
+    page: filters.page,
+    perPage: filters.perPage,
+    isActive:
+      filters.isActive === undefined
+        ? undefined
+        : filters.isActive
+          ? "true"
+          : "false",
+    audience: filters.audience,
+  })
   return useQuery({
-    queryKey: PLATFORM_OPS_KEYS.announcements,
+    queryKey: [...PLATFORM_OPS_KEYS.announcements, filters],
     queryFn: () =>
       apiFetch<{
         announcements: AnnouncementRow[]
@@ -161,7 +202,7 @@ export function useAnnouncements() {
         page: number
         perPage: number
         totalPages: number
-      }>("/api/v1/admin/announcements"),
+      }>(`/api/v1/admin/announcements${query}`),
   })
 }
 
@@ -260,10 +301,17 @@ export function useAuditLog(id: string) {
 
 // ─── Health + system + overview ───────────────────────────────────────
 
+// ADM-100: the health page is a "live platform state" page —
+// refetch every 30 s so it stays live without a manual reload, and
+// the component shows the fetch time (dataUpdatedAt) so the admin
+// can see how stale the numbers are.
+export const PLATFORM_HEALTH_REFETCH_MS = 30_000
+
 export function usePlatformHealth() {
   return useQuery({
     queryKey: PLATFORM_OPS_KEYS.health,
     queryFn: () => apiFetch<PlatformHealth>("/api/v1/admin/health"),
+    refetchInterval: PLATFORM_HEALTH_REFETCH_MS,
   })
 }
 

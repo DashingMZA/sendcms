@@ -52,6 +52,12 @@ const STATUS_KEYS = {
   SPAM: "statusSpam",
 } as const
 
+const USER_STATUS_KEYS = {
+  ACTIVE: "statusActive",
+  SUSPENDED: "statusSuspended",
+  DISABLED: "statusDisabled",
+} as const
+
 const perDayConfig: ChartConfig = {
   count: {
     label: "Submissions",
@@ -103,7 +109,13 @@ export function OverviewDashboard({
 }) {
   const router = useRouter()
   const { t } = useTranslation("overview")
-  const { data } = useAdminOverview(query, initialData)
+  // ADM-006: the refetch status — a range change used to keep the old
+  // numbers on screen with no indicator, and a failed refetch stayed
+  // silently stale (the security overview's skeleton pattern).
+  const { data, isFetching, isError, refetch } = useAdminOverview(
+    query,
+    initialData
+  )
   const overview = data ?? initialData
 
   function pushRange(range: OverviewRangeKey, from?: string, to?: string) {
@@ -133,6 +145,20 @@ export function OverviewDashboard({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* ADM-006: a failed refetch shows an inline error instead of
+          silently stale numbers; the cards below keep the last good
+          data until the retry succeeds. */}
+      {isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+        >
+          <span>{t("loadError")}</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            {t("retry")}
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {RANGES.map((range) => (
           <Button
@@ -152,6 +178,13 @@ export function OverviewDashboard({
             {t(RANGE_KEYS[range])}
           </Button>
         ))}
+        {/* ADM-006: a range change refetches — show that it is
+            happening instead of silently keeping the old numbers. */}
+        {isFetching && (
+          <span aria-live="polite" className="text-sm text-muted-foreground">
+            {t("refreshing")}
+          </span>
+        )}
       </div>
 
       {query.range === "custom" && (
@@ -197,6 +230,23 @@ export function OverviewDashboard({
               label={t("usersNew", { count: overview.users.newInRange })}
               value={String(overview.users.total)}
             />
+            {/* ADM-007: the status split the API already computes
+                (users.byStatus) — the early-warning numbers for
+                account health — rendered on the Users card instead of
+                living only in the API response. */}
+            <div className="mt-3 flex flex-col gap-1 border-t pt-3 text-sm">
+              {overview.users.byStatus.map((row) => (
+                <div
+                  key={row.status}
+                  className="flex items-center justify-between gap-4"
+                >
+                  <span className="text-muted-foreground">
+                    {t(USER_STATUS_KEYS[row.status])}
+                  </span>
+                  <span className="font-medium tabular-nums">{row.count}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
         <Card>

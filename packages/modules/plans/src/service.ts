@@ -666,7 +666,7 @@ export async function listPlans(
   totalPages: number
 }> {
   requireAdmin(actor, "VIEW_PLAN_VERSIONS")
-  const { q, status, kind, page, perPage, sort } = filters
+  const { q, slug, status, kind, page, perPage, sort } = filters
   const where: Prisma.PlanWhereInput = {}
   if (q) {
     where.OR = [
@@ -674,6 +674,7 @@ export async function listPlans(
       { slug: { contains: q, mode: "insensitive" } },
     ]
   }
+  if (slug) where.slug = slug
   if (status) where.status = status
   if (kind) where.kind = kind
   const [field = "createdAt", direction = "desc"] = sort.split(":")
@@ -1072,11 +1073,21 @@ export async function listSubscriptions(
   totalPages: number
 }> {
   requireAdmin(actor, "VIEW_USERS")
-  const { userId, planId, status, page, perPage, sort } = filters
+  const { userId, planId, status, q, page, perPage, sort } = filters
   const where: Prisma.SubscriptionWhereInput = {}
   if (userId) where.userId = userId
   if (planId) where.planId = planId
   if (status) where.status = status
+  // ADM-032: match the subscriber's name or email (contains,
+  // case-insensitive) — the same shape listPlans uses for its own q.
+  if (q) {
+    where.user = {
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    }
+  }
   const [field = "createdAt", direction = "desc"] = sort.split(":")
   const orderBy: Prisma.SubscriptionOrderByWithRelationInput = {
     [field]: direction === "asc" ? "asc" : "desc",
@@ -1139,13 +1150,22 @@ export async function getSubscription(
 }
 
 // The user's ACTIVE (or TRIALING) subscription with its effective plan
-// version + parsed entitlements — the read the admin UI's Package tab
-// and the entitlement resolver share. Null when the user has no
-// subscription (they fall back to the default Free plan).
+// version + entitlements — the read the admin UI's Package tab and the
+// entitlement resolver share. Null when the user has no subscription
+// (they fall back to the default Free plan).
+//
+// ADM-036: the `entitlements` here are the EFFECTIVE entitlements
+// (getEffectiveEntitlements: overrides merged, emergency zeroing,
+// suspended/disabled → null) — not the plan version's raw values.
+// A field named `entitlements` must reflect what the user is actually
+// allowed; the plan's raw values are one merge step away from that
+// whenever an override is active.
 export async function getUserSubscription(
   actor: AdminSession,
   userId: string
-): Promise<(SubscriptionSummary & { entitlements: PlanEntitlements }) | null> {
+): Promise<
+  (SubscriptionSummary & { entitlements: PlanEntitlements | null }) | null
+> {
   requireAdmin(actor, "VIEW_CUSTOMER_DATA")
   const target = await db.user.findUnique({
     where: { id: userId },
@@ -1154,9 +1174,10 @@ export async function getUserSubscription(
   if (!target) throw new ApiError("User not found", 404)
   const row = await findActiveSubscription(userId)
   if (!row) return null
+  const effective = await getEffectiveEntitlements(userId)
   return {
     ...toSubscriptionSummary(row),
-    entitlements: parseEntitlements(row.planVersion.entitlements),
+    entitlements: effective.entitlements,
   }
 }
 

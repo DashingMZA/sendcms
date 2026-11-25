@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { BillingEventsTable } from "@/components/admin/billing-events-table"
 import { BillingOverview } from "@/components/admin/billing-overview"
 
 export const metadata: Metadata = {
@@ -10,9 +11,11 @@ export const metadata: Metadata = {
   description: "Manage payment providers, their countries, and checkout.",
 }
 
-// Billing providers (Phase 8). The server only authenticates and
-// resolves the actor's role; the client component reads the provider
-// configs and the country list through the api app.
+// Billing providers (Phase 8) + billing events (Wave 5, ADM-123 /
+// BIL-123 / BIL-092): the webhook receipts and payment events the
+// providers actually delivered. The server only authenticates and
+// resolves the actor's role; the client components read through the
+// api app.
 export default async function AdminBillingPage() {
   const session = await auth()
   if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
@@ -32,6 +35,7 @@ export default async function AdminBillingPage() {
         <p className="text-muted-foreground">{t("description")}</p>
       </div>
       <BillingOverview actorRole={actorRole} />
+      <BillingEventsTable actorRole={actorRole} />
     </main>
   )
 }

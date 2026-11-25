@@ -17,6 +17,13 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
   },
   ticketMessage: { create: vi.fn() },
+  // DB-026: the service locks the ticket row with SELECT ... FOR
+  // UPDATE. The mock returns the same row findUnique would — the
+  // per-test findUnique mockResolvedValue is the locked row.
+  $queryRaw: vi.fn(async () => {
+    const row = await mockDb.supportTicket.findUnique()
+    return row ? [{ id: row.id, userId: row.userId, status: row.status }] : []
+  }),
   // Array form (reply/status/assign run message + update together):
   // the array already holds the mock calls' promises, so await them all.
   // Callback form (createTicket): run it against mockDb.
@@ -177,6 +184,22 @@ describe("createTicket", () => {
       message: "A suspended account cannot open a support ticket.",
     })
     expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  // SRC-238: the user lookup is an existence guard BEFORE the
+  // transaction — a nonexistent user is a 404, never a raw FK 500
+  // from the ticket create inside the transaction.
+  it("404s for a nonexistent user (no transaction)", async () => {
+    mockDb.user.findUnique.mockResolvedValue(null)
+    await expect(
+      createTicket("ghost-user", {
+        subject: "Cannot sign in",
+        body: "Cannot sign in.",
+        priority: "NORMAL",
+      })
+    ).rejects.toMatchObject({ status: 404 })
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+    expect(mockDb.supportTicket.create).not.toHaveBeenCalled()
   })
 })
 

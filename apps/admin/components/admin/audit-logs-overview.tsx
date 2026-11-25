@@ -8,6 +8,7 @@ import {
   type PlatformRole,
 } from "@sendcms/permissions"
 import type { AuditLogRow } from "@sendcms/platform-ops"
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "./audit-filter-options"
 import { useAuditLog, useAuditLogs } from "@sendcms/platform-ops/queries"
 import { apiFetch } from "@sendcms/shared"
 import {
@@ -43,39 +44,6 @@ import { downloadJson } from "@/lib/download-json"
 type Props = {
   actorRole: PlatformRole | AdminRole
 }
-
-/** The audit actions and resources the filter dropdowns offer (the
-    live Prisma enum values, as the service validates them). */
-const AUDIT_ACTIONS = [
-  "CREATE",
-  "UPDATE",
-  "DELETE",
-  "VERIFY",
-  "SUSPEND",
-  "REACTIVATE",
-  "PUBLISH",
-  "MIGRATE",
-  "CANCEL",
-  "ARCHIVE",
-  "ASSIGN",
-] as const
-
-const AUDIT_RESOURCES = [
-  "DOMAIN",
-  "FORM",
-  "SUBMISSION",
-  "USER",
-  "SETTINGS",
-  "API_KEY",
-  "PLAN",
-  "SUBSCRIPTION",
-  "ENTITLEMENT",
-  "AI_KEY",
-  "MCP_SETTINGS",
-  "FEATURE_FLAG",
-  "ANNOUNCEMENT",
-  "DELETION_REQUEST",
-] as const
 
 type Filters = {
   actorId?: string

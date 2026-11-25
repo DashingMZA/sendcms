@@ -5,11 +5,13 @@
 // exercise the real writer. No test hits the real DB.
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AdminSession } from "@sendcms/auth"
+import { AuditAction, AuditResource } from "@sendcms/database"
 import * as platformOps from "@sendcms/platform-ops"
 import { logAudit } from "@sendcms/security"
 import {
   createAnnouncement,
   createFlag,
+  deleteFlag,
   executeErasure,
   exportAuditLogs,
   exportTranslations,
@@ -33,10 +35,17 @@ import {
   setFlagOverride,
   updateAnnouncement,
   updatePlatformSubmissionStatus,
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCES,
 } from "@sendcms/platform-ops"
+import {
+  AUDIT_ACTIONS as CLIENT_AUDIT_ACTIONS,
+  AUDIT_RESOURCES as CLIENT_AUDIT_RESOURCES,
+} from "../apps/admin/components/admin/audit-filter-options"
 import {
   CreateAnnouncementSchema,
   CreateFlagSchema,
+  DeleteFlagSchema,
   ExecuteErasureSchema,
   ReviewDeletionRequestSchema,
   SetAnnouncementActiveSchema,
@@ -147,16 +156,23 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
   ): T[] {
     let out = [...rows]
     const order = args?.orderBy as Row | undefined
-    if (order?.createdAt === "desc")
+    // Sort by whichever date field the query orders on (createdAt or
+    // updatedAt — the health outbox reads order by updatedAt).
+    const orderKey = order
+      ? (Object.keys(order).find((k) => order[k] !== undefined) as
+          keyof T | undefined)
+      : undefined
+    const direction = orderKey
+      ? (order?.[orderKey as string] as string | undefined)
+      : undefined
+    if (orderKey && (direction === "desc" || direction === "asc")) {
+      const sign = direction === "desc" ? -1 : 1
       out.sort(
         (a, b) =>
-          (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime()
+          sign *
+          ((a[orderKey] as Date).getTime() - (b[orderKey] as Date).getTime())
       )
-    if (order?.createdAt === "asc")
-      out.sort(
-        (a, b) =>
-          (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime()
-      )
+    }
     if (args?.skip) out = out.slice(args.skip)
     if (args?.take !== undefined) out = out.slice(0, args.take)
     return out
@@ -191,6 +207,7 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
     verifications: [] as Row[],
     aiProviderConfigs: [] as Row[],
     mcpSettingsRows: [] as Row[],
+    rateLimitBuckets: [] as Row[],
   }
 
   const nextId = () => `id-${++store.seq}`
@@ -260,6 +277,18 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         }
         row.updatedAt = new Date()
         return { ...row }
+      }),
+      // ADM-092: the flag delete removes the flag row itself; a
+      // concurrent delete surfaces as a zero count, never a throw.
+      deleteMany: vi.fn(async (args: Row = {}) => {
+        let n = 0
+        for (const [k, row] of [...store.flags.entries()]) {
+          if (matchesWhere(row, args.where as Row)) {
+            store.flags.delete(k)
+            n++
+          }
+        }
+        return { count: n }
       }),
     },
     featureFlagOverride: {
@@ -515,6 +544,23 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
           reviewedBy: store.users.get(row.reviewedById as string) ?? null,
         }
       }),
+      // SRC-220: the review write is a conditional update — it only
+      // applies while the row is still REQUESTED, so the mock
+      // applies the data only to rows matching the whole where
+      // (id + status) and reports how many matched.
+      updateMany: vi.fn(async (args: Row = {}) => {
+        let n = 0
+        for (const row of store.deletionRequests.values()) {
+          if (matchesWhere(row, args.where as Row)) {
+            for (const [k, v] of Object.entries(args.data as Row)) {
+              if (v !== undefined) row[k] = v
+            }
+            row.updatedAt = new Date()
+            n++
+          }
+        }
+        return { count: n }
+      }),
     },
     // Phase 9: the gated actions (deletion approve/erase) call
     // requireStepUp, which reads the latest unexpired verification.
@@ -753,6 +799,20 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         return store.aiProviderConfigs.filter((c) =>
           matchesWhere(c, args.where as Row)
         ).length
+      }),
+    },
+    // ADM-124: the health read pins the calling admin's own bucket
+    // by the (scope, subject) unique key — never a bare findFirst.
+    rateLimitBucket: {
+      findUnique: vi.fn(async (args: Row = {}) => {
+        const key = args.where as Row | undefined
+        const scopeSubject = key?.scope_subject as Row | undefined
+        const row = store.rateLimitBuckets.find(
+          (b) =>
+            b.scope === scopeSubject?.scope &&
+            b.subject === scopeSubject?.subject
+        )
+        return row ? { ...row } : null
       }),
     },
     apiKey: {
@@ -1021,6 +1081,7 @@ beforeEach(() => {
     store.verifications,
     store.aiProviderConfigs,
     store.mcpSettingsRows,
+    store.rateLimitBuckets,
   ])
     arr.length = 0
   store.mcpSettingsRows = [{ id: "platform", globalEnabled: true }]
@@ -1277,9 +1338,27 @@ beforeEach(() => {
     { id: "adu-2", formId: "form-2", date: daysAgo(1), calls: 10 }
   )
   store.emailJobs.push(
-    { id: "job-1", status: "PENDING", createdAt: hoursAgo(3) },
-    { id: "job-2", status: "PENDING", createdAt: hoursAgo(0.5) },
-    { id: "job-3", status: "SENT", createdAt: daysAgo(1) },
+    {
+      id: "job-1",
+      status: "PENDING",
+      nextAttemptAt: null,
+      createdAt: hoursAgo(3),
+      updatedAt: hoursAgo(3),
+    },
+    {
+      id: "job-2",
+      status: "PENDING",
+      nextAttemptAt: null,
+      createdAt: hoursAgo(0.5),
+      updatedAt: hoursAgo(0.5),
+    },
+    {
+      id: "job-3",
+      status: "SENT",
+      nextAttemptAt: null,
+      createdAt: daysAgo(1),
+      updatedAt: daysAgo(1),
+    },
     // SRC-213: a sent job addressed to user-2, and a sent job on
     // user-2's form addressed to someone else — both must go on
     // erasure; job-1..3 (no owner) must stay. (SENT, not PENDING:
@@ -1292,7 +1371,9 @@ beforeEach(() => {
       // the user's outbox rows by ownerId now, not by form id.
       ownerId: "user-2",
       status: "SENT",
+      nextAttemptAt: null,
       createdAt: hoursAgo(1),
+      updatedAt: hoursAgo(1),
     },
     {
       id: "job-u2b",
@@ -1300,9 +1381,21 @@ beforeEach(() => {
       formId: "form-2",
       ownerId: "user-2",
       status: "SENT",
+      nextAttemptAt: null,
       createdAt: hoursAgo(2),
+      updatedAt: hoursAgo(2),
     }
   )
+  // ADM-124: the calling admin's own ADMIN_API bucket (subject
+  // `user:admin-1`) — the health posture echoes these exact counts.
+  store.rateLimitBuckets.push({
+    scope: "ADMIN_API",
+    subject: "user:admin-1",
+    minuteCount: 7,
+    hourCount: 42,
+    minuteWindowStart: new Date(now - 30 * 1000),
+    hourWindowStart: new Date(now - 30 * 60 * 1000),
+  })
   store.verifications.push(
     // SRC-213: user-2's verification row must go; user-1's stays.
     {
@@ -1418,6 +1511,57 @@ describe("feature flags", () => {
     ).rejects.toThrowError(ApiError)
     await expect(listFlags(supportSession)).rejects.toThrowError(ApiError)
   })
+
+  // ADM-092: a flag can be deleted (reason required, audited, its
+  // per-user overrides removed in the same transaction) — except
+  // the built-in system flags, which guard live jobs.
+  it("deletes a flag with its overrides and audits", async () => {
+    const removed = await deleteFlag(ownerSession, "ai-features", {
+      reason: "Retired",
+    })
+    expect(removed).toEqual({
+      deleted: true,
+      key: "ai-features",
+      overridesRemoved: 1,
+    })
+    expect(store.flags.has("ai-features")).toBe(false)
+    expect(store.overrides.has("flag-1:user-1")).toBe(false)
+    const { flags } = await listFlags(ownerSession)
+    expect(flags.map((f) => f.key)).not.toContain("ai-features")
+    const audit = store.auditLogs.find(
+      (l) => l.resourceId === "ai-features" && l.action === "DELETE"
+    )
+    expect(audit?.detail).toMatchObject({
+      event: "flag-deleted",
+      reason: "Retired",
+      overridesRemoved: 1,
+    })
+  })
+
+  it("refuses to delete a built-in system flag (422)", async () => {
+    store.flags.set("ai-spam-rescore", {
+      id: "flag-sys",
+      key: "ai-spam-rescore",
+      name: "AI spam rescore",
+      description: null,
+      isEnabled: true,
+      createdAt: daysAgo(10),
+      updatedAt: daysAgo(10),
+    })
+    await expect(
+      deleteFlag(ownerSession, "ai-spam-rescore", { reason: "Cleanup" })
+    ).rejects.toMatchObject({ status: 422 })
+    expect(store.flags.has("ai-spam-rescore")).toBe(true)
+  })
+
+  it("404s deleting an unknown flag, and requires a reason", async () => {
+    await expect(
+      deleteFlag(ownerSession, "no-such-flag", { reason: "x" })
+    ).rejects.toMatchObject({ status: 404 })
+    expect(() => DeleteFlagSchema.parse({})).toThrow()
+    const parsed = DeleteFlagSchema.safeParse({ reason: "  " })
+    expect(parsed.success).toBe(false)
+  })
 })
 
 // ─── Announcements ────────────────────────────────────────────────────
@@ -1494,6 +1638,55 @@ describe("announcements", () => {
     expect(huge.page).toBe(1)
     expect(huge.announcements.length).toBeLessThanOrEqual(100)
   })
+
+  // ADM-093: the list API's pagination + filters are what the page
+  // now threads through the hook — page 2 reaches rows 21-25, and
+  // isActive/audience filter to exactly the matching rows.
+  it("pages past 20 and filters by isActive/audience", async () => {
+    for (let i = 6; i <= 25; i++) {
+      store.announcements.set(`ann-${i}`, {
+        id: `ann-${i}`,
+        title: `Bulk ${i}`,
+        body: "Seeded",
+        audience: i % 2 === 0 ? "ADMIN_ONLY" : "ALL",
+        isActive: i % 3 !== 0,
+        startsAt: null,
+        endsAt: null,
+        createdById: "admin-1",
+        createdAt: daysAgo(3),
+        updatedAt: daysAgo(3),
+      })
+    }
+    const page1 = await listAnnouncements(ownerSession, {
+      page: 1,
+      perPage: 20,
+    })
+    const page2 = await listAnnouncements(ownerSession, {
+      page: 2,
+      perPage: 20,
+    })
+    expect(page1.total).toBe(25)
+    expect(page1.announcements).toHaveLength(20)
+    expect(page2.announcements).toHaveLength(5)
+    expect(page2.totalPages).toBe(2)
+    const page1Ids = new Set(page1.announcements.map((a) => a.id))
+    const page2Ids = page2.announcements.map((a) => a.id)
+    expect(page2Ids.every((id) => !page1Ids.has(id))).toBe(true)
+    expect(new Set([...page1Ids, ...page2Ids]).size).toBe(25)
+
+    const inactive = await listAnnouncements(ownerSession, {
+      isActive: false,
+    })
+    expect(inactive.total).toBe(8)
+    expect(inactive.announcements.every((a) => !a.isActive)).toBe(true)
+    const adminOnly = await listAnnouncements(ownerSession, {
+      audience: "ADMIN_ONLY",
+    })
+    expect(adminOnly.total).toBe(11)
+    expect(
+      adminOnly.announcements.every((a) => a.audience === "ADMIN_ONLY")
+    ).toBe(true)
+  })
 })
 
 // ─── Audit trail ──────────────────────────────────────────────────────
@@ -1556,6 +1749,31 @@ describe("audit trail", () => {
     await expect(
       exportAuditLogs(managerSession, { page: 1, perPage: 20 })
     ).rejects.toThrowError(ApiError)
+  })
+
+  // PRF-014: the export is capped in the service — a caller may ask
+  // for fewer rows, never more than 10k, and the response says so.
+  it("caps the export at the service-enforced limit", async () => {
+    const capped = await exportAuditLogs(
+      ownerSession,
+      { page: 1, perPage: 20 },
+      2
+    )
+    expect(capped.logs).toHaveLength(2)
+    expect(capped.total).toBe(4)
+    expect(capped.capped).toBe(true)
+    expect(capped.limit).toBe(2)
+    const full = await exportAuditLogs(ownerSession, {
+      page: 1,
+      perPage: 20,
+    })
+    expect(full.logs).toHaveLength(4)
+    expect(full.total).toBe(4)
+    expect(full.capped).toBe(false)
+    expect(full.limit).toBe(10000)
+    expect(mockDb.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 10000 })
+    )
   })
 
   it("exports no AuditLog mutation (immutability proof)", () => {
@@ -1633,6 +1851,31 @@ describe("health and system", () => {
     })
     expect(health.outbox.pending).toBe(2)
     expect(health.outbox.oldestPendingAgeMinutes).toBeGreaterThanOrEqual(170)
+    // EML-092: the per-status breakdown, not a single pending count.
+    expect(health.outbox.pendingDue).toBe(2)
+    expect(health.outbox.sending).toBe(0)
+    expect(health.outbox.failed).toBe(0)
+    expect(health.outbox.stuckSendingAgeMinutes).toBeNull()
+    // The most recently completed job is job-u2 (sent 1h ago).
+    expect(health.outbox.worker.lastRunAt).toBe(
+      new Date(now - 60 * 60 * 1000).toISOString()
+    )
+    expect(health.outbox.worker.lastError).toBeNull()
+    expect(health.outbox.lastCronRunAt).toBe(
+      new Date(now - 60 * 60 * 1000).toISOString()
+    )
+    // ADM-124: the posture carries the config.json limiter values
+    // (never hardcoded) + the caller's own bucket + the CSP mode.
+    expect(health.securityPosture.rateLimit.config.adminApi).toEqual({
+      perMinute: 600,
+      perHour: 10000,
+    })
+    expect(health.securityPosture.rateLimit.ownBucket).toMatchObject({
+      minuteCount: 7,
+      hourCount: 42,
+    })
+    expect(health.securityPosture.csp.mode).toBe("enforcing")
+    expect(health.securityPosture.csp.reportingConfigured).toBe(true)
     expect(health.ai.callsToday).toBe(40)
     expect(health.ai.providersEnabled).toBe(3)
     expect(health.mcp.callsLast24h).toBe(3)
@@ -1653,6 +1896,46 @@ describe("health and system", () => {
     expect(summary.emergency).toBe(false)
   })
 
+  it("reports the email queue breakdown: sending, failed, stuck age, worker error (EML-092)", async () => {
+    store.emailJobs.push(
+      {
+        id: "job-sending",
+        status: "SENDING",
+        nextAttemptAt: null,
+        createdAt: hoursAgo(2),
+        updatedAt: hoursAgo(2),
+      },
+      {
+        id: "job-failed",
+        status: "FAILED",
+        nextAttemptAt: null,
+        lastError: "Resend 500",
+        createdAt: hoursAgo(0.25),
+        updatedAt: hoursAgo(0.25),
+      }
+    )
+    const health = await getPlatformHealth(ownerSession)
+    expect(health.outbox.sending).toBe(1)
+    expect(health.outbox.failed).toBe(1)
+    expect(health.outbox.stuckSendingAgeMinutes).toBeGreaterThanOrEqual(119)
+    expect(health.outbox.worker.lastError).toBe("Resend 500")
+    // The failed job (15 min ago) is the most recent completion.
+    expect(health.outbox.lastCronRunAt).toBe(
+      new Date(now - 15 * 60 * 1000).toISOString()
+    )
+  })
+
+  it("reports a null own bucket when the admin has no rate-limit row yet (ADM-124)", async () => {
+    store.rateLimitBuckets.length = 0
+    const health = await getPlatformHealth(ownerSession)
+    expect(health.securityPosture.rateLimit.ownBucket).toBeNull()
+    // The config values are still reported — they come from the file.
+    expect(health.securityPosture.rateLimit.config.adminApi).toEqual({
+      perMinute: 600,
+      perHour: 10000,
+    })
+  })
+
   it("pins the MCP kill-switch read to the platform singleton (ADM-095)", async () => {
     // A stray second row with the kill-switch flipped, inserted
     // FIRST — the old bare findFirst would have reported this row.
@@ -1669,6 +1952,40 @@ describe("health and system", () => {
     store.mcpSettingsRows = [{ id: "platform", globalEnabled: false }]
     const health = await getPlatformHealth(ownerSession)
     expect(health.mcp.globalEnabled).toBe(false)
+  })
+})
+
+// ─── Audit explorer filter options (ADM-094) ────────────────────────
+
+describe("audit explorer filter options", () => {
+  it("covers every Prisma enum value, including step-up + billing/support", () => {
+    expect([...AUDIT_ACTIONS].sort()).toEqual(Object.values(AuditAction).sort())
+    expect([...AUDIT_RESOURCES].sort()).toEqual(
+      Object.values(AuditResource).sort()
+    )
+    expect(AUDIT_ACTIONS).toContain("STEP_UP_VERIFIED")
+    expect(AUDIT_ACTIONS).toContain("STEP_UP_FAILED")
+    expect(AUDIT_RESOURCES).toContain("BILLING_PROVIDER")
+    expect(AUDIT_RESOURCES).toContain("SUPPORT_TICKET")
+  })
+
+  it("client-side copy matches the Prisma enums (ADM-094 build fix)", () => {
+    // The explorer is a client component and cannot import the
+    // service-side constants: the platform-ops barrel re-exports
+    // ./audit, which imports db — pulling pg into the browser bundle
+    // breaks the production build. The client copy in
+    // apps/admin/components/admin/audit-filter-options.ts must stay
+    // in sync with the live enums; this test is the drift guard.
+    expect([...CLIENT_AUDIT_ACTIONS].sort()).toEqual(
+      Object.values(AuditAction).sort()
+    )
+    expect([...CLIENT_AUDIT_RESOURCES].sort()).toEqual(
+      Object.values(AuditResource).sort()
+    )
+    expect([...CLIENT_AUDIT_ACTIONS].sort()).toEqual([...AUDIT_ACTIONS].sort())
+    expect([...CLIENT_AUDIT_RESOURCES].sort()).toEqual(
+      [...AUDIT_RESOURCES].sort()
+    )
   })
 })
 
@@ -1809,6 +2126,26 @@ describe("deletion workflow", () => {
       reason: "Duplicate",
     })
     expect(rejected.status).toBe("REJECTED")
+  })
+
+  // SRC-220: the pre-read sees REQUESTED, but by write time another
+  // review already decided it — the conditional update matches zero
+  // rows, so the loser gets a 409 and the winner's decision stands.
+  it("a lost conditional-update race is a 409, not a silent overwrite", async () => {
+    mockDb.deletionRequest.updateMany.mockResolvedValueOnce({ count: 0 })
+    await expect(
+      reviewDeletionRequest(ownerSession, "dr-1", {
+        decision: "APPROVED",
+        reason: "Verified",
+      })
+    ).rejects.toThrowError(ApiError)
+    expect(store.deletionRequests.get("dr-1")?.status).toBe("REQUESTED")
+    const refused = store.auditLogs.find(
+      (l) =>
+        l.outcome === "FAILED" &&
+        (l.detail as { event?: string }).event === "deletion-review-refused"
+    )
+    expect(refused).toBeDefined()
   })
 
   it("erases an APPROVED request: anonymize + delete, keep history", async () => {

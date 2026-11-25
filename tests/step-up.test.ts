@@ -181,9 +181,42 @@ const { buckets, mockQueryRaw, mockDb, verifications, auditCreates } =
           return { id: "audit-1", ...data }
         }),
       },
-      user: { findUnique: vi.fn(), update: vi.fn() },
+      user: {
+        findUnique: vi.fn(),
+        update: vi.fn(),
+        // DB-027: disableUser writes via a conditional updateMany;
+        // the fake applies it to TARGET so a later findUnique reads
+        // the new status, like the real row would. beforeEach resets
+        // TARGET.status to ACTIVE.
+        updateMany: vi.fn(
+          async ({ data }: { data: Record<string, unknown> }) => {
+            Object.assign(TARGET, data)
+            return { count: 1 }
+          }
+        ),
+      },
       session: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-      deletionRequest: { findUnique: vi.fn(), update: vi.fn() },
+      deletionRequest: {
+        findUnique: vi.fn(),
+        update: vi.fn(),
+        // SRC-220: reviewDeletionRequest writes via a conditional
+        // updateMany; the fake applies it to deletionRequestRow only
+        // while the row is still REQUESTED, like the real row would.
+        // beforeEach resets deletionRequestRow.status to REQUESTED.
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { status: string }
+            data: Record<string, unknown>
+          }) => {
+            if (deletionRequestRow.status !== where.status) return { count: 0 }
+            Object.assign(deletionRequestRow, data)
+            return { count: 1 }
+          }
+        ),
+      },
       apiKey: { findUnique: vi.fn(), update: vi.fn() },
       mcpSettings: { findFirst: vi.fn(), upsert: vi.fn() },
     }
@@ -237,6 +270,22 @@ const TARGET = {
   emailVerified: true,
 }
 
+// SRC-220: the shared deletion-request row the updateMany fake
+// above mutates; reset in beforeEach.
+const deletionRequestRow = {
+  id: "req-1",
+  userId: "user-2",
+  status: "REQUESTED",
+  user: {
+    id: "user-2",
+    name: "User",
+    email: "user@example.com",
+    platformRole: "PLATFORM_USER",
+    status: "ACTIVE",
+    deletionCompletedAt: null,
+  },
+}
+
 async function expectStepUpRequired(promise: Promise<unknown>) {
   await expect(promise).rejects.toMatchObject({
     status: 403,
@@ -250,21 +299,13 @@ beforeEach(() => {
   auditCreates.length = 0
   mockQueryRaw.mockClear()
   mockDb.account.findFirst.mockResolvedValue({ password: PASSWORD_HASH })
+  // DB-027 / SRC-220: the updateMany fakes mutate these shared rows,
+  // so the status is reset here before every test.
+  TARGET.status = "ACTIVE"
+  deletionRequestRow.status = "REQUESTED"
   mockDb.user.findUnique.mockResolvedValue(TARGET)
   mockDb.user.update.mockResolvedValue({ id: "user-2", status: "DISABLED" })
-  mockDb.deletionRequest.findUnique.mockResolvedValue({
-    id: "req-1",
-    userId: "user-2",
-    status: "REQUESTED",
-    user: {
-      id: "user-2",
-      name: "User",
-      email: "user@example.com",
-      platformRole: "PLATFORM_USER",
-      status: "ACTIVE",
-      deletionCompletedAt: null,
-    },
-  })
+  mockDb.deletionRequest.findUnique.mockResolvedValue(deletionRequestRow)
   mockDb.deletionRequest.update.mockImplementation(
     async ({ data }: { data: { status: string } }) => ({
       id: "req-1",
@@ -287,7 +328,9 @@ beforeEach(() => {
     mockDb.stepUpVerification.deleteMany,
     mockDb.auditLog.create,
     mockDb.user.update,
+    mockDb.user.updateMany,
     mockDb.deletionRequest.update,
+    mockDb.deletionRequest.updateMany,
     mockDb.apiKey.update,
     mockDb.mcpSettings.upsert,
     mockDb.$transaction,
@@ -589,7 +632,7 @@ describe("step-up enforcement on the five actions", () => {
     await expectStepUpRequired(
       disableUser(OWNER, "user-2", { reason: "Abuse." })
     )
-    expect(mockDb.user.update).not.toHaveBeenCalled()
+    expect(mockDb.user.updateMany).not.toHaveBeenCalled()
   })
 
   it("setAdminRole refuses without verification and never touches the user row", async () => {
@@ -606,7 +649,7 @@ describe("step-up enforcement on the five actions", () => {
         reason: "Confirmed.",
       })
     )
-    expect(mockDb.deletionRequest.update).not.toHaveBeenCalled()
+    expect(mockDb.deletionRequest.updateMany).not.toHaveBeenCalled()
   })
 
   it("reviewDeletionRequest REJECTED needs no step-up", async () => {
@@ -615,7 +658,12 @@ describe("step-up enforcement on the five actions", () => {
       reason: "Not eligible.",
     })
     expect(result.status).toBe("REJECTED")
-    expect(mockDb.deletionRequest.update).toHaveBeenCalledTimes(1)
+    expect(mockDb.deletionRequest.updateMany).toHaveBeenCalledTimes(1)
+    expect(mockDb.deletionRequest.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "req-1", status: "REQUESTED" },
+      })
+    )
     expect(mockDb.stepUpVerification.findFirst).not.toHaveBeenCalled()
   })
 
@@ -659,12 +707,13 @@ describe("step-up enforcement on the five actions", () => {
       // Verify at the real current time: requireStepUp reads the wall
       // clock, so a fixed test time would go stale.
       await verifyStepUp(OWNER, PASSWORD, { now: new Date() })
-      mockDb.user.update.mockResolvedValue({
-        id: "user-2",
-        status: "DISABLED",
-      })
       const updated = await disableUser(OWNER, "user-2", { reason: "Abuse." })
-      expect(mockDb.user.update).toHaveBeenCalledTimes(1)
+      expect(mockDb.user.updateMany).toHaveBeenCalledTimes(1)
+      expect(mockDb.user.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "user-2", status: "ACTIVE" },
+        })
+      )
       expect(updated.status).toBe("DISABLED")
     }
   )

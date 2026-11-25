@@ -93,7 +93,7 @@ describe("SRC-121 DELETE handlers return 204 with an empty body", () => {
     const deletes = files.filter((f) =>
       readFileSync(f, "utf8").includes("export async function DELETE(")
     )
-    expect(deletes.length).toBe(10)
+    expect(deletes.length).toBe(11) // 10 + the ADM-092 flag DELETE
     for (const file of deletes) {
       const src = readFileSync(file, "utf8")
       expect(src, `${file}: DELETE returns noContent()`).toContain(

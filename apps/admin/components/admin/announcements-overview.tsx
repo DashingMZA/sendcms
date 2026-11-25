@@ -98,7 +98,23 @@ export function AnnouncementsOverview({ actorRole }: Props) {
 
 function AnnouncementsInner() {
   const { t } = useTranslation("announcements")
-  const { data, isLoading } = useAnnouncements()
+  // ADM-093: the list API's page/perPage + isActive/audience
+  // filters are threaded through the hook (audit-explorer pattern),
+  // so announcements past page 1 are reachable and the list can be
+  // filtered — the hook used to fetch page 1 only, with no controls.
+  const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<"all" | "true" | "false">(
+    "all"
+  )
+  const [audienceFilter, setAudienceFilter] = useState<
+    "all" | "ALL" | "ADMIN_ONLY"
+  >("all")
+  const { data, isLoading } = useAnnouncements({
+    page,
+    perPage: 20,
+    isActive: statusFilter === "all" ? undefined : statusFilter === "true",
+    audience: audienceFilter === "all" ? undefined : audienceFilter,
+  })
   const createAnnouncement = useCreateAnnouncement()
 
   // The announcement being created (null) or edited (a row). The
@@ -124,6 +140,18 @@ function AnnouncementsInner() {
   const updateAnnouncement = useUpdateAnnouncement(editing?.id ?? "")
 
   const announcements = data?.announcements ?? []
+  const totalPages = data?.totalPages ?? 1
+  const currentPage = data?.page ?? page
+
+  function changeStatusFilter(value: "all" | "true" | "false") {
+    setStatusFilter(value)
+    setPage(1)
+  }
+
+  function changeAudienceFilter(value: "all" | "ALL" | "ADMIN_ONLY") {
+    setAudienceFilter(value)
+    setPage(1)
+  }
 
   function openCreate() {
     setFormTitle("")
@@ -208,6 +236,50 @@ function AnnouncementsInner() {
           <Button onClick={openCreate}>{t("createAnnouncement")}</Button>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="announcement-status-filter">
+                {t("filterStatus")}
+              </Label>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) =>
+                  changeStatusFilter(v as "all" | "true" | "false")
+                }
+              >
+                <SelectTrigger id="announcement-status-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("all")}</SelectItem>
+                  <SelectItem value="true">{t("active")}</SelectItem>
+                  <SelectItem value="false">{t("inactive")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="announcement-audience-filter">
+                {t("filterAudience")}
+              </Label>
+              <Select
+                value={audienceFilter}
+                onValueChange={(v) =>
+                  changeAudienceFilter(v as "all" | "ALL" | "ADMIN_ONLY")
+                }
+              >
+                <SelectTrigger id="announcement-audience-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("all")}</SelectItem>
+                  <SelectItem value="ALL">{t("audienceAll")}</SelectItem>
+                  <SelectItem value="ADMIN_ONLY">
+                    {t("audienceAdminOnly")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           {isLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : announcements.length === 0 ? (
@@ -292,6 +364,29 @@ function AnnouncementsInner() {
               </Table>
             </div>
           )}
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              {t("pageOf", { page: currentPage, totalPages })}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+              >
+                {t("prev")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                {t("next")}
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

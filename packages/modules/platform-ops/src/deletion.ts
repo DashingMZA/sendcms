@@ -207,15 +207,45 @@ export async function reviewDeletionRequest(
     await requireStepUp(actor)
   }
   const now = new Date()
-  const updated = await db.deletionRequest.update({
-    where: { id },
+  // SRC-220: the decision write is a CONDITIONAL update — it only
+  // applies while the row is still REQUESTED, and the matched-row
+  // count is asserted. The pre-read guard above gives the friendly
+  // message, but two concurrent reviews both pass it; the loser's
+  // conditional update then matches zero rows and gets the 409
+  // instead of silently overwriting the winner's decision. (Same
+  // shape as executeErasure's in-transaction re-check below, and
+  // the DB-027 conditional status updates.)
+  const result = await db.deletionRequest.updateMany({
+    where: { id, status: "REQUESTED" },
     data: {
       status: input.decision,
       reviewedById: actor.user.id,
       reviewedAt: now,
     },
+  })
+  if (result.count !== 1) {
+    const fresh = await db.deletionRequest.findUnique({
+      where: { id },
+      select: { status: true },
+    })
+    await auditRefusedErasure(
+      actor,
+      id,
+      request.userId,
+      "deletion-review-refused",
+      input.reason,
+      opts
+    )
+    throw new ApiError(
+      `Only a REQUESTED deletion request can be reviewed (this one is ${fresh?.status ?? "missing"}).`,
+      409
+    )
+  }
+  const updated = await db.deletionRequest.findUnique({
+    where: { id },
     select: deletionRequestSelect,
   })
+  if (!updated) throw new ApiError("Deletion request not found.", 404)
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,

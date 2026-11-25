@@ -36,6 +36,15 @@ export type AuditLogRow = {
   actor: { id: string; name: string | null; email: string } | null
 }
 
+// ADM-094: the filter dropdown options for the audit explorer,
+// derived from the live Prisma enums — never a hardcoded list again.
+// The hardcoded UI lists omitted STEP_UP_VERIFIED / STEP_UP_FAILED
+// and BILLING_PROVIDER / SUPPORT_TICKET, so those rows were
+// unfilterable even though the API accepts them. The service already
+// validates against these same enum values (listAuditLogs).
+export const AUDIT_ACTIONS = Object.values(AuditAction)
+export const AUDIT_RESOURCES = Object.values(AuditResource)
+
 const auditLogSelect = {
   id: true,
   action: true,
@@ -172,24 +181,49 @@ export async function getAuditLog(
     admin UI). Reads need EXPORT_AUDIT_LOGS. The rows are returned as
     stored — safe only because services never write secrets into
     `detail` (see the module header). No update/delete exists, so an
-    export can never be used to rewrite history. */
+    export can never be used to rewrite history.
+    PRF-014: the export is CAPPED — at most AUDIT_EXPORT_MAX_ROWS
+    rows (10k) in one response, enforced here in the service, not
+    just in the route's validator. A caller may ask for fewer with
+    `take`; asking for more (or an invalid value) still gets at most
+    the cap. `total` is the full matching count, `capped` says
+    whether rows were left out, so the UI can say so instead of
+    silently handing over a partial export. */
+export const AUDIT_EXPORT_MAX_ROWS = 10000
+
 export async function exportAuditLogs(
   actor: AdminSession,
-  filters: AuditLogsQuery
-): Promise<{ logs: AuditLogRow[]; total: number; exportedAt: Date }> {
+  filters: AuditLogsQuery,
+  take: number = AUDIT_EXPORT_MAX_ROWS
+): Promise<{
+  logs: AuditLogRow[]
+  total: number
+  exportedAt: Date
+  capped: boolean
+  limit: number
+}> {
   requireAdmin(actor, "EXPORT_AUDIT_LOGS")
+  const limit = Number.isFinite(take)
+    ? Math.min(Math.max(1, Math.floor(take)), AUDIT_EXPORT_MAX_ROWS)
+    : AUDIT_EXPORT_MAX_ROWS
   const where = auditLogsWhere(filters)
-  const rows = await db.auditLog.findMany({
-    where,
-    select: {
-      ...auditLogSelect,
-      user: { select: { id: true, name: true, email: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  })
+  const [total, rows] = await Promise.all([
+    db.auditLog.count({ where }),
+    db.auditLog.findMany({
+      where,
+      select: {
+        ...auditLogSelect,
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    }),
+  ])
   return {
     logs: rows.map(toAuditLogRow),
-    total: rows.length,
+    total,
     exportedAt: new Date(),
+    capped: total > limit,
+    limit,
   }
 }

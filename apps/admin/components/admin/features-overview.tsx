@@ -9,6 +9,7 @@ import {
 } from "@sendcms/permissions"
 import {
   useCreateFeatureFlag,
+  useDeleteFeatureFlag,
   useFeatureFlags,
   useFlagOverrides,
   useRemoveFlagOverride,
@@ -58,15 +59,30 @@ type Props = {
     FlagKeySchema, mirrored here for inline validation). */
 const FLAG_KEY_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
+/** The built-in system flags — mirrors SYSTEM_FLAGS in
+    packages/modules/platform-ops/src/flags.ts (kept as a client-side
+    copy because the service module pulls @sendcms/database into the
+    browser bundle if imported here). Deleting one would silently
+    disable its live job, so the service refuses with a 422 and the
+    UI shows a Built-in badge instead of a delete button. The
+    wave5-stream-c locale test asserts the two lists still match. */
+const SYSTEM_FLAG_KEYS = ["ai-spam-rescore", "ai-digest"] as const
+
+function isSystemFlag(key: string): boolean {
+  return (SYSTEM_FLAG_KEYS as readonly string[]).includes(key)
+}
+
 /**
  * The feature flags page (Phase 7): the flags table, the create
  * dialog, the global toggle (reason dialog — the service requires a
- * reason), and the per-user overrides manager. The flags are the
- * registry and the API; no feature reads a flag yet (Phase 8 wiring)
- * — the page says so plainly instead of implying otherwise. The
- * flags page is a management page (owner + SUPER_ADMIN only), so an
- * actor without MANAGE_FEATURE_FLAGS gets the no-permission card and
- * the list query never fires.
+ * reason), and the per-user overrides manager. Two features read
+ * flags (ai-spam-rescore, ai-digest); an unknown or disabled flag
+ * keeps its job off. Built-in system flags cannot be deleted (the
+ * service refuses with a 422 — deleting one would silently disable
+ * its live job), so the delete button is shown only for other flags.
+ * The flags page is a management page (owner + SUPER_ADMIN only), so
+ * an actor without MANAGE_FEATURE_FLAGS gets the no-permission card
+ * and the list query never fires.
  */
 export function FeaturesOverview({ actorRole }: Props) {
   const { t } = useTranslation("features")
@@ -106,6 +122,15 @@ function FeaturesInner() {
   // The toggle mutation is only invoked from the confirm handler,
   // when pendingToggle is set — so the key is correct at call time.
   const setFlag = useSetFeatureFlag(pendingToggle?.key ?? "")
+
+  // The pending delete: null = no dialog open.
+  const [pendingDelete, setPendingDelete] = useState<{
+    key: string
+    name: string
+  } | null>(null)
+  const [deleteReason, setDeleteReason] = useState("")
+  // Same shape as the toggle mutation above.
+  const deleteFlag = useDeleteFeatureFlag(pendingDelete?.key ?? "")
 
   // Which flag's overrides are open below the table.
   const [overridesFlagKey, setOverridesFlagKey] = useState<string | null>(null)
@@ -149,6 +174,18 @@ function FeaturesInner() {
       toast.success(t("flagSaved"))
       setPendingToggle(null)
       setToggleReason("")
+    } catch {
+      // The global mutation error toast already shows the failure.
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    try {
+      await deleteFlag.mutateAsync({ reason: deleteReason.trim() })
+      toast.success(t("flagDeleted"))
+      setPendingDelete(null)
+      setDeleteReason("")
     } catch {
       // The global mutation error toast already shows the failure.
     }
@@ -238,6 +275,23 @@ function FeaturesInner() {
                           >
                             {t("manageOverrides")}
                           </Button>
+                          {isSystemFlag(flag.key) ? (
+                            <Badge variant="outline">{t("systemFlag")}</Badge>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setDeleteReason("")
+                                setPendingDelete({
+                                  key: flag.key,
+                                  name: flag.name,
+                                })
+                              }}
+                            >
+                              {t("deleteFlag")}
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -378,6 +432,61 @@ function FeaturesInner() {
                   disabled={setFlag.isPending || toggleReason.trim() === ""}
                 >
                   {t("save")}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null)
+            setDeleteReason("")
+          }
+        }}
+      >
+        <DialogContent>
+          {pendingDelete !== null && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t("deleteTitle")}</DialogTitle>
+                <DialogDescription>{t("deleteDescription")}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1">
+                <Label htmlFor="flag-delete-reason">{t("reasonLabel")}</Label>
+                <Textarea
+                  id="flag-delete-reason"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder={t("reasonPlaceholder")}
+                  maxLength={500}
+                  rows={3}
+                />
+                {deleteReason.trim() === "" && (
+                  <p className="text-sm text-destructive">
+                    {t("reasonRequired")}
+                  </p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPendingDelete(null)
+                    setDeleteReason("")
+                  }}
+                >
+                  {t("cancel")}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmDelete}
+                  disabled={deleteFlag.isPending || deleteReason.trim() === ""}
+                >
+                  {t("deleteFlag")}
                 </Button>
               </DialogFooter>
             </>

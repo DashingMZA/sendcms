@@ -110,6 +110,43 @@ const { store, mockDb } = vi.hoisted(() => {
     }
   }
 
+  // ADM-123 / BIL-123 / BIL-092: the where shape listBillingEvents
+  // builds — provider / eventType equality, processedAt null (never
+  // applied) vs { not: null } (applied), createdAt gte/lte bounds.
+  function matchesEventWhere(
+    event: StoredEvent,
+    where?: {
+      provider?: string
+      eventType?: string
+      processedAt?: { not: null } | null
+      createdAt?: { gte?: Date; lte?: Date }
+    }
+  ): boolean {
+    if (!where) return true
+    if (where.provider !== undefined && event.provider !== where.provider)
+      return false
+    if (where.eventType !== undefined && event.eventType !== where.eventType)
+      return false
+    if (where.processedAt === null && event.processedAt !== null) return false
+    if (
+      where.processedAt !== undefined &&
+      where.processedAt !== null &&
+      event.processedAt === null
+    )
+      return false
+    if (
+      where.createdAt?.gte !== undefined &&
+      event.createdAt < where.createdAt.gte
+    )
+      return false
+    if (
+      where.createdAt?.lte !== undefined &&
+      event.createdAt > where.createdAt.lte
+    )
+      return false
+    return true
+  }
+
   const billingProviderConfig = {
     findMany: vi.fn(async ({ where }: { where?: { isEnabled?: boolean } }) =>
       [...store.configs.values()]
@@ -238,6 +275,42 @@ const { store, mockDb } = vi.hoisted(() => {
           return row
         }
       ),
+      // ADM-123 / BIL-123 / BIL-092: listBillingEvents reads.
+      count: vi.fn(
+        async ({
+          where,
+        }: {
+          where?: {
+            provider?: string
+            eventType?: string
+            processedAt?: { not: null } | null
+            createdAt?: { gte?: Date; lte?: Date }
+          }
+        }) =>
+          [...store.events.values()].filter((e) => matchesEventWhere(e, where))
+            .length
+      ),
+      findMany: vi.fn(
+        async ({
+          where,
+          skip,
+          take,
+        }: {
+          where?: {
+            provider?: string
+            eventType?: string
+            processedAt?: { not: null } | null
+            createdAt?: { gte?: Date; lte?: Date }
+          }
+          skip?: number
+          take?: number
+        }) => {
+          const rows = [...store.events.values()]
+            .filter((e) => matchesEventWhere(e, where))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          return rows.slice(skip ?? 0, (skip ?? 0) + (take ?? rows.length))
+        }
+      ),
     },
     planVersion: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
@@ -312,7 +385,9 @@ vi.mock("@sendcms/plans", async (importOriginal) => {
 
 import {
   createCheckoutSession,
+  getFreemiusPlanMapCount,
   handleWebhook,
+  listBillingEvents,
   listEnabledProviders,
   listProviderConfigs,
   setProviderConfig,
@@ -346,6 +421,24 @@ function seedConfig(
     isEnabled,
     countries,
   })
+}
+
+// ADM-123 / BIL-123 / BIL-092: seed a BillingEvent row. Defaults to
+// a processed Stripe payment event; override processedAt with null
+// for an unprocessed (failed) delivery.
+function seedEvent(overrides: Record<string, unknown> = {}) {
+  const seq = store.eventSeq++
+  const row = {
+    id: `evt-${seq}`,
+    provider: "STRIPE",
+    providerEventId: `evt_${seq}`,
+    eventType: "payment_intent.succeeded",
+    processedAt: new Date("2026-11-25T10:00:00Z"),
+    createdAt: new Date("2026-11-25T10:00:00Z"),
+    ...overrides,
+  }
+  store.events.set(`${row.provider}:${row.providerEventId}`, row)
+  return row
 }
 
 function seedVersion(overrides: Record<string, unknown> = {}) {
@@ -1266,5 +1359,148 @@ describe("Freemius webhook — replay protection (BIL-088)", () => {
       message: expect.stringContaining("Replayed"),
     })
     expect(mockActivate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("listBillingEvents (ADM-123 / BIL-123 / BIL-092)", () => {
+  it("returns rows newest first with pagination totals", async () => {
+    seedEvent({
+      providerEventId: "evt_old",
+      createdAt: new Date("2026-11-24T10:00:00Z"),
+    })
+    seedEvent({
+      providerEventId: "evt_new",
+      createdAt: new Date("2026-11-25T10:00:00Z"),
+    })
+    seedEvent({
+      provider: "PAYPAL",
+      providerEventId: "evt_mid",
+      createdAt: new Date("2026-11-25T09:00:00Z"),
+    })
+    const page = await listBillingEvents(ownerSession, {
+      page: 1,
+      perPage: 2,
+    })
+    expect(page.total).toBe(3)
+    expect(page.totalPages).toBe(2)
+    expect(page.events.map((e) => e.providerEventId)).toEqual([
+      "evt_new",
+      "evt_mid",
+    ])
+    expect(page.events[0]).toMatchObject({
+      provider: "STRIPE",
+      eventType: "payment_intent.succeeded",
+      processed: true,
+    })
+    const page2 = await listBillingEvents(ownerSession, {
+      page: 2,
+      perPage: 2,
+    })
+    expect(page2.events.map((e) => e.providerEventId)).toEqual(["evt_old"])
+  })
+
+  it("filters by provider, event type, and processed state", async () => {
+    seedEvent({ providerEventId: "stripe-ok" })
+    seedEvent({
+      providerEventId: "stripe-failed",
+      eventType: "payment_intent.payment_failed",
+      processedAt: null,
+    })
+    seedEvent({
+      provider: "PAYPAL",
+      providerEventId: "paypal-ok",
+      eventType: "PAYMENT.CAPTURE.COMPLETED",
+    })
+    const byProvider = await listBillingEvents(ownerSession, {
+      page: 1,
+      perPage: 20,
+      provider: "PAYPAL",
+    })
+    expect(byProvider.events.map((e) => e.providerEventId)).toEqual([
+      "paypal-ok",
+    ])
+    const byType = await listBillingEvents(ownerSession, {
+      page: 1,
+      perPage: 20,
+      eventType: "payment_intent.payment_failed",
+    })
+    expect(byType.events.map((e) => e.providerEventId)).toEqual([
+      "stripe-failed",
+    ])
+    // Unprocessed rows are the failed deliveries: received, never applied.
+    const unprocessed = await listBillingEvents(ownerSession, {
+      page: 1,
+      perPage: 20,
+      processed: false,
+    })
+    expect(unprocessed.events.map((e) => e.providerEventId)).toEqual([
+      "stripe-failed",
+    ])
+    expect(unprocessed.events[0]?.processed).toBe(false)
+    const processed = await listBillingEvents(ownerSession, {
+      page: 1,
+      perPage: 20,
+      processed: true,
+    })
+    expect(processed.total).toBe(2)
+  })
+
+  it("forbids support staff from listing billing events", async () => {
+    await expect(
+      listBillingEvents(supportSession, { page: 1, perPage: 20 })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+describe("Freemius plan map (BIL-053)", () => {
+  it("counts the mapped versions in the provider row", async () => {
+    setEnv({
+      FREEMIUS_PRODUCT_ID: "1",
+      FREEMIUS_API_KEY: "key",
+      FREEMIUS_SECRET_KEY: "secret",
+      FREEMIUS_PUBLIC_KEY: "pub",
+      FREEMIUS_PLAN_MAP: JSON.stringify({ "pv-1": "123", "pv-2": "456" }),
+    })
+    expect(getFreemiusPlanMapCount()).toBe(2)
+    const rows = await listProviderConfigs(ownerSession)
+    const freemius = rows.find((r) => r.provider === "FREEMIUS")
+    expect(freemius?.planMapCount).toBe(2)
+    // Providers without a plan map report null, not zero.
+    expect(rows.find((r) => r.provider === "STRIPE")?.planMapCount).toBe(null)
+  })
+
+  it("warns when Freemius is enabled with an empty plan map", async () => {
+    setEnv({
+      FREEMIUS_PRODUCT_ID: "1",
+      FREEMIUS_API_KEY: "key",
+      FREEMIUS_SECRET_KEY: "secret",
+      FREEMIUS_PUBLIC_KEY: "pub",
+      FREEMIUS_PLAN_MAP: undefined,
+    })
+    expect(getFreemiusPlanMapCount()).toBe(0)
+    const row = await setProviderConfig(ownerSession, "FREEMIUS", {
+      isEnabled: true,
+      reason: "launch",
+    })
+    expect(row.isEnabled).toBe(true)
+    expect(row.planMapCount).toBe(0)
+    expect(row.warning).toMatch(/No Freemius plan is mapped/)
+  })
+
+  it("does not warn when at least one version is mapped", async () => {
+    setEnv({
+      FREEMIUS_PRODUCT_ID: "1",
+      FREEMIUS_API_KEY: "key",
+      FREEMIUS_SECRET_KEY: "secret",
+      FREEMIUS_PUBLIC_KEY: "pub",
+      FREEMIUS_PLAN_MAP: JSON.stringify({ "pv-1": "123" }),
+    })
+    const row = await setProviderConfig(ownerSession, "FREEMIUS", {
+      isEnabled: true,
+      reason: "launch",
+    })
+    expect(row.isEnabled).toBe(true)
+    expect(row.planMapCount).toBe(1)
+    expect(row.warning).toBeUndefined()
   })
 })

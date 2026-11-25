@@ -57,6 +57,17 @@ export const SetFlagSchema = z.object({
 
 export type SetFlagInput = z.infer<typeof SetFlagSchema>
 
+// ADM-092: deleting a flag removes it and its per-user overrides,
+// so the reason is required like every other flag write.
+export const DeleteFlagSchema = z.object({
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
+})
+
+export type DeleteFlagInput = z.infer<typeof DeleteFlagSchema>
+
 // A per-user override is an admin decision about one customer, so the
 // reason is required here too.
 export const SetFlagOverrideSchema = z.object({

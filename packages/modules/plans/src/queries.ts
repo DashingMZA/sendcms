@@ -142,6 +142,7 @@ export function usePlans(
       apiFetch<PlansListResponse>(
         `/api/v1/admin/plans?${toQueryString({
           q: filters.q,
+          slug: filters.slug,
           status: filters.status,
           kind: filters.kind,
           page: filters.page,
@@ -199,6 +200,7 @@ export function useSubscriptions(
           userId: filters.userId,
           planId: filters.planId,
           status: filters.status,
+          q: filters.q,
           page: filters.page,
           perPage: filters.perPage,
           sort: filters.sort,

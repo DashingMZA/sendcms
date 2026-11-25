@@ -51,7 +51,10 @@ export function UsersTable({ initialData, filters }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const { data } = useAdminUsers(filters, initialData)
+  const { data, isFetching, isError, refetch } = useAdminUsers(
+    filters,
+    initialData
+  )
   const list = data ?? initialData
 
   const pageCount = Math.max(1, Math.ceil(list.total / list.perPage))
@@ -165,7 +168,75 @@ export function UsersTable({ initialData, filters }: Props) {
             {t("clearFilters")}
           </Button>
         )}
+        {/* ADM-005: the sort + per-page the API already supports,
+            URL-as-state like the existing filters. */}
+        <div className="space-y-1">
+          <Label htmlFor="users-sort">{t("sortLabel")}</Label>
+          <Select
+            value={filters.sort ?? "createdAt:desc"}
+            onValueChange={(value) => setParam("sort", value)}
+          >
+            <SelectTrigger id="users-sort" className="h-9 w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="createdAt:desc">
+                {t("sortCreatedDesc")}
+              </SelectItem>
+              <SelectItem value="createdAt:asc">
+                {t("sortCreatedAsc")}
+              </SelectItem>
+              <SelectItem value="name:asc">{t("sortNameAsc")}</SelectItem>
+              <SelectItem value="name:desc">{t("sortNameDesc")}</SelectItem>
+              <SelectItem value="email:asc">{t("sortEmailAsc")}</SelectItem>
+              <SelectItem value="email:desc">{t("sortEmailDesc")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="users-per-page">{t("perPageLabel")}</Label>
+          <Select
+            value={String(filters.perPage ?? 20)}
+            onValueChange={(value) => setParam("perPage", value)}
+          >
+            <SelectTrigger id="users-per-page" className="h-9 w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* ADM-006: a refetch shows a loading indicator instead of
+            silently keeping the old rows on screen. */}
+        {isFetching && (
+          <span
+            aria-live="polite"
+            className="self-center text-sm text-muted-foreground"
+          >
+            {t("refreshing")}
+          </span>
+        )}
       </div>
+
+      {/* ADM-006: a failed refetch shows an inline error instead of
+          silently stale data (the table below still shows the last
+          good rows, labelled stale by this banner). */}
+      {isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+        >
+          <span>{t("loadError")}</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            {t("retry")}
+          </Button>
+        </div>
+      )}
 
       {list.total === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20 text-center">

@@ -10,6 +10,7 @@ import { dashboardSignInURL } from "@/lib/callback-url"
 import { Logo } from "@sendcms/ui"
 import {
   RiBarChartLine,
+  RiBookLine,
   RiBrainLine,
   RiCustomerServiceLine,
   RiDashboardLine,
@@ -63,6 +64,9 @@ type NavItem = {
   label: string
   href: string
   icon: React.ElementType
+  // DOC-053: external docs link — opens in a new tab, never matched
+  // as the active route.
+  external?: boolean
 }
 
 type NavGroup = {
@@ -197,6 +201,15 @@ export function AppSidebar({ user, side }: Props) {
           href: "/admin/settings",
           icon: RiSettings3Line,
         },
+        // DOC-053: the admin control-plane docs (22 files under
+        // docs/admin-control-plane/) — GitHub until a docs-app route
+        // exists. External: new tab, never the active route.
+        {
+          label: t("docs"),
+          href: "https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/admin-control-plane/README.md",
+          icon: RiBookLine,
+          external: true,
+        },
       ],
     },
   ]
@@ -240,9 +253,11 @@ export function AppSidebar({ user, side }: Props) {
               <SidebarMenu className="gap-1">
                 {group.items.map((item) => {
                   const active =
-                    item.href === "/admin"
-                      ? pathname === "/admin"
-                      : pathname.startsWith(item.href)
+                    item.external === true
+                      ? false
+                      : item.href === "/admin"
+                        ? pathname === "/admin"
+                        : pathname.startsWith(item.href)
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
@@ -250,10 +265,17 @@ export function AppSidebar({ user, side }: Props) {
                         isActive={active}
                         tooltip={{ children: item.label, side: tooltipSide }}
                       >
-                        <Link href={item.href}>
-                          <item.icon aria-hidden="true" />
-                          <span className="truncate">{item.label}</span>
-                        </Link>
+                        {item.external === true ? (
+                          <a href={item.href} target="_blank" rel="noreferrer">
+                            <item.icon aria-hidden="true" />
+                            <span className="truncate">{item.label}</span>
+                          </a>
+                        ) : (
+                          <Link href={item.href}>
+                            <item.icon aria-hidden="true" />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   )

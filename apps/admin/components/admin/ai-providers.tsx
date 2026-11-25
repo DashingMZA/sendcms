@@ -44,7 +44,7 @@ type Props = {
 export function AiProviders({ actorRole }: Props) {
   const { t } = useTranslation("ai")
   const canManageAi = adminCan(actorRole, "MANAGE_AI")
-  const { data: configs, isLoading } = useProviderConfigs()
+  const { data: configs, isLoading, isError, refetch } = useProviderConfigs()
 
   if (!canManageAi) {
     return (
@@ -63,6 +63,17 @@ export function AiProviders({ actorRole }: Props) {
       </p>
       {isLoading ? (
         <Skeleton className="h-64 w-full" />
+      ) : isError ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 py-6">
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              {t("retry")}
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         (configs ?? []).map((config) => (
           <ProviderCard key={config.provider} config={config} />
@@ -74,7 +85,9 @@ export function AiProviders({ actorRole }: Props) {
 
 function ProviderCard({ config }: { config: AiProviderConfigRow }) {
   const { t } = useTranslation("ai")
-  const { data: health } = useProviderHealth()
+  // AIM-012: when the health fetch fails the key badge must not
+  // fall through to a false "Not configured".
+  const { data: health, isError: healthError } = useProviderHealth()
   const setConfig = useSetProviderConfig()
 
   const [isEnabled, setIsEnabled] = useState(config.isEnabled)
@@ -117,9 +130,11 @@ function ProviderCard({ config }: { config: AiProviderConfigRow }) {
         <CardTitle className="flex items-center gap-2">
           {providerDisplayName(config.provider)}
           <Badge variant="secondary">
-            {healthRow?.platformKeyConfigured
-              ? t("keyConfigured")
-              : t("keyNotConfigured")}
+            {healthError
+              ? "—"
+              : healthRow?.platformKeyConfigured
+                ? t("keyConfigured")
+                : t("keyNotConfigured")}
           </Badge>
         </CardTitle>
         <CardDescription>{t("providersDescription")}</CardDescription>

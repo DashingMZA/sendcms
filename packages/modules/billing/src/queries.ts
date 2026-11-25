@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { BillingProvider } from "@sendcms/database"
 import type { PublicPlan, SubscriptionSummary } from "@sendcms/plans"
 import type {
+  BillingEventRow,
   BillingProviderConfigRow,
   EnabledBillingProvider,
 } from "./service"
@@ -42,6 +43,45 @@ export function useBillingCountries() {
       apiFetch<{ code: string; name: string }[]>(
         "/api/v1/admin/billing/countries"
       ),
+  })
+}
+
+// ADM-123 / BIL-123 / BIL-092: the admin billing-events (webhook
+// receipts + payment events) list. Filters mirror the API query
+// schema; `processed` true = applied only, false = unprocessed only.
+export type BillingEventsFilters = {
+  provider?: BillingProvider
+  eventType?: string
+  processed?: boolean
+  from?: string
+  to?: string
+  page?: number
+  perPage?: number
+}
+
+export type BillingEventsPage = {
+  events: BillingEventRow[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}
+
+export function useBillingEvents(filters: BillingEventsFilters) {
+  const params = new URLSearchParams()
+  if (filters.provider) params.set("provider", filters.provider)
+  if (filters.eventType) params.set("eventType", filters.eventType)
+  if (filters.processed !== undefined)
+    params.set("processed", String(filters.processed))
+  if (filters.from) params.set("from", filters.from)
+  if (filters.to) params.set("to", filters.to)
+  params.set("page", String(filters.page ?? 1))
+  params.set("perPage", String(filters.perPage ?? 20))
+  const query = params.toString()
+  return useQuery<BillingEventsPage>({
+    queryKey: ["billing", "events", filters],
+    queryFn: () =>
+      apiFetch<BillingEventsPage>(`/api/v1/admin/billing/events?${query}`),
   })
 }
 

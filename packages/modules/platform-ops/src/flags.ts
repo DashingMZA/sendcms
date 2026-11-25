@@ -5,6 +5,7 @@ import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import type {
   CreateFlagInput,
+  DeleteFlagInput,
   SetFlagInput,
   SetFlagOverrideInput,
 } from "./validators"
@@ -25,11 +26,26 @@ import {
 // registry and it is not toggled from here.
 //
 // Precedence: per-user override → global flag → default (off). An
-// unknown key is OFF — fail-closed. There are NO seed flags and NO
-// consumer wiring in this phase: the registry + API is the
-// deliverable; wiring gates into features is Phase 8.
+// unknown key is OFF — fail-closed. Two features read flags:
+// `ai-spam-rescore` guards submission re-scoring and `ai-digest`
+// guards the digest job; an unknown or disabled flag keeps its job
+// off. (ADM-091: the old note claiming no feature read a flag was
+// stale since Phase 8 wired those two gates.)
 
 const logger = createLogger("platform-ops:flags")
+
+// ADM-092: the built-in system flags guard live jobs
+// (`ai-spam-rescore` guards rescoreNewSubmissions, `ai-digest`
+// guards sendDueDigests). Deleting one would silently disable its
+// job, so deleteFlag refuses them with a 422 — disable the flag
+// instead. The UI hides the delete button for these keys.
+export const SYSTEM_FLAGS = ["ai-spam-rescore", "ai-digest"] as const
+
+export type SystemFlagKey = (typeof SYSTEM_FLAGS)[number]
+
+export function isSystemFlag(key: string): key is SystemFlagKey {
+  return (SYSTEM_FLAGS as readonly string[]).includes(key)
+}
 
 export type FeatureFlagRow = {
   key: string
@@ -193,6 +209,61 @@ export async function setFlag(
     correlationId: opts.correlationId,
   })
   return toFlagRow(updated)
+}
+
+/** Deletes a flag and its per-user overrides in ONE transaction.
+    MANAGE_FEATURE_FLAGS, reason required, audited with the number
+    of overrides removed. 404 when the flag does not exist.
+    ADM-092: built-in system flags (SYSTEM_FLAGS) are refused with
+    a 422 — deleting one would silently disable the live job it
+    guards; disable the flag instead. */
+export async function deleteFlag(
+  actor: AdminSession,
+  key: string,
+  input: DeleteFlagInput,
+  opts: AuditOpts = {}
+): Promise<{ deleted: true; key: string; overridesRemoved: number }> {
+  requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
+  if (isSystemFlag(key)) {
+    throw new ApiError(
+      `Built-in flag "${key}" cannot be deleted — it guards a live job. Disable it instead.`,
+      422
+    )
+  }
+  const flag = await getFlagOrThrow(key)
+  const { overridesRemoved, flagsRemoved } = await db.$transaction(
+    async (tx) => {
+      const overrides = await tx.featureFlagOverride.deleteMany({
+        where: { flagId: flag.id },
+      })
+      // deleteMany (not delete): a concurrent delete surfaces as a
+      // zero count, which becomes the same 404 — never a raw P2025.
+      const flags = await tx.featureFlag.deleteMany({
+        where: { key },
+      })
+      return {
+        overridesRemoved: overrides.count,
+        flagsRemoved: flags.count,
+      }
+    }
+  )
+  if (flagsRemoved !== 1) {
+    throw new ApiError(`Feature flag "${key}" not found.`, 404)
+  }
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.DELETE,
+    resourceType: AuditResource.FEATURE_FLAG,
+    resourceId: key,
+    detail: {
+      event: "flag-deleted",
+      reason: input.reason,
+      overridesRemoved,
+    },
+    reason: input.reason,
+    correlationId: opts.correlationId,
+  })
+  return { deleted: true as const, key, overridesRemoved }
 }
 
 // ─── Per-user overrides ───────────────────────────────────────────────

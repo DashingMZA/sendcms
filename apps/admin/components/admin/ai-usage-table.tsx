@@ -84,8 +84,18 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
     from: from || undefined,
     to: to || undefined,
   }
-  const { data: summary } = useAiUsageSummary(filters)
-  const { data, isLoading } = useAiUsage({ ...filters, page, perPage: 20 })
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useAiUsageSummary(filters)
+  const {
+    data,
+    isLoading,
+    isError: listError,
+    refetch: refetchList,
+  } = useAiUsage({ ...filters, page, perPage: 20 })
 
   if (!canViewUsage) {
     return (
@@ -112,15 +122,40 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* AIM-012: a failed summary/list fetch shows an error state
+          with a retry instead of literal zeros / a false empty table. */}
+      {(summaryError || listError) && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 py-6">
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void refetchSummary()
+                void refetchList()
+              }}
+            >
+              {t("retry")}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>{t("byokCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold tracking-tight">
-              {summary?.byok.calls ?? 0}
-            </p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight">
+                {summary?.byok.calls ?? 0}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {t("costReported")}: {byokCost ?? "—"}
             </p>
@@ -131,9 +166,13 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
             <CardTitle>{t("platformCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold tracking-tight">
-              {summary?.platform.calls ?? 0}
-            </p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight">
+                {summary?.platform.calls ?? 0}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {t("costReported")}: {platformCost ?? "—"}
             </p>
@@ -145,9 +184,13 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
             <CardDescription>{t("costNote")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold tracking-tight">
-              {summary?.total.calls ?? 0}
-            </p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight">
+                {summary?.total.calls ?? 0}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {t("costReported")}: {totalCost ?? "—"}
             </p>
@@ -258,6 +301,13 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
 
           {isLoading ? (
             <Skeleton className="h-64 w-full" />
+          ) : listError ? (
+            <p
+              role="alert"
+              className="py-10 text-center text-sm text-destructive"
+            >
+              {t("loadError")}
+            </p>
           ) : rows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {t("emptyUsage")}

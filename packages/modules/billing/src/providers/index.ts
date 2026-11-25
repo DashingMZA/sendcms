@@ -9,6 +9,8 @@ import {
 } from "./freemius"
 import { createGumroadCheckoutSession } from "./gumroad"
 
+export { getFreemiusPlanMapCount } from "./freemius"
+
 // Dispatcher: one entry point per operation, provider picked by id.
 // Webhook verification is async because PayPal verifies over HTTP
 // and Freemius resolves the buyer from the DB. Headers are

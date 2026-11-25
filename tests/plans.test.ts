@@ -643,6 +643,20 @@ describe("getUserSubscription", () => {
     expect(sub?.entitlements).toEqual(FREE_PLAN_V1_ENTITLEMENTS)
   })
 
+  it("merges overrides into the returned entitlements (ADM-036)", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(makeSubscription())
+    // The Free plan leaves forms unlimited (null); a FORMS=5 override
+    // must show up as 5 — the plan's raw value (null) would be wrong.
+    mockDb.entitlementOverride.findMany.mockResolvedValue([
+      { meter: "FORMS", value: 5 },
+    ])
+
+    const sub = await getUserSubscription(ownerActor(), userId)
+
+    expect(sub?.entitlements?.forms).toBe(5)
+    expect(sub?.entitlements?.domains).toBeNull()
+  })
+
   it("returns null when the user has no subscription", async () => {
     const sub = await getUserSubscription(ownerActor(), userId)
     expect(sub).toBeNull()
@@ -1219,6 +1233,40 @@ describe("listPlans + listSubscriptions", () => {
     })
     expect(result.total).toBe(1)
     expect(result.subscriptions[0].userId).toBe(userId)
+  })
+
+  it("filters subscriptions by subscriber name/email with q (ADM-032)", async () => {
+    mockDb.subscription.count.mockResolvedValue(1)
+    mockDb.subscription.findMany.mockResolvedValue([makeSubscription()])
+    await listSubscriptions(ownerActor(), {
+      page: 1,
+      perPage: 20,
+      sort: "createdAt:desc",
+      q: "cust",
+    })
+    const where = mockDb.subscription.findMany.mock.calls[0][0].where
+    expect(where.user).toEqual({
+      OR: [
+        { name: { contains: "cust", mode: "insensitive" } },
+        { email: { contains: "cust", mode: "insensitive" } },
+      ],
+    })
+  })
+
+  it("resolves a plan by exact slug (ADM-038)", async () => {
+    mockDb.plan.count.mockResolvedValue(1)
+    mockDb.plan.findMany.mockResolvedValue([makePlan()])
+    await listPlans(ownerActor(), {
+      page: 1,
+      perPage: 20,
+      sort: "createdAt:desc",
+      slug: "free",
+    })
+    expect(mockDb.plan.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ slug: "free" }),
+      })
+    )
   })
 })
 

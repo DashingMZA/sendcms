@@ -36,6 +36,27 @@ export const setProviderConfigBodySchema = setProviderConfigSchema.extend({
   provider: providerSchema,
 })
 
+// ADM-123 / BIL-123 / BIL-092: the admin billing-events list —
+// paginated, filterable by provider / event type / processed state /
+// date. `processed` arrives as a query string ("true" / "false").
+// `from`/`to` are ISO date strings, inclusive bounds; the route
+// rejects unparseable ones with invalidDateFilterResponse before the
+// service runs (same shape as the audit-logs list).
+export const BillingEventsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.coerce.number().int().min(1).max(100).default(20),
+  provider: providerSchema.optional(),
+  eventType: z.string().trim().min(1).max(100).optional(),
+  processed: z
+    .string()
+    .transform((v) => v === "true")
+    .optional(),
+  from: z.string().trim().min(1).optional(),
+  to: z.string().trim().min(1).optional(),
+})
+
+export type BillingEventsQuery = z.infer<typeof BillingEventsQuerySchema>
+
 export const checkoutSessionSchema = z.object({
   planVersionId: z.string().trim().min(1, "planVersionId is required"),
   provider: providerSchema,

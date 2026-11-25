@@ -60,8 +60,18 @@ export function McpOverview({ actorRole }: Props) {
   const canViewMcp = adminCan(actorRole, "VIEW_MCP")
   const canManageMcp = adminCan(actorRole, "MANAGE_MCP")
 
-  const { data: settings, isLoading: settingsLoading } = useMcpSettings()
-  const { data: summary, isLoading: summaryLoading } = useMcpUsageSummary({})
+  const {
+    data: settings,
+    isLoading: settingsLoading,
+    isError: settingsError,
+    refetch: refetchSettings,
+  } = useMcpSettings()
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useMcpUsageSummary({})
   const setSettings = useSetMcpSettings()
 
   // The pending switch value: null = no dialog open.
@@ -114,7 +124,7 @@ export function McpOverview({ actorRole }: Props) {
             {t("killSwitchTitle")}
             {settingsLoading ? (
               <Skeleton className="h-5 w-24" />
-            ) : (
+            ) : settingsError ? null : (
               <Badge variant={globalEnabled ? "secondary" : "destructive"}>
                 {globalEnabled
                   ? t("killSwitchEnabled")
@@ -125,21 +135,41 @@ export function McpOverview({ actorRole }: Props) {
           <CardDescription>{t("killSwitchDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            {settingsLoading ? (
-              <Skeleton className="h-6 w-11" />
-            ) : (
-              <Switch
-                checked={globalEnabled}
-                onCheckedChange={openSwitchDialog}
-                disabled={!canManageMcp}
-                aria-label={t("killSwitchTitle")}
-              />
-            )}
-            <span className="text-sm font-medium">
-              {globalEnabled ? t("killSwitchEnabled") : t("killSwitchDisabled")}
-            </span>
-          </div>
+          {/* AIM-012: a failed settings fetch is an error state, not
+              a silently defaulted "enabled" switch. */}
+          {settingsError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+            >
+              <span>{t("loadError")}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchSettings()}
+              >
+                {t("retry")}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {settingsLoading ? (
+                <Skeleton className="h-6 w-11" />
+              ) : (
+                <Switch
+                  checked={globalEnabled}
+                  onCheckedChange={openSwitchDialog}
+                  disabled={!canManageMcp}
+                  aria-label={t("killSwitchTitle")}
+                />
+              )}
+              <span className="text-sm font-medium">
+                {globalEnabled
+                  ? t("killSwitchEnabled")
+                  : t("killSwitchDisabled")}
+              </span>
+            </div>
+          )}
           <p className="text-sm font-medium">{t("killSwitchNote")}</p>
           <div>
             <Button variant="outline" asChild>
@@ -149,64 +179,83 @@ export function McpOverview({ actorRole }: Props) {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* AIM-012: a failed summary fetch shows an error state with
+          a retry instead of literal zeros in every stat card. */}
+      {summaryError ? (
         <Card>
-          <CardHeader>
-            <CardTitle>{t("totalCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {summary?.total ?? 0}
-              </p>
-            )}
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 py-6">
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refetchSummary()}
+            >
+              {t("retry")}
+            </Button>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("successCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {summary?.success ?? 0}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("failedCalls")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {summary?.failed ?? 0}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("errorRate24h")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summaryLoading ? (
-              <Skeleton className="h-8 w-20" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {formatErrorRate(summary?.errorRate24h ?? null)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("totalCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {summary?.total ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("successCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {summary?.success ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("failedCalls")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {summary?.failed ?? 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("errorRate24h")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <p className="text-3xl font-bold tracking-tight">
+                  {formatErrorRate(summary?.errorRate24h ?? null)}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -216,6 +265,10 @@ export function McpOverview({ actorRole }: Props) {
         <CardContent>
           {summaryLoading ? (
             <Skeleton className="h-32 w-full" />
+          ) : summaryError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
           ) : byTool.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {t("noCalls")}
@@ -257,6 +310,10 @@ export function McpOverview({ actorRole }: Props) {
         <CardContent>
           {summaryLoading ? (
             <Skeleton className="h-32 w-full" />
+          ) : summaryError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
           ) : topUsers.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {t("topUsersEmpty")}

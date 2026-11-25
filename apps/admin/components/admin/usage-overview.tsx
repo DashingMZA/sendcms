@@ -13,6 +13,7 @@ import {
 import type { PlanEntitlements, UsageMeter } from "@sendcms/plans/validators"
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -25,6 +26,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -208,6 +210,13 @@ function meterLabel(meter: UsageMeter, t: (key: string) => string): string {
  * plan's published version entitlements. Overrides (fetched here) win
  * per meter. The free-plan lookup only mounts when the user has no
  * subscription, so no request fires for subscribed users.
+ *
+ * ADM-035: while the subscription / plans fetch is pending the table
+ * shows a skeleton, and on failure an error state — never a false
+ * zero or a false "no limit". ADM-038: the Free plan is resolved by
+ * exact slug (`?slug=free`) instead of paging the plan list, so it
+ * keeps resolving past 100 plans; the "No limit set" fallback below
+ * only applies when no Free plan exists at all.
  */
 function UsageTable({
   userId,
@@ -216,10 +225,22 @@ function UsageTable({
   userId: string
   meterFilter: string
 }) {
-  const { data: subscription } = useUserSubscription(userId)
-  const { data: plansData } = usePlans({
+  const { t } = useTranslation("usage")
+  const {
+    data: subscription,
+    isPending: subscriptionPending,
+    isError: subscriptionError,
+    refetch: refetchSubscription,
+  } = useUserSubscription(userId)
+  const {
+    data: plansData,
+    isPending: plansPending,
+    isError: plansError,
+    refetch: refetchPlans,
+  } = usePlans({
+    slug: "free",
     page: 1,
-    perPage: 100,
+    perPage: 1,
     sort: "createdAt:desc",
   })
   const { data: overridesData } = useEntitlementOverrides(userId, {
@@ -227,7 +248,32 @@ function UsageTable({
     perPage: 20,
   })
 
-  const freePlan = (plansData?.plans ?? []).find((plan) => plan.slug === "free")
+  if (subscriptionPending || plansPending) {
+    return <Skeleton className="h-64 w-full" />
+  }
+  if (subscriptionError || plansError) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+      >
+        <span>{t("loadError")}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void refetchSubscription()
+            void refetchPlans()
+          }}
+        >
+          {t("retry")}
+        </Button>
+      </div>
+    )
+  }
+
+  // Exact-slug lookup: the list holds the Free plan (if one exists).
+  const freePlan = plansData?.plans[0] ?? null
 
   if (subscription) {
     return (
@@ -273,7 +319,31 @@ function FreePlanRows({
   overrides: { meter: UsageMeter; value: number | null }[]
   meterFilter: string
 }) {
-  const { data: version } = usePlanVersion(planId, versionId)
+  const { t } = useTranslation("usage")
+  const {
+    data: version,
+    isPending,
+    isError,
+    refetch,
+  } = usePlanVersion(planId, versionId)
+  // ADM-035: a failed version fetch must not fall through to the
+  // null-entitlements "No limit set" rows.
+  if (isPending) {
+    return <Skeleton className="h-64 w-full" />
+  }
+  if (isError) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+      >
+        <span>{t("loadError")}</span>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t("retry")}
+        </Button>
+      </div>
+    )
+  }
   return (
     <MeterRows
       userId={userId}
@@ -388,15 +458,27 @@ function UsageMeterRow({
   source: "override" | "plan" | "none"
   isOverride: boolean
 }) {
-  const { data } = useUsage(userId, meter, periodForMeter(meter))
+  const { data, isPending, isError } = useUsage(
+    userId,
+    meter,
+    periodForMeter(meter)
+  )
   // ADM-033: show the live count enforcement uses when the endpoint
   // has one, falling back to the ledger total for past buckets.
-  const used = data?.liveTotal ?? data?.total ?? 0
-  const remaining = limit === null ? null : Math.max(0, limit - used)
+  // ADM-035: while loading the used cell is a skeleton and on failure
+  // an error note — never a false 0.
+  const used =
+    isPending || isError ? null : (data?.liveTotal ?? data?.total ?? 0)
+  const remaining =
+    isError || isPending || limit === null || used === null
+      ? null
+      : Math.max(0, limit - used)
   return (
     <MeterRowCells
       meter={meter}
       used={used}
+      usedLoading={isPending}
+      usedError={isError}
       limit={limit}
       remaining={remaining}
       periodKey={periodLabelKey(meter)}
@@ -437,6 +519,8 @@ function McpMeterRow({
 function MeterRowCells({
   meter,
   used,
+  usedLoading = false,
+  usedError = false,
   limit,
   remaining,
   periodKey,
@@ -446,6 +530,8 @@ function MeterRowCells({
 }: {
   meter: UsageMeter
   used: number | null
+  usedLoading?: boolean
+  usedError?: boolean
   limit: number | null
   remaining: number | null
   periodKey: string
@@ -465,7 +551,17 @@ function MeterRowCells({
       <TableCell className="font-medium">{meterLabel(meter, t)}</TableCell>
       <TableCell>
         <span className="flex items-center gap-2">
-          {used === null ? "—" : used}
+          {usedLoading ? (
+            <Skeleton className="h-4 w-10" />
+          ) : usedError ? (
+            <span className="text-sm text-destructive">
+              {t("usageLoadError")}
+            </span>
+          ) : used === null ? (
+            "—"
+          ) : (
+            used
+          )}
           {divergent && <Badge variant="outline">{t("divergentBadge")}</Badge>}
         </span>
       </TableCell>
@@ -477,7 +573,7 @@ function MeterRowCells({
           : limit}
       </TableCell>
       <TableCell>
-        {source === "none"
+        {source === "none" || usedError
           ? "—"
           : remaining === null
             ? t("unlimited")

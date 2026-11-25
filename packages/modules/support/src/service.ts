@@ -150,6 +150,36 @@ function toTicketDetailRow(row: TicketDetailPayload): TicketDetailRow {
   }
 }
 
+// ─── Row locking (DB-026) ────────────────────────────────────────────
+
+// A plain in-transaction findUnique does NOT serialize writers under
+// Postgres READ COMMITTED: two concurrent transactions can both read
+// the same status, both validate, and both apply their write — the
+// second UPDATE re-evaluates against the new row version and still
+// succeeds. Verified live 2026-11-25 against Postgres 16: with the
+// bare findUnique, two concurrent OPEN → RESOLVED calls BOTH
+// fulfilled, and a reply racing a close resurrected the ticket — the
+// reply's stale no-op status write (OPEN) landed after the close's
+// CLOSED write. SELECT ... FOR UPDATE (the DB-051 idiom in
+// platform-ops/src/flags.ts) makes the second transaction wait on
+// the row, then read the committed status, so the loser sees the
+// real outcome and gets the 409.
+type LockedTicketRow = {
+  id: string
+  userId: string
+  status: TicketStatus
+}
+
+async function lockTicketRow(
+  tx: Prisma.TransactionClient,
+  ticketId: string
+): Promise<LockedTicketRow | null> {
+  const locked = await tx.$queryRaw<LockedTicketRow[]>`
+    SELECT "id", "userId", "status" FROM "SupportTicket" WHERE "id" = ${ticketId} FOR UPDATE
+  `
+  return locked[0] ?? null
+}
+
 // ─── Customer ─────────────────────────────────────────────────────────
 
 /** Creates a ticket + its first message in ONE transaction, then
@@ -258,18 +288,6 @@ export async function listMyTickets(
   }
 }
 
-// The ownership check doubles as the not-found case: another user's
-// ticket is a 404, never a 403 (see the header note).
-async function getOwnedTicketOrThrow(userId: string, ticketId: string) {
-  const ticket = await db.supportTicket.findUnique({
-    where: { id: ticketId },
-  })
-  if (!ticket || ticket.userId !== userId) {
-    throw new ApiError("Ticket not found.", 404)
-  }
-  return ticket
-}
-
 /** One of the caller's own tickets with the full thread, oldest
     message first. 404 when missing or owned by someone else. */
 export async function getMyTicket(
@@ -300,45 +318,63 @@ export async function getMyTicket(
 
 /** Appends the caller's reply. Replying to a RESOLVED ticket reopens
     it to OPEN; replying to a CLOSED ticket is refused (409) — closed
-    is terminal, open a new ticket instead. Audited. */
+    is terminal, open a new ticket instead. Audited.
+    DB-026: the ownership + CLOSED checks and the write all happen
+    inside ONE transaction, and the ticket row is read under a
+    FOR UPDATE lock (lockTicketRow) — a ticket closed between an
+    outside guard read and the write used to still get the reply
+    appended (the CLOSED guard was evaluated on a stale read), and a
+    bare in-transaction read still let a stale status write land
+    after the close. Now the loser of the race sees the committed
+    CLOSED status and gets the 409, with no message row written. */
 export async function replyToTicket(
   userId: string,
   ticketId: string,
   input: ReplyToTicketInput
 ): Promise<TicketDetailRow> {
-  const ticket = await getOwnedTicketOrThrow(userId, ticketId)
-  if (ticket.status === "CLOSED") {
-    throw new ApiError(
-      "This ticket is closed. Please open a new ticket if you still need help.",
-      409
-    )
-  }
-  const reopened = ticket.status === "RESOLVED"
-  const [, updated] = await db.$transaction([
-    db.ticketMessage.create({
-      data: { ticketId: ticket.id, authorId: userId, body: input.body },
-    }),
-    db.supportTicket.update({
-      where: { id: ticket.id },
-      data: { status: reopened ? "OPEN" : ticket.status },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        assignedTo: { select: { id: true, name: true, email: true } },
-        messages: {
-          include: {
-            author: { select: { id: true, name: true, email: true } },
+  const { updated, reopened } = await db.$transaction(
+    async (tx) => {
+      const ticket = await lockTicketRow(tx, ticketId)
+      if (!ticket || ticket.userId !== userId) {
+        throw new ApiError("Ticket not found.", 404)
+      }
+      if (ticket.status === "CLOSED") {
+        throw new ApiError(
+          "This ticket is closed. Please open a new ticket if you still need help.",
+          409
+        )
+      }
+      const reopened = ticket.status === "RESOLVED"
+      await tx.ticketMessage.create({
+        data: { ticketId: ticket.id, authorId: userId, body: input.body },
+      })
+      const updated = await tx.supportTicket.update({
+        where: { id: ticket.id },
+        data: { status: reopened ? "OPEN" : ticket.status },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          assignedTo: { select: { id: true, name: true, email: true } },
+          messages: {
+            include: {
+              author: { select: { id: true, name: true, email: true } },
+            },
+            orderBy: { createdAt: "asc" },
           },
-          orderBy: { createdAt: "asc" },
+          _count: { select: { messages: true } },
         },
-        _count: { select: { messages: true } },
-      },
-    }),
-  ])
+      })
+      return { updated, reopened }
+    },
+    // Same headroom as the flag toggles (platform-ops/src/flags.ts):
+    // the loser of a race on one ticket's row needs more than
+    // Prisma's 2s default start window.
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
     resourceType: AuditResource.SUPPORT_TICKET,
-    resourceId: ticket.id,
+    resourceId: ticketId,
     detail: {
       event: "ticket-replied",
       by: "customer",
@@ -435,51 +471,60 @@ export async function getTicket(
     stays RESOLVED (the admin reopens it with an explicit status
     change, or the customer reopens it by replying). Replying to a
     CLOSED ticket is refused (409). Replying needs MANAGE_USERS or
-    the SUPPORT role. */
+    the SUPPORT role. DB-026: like replyToTicket, the CLOSED check
+    and the write share one transaction under a FOR UPDATE row lock
+    (lockTicketRow) — a close racing this reply can no longer be
+    silently overwritten by a stale status write. */
 export async function adminReply(
   actor: AdminSession,
   ticketId: string,
   input: ReplyToTicketInput
 ): Promise<TicketDetailRow> {
   requireTicketWrite(actor)
-  const ticket = await getTicketOrThrow(ticketId)
-  if (ticket.status === "CLOSED") {
-    throw new ApiError("This ticket is closed.", 409)
-  }
-  const nextStatus = ticket.status === "RESOLVED" ? "RESOLVED" : "IN_PROGRESS"
-  const [, updated] = await db.$transaction([
-    db.ticketMessage.create({
-      data: {
-        ticketId: ticket.id,
-        authorId: actor.user.id,
-        body: input.body,
-      },
-    }),
-    db.supportTicket.update({
-      where: { id: ticket.id },
-      data: { status: nextStatus },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        assignedTo: { select: { id: true, name: true, email: true } },
-        messages: {
-          include: {
-            author: { select: { id: true, name: true, email: true } },
-          },
-          orderBy: { createdAt: "asc" },
+  const { updated, nextStatus, oldStatus } = await db.$transaction(
+    async (tx) => {
+      const ticket = await lockTicketRow(tx, ticketId)
+      if (!ticket) throw new ApiError("Ticket not found.", 404)
+      if (ticket.status === "CLOSED") {
+        throw new ApiError("This ticket is closed.", 409)
+      }
+      const nextStatus =
+        ticket.status === "RESOLVED" ? "RESOLVED" : "IN_PROGRESS"
+      await tx.ticketMessage.create({
+        data: {
+          ticketId: ticket.id,
+          authorId: actor.user.id,
+          body: input.body,
         },
-        _count: { select: { messages: true } },
-      },
-    }),
-  ])
+      })
+      const updated = await tx.supportTicket.update({
+        where: { id: ticket.id },
+        data: { status: nextStatus },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          assignedTo: { select: { id: true, name: true, email: true } },
+          messages: {
+            include: {
+              author: { select: { id: true, name: true, email: true } },
+            },
+            orderBy: { createdAt: "asc" },
+          },
+          _count: { select: { messages: true } },
+        },
+      })
+      return { updated, nextStatus, oldStatus: ticket.status }
+    },
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
     resourceType: AuditResource.SUPPORT_TICKET,
-    resourceId: ticket.id,
+    resourceId: ticketId,
     detail: {
       event: "ticket-replied",
       by: "admin",
-      statusChanged: nextStatus !== ticket.status,
+      statusChanged: nextStatus !== oldStatus,
     },
   })
   return toTicketDetailRow(updated)
@@ -487,44 +532,56 @@ export async function adminReply(
 
 /** Moves a ticket along the status machine. Only the transitions in
     TICKET_TRANSITIONS are allowed — anything else is a 409. Reason
-    required. Needs MANAGE_USERS or the SUPPORT role. */
+    required. Needs MANAGE_USERS or the SUPPORT role. DB-026: the
+    read, the transition check, and the write share one transaction
+    under a FOR UPDATE row lock (lockTicketRow), so the transition is
+    validated against the status it actually replaces — two
+    concurrent calls can no longer both validate against the same
+    stale status and both apply. */
 export async function setTicketStatus(
   actor: AdminSession,
   ticketId: string,
   input: SetTicketStatusInput
 ): Promise<TicketDetailRow> {
   requireTicketWrite(actor)
-  const ticket = await getTicketOrThrow(ticketId)
-  if (!TICKET_TRANSITIONS[ticket.status].includes(input.status)) {
-    throw new ApiError(
-      `Cannot move a ${ticket.status} ticket to ${input.status}.`,
-      409
-    )
-  }
-  const updated = await db.supportTicket.update({
-    where: { id: ticket.id },
-    data: { status: input.status },
-    include: {
-      user: { select: { id: true, name: true, email: true } },
-      assignedTo: { select: { id: true, name: true, email: true } },
-      messages: {
+  const { updated, oldStatus } = await db.$transaction(
+    async (tx) => {
+      const ticket = await lockTicketRow(tx, ticketId)
+      if (!ticket) throw new ApiError("Ticket not found.", 404)
+      if (!TICKET_TRANSITIONS[ticket.status].includes(input.status)) {
+        throw new ApiError(
+          `Cannot move a ${ticket.status} ticket to ${input.status}.`,
+          409
+        )
+      }
+      const updated = await tx.supportTicket.update({
+        where: { id: ticket.id },
+        data: { status: input.status },
         include: {
-          author: { select: { id: true, name: true, email: true } },
+          user: { select: { id: true, name: true, email: true } },
+          assignedTo: { select: { id: true, name: true, email: true } },
+          messages: {
+            include: {
+              author: { select: { id: true, name: true, email: true } },
+            },
+            orderBy: { createdAt: "asc" },
+          },
+          _count: { select: { messages: true } },
         },
-        orderBy: { createdAt: "asc" },
-      },
-      _count: { select: { messages: true } },
+      })
+      return { updated, oldStatus: ticket.status }
     },
-  })
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
     resourceType: AuditResource.SUPPORT_TICKET,
-    resourceId: ticket.id,
+    resourceId: ticketId,
     detail: {
       event: "ticket-status-changed",
       reason: input.reason,
-      oldStatus: ticket.status,
+      oldStatus,
       newStatus: input.status,
     },
   })

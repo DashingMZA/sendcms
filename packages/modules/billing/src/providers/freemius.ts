@@ -30,8 +30,10 @@ export const FREEMIUS_REPLAY_WINDOW_MS = 10 * 60 * 1000
 // with no mapped Freemius plan cannot be sold through Freemius —
 // the checkout refuses with a clear 422 instead of guessing.
 
-function getPlanMap(): Record<string, string> {
-  const raw = process.env.FREEMIUS_PLAN_MAP
+function getPlanMap(
+  env: NodeJS.ProcessEnv = process.env
+): Record<string, string> {
+  const raw = env.FREEMIUS_PLAN_MAP
   if (!raw) return {}
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -42,6 +44,16 @@ function getPlanMap(): Record<string, string> {
   } catch {
     return {}
   }
+}
+
+// BIL-053: how many plan versions FREEMIUS_PLAN_MAP maps — the admin
+// provider row surfaces this count, and enabling Freemius with zero
+// mapped versions warns (the map is env JSON, not DB rows, so the
+// service can only count it, not edit it).
+export function getFreemiusPlanMapCount(
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  return Object.keys(getPlanMap(env)).length
 }
 
 function freemiusPlanIdFor(versionId: string): string | null {

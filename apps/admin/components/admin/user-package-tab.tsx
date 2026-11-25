@@ -37,6 +37,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -91,8 +92,17 @@ export function UserPackageTab({
   const [cancelOpen, setCancelOpen] = useState(false)
   const [overrideOpen, setOverrideOpen] = useState(false)
 
-  const { data: subscription } = useUserSubscription(userId)
-  const { data: overridesData } = useEntitlementOverrides(userId, {
+  const {
+    data: subscription,
+    isPending: subscriptionPending,
+    isError: subscriptionError,
+    refetch: refetchSubscription,
+  } = useUserSubscription(userId)
+  const {
+    data: overridesData,
+    isPending: overridesPending,
+    isError: overridesError,
+  } = useEntitlementOverrides(userId, {
     page: 1,
     perPage: 20,
   })
@@ -108,7 +118,26 @@ export function UserPackageTab({
           <CardTitle>{t("currentSubscription")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {!subscription ? (
+          {/* ADM-035: while loading a skeleton, on failure an error
+              state — never the false "No active subscription" empty
+              state for a user who has one. */}
+          {subscriptionPending ? (
+            <Skeleton className="h-48 w-full" />
+          ) : subscriptionError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
+            >
+              <span>{t("loadError")}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchSubscription()}
+              >
+                {t("retry")}
+              </Button>
+            </div>
+          ) : !subscription ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
               <RiPriceTag3Line
                 className="mb-4 size-10 text-muted-foreground"
@@ -156,6 +185,53 @@ export function UserPackageTab({
                     : t("cancelAtEndNo")}
                 </Field>
               </dl>
+              {/* ADM-037: the plan's limits, alongside the
+                  subscription and overrides — effective entitlements
+                  (ADM-036: overrides already merged in), so what the
+                  admin sees is what the user is actually allowed. */}
+              <div className="rounded-lg border px-4 py-3">
+                <h3 className="mb-2 text-sm font-semibold">
+                  {t("limitsTitle")}
+                </h3>
+                {subscription.entitlements === null ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("limitsUnavailable")}
+                  </p>
+                ) : (
+                  <dl className="flex flex-col gap-1 text-sm">
+                    <LimitRow
+                      label={meterLabel("FORMS", t)}
+                      value={subscription.entitlements.forms}
+                      t={t}
+                    />
+                    <LimitRow
+                      label={meterLabel("DOMAINS", t)}
+                      value={subscription.entitlements.domains}
+                      t={t}
+                    />
+                    <LimitRow
+                      label={meterLabel("SUBMISSIONS", t)}
+                      value={subscription.entitlements.submissionsPerMonth}
+                      t={t}
+                    />
+                    <LimitRow
+                      label={meterLabel("API_KEYS", t)}
+                      value={subscription.entitlements.apiKeys}
+                      t={t}
+                    />
+                    <LimitRow
+                      label={meterLabel("MCP_REQUESTS", t)}
+                      value={subscription.entitlements.mcpRequestsPerHour}
+                      t={t}
+                    />
+                    <LimitRow
+                      label={meterLabel("AI_REQUESTS", t)}
+                      value={subscription.entitlements.aiRequestsPerDay}
+                      t={t}
+                    />
+                  </dl>
+                )}
+              </div>
               {canManageSubs && (
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" onClick={() => setAssignOpen(true)}>
@@ -183,7 +259,15 @@ export function UserPackageTab({
           <CardDescription>{t("overridesDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {overrides.length === 0 ? (
+          {/* ADM-035: the overrides list is empty only once it has
+              loaded — a pending or failed fetch is not "no overrides". */}
+          {overridesPending ? (
+            <Skeleton className="h-32 w-full" />
+          ) : overridesError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
+          ) : overrides.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
               <RiInformationLine
                 className="mb-4 size-10 text-muted-foreground"
@@ -239,7 +323,16 @@ export function UserPackageTab({
           <CardTitle>{t("historyTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
-          {!subscription ? (
+          {/* ADM-035: same loading/error gate as the subscription
+              card — the history empty state is only true once the
+              subscription has loaded and there is none. */}
+          {subscriptionPending ? (
+            <Skeleton className="h-32 w-full" />
+          ) : subscriptionError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("loadError")}
+            </p>
+          ) : !subscription ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
               <RiInformationLine
                 className="mb-4 size-10 text-muted-foreground"
@@ -291,6 +384,26 @@ function Field({
     <div className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
       <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="text-sm font-medium">{children}</dd>
+    </div>
+  )
+}
+
+/** One effective plan limit (ADM-037): null means unlimited. */
+function LimitRow({
+  label,
+  value,
+  t,
+}: {
+  label: string
+  value: number | null
+  t: (key: string) => string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium tabular-nums">
+        {value === null ? t("unlimited") : value}
+      </dd>
     </div>
   )
 }
@@ -507,9 +620,20 @@ function SetOverrideDialog({
 
 function SubscriptionHistory({ subscriptionId }: { subscriptionId: string }) {
   const { t } = useTranslation("subscriptions")
-  const { data } = useSubscription(subscriptionId)
+  const { data, isPending, isError } = useSubscription(subscriptionId)
   const events = data?.events ?? []
 
+  // ADM-035: the event history is empty only once it has loaded.
+  if (isPending) {
+    return <Skeleton className="h-32 w-full" />
+  }
+  if (isError) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {t("loadError")}
+      </p>
+    )
+  }
   if (events.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
