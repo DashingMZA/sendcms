@@ -183,22 +183,36 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
     }
   }
 
+  // Bulk delete is N single DELETEs (there is no bulk-delete endpoint —
+  // the bulk route only handles status actions). A failure mid-loop must
+  // not hide what already happened: delete each id on its own, count the
+  // outcomes, and report the exact counts. The ids that failed stay
+  // selected (and stay listed) so the user can see exactly which
+  // submissions were not deleted and retry them (DSH-205).
   async function bulkDelete() {
     if (selectedIds.size === 0) return
     const ids = [...selectedIds]
-    try {
-      for (const id of ids) {
+    const failedIds: string[] = []
+    let deleted = 0
+    for (const id of ids) {
+      try {
         await deleteSubmission.mutateAsync(id)
+        deleted += 1
+      } catch {
+        failedIds.push(id)
       }
+    }
+    if (deleted > 0) {
       toast.success(
-        ids.length === 1
-          ? t("bulkDeletedOne", { count: ids.length })
-          : t("bulkDeletedOther", { count: ids.length })
+        deleted === 1
+          ? t("bulkDeletedOne", { count: deleted })
+          : t("bulkDeletedOther", { count: deleted })
       )
-      setSelectedIds(new Set())
-    } catch {
+    }
+    if (failedIds.length > 0) {
       toast.error(t("deleteFailedMultiple"))
     }
+    setSelectedIds(new Set(failedIds))
   }
 
   function toggleAll(checked: boolean) {

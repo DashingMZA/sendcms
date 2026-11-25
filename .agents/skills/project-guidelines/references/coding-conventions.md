@@ -166,7 +166,13 @@ export default async function Page({
 
 ## Cache Revalidation
 
-Routes that mutate data call `revalidatePath("/dashboard", "layout")` after writes.
+Routes do NOT call `revalidatePath()` (SRC-114). The refresh mechanism
+after a mutation is React Query invalidation: every mutation hook
+invalidates its queries `onSuccess`/`onSettled` (see "Client Data
+Fetching (React Query)" above), so the dashboard and admin UIs refetch
+from the API and never show stale data. The 17 older route files that
+still call `revalidatePath` after writes are harmless leftovers from
+the Phase 3–5 era — they may stay, but no new route needs them.
 
 ## Permissions (RBAC)
 

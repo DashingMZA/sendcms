@@ -9,6 +9,17 @@
 // copy in this file.
 import { z } from "zod"
 
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
+
 // Shared pagination for admin list endpoints.
 export const McpPaginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -21,7 +32,10 @@ export const McpPaginationQuerySchema = z.object({
 // sensitive action and the audit record must say why.
 export const SetMcpSettingsSchema = z.object({
   globalEnabled: z.boolean(),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetMcpSettingsInput = z.infer<typeof SetMcpSettingsSchema>
@@ -44,7 +58,10 @@ export const SetUserMcpSettingsSchema = z.object({
     .optional(),
   minuteLimit: z.number().int().positive().nullable().optional(),
   hourLimit: z.number().int().positive().nullable().optional(),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetUserMcpSettingsInput = z.infer<typeof SetUserMcpSettingsSchema>
@@ -78,7 +95,10 @@ export type McpUsageSummaryQuery = z.infer<typeof McpUsageSummaryQuerySchema>
 // `reason` is required — revoking a customer's key is a sensitive
 // action and the audit record must say why.
 export const RevokeMcpKeySchema = z.object({
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type RevokeMcpKeyInput = z.infer<typeof RevokeMcpKeySchema>

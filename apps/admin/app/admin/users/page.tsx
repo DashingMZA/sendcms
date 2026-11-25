@@ -24,7 +24,16 @@ export default async function AdminUsersPage({
   const session = await auth()
   if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
 
-  const filters = AdminUserListQuerySchema.parse(await searchParams)
+  // SRC-119: one invalid-input policy for list pages — an invalid
+  // query param falls back to the schema defaults, never throws.
+  // `.parse()` here used to 500 on `?page=abc` (the error boundary),
+  // while the dashboard inbox silently fell back to its defaults;
+  // both pages now do the same thing.
+  const raw = await searchParams
+  const parsed = AdminUserListQuerySchema.safeParse(raw)
+  const filters = parsed.success
+    ? parsed.data
+    : AdminUserListQuerySchema.parse({})
   const initialData = await listUsers(session, filters)
 
   const locale = await getRequestLocale()

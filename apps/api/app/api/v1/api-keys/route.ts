@@ -1,9 +1,15 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { createApiKeyForUser, listApiKeysForUser } from "@sendcms/api-keys"
 import { CreateApiKeySchema } from "@sendcms/api-keys/validators"
-import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  created,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function GET() {
   try {
@@ -26,15 +32,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = CreateApiKeySchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const key = await createApiKeyForUser(session.user.id, parsed.data)
     revalidatePath("/dashboard", "layout")

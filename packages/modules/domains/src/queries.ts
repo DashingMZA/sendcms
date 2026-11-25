@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@sendcms/shared"
-import type { DomainDetail, DomainWithVerification } from "./service"
+import type {
+  DomainDetail,
+  DomainListResult,
+  DomainWithVerification,
+} from "./service"
+import type { DomainListQueryInput } from "./validators"
 import type {
   DomainVerification,
   DomainVerificationMethod,
 } from "@sendcms/database"
 
-export type { DomainDetail, DomainWithVerification }
+export type { DomainDetail, DomainListResult, DomainWithVerification }
+
+export type { DomainListQueryInput }
 
 export type VerifyResult = {
   verified: boolean
@@ -18,6 +25,7 @@ export type VerifyResult = {
 
 export const domainKeys = {
   list: ["domains"] as const,
+  page: (params: DomainListQueryInput) => ["domains", "page", params] as const,
   detail: (id: string) => ["domains", id] as const,
 }
 
@@ -27,6 +35,35 @@ export function useDomains(initialData?: DomainWithVerification[]) {
     queryFn: () => apiFetch<DomainWithVerification[]>("/api/v1/domains"),
     initialData,
   })
+}
+
+// DSH-107: the paged list the dashboard tables use — search, sort and
+// pagination ride in the URL (the page passes its parsed params in),
+// so the table refetches when the user pages or searches. The key
+// nests under domainKeys.list, so the create/verify/delete mutations'
+// invalidateQueries({ queryKey: domainKeys.list }) refreshes paged
+// lists too.
+export function useDomainsPage(
+  params: DomainListQueryInput,
+  initialData?: DomainListResult
+) {
+  return useQuery({
+    queryKey: domainKeys.page(params),
+    queryFn: () =>
+      apiFetch<DomainListResult>(`/api/v1/domains${toQueryString(params)}`),
+    initialData,
+  })
+}
+
+function toQueryString(params: DomainListQueryInput): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      query.set(key, String(value))
+    }
+  }
+  const text = query.toString()
+  return text ? `?${text}` : ""
 }
 
 export function useDomain(id: string, initialData?: DomainDetail) {

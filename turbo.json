@@ -20,7 +20,16 @@
     "db:generate": { "cache": false },
     "dev": { "cache": false, "persistent": true },
     "lint": { "dependsOn": ["^lint"] },
-    "sdk:build": { "outputs": ["public/forms/**"] },
+    // TST-017: the SDK build writes outside its own package, into
+    // apps/api/public/forms/ — the old "sdk:build" entry was dead
+    // (no package defines an "sdk:build" script) and its
+    // "public/forms/**" outputs matched nothing, so every build
+    // warned "no output files found for task @sendcms/sdk#build".
+    // The per-package override below declares the real outputs
+    // (relative to packages/sdk), so the task is cacheable.
+    "@sendcms/sdk#build": {
+      "outputs": ["../../apps/api/public/forms/**"]
+    },
     "test": { "dependsOn": ["^test"] },
     "typecheck": { "dependsOn": ["^typecheck"] }
   }

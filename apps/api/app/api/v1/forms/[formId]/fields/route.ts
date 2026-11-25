@@ -1,9 +1,15 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { addFieldToForm, getFormForUser } from "@sendcms/forms"
 import { CreateFieldSchema } from "@sendcms/forms/validators"
-import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  created,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 type Params = { params: Promise<{ formId: string }> }
 
@@ -27,15 +33,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const parsed = CreateFieldSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const field = await addFieldToForm(session.user.id, formId, parsed.data)
     revalidatePath("/dashboard", "layout")

@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { verifyStepUp } from "@sendcms/security"
 import { requireAdmin } from "@sendcms/permissions"
-import { handleApiError, ok } from "@sendcms/api-client"
+import { StepUpVerifySchema } from "@sendcms/admin-users/validators"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // Step-up verification (Admin Control Plane, Phase 9): the admin
 // re-enters their password before a high-impact action. The service
@@ -24,21 +29,15 @@ export async function POST(req: NextRequest) {
     requireAdmin(session, "VIEW_ADMIN_DASHBOARD")
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
-    const body = (await req.json().catch(() => ({}))) as unknown
-    const password =
-      typeof body === "object" &&
-      body !== null &&
-      "password" in body &&
-      typeof (body as { password: unknown }).password === "string"
-        ? (body as { password: string }).password
-        : undefined
-    if (password === undefined) {
-      return NextResponse.json(
-        { error: "Password is required." },
-        { status: 422 }
-      )
+    const body = await req.json().catch(() => ({}))
+    // SRC-104: validated with Zod, not by hand — the schema caps the
+    // password at 128 chars (the login-password bound), so no
+    // unbounded string reaches password-hash comparison.
+    const parsed = StepUpVerifySchema.safeParse(body)
+    if (!parsed.success) {
+      return validationErrorResponse(parsed.error)
     }
-    const result = await verifyStepUp(session, password)
+    const result = await verifyStepUp(session, parsed.data.password)
     return ok(result)
   } catch (err) {
     return handleApiError(err)

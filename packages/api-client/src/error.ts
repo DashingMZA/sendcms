@@ -34,6 +34,19 @@ export function handleApiError(
       { status: err.statusCode, headers: resolvedHeaders }
     )
   }
+  // SRC-206: a raw Prisma error used to collapse into a generic 500.
+  // Concurrent duplicates (a pre-check-then-create race) are a 409,
+  // a missing row is a 404, a broken foreign key is a 400 — the
+  // services' own messages already say this for the non-race path.
+  // Duck-typed (name + code) on purpose — this package must not
+  // depend on @prisma/client.
+  const prismaStatus = prismaErrorStatus(err)
+  if (prismaStatus !== null) {
+    return NextResponse.json(
+      { error: prismaStatus.message },
+      { status: prismaStatus.status, headers: resolvedHeaders }
+    )
+  }
   logger.error("unhandled API error", { error: err })
   return NextResponse.json(
     { error: "Internal server error" },
@@ -66,4 +79,32 @@ function isBetterAuthApiError(err: unknown): err is BetterAuthApiError {
   }
   const body = candidate.body as { message?: unknown } | null | undefined
   return typeof body?.message === "string"
+}
+
+// Prisma's known-request errors: a unique-constraint violation
+// (P2002), a missing record (P2025), a broken foreign-key reference
+// (P2003). Only the code is trusted — never a message, which can
+// carry table/column internals.
+function prismaErrorStatus(
+  err: unknown
+): { status: number; message: string } | null {
+  if (typeof err !== "object" || err === null) return null
+  const candidate = err as { name?: unknown; code?: unknown }
+  if (candidate.name !== "PrismaClientKnownRequestError") return null
+  switch (candidate.code) {
+    case "P2002":
+      return {
+        status: 409,
+        message: "A record with these values already exists.",
+      }
+    case "P2025":
+      return { status: 404, message: "Record not found." }
+    case "P2003":
+      return {
+        status: 400,
+        message: "The referenced record does not exist.",
+      }
+    default:
+      return null
+  }
 }

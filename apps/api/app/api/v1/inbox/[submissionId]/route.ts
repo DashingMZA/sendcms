@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import {
@@ -7,7 +7,13 @@ import {
   updateSubmissionStatusForUser,
 } from "@sendcms/inbox"
 import { UpdateSubmissionStatusSchema } from "@sendcms/inbox/validators"
-import { ApiError, handleApiError, noContent, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  noContent,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 type Params = { params: Promise<{ submissionId: string }> }
 
@@ -31,15 +37,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const parsed = UpdateSubmissionStatusSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await updateSubmissionStatusForUser(
       session.user.id,

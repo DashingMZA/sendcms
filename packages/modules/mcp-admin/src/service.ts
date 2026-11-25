@@ -91,15 +91,31 @@ export async function setMcpSettings(
   // Step-up (Phase 9): the kill-switch is high-impact — the actor
   // re-enters their password first. Checked before the write.
   await requireStepUp(actor)
-  const before = await db.mcpSettings.findFirst({
-    select: { globalEnabled: true },
-  })
-  const updated = await db.mcpSettings.upsert({
-    where: { id: MCP_SETTINGS_ID },
-    update: { globalEnabled: input.globalEnabled },
-    create: { id: MCP_SETTINGS_ID, globalEnabled: input.globalEnabled },
-    select: { globalEnabled: true },
-  })
+  // SRC-236 (DB-051's shape): the "before" value is read under an
+  // advisory lock in the same transaction as the write, so a
+  // concurrent toggle cannot make the audit's old value stale (the
+  // read-then-write it replaced could record a transition that never
+  // happened). A row lock cannot cover the first write (no row exists
+  // yet), so the advisory lock serializes creation too.
+  const { before, updated } = await db.$transaction(
+    async (tx) => {
+      // pg_advisory_xact_lock returns void, which Prisma cannot
+      // deserialize through $queryRaw — $executeRaw takes the lock
+      // without reading any result column.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:mcp-settings"}))`
+      const before = await tx.mcpSettings.findFirst({
+        select: { globalEnabled: true },
+      })
+      const updated = await tx.mcpSettings.upsert({
+        where: { id: MCP_SETTINGS_ID },
+        update: { globalEnabled: input.globalEnabled },
+        create: { id: MCP_SETTINGS_ID, globalEnabled: input.globalEnabled },
+        select: { globalEnabled: true },
+      })
+      return { before, updated }
+    },
+    { maxWait: 20000, timeout: 30000 }
+  )
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -212,9 +228,6 @@ export async function setUserMcpSettings(
     validateAllowedTools(input.allowedTools)
   }
   validateQuotaLimits(input)
-  const before = await db.mcpUserSettings.findUnique({
-    where: { userId },
-  })
   const data: Prisma.McpUserSettingsUpdateInput = {}
   if (input.isEnabled !== undefined) data.isEnabled = input.isEnabled
   if (input.allowedTools !== undefined) {
@@ -225,22 +238,46 @@ export async function setUserMcpSettings(
   }
   if (input.minuteLimit !== undefined) data.minuteLimit = input.minuteLimit
   if (input.hourLimit !== undefined) data.hourLimit = input.hourLimit
-  const updated = await db.mcpUserSettings.upsert({
-    where: { userId },
-    update: data,
-    create: {
-      userId,
-      isEnabled: input.isEnabled ?? true,
-      allowedTools:
-        input.allowedTools === undefined
-          ? undefined
-          : input.allowedTools === null
-            ? Prisma.JsonNull
-            : (input.allowedTools as Prisma.InputJsonValue),
-      minuteLimit: input.minuteLimit ?? null,
-      hourLimit: input.hourLimit ?? null,
+  // SRC-236: a call with only `reason` changes nothing — it used to
+  // upsert a settings row with an empty `update: {}` (creating a row
+  // out of thin air) and audit a change that never happened. Return
+  // the current settings (or the defaults when no row exists) with
+  // no write and no audit row.
+  if (Object.keys(data).length === 0) {
+    const current = await db.mcpUserSettings.findUnique({
+      where: { userId },
+    })
+    return toUserMcpSettingsRow(userId, current)
+  }
+  // SRC-236 (DB-051's shape): the "before" row is read under an
+  // advisory lock in the same transaction as the write, so a
+  // concurrent update cannot make the audit's old value stale.
+  const { before, updated } = await db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:mcp-user-settings:" + userId}))`
+      const before = await tx.mcpUserSettings.findUnique({
+        where: { userId },
+      })
+      const updated = await tx.mcpUserSettings.upsert({
+        where: { userId },
+        update: data,
+        create: {
+          userId,
+          isEnabled: input.isEnabled ?? true,
+          allowedTools:
+            input.allowedTools === undefined
+              ? undefined
+              : input.allowedTools === null
+                ? Prisma.JsonNull
+                : (input.allowedTools as Prisma.InputJsonValue),
+          minuteLimit: input.minuteLimit ?? null,
+          hourLimit: input.hourLimit ?? null,
+        },
+      })
+      return { before, updated }
     },
-  })
+    { maxWait: 20000, timeout: 30000 }
+  )
   const beforeRow = toUserMcpSettingsRow(userId, before)
   const afterRow = toUserMcpSettingsRow(userId, updated)
   await logAudit({
@@ -477,6 +514,21 @@ const mcpKeySelect = {
   createdAt: true,
 } as const
 
+// DB-049: services clamp pagination themselves. `page` floors at 1,
+// `perPage` clamps to 1..100 (the routes' max); non-finite input
+// falls back to the defaults instead of reaching Prisma as NaN.
+function clampPagination(
+  page: number | undefined,
+  perPage: number | undefined
+): { page: number; perPage: number } {
+  return {
+    page: Number.isFinite(page) ? Math.max(1, Math.floor(page as number)) : 1,
+    perPage: Number.isFinite(perPage)
+      ? Math.min(100, Math.max(1, Math.floor(perPage as number)))
+      : 20,
+  }
+}
+
 /** Every API key with its owner and its 30-day call count (one
     groupBy, no N+1). Reads need VIEW_MCP. */
 export async function listMcpKeys(
@@ -491,6 +543,12 @@ export async function listMcpKeys(
   totalPages: number
 }> {
   requireAdmin(actor, "VIEW_MCP")
+  // DB-049: the service clamps pagination itself — a direct caller
+  // must not be able to make the service load 100k rows. The route
+  // validates too, but the service is the last line.
+  const clamped = clampPagination(page, perPage)
+  page = clamped.page
+  perPage = clamped.perPage
   const [total, rows, callCounts] = await Promise.all([
     db.apiKey.count(),
     db.apiKey.findMany({

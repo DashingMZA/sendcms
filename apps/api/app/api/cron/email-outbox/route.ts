@@ -18,16 +18,7 @@ import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 // Phase 12, Step 3: the same hit also sends due AI digests.
 export async function GET(req: NextRequest) {
   try {
-    const secret = process.env.CRON_SECRET
-    if (!secret) {
-      throw new ApiError("Email outbox cron is not configured.", 503)
-    }
-    const header = req.headers.get("authorization")
-    // Timing-safe bearer check (SRC-115 / EML-067): the scheme is
-    // case-insensitive and the token comparison is constant-time.
-    if (!isValidBearerToken(header, secret)) {
-      throw new ApiError("Unauthorized", 401)
-    }
+    requireCronSecret(req)
     // The three jobs are independent — run them concurrently
     // (SRC-115): serially, one hit ran three limit-100 jobs back to
     // back and grew toward serverless timeouts as the queues grew.
@@ -44,5 +35,19 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     return handleApiError(err)
+  }
+}
+
+// Cron auth: a shared secret, `Authorization: Bearer <CRON_SECRET>`.
+// Without CRON_SECRET set, the route refuses to run.
+function requireCronSecret(req: NextRequest): void {
+  const secret = process.env.CRON_SECRET
+  if (!secret) {
+    throw new ApiError("Email outbox cron is not configured.", 503)
+  }
+  // Timing-safe bearer check (SRC-115 / EML-067): the scheme is
+  // case-insensitive and the token comparison is constant-time.
+  if (!isValidBearerToken(req.headers.get("authorization"), secret)) {
+    throw new ApiError("Unauthorized", 401)
   }
 }

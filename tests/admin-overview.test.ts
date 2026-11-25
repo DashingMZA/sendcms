@@ -39,8 +39,9 @@ const plainSession = makeSession({
 })
 
 const mockDb = vi.hoisted(() => ({
+  $queryRaw: vi.fn(),
   user: { count: vi.fn(), groupBy: vi.fn() },
-  submission: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
+  submission: { count: vi.fn(), groupBy: vi.fn() },
   form: { count: vi.fn() },
   domain: { count: vi.fn() },
   subscription: { count: vi.fn(), groupBy: vi.fn() },
@@ -69,10 +70,11 @@ beforeEach(() => {
     { status: "NEW", _count: 5 },
     { status: "SPAM", _count: 3 },
   ])
-  mockDb.submission.findMany.mockResolvedValue([
-    { createdAt: new Date("2026-11-22T09:00:00.000Z") },
-    { createdAt: new Date("2026-11-22T10:00:00.000Z") },
-    { createdAt: new Date("2026-11-20T08:00:00.000Z") },
+  // SRC-236: the per-day series is aggregated in SQL now — one row
+  // per day that has submissions (day as a YYYY-MM-DD string).
+  mockDb.$queryRaw.mockResolvedValue([
+    { day: "2026-11-20", count: 1 },
+    { day: "2026-11-22", count: 2 },
   ])
   mockDb.form.count.mockResolvedValue(4)
   mockDb.domain.count.mockResolvedValue(6)
@@ -257,15 +259,16 @@ describe("getAdminOverview", () => {
       { date: "2026-11-21", count: 0 },
       { date: "2026-11-22", count: 2 },
     ])
-    expect(mockDb.submission.findMany).toHaveBeenCalledWith({
-      where: {
-        createdAt: {
-          gte: new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
-          lte: NOW,
-        },
-      },
-      select: { createdAt: true },
-    })
+    // SRC-236: one SQL aggregation (DATE_TRUNC + GROUP BY) bound to
+    // the range window — no findMany of every in-range timestamp.
+    expect(mockDb.$queryRaw).toHaveBeenCalledTimes(1)
+    const query = mockDb.$queryRaw.mock.calls[0][0] as {
+      values?: unknown[]
+    }
+    expect(query.values).toEqual([
+      new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
+      NOW,
+    ])
   })
 
   it("scopes the in-range counts to the window", async () => {

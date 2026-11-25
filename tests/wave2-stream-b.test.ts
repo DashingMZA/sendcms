@@ -308,12 +308,15 @@ describe("ADM-001 handleApiError maps Better Auth APIErrors", () => {
 
 describe("SRC-102 dashboard pages require a session", () => {
   const pages = [
-    "apps/dashboard/app/dashboard/page.tsx",
-    "apps/dashboard/app/dashboard/inbox/page.tsx",
+    // Route groups (DSH-104/204/409, Wave 4): the list/overview pages
+    // live in (overview)/(list) groups so their loading.tsx skeletons
+    // do not wrap the detail segments.
+    "apps/dashboard/app/dashboard/(overview)/page.tsx",
+    "apps/dashboard/app/dashboard/inbox/(list)/page.tsx",
     "apps/dashboard/app/dashboard/inbox/[submissionId]/page.tsx",
-    "apps/dashboard/app/dashboard/domains/page.tsx",
+    "apps/dashboard/app/dashboard/domains/(list)/page.tsx",
     "apps/dashboard/app/dashboard/domains/[domainId]/page.tsx",
-    "apps/dashboard/app/dashboard/forms/page.tsx",
+    "apps/dashboard/app/dashboard/forms/(list)/page.tsx",
     "apps/dashboard/app/dashboard/forms/[formId]/page.tsx",
     "apps/dashboard/app/dashboard/forms/new/page.tsx",
     "apps/dashboard/app/dashboard/account/page.tsx",

@@ -1,9 +1,13 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { assignTicket } from "@sendcms/support"
 import { AssignTicketSchema } from "@sendcms/support/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // Assigns a ticket to a staff user (the owner or a staff admin role).
 // Writes need MANAGE_USERS or the SUPPORT role (enforced in the
@@ -20,15 +24,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const parsed = AssignTicketSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const ticket = await assignTicket(session, ticketId, parsed.data)
     return ok(ticket)

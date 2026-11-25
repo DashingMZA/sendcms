@@ -79,12 +79,13 @@ payload must stay under 64 KB.
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **201** | Submission saved. Body: `{ "ok": true, "id": "<submission id>", "message": "<form success message>", "redirectUrl": "<form redirect URL or null>" }`.                                                                            |
 | **200** | Duplicate — same `idempotencyKey`, or identical content within 10 minutes. Same body, same `id`.                                                                                                                                 |
-| **400** | Malformed JSON or body.                                                                                                                                                                                                          |
+| **400** | Malformed JSON or body. Body: `{ "error": "Malformed JSON body." }`. A well-formed body with missing/invalid fields is 422 instead.                                                                                              |
 | **403** | Form inactive, origin not allowed, or Turnstile verification failed. The origin must be a **verified domain linked to the form** — an unlinked or unverified domain, a missing `Origin`, and a non-HTTP origin are all rejected. |
-| **404** | Unknown `userId`/`formId` pair.                                                                                                                                                                                                  |
+| **404** | Unknown `userId`/`formId` pair. An unknown path under `/api/public/v1/` also returns 404, as JSON `{ "error": "Not found" }` — not an HTML page.                                                                                 |
+| **405** | Wrong method for the endpoint (e.g. `GET` on `/submit`). Body: `{ "error": "Method not allowed" }`, with an `Allow` header listing the supported methods.                                                                        |
 | **413** | Payload over 64 KB.                                                                                                                                                                                                              |
 | **422** | Field validation failed (missing required field, bad email, unknown field, bad option, value too long). The response names the problem field.                                                                                    |
-| **429** | Rate limit: 10 submissions/min or 100/hour per IP, or the form's daily limit reached.                                                                                                                                            |
+| **429** | Rate limit: 10 submissions/min or 100/hour per IP, the form's daily limit reached, or the form owner's monthly submission quota exhausted.                                                                                       |
 | **503** | Turnstile is enabled on the form but the server has no `TURNSTILE_SECRET_KEY` configured.                                                                                                                                        |
 
 Spam is not an error: a submission that trips the spam heuristics
@@ -94,11 +95,19 @@ Spam tab and triggers no notification.
 
 ## CORS
 
-Preflight (`OPTIONS`) always answers 204. A successful or duplicate
+Preflight (`OPTIONS`) always answers 204, but it carries
+`Access-Control-Allow-Origin` only when the request's origin is a
+**verified domain** — any other origin gets a bare 204 with no CORS
+headers, so the browser blocks the request. A successful or duplicate
 response echoes the request's `Origin` in
-`Access-Control-Allow-Origin` — only when that origin is allowed.
-Rejected requests carry no CORS headers, so a browser will not expose
-the error body to the page.
+`Access-Control-Allow-Origin` — only when that origin is allowed
+(verified and linked to the form). Error responses follow the same
+rule with one exception: errors that happen before the service checks
+the allowlist — validation (422), the size guard (413), malformed JSON
+(400), and the form-lookup 404 — echo CORS when the origin is a
+verified domain, so a browser client can read the validation message;
+an origin the service explicitly rejected for the form, or a
+non-verified origin, still gets no CORS headers on errors.
 
 ## Idempotency and duplicates
 

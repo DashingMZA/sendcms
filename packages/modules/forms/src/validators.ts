@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { HONEYPOT_FIELD } from "@sendcms/submissions/validators"
+import { BrowserKeyOptionsSchema } from "@sendcms/ai-settings/validators"
 
 export const FormFieldTypeSchema = z.enum([
   "TEXT",
@@ -99,6 +100,16 @@ export type CreateFieldInput = z.infer<typeof CreateFieldSchema>
 
 export const UpdateFieldSchema = refineField(
   z.object({
+    // DSH-108: the field key is immutable — a PATCH carrying `name`
+    // must fail loudly ("Field key cannot be changed.") instead of
+    // being silently stripped by zod's default unknown-key behaviour
+    // (200, label updated, key kept, no error).
+    name: z
+      .string()
+      .optional()
+      .refine((v) => v === undefined, {
+        message: "Field key cannot be changed.",
+      }),
     label: fieldShape.label.optional(),
     type: fieldShape.type.optional(),
     required: z.boolean().optional(),
@@ -182,3 +193,43 @@ export const UpdateNotificationEmailSchema = z.object({
 export type UpdateNotificationEmailInput = z.infer<
   typeof UpdateNotificationEmailSchema
 >
+
+// DSH-107: the forms list query — same contract as the domains list
+// (see @sendcms/domains validators): `limit` is an alias for
+// `perPage`; when both are given, `limit` wins. Unknown params are
+// rejected by the route's safeParse instead of silently dropped
+// (strict).
+export const FormListQuerySchema = z
+  .object({
+    search: z.string().trim().min(1).max(200).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    perPage: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    sortBy: z.enum(["createdAt", "name"]).default("createdAt"),
+    sortDir: z.enum(["asc", "desc"]).default("desc"),
+  })
+  .strict()
+  .transform((v) => ({
+    search: v.search,
+    page: v.page,
+    perPage: v.limit ?? v.perPage,
+    sortBy: v.sortBy,
+    sortDir: v.sortDir,
+  }))
+
+export type FormListQueryInput = z.infer<typeof FormListQuerySchema>
+
+// SRC-104: the suggest-fields body, validated with Zod instead of
+// the route's hand-rolled prompt/browser-key block. The prompt cap
+// (1000) is the route's old inline check; the browser-key trio is
+// the shared BrowserKeyOptionsSchema (a key without its provider
+// 422s with "A browser-only key needs its provider.").
+export const SuggestFieldsSchema = BrowserKeyOptionsSchema.extend({
+  prompt: z
+    .string()
+    .trim()
+    .min(1, "A description is required.")
+    .max(1000, "Description is too long."),
+})
+
+export type SuggestFieldsInput = z.infer<typeof SuggestFieldsSchema>

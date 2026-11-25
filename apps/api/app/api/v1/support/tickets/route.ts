@@ -1,11 +1,17 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { createTicket, listMyTickets } from "@sendcms/support"
 import {
   CreateTicketSchema,
   MyTicketsQuerySchema,
 } from "@sendcms/support/validators"
-import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  created,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // The customer's own support tickets. A signed-in user lists and
 // creates only their own tickets — there is no public or anonymous
@@ -18,15 +24,7 @@ export async function GET(req: NextRequest) {
       Object.fromEntries(req.nextUrl.searchParams)
     )
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await listMyTickets(session.user.id, parsed.data)
     return ok(result)
@@ -42,15 +40,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = CreateTicketSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const ticket = await createTicket(session.user.id, parsed.data)
     return created(ticket)

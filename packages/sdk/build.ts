@@ -49,6 +49,13 @@ const appUrl =
   process.env.NEXT_PUBLIC_APP_URL ??
   "http://localhost:3001"
 
+// Single source of truth for the SDK version: the package's own
+// version, inlined as __SDK_VERSION__ so the bundle's
+// window.SendCMS.version can never disagree with package.json.
+const packageJson = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "package.json"), "utf8")
+) as { version: string }
+
 const commonOptions = {
   entryPoints: [resolve(import.meta.dirname, "src/index.ts")],
   bundle: true,
@@ -56,6 +63,7 @@ const commonOptions = {
   target: ["es2020"],
   define: {
     __APP_URL__: JSON.stringify(appUrl),
+    __SDK_VERSION__: JSON.stringify(packageJson.version),
   } as Record<string, string>,
   logLevel: "info" as const,
 }

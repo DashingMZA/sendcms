@@ -4,6 +4,15 @@
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
+// SDK-016: whether the server can verify Turnstile tokens at all.
+// The form service refuses to enable Turnstile while this is false
+// (a form with Turnstile on and no secret can never accept a
+// submission), and submitForm fails closed per submit when the
+// secret is missing.
+export function isTurnstileConfigured(): boolean {
+  return Boolean(process.env.TURNSTILE_SECRET_KEY)
+}
+
 export async function verifyTurnstileToken(
   token: string,
   remoteIp?: string | null

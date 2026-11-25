@@ -39,6 +39,10 @@ vi.mock("@sendcms/notifications", () => ({
   enqueueSubmissionNotifications: vi.fn(async () => 1),
 }))
 vi.mock("@sendcms/submissions/turnstile", () => ({
+  // SDK-016: the service also imports isTurnstileConfigured now.
+  // Mirror the real implementation (reads the env at call time) so
+  // the tests' env assignments keep working.
+  isTurnstileConfigured: vi.fn(() => Boolean(process.env.TURNSTILE_SECRET_KEY)),
   verifyTurnstileToken: vi.fn(async () => true),
 }))
 
@@ -402,12 +406,19 @@ describe("submitForm", () => {
   })
 
   describe("Turnstile", () => {
-    it("throws 503 when enabled but no secret is configured", async () => {
+    // SDK-016: the token check comes first — with no token the
+    // answer is 422 even when the secret is unset (see the 422 test
+    // below). The 503 fail-closed fires only when a token IS present
+    // but the server cannot verify it.
+    it("throws 503 when enabled, a token is present, but no secret is configured", async () => {
       delete process.env.TURNSTILE_SECRET_KEY
       mockDb.form.findFirst.mockResolvedValue(
         makeForm({ turnstileEnabled: true })
       )
-      await expectApiError(submitForm(BODY, META), 503)
+      await expectApiError(
+        submitForm({ ...BODY, turnstileToken: "tok" }, META),
+        503
+      )
     })
 
     it("throws 422 when enabled and the token is missing", async () => {

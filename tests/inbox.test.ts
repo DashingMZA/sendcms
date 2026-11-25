@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest"
 import { resolveStatusAction } from "@sendcms/inbox"
 import {
   BulkUpdateSubmissionsSchema,
+  DraftReplySchema,
   InboxListQuerySchema,
+  SendReplySchema,
   UpdateSubmissionStatusSchema,
+  isValidCalendarDate,
 } from "@sendcms/inbox/validators"
 import { getSubmissionSender, previewSubmissionText } from "@sendcms/shared"
 
@@ -150,6 +153,26 @@ describe("InboxListQuerySchema", () => {
       InboxListQuerySchema.parse({ from: "2026-11-01", to: "2026-11-30" })
     ).toMatchObject({ from: "2026-11-01", to: "2026-11-30" })
   })
+
+  // DSH-202: shape-valid but impossible dates (Feb 30, month 13)
+  // used to pass Zod, reach Postgres as a ::timestamptz cast, and
+  // 500. They are a 422 now, at the validator and in the service.
+  it("rejects impossible calendar dates", () => {
+    expect(InboxListQuerySchema.safeParse({ from: "2026-02-30" }).success).toBe(
+      false
+    )
+    expect(InboxListQuerySchema.safeParse({ from: "2026-13-01" }).success).toBe(
+      false
+    )
+    expect(InboxListQuerySchema.safeParse({ to: "2026-02-30" }).success).toBe(
+      false
+    )
+    expect(isValidCalendarDate("2026-02-28")).toBe(true)
+    expect(isValidCalendarDate("2024-02-29")).toBe(true)
+    expect(isValidCalendarDate("2026-02-29")).toBe(false)
+    expect(isValidCalendarDate("2026-13-01")).toBe(false)
+    expect(isValidCalendarDate("not-a-date")).toBe(false)
+  })
 })
 
 describe("inbox action schemas", () => {
@@ -175,6 +198,46 @@ describe("inbox action schemas", () => {
         ids: Array.from({ length: 101 }, (_, i) => `id-${i}`),
         action: "archive",
       }).success
+    ).toBe(false)
+  })
+})
+
+describe("SendReplySchema / DraftReplySchema (SRC-104)", () => {
+  it("caps subject at 200 and body at 2000", () => {
+    expect(
+      SendReplySchema.safeParse({ subject: "Hi", body: "Hello" }).success
+    ).toBe(true)
+    expect(
+      SendReplySchema.safeParse({ subject: "x".repeat(201), body: "Hello" })
+        .success
+    ).toBe(false)
+    expect(
+      SendReplySchema.safeParse({ subject: "Hi", body: "x".repeat(2001) })
+        .success
+    ).toBe(false)
+    expect(
+      SendReplySchema.safeParse({ subject: "Hi", body: "x".repeat(100000) })
+        .success
+    ).toBe(false)
+  })
+
+  it("draft-reply is the shared browser-key trio: key without provider fails", () => {
+    expect(DraftReplySchema.safeParse({}).success).toBe(true)
+    expect(
+      DraftReplySchema.safeParse({
+        browserKey: "sk-test",
+        browserProvider: "openai",
+      }).success
+    ).toBe(true)
+    const parsed = DraftReplySchema.safeParse({ browserKey: "sk-test" })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "A browser-only key needs its provider."
+      )
+    }
+    expect(
+      DraftReplySchema.safeParse({ browserKey: "x".repeat(501) }).success
     ).toBe(false)
   })
 })

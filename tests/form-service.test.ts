@@ -8,6 +8,9 @@ const mockDb = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    // DSH-107: listFormsPageForUser pages through these.
+    count: vi.fn(),
+    findMany: vi.fn(),
   },
   domain: { findFirst: vi.fn(), findMany: vi.fn() },
   formDomain: { findUnique: vi.fn(), create: vi.fn() },
@@ -31,6 +34,9 @@ const mockDb = vi.hoisted(() => ({
     deleteMany: vi.fn(),
   },
   auditLog: { create: vi.fn() },
+  // DB-029: createFormForUser takes a per-user advisory lock inside
+  // its transaction (tx IS mockDb in this file's $transaction stub).
+  $executeRaw: vi.fn(async () => 0),
   $transaction: vi.fn(),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
@@ -58,6 +64,7 @@ import {
   deleteNotificationEmailForUser,
   getFormForUser,
   linkDomainToForm,
+  listFormsPageForUser,
   resendNotificationConfirmation,
   updateFieldForUser,
   updateFormForUser,
@@ -65,6 +72,7 @@ import {
 } from "@sendcms/forms"
 
 import { ApiError } from "@sendcms/api-client"
+import { Prisma } from "@sendcms/database"
 
 function makeForm(overrides: Record<string, unknown> = {}) {
   return {
@@ -212,6 +220,64 @@ describe("createFormForUser", () => {
   })
 })
 
+// SDK-016: a form with Turnstile on and no server secret can never
+// accept a submission — the service refuses to build one.
+describe("Turnstile enable refusal (SDK-016)", () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY
+  afterEach(() => {
+    if (originalSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = originalSecret
+    }
+  })
+
+  it("refuses to create a Turnstile form when the secret is unset", async () => {
+    delete process.env.TURNSTILE_SECRET_KEY
+    await expectApiError(
+      createFormForUser("user-1", {
+        name: "Contact us",
+        honeypotEnabled: true,
+        turnstileEnabled: true,
+      }),
+      422
+    )
+    expect(mockDb.form.create).not.toHaveBeenCalled()
+  })
+
+  it("creates a Turnstile form when the secret is set", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret"
+    const created = await createFormForUser("user-1", {
+      name: "Contact us",
+      honeypotEnabled: true,
+      turnstileEnabled: true,
+    })
+    expect(created.id).toBe("form-1")
+    expect(mockDb.form.create).toHaveBeenCalled()
+  })
+
+  it("refuses to newly enable Turnstile on an existing form when the secret is unset", async () => {
+    delete process.env.TURNSTILE_SECRET_KEY
+    await expectApiError(
+      updateFormForUser("user-1", "form-1", { turnstileEnabled: true }),
+      422
+    )
+    expect(mockDb.form.update).not.toHaveBeenCalled()
+  })
+
+  it("lets an already-Turnstile form stay Turnstile when the secret is unset", async () => {
+    delete process.env.TURNSTILE_SECRET_KEY
+    mockDb.form.findFirst.mockResolvedValue(
+      makeForm({ turnstileEnabled: true })
+    )
+    const updated = await updateFormForUser("user-1", "form-1", {
+      name: "Renamed",
+    })
+    expect(updated.name).toBe("Renamed")
+    expect(mockDb.form.update).toHaveBeenCalled()
+  })
+})
+
 describe("updateFormForUser", () => {
   it("toggles the form inactive", async () => {
     const updated = await updateFormForUser("user-1", "form-1", {
@@ -280,6 +346,21 @@ describe("linkDomainToForm", () => {
       expect.objectContaining({
         data: { formId: "form-1", domainId: "dom-1" },
       })
+    )
+  })
+
+  // DB-028: the pre-check is not enough — a concurrent duplicate
+  // link surfaces as P2002, which is a 409, never a 500.
+  it("maps a concurrent duplicate link (P2002) to 409, never 500", async () => {
+    mockDb.formDomain.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "7",
+      })
+    )
+    await expectApiError(
+      linkDomainToForm("user-1", "form-1", { domainId: "dom-1" }),
+      409
     )
   })
 })
@@ -495,11 +576,23 @@ describe("addNotificationEmailToForm", () => {
     )
   })
 
-  // EML-004: a new recipient is disabled until it confirms, and the
-  // confirmation token is stored — no notification job can be created
-  // for it while `enabled` is false (the notifier only enqueues for
-  // enabled rows). The dev log carries the redacted link shape, never
-  // the token (EML-002).
+  // DB-028: the pre-check is not enough — a concurrent duplicate
+  // recipient surfaces as P2002, which is a 409, never a 500.
+  it("maps a concurrent duplicate recipient (P2002) to 409, never 500", async () => {
+    mockDb.notificationSettings.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "7",
+      })
+    )
+    await expectApiError(
+      addNotificationEmailToForm("user-1", "form-1", {
+        email: "owner@example.com",
+      }),
+      409
+    )
+  })
+
   it("creates the recipient disabled with a 24h confirmation token", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
     const created = await addNotificationEmailToForm("user-1", "form-1", {
@@ -520,6 +613,36 @@ describe("addNotificationEmailToForm", () => {
       .find((l) => l.includes("[recipient-confirm]"))
     expect(line).toContain("?token=<redacted>")
     expect(line).not.toContain(tokenArgs.data.value)
+  })
+})
+
+describe("listFormsPageForUser (DSH-107)", () => {
+  it("pages, searches, and clamps perPage at the service", async () => {
+    mockDb.form.count.mockResolvedValue(3)
+    mockDb.form.findMany.mockResolvedValue([makeForm({ id: "form-2" })])
+    const page = await listFormsPageForUser("user-1", {
+      search: "contact",
+      page: 2,
+      perPage: 1,
+    })
+    expect(page.total).toBe(3)
+    expect(page.page).toBe(2)
+    expect(page.perPage).toBe(1)
+    expect(page.items).toHaveLength(1)
+    expect(mockDb.form.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          name: { contains: "contact", mode: "insensitive" },
+        }),
+        skip: 1,
+        take: 1,
+      })
+    )
+    const huge = await listFormsPageForUser("user-1", { perPage: 500 })
+    expect(huge.perPage).toBe(100)
+    expect(mockDb.form.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 100 })
+    )
   })
 })
 

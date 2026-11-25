@@ -5,6 +5,7 @@ import {
   DomainStatus,
   DomainVerificationMethod,
   DomainVerificationStatus,
+  Prisma,
   db,
 } from "@sendcms/database"
 
@@ -125,6 +126,73 @@ export type DomainWithVerification = Awaited<
   ReturnType<typeof listDomainsForUser>
 >[number]
 
+// DSH-107: the paged list. `listDomainsForUser` above stays the
+// unpaged call the dashboard pages and MCP tools use (they render
+// every row); the API route takes this one so `?search=&page=&
+// perPage=` (or `limit=` as an alias for `perPage`) is honoured
+// instead of silently dropped. Pagination is clamped here, at the
+// service, not only at the route (DB-049's rule).
+export type DomainListQuery = {
+  search?: string
+  page?: number
+  perPage?: number
+  sortBy?: "createdAt" | "name"
+  sortDir?: "asc" | "desc"
+}
+
+export type DomainListResult = {
+  items: DomainWithVerification[]
+  total: number
+  page: number
+  perPage: number
+}
+
+function domainListWhere(
+  userId: string,
+  query: DomainListQuery
+): Prisma.DomainWhereInput {
+  const where: Prisma.DomainWhereInput = { ownerId: userId }
+  const search = query.search?.trim()
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      { domain: { contains: search, mode: "insensitive" } },
+    ]
+  }
+  return where
+}
+
+export async function listDomainsPageForUser(
+  userId: string,
+  query: DomainListQuery = {}
+): Promise<DomainListResult> {
+  const page = Number.isFinite(query.page)
+    ? Math.max(1, Math.floor(query.page as number))
+    : 1
+  const perPage = Number.isFinite(query.perPage)
+    ? Math.min(100, Math.max(1, Math.floor(query.perPage as number)))
+    : 20
+  const where = domainListWhere(userId, query)
+  const orderBy =
+    query.sortBy === "name"
+      ? { name: query.sortDir ?? "asc" }
+      : { createdAt: query.sortDir ?? "desc" }
+  const [total, items] = await Promise.all([
+    db.domain.count({ where }),
+    db.domain.findMany({
+      where,
+      include: {
+        verifications: { orderBy: { createdAt: "desc" }, take: 1 },
+        _count: { select: { formLinks: true } },
+      },
+      orderBy,
+      skip: (page - 1) * perPage,
+      take: perPage,
+    }),
+  ])
+  return { items, total, page, perPage }
+}
+
 export async function getDomainForUser(userId: string, domainId: string) {
   return getOwnedDomainOrThrow(userId, domainId)
 }
@@ -140,41 +208,63 @@ export async function createDomainForUser(
   if (!user.emailVerified) {
     throw new ApiError("Verify your email before registering a domain.", 403)
   }
-  // Entitlement guard (Phase 4): the DOMAINS limit from the user's
-  // effective plan. SRC-216: fail CLOSED — a plans-module error
-  // refuses the creation (503) instead of silently granting
-  // unlimited domains.
-  const limit = await checkLimitStrict(userId, "DOMAINS")
-  if (!limit.allowed) {
-    throw new ApiError(
-      `Your plan allows at most ${limit.limit} domains. Upgrade your plan or ask an admin to raise your limit.`,
-      409
-    )
-  }
   const domain = assertValidDomain(input.domain)
-  const existing = await db.domain.findUnique({ where: { domain } })
-  if (existing) {
-    throw new ApiError("This domain is already registered.", 409)
-  }
   const method: DomainVerificationMethod = input.method ?? "DNS_TXT"
-  const created = await db.domain.create({
-    data: {
-      name: domain,
-      domain,
-      ownerId: userId,
-      verifications: {
-        create: {
-          method,
-          challenge: newChallenge(),
-          expiresAt: challengeExpiresAt(),
+  // DB-029: the plan quota check and the create run under a
+  // per-user advisory lock, so two concurrent creates cannot both
+  // see `used = limit - 1` and both succeed. The lock is
+  // transaction-scoped (same pattern as submitForm's submit locks)
+  // and serializes this user's domain creates; the P2002 catch
+  // below still covers a same-hostname race from another user.
+  let created
+  try {
+    created = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:create:domain:" + userId}))`
+      // Entitlement guard (Phase 4): the DOMAINS limit from the user's
+      // effective plan. SRC-216: fail CLOSED — a plans-module error
+      // refuses the creation (503) instead of silently granting
+      // unlimited domains.
+      const limit = await checkLimitStrict(userId, "DOMAINS")
+      if (!limit.allowed) {
+        throw new ApiError(
+          `Your plan allows at most ${limit.limit} domains. Upgrade your plan or ask an admin to raise your limit.`,
+          409
+        )
+      }
+      const existing = await tx.domain.findUnique({ where: { domain } })
+      if (existing) {
+        throw new ApiError("This domain is already registered.", 409)
+      }
+      return tx.domain.create({
+        data: {
+          name: domain,
+          domain,
+          ownerId: userId,
+          verifications: {
+            create: {
+              method,
+              challenge: newChallenge(),
+              expiresAt: challengeExpiresAt(),
+            },
+          },
         },
-      },
-    },
-    include: {
-      verifications: { orderBy: { createdAt: "desc" }, take: 1 },
-      _count: { select: { formLinks: true } },
-    },
-  })
+        include: {
+          verifications: { orderBy: { createdAt: "desc" }, take: 1 },
+          _count: { select: { formLinks: true } },
+        },
+      })
+    })
+  } catch (err) {
+    // SRC-206: the pre-check is not enough — a concurrent duplicate
+    // surfaces as P2002, which is a 409, never a generic 500.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError("This domain is already registered.", 409)
+    }
+    throw err
+  }
   await logAudit({
     userId,
     action: AuditAction.CREATE,
@@ -208,23 +298,32 @@ export async function startVerificationForUser(
     input.method ??
     domain.verifications[0]?.method ??
     DomainVerificationMethod.DNS_TXT
-  const pending = domain.verifications.find(
-    (v) => v.status === DomainVerificationStatus.PENDING
-  )
-  if (pending) {
-    if (pending.method === method) return pending
-    return db.domainVerification.update({
-      where: { id: pending.id },
-      data: { method },
+  // DB-030: the pending check and the create run under a per-domain
+  // advisory lock, re-reading the pending row inside the transaction
+  // — two concurrent starts that both loaded "no pending
+  // verification" can no longer both create a PENDING row (the
+  // second would orphan a challenge nothing ever checks).
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:verify:" + domainId}))`
+    const pending = await tx.domainVerification.findFirst({
+      where: { domainId, status: DomainVerificationStatus.PENDING },
+      orderBy: { createdAt: "desc" },
     })
-  }
-  return db.domainVerification.create({
-    data: {
-      domainId,
-      method,
-      challenge: newChallenge(),
-      expiresAt: challengeExpiresAt(),
-    },
+    if (pending) {
+      if (pending.method === method) return pending
+      return tx.domainVerification.update({
+        where: { id: pending.id },
+        data: { method },
+      })
+    }
+    return tx.domainVerification.create({
+      data: {
+        domainId,
+        method,
+        challenge: newChallenge(),
+        expiresAt: challengeExpiresAt(),
+      },
+    })
   })
 }
 
@@ -289,27 +388,77 @@ export async function verifyDomainForUser(userId: string, domainId: string) {
     })
     return {
       verified: true,
-      domain: { ...domain, status: DomainStatus.VERIFIED, verifiedAt: now },
+      domain: withPatchedVerification(
+        { ...domain, status: DomainStatus.VERIFIED, verifiedAt: now },
+        verification.id,
+        {
+          status: DomainVerificationStatus.VERIFIED,
+          verifiedAt: now,
+        }
+      ),
       attempts: verification.attempts,
       maxAttempts: MAX_VERIFICATION_ATTEMPTS,
     }
   }
-  const attempts = verification.attempts + 1
-  await db.domainVerification.update({
+  // DB-030: the attempt counter is an atomic increment, not a
+  // read-then-write — two concurrent failures used to both read N
+  // and both write N+1, so the counter undercounted and a challenge
+  // could absorb more than MAX attempts. The increment's return
+  // value is the post-increment count; the FAILED flip is a
+  // conditional updateMany so concurrent flippers cannot race it.
+  const updatedVerification = await db.domainVerification.update({
     where: { id: verification.id },
-    data: {
-      attempts,
-      ...(attempts >= MAX_VERIFICATION_ATTEMPTS
-        ? { status: DomainVerificationStatus.FAILED }
-        : {}),
-    },
+    data: { attempts: { increment: 1 } },
   })
+  const attempts = updatedVerification.attempts
+  // DB-030: the annotation matters — without it TS narrows the
+  // initializer to the "PENDING" literal and the FAILED assignment
+  // below fails typecheck (TS2322).
+  let verificationStatus: DomainVerificationStatus =
+    DomainVerificationStatus.PENDING
+  if (attempts >= MAX_VERIFICATION_ATTEMPTS) {
+    await db.domainVerification.updateMany({
+      where: {
+        id: verification.id,
+        status: DomainVerificationStatus.PENDING,
+      },
+      data: { status: DomainVerificationStatus.FAILED },
+    })
+    verificationStatus = DomainVerificationStatus.FAILED
+  }
   return {
     verified: false,
-    domain,
+    domain: withPatchedVerification(domain, verification.id, {
+      attempts,
+      status: verificationStatus,
+    }),
     attempts,
     maxAttempts: MAX_VERIFICATION_ATTEMPTS,
     reason: result.reason,
+  }
+}
+
+// DSH-106: the domain row is loaded BEFORE the attempt, so returning
+// it verbatim leaves the nested verification stale (its `attempts`
+// is the pre-update count, its `status` still PENDING once the
+// challenge FAILED or VERIFIED) next to the top-level `attempts`.
+// Patch the nested row to the post-update values so the payload is
+// self-consistent — the dashboard reads `verification.attempts` from
+// the nested object.
+function withPatchedVerification(
+  domain: DomainDetail,
+  verificationId: string,
+  patch: {
+    status?: DomainVerificationStatus
+    verifiedAt?: Date
+    attempts?: number
+  }
+): DomainDetail {
+  return {
+    ...domain,
+    verifications: domain.verifications.map((v) =>
+      v.id === verificationId ? { ...v, ...patch } : v
+    ),
   }
 }
 

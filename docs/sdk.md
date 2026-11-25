@@ -1,6 +1,6 @@
 # SendCMS JavaScript SDK
 
-A dependency-free vanilla-TS snippet (7 KB minified) that turns any
+A dependency-free vanilla-TS snippet (10 KB minified) that turns any
 `<form>` into a SendCMS form. It posts to the public submission API,
 shows loading / success / error states, blocks double submits, adds a
 honeypot bot trap, and supports Turnstile.
@@ -82,6 +82,17 @@ dashboard. Extra fields are rejected by the API (422).
 - A second submit while one is in flight is ignored.
 - A hidden honeypot input (`_sendcms_honeypot`) is added to every
   form; bots that fill it get a fake success and nothing is saved.
+- File inputs are not supported (the API takes text only): the SDK
+  warns once per form in the console and the file is never sent.
+  Disabled inputs are excluded, like `FormData` itself excludes them.
+- If a form has no `userId`/`formId` anywhere (script tag, `init()`,
+  or its own data attributes), the SDK logs a console warning naming
+  the missing id and leaves the form alone — the form then submits
+  natively, so check the console when a form reloads the page and
+  nothing arrives.
+- `window.SendCMS.version` reports the bundle version (taken from the
+  SDK package version at build time). It is diagnostic only — nothing
+  gates on it.
 - Submissions are only accepted from domains that are **verified and
   linked to the form** (the API enforces this by the page's Origin).
   Link domains in the dashboard first, or every submit returns 403.
@@ -89,6 +100,14 @@ dashboard. Extra fields are rejected by the API (422).
 Config resolution (highest priority first): form data attributes >
 `init()` options > script tag data attributes. The API origin resolves
 from the script `src` origin first, then the build-time `__APP_URL__`.
+`init()` ignores `undefined`-valued keys, so a later `init()` can
+never wipe values set by an earlier one, and `enhance()` on an
+already-enhanced form refreshes its config instead of ignoring the
+new options. When the bundle is hosted somewhere other than the API
+app (a CDN, or imported from npm), the origin cannot be inferred:
+pass `apiUrl` to `init()` — without a resolvable API URL the SDK
+warns in the console and `submit()` throws instead of posting to the
+host site.
 
 ## Multiple forms and overrides
 
@@ -107,11 +126,17 @@ attributes:
 
 Forms added after page load (client-side routing, Astro view
 transitions) are picked up automatically via a `MutationObserver` and
-the `astro:page-load` event. For fully manual control:
+the `astro:page-load` event. Forms that gain `data-cms-form` — or
+change `data-user-id` / `data-form-id` / `data-turnstile-site-key` —
+after load are picked up the same way. For fully manual control:
 
 ```js
 SendCMS.enhance(document.querySelector("#my-form"))
 ```
+
+Loading the bundle twice keeps the first instance (its handlers own
+the forms), and `SendCMS.destroy()` disconnects the observer and
+releases `window.SendCMS` so a later load starts clean.
 
 ## Programmatic API
 
@@ -149,12 +174,12 @@ const result = await SendCMS.submit(formElement, {
 | Option                               | Default                                      | Notes                                             |
 | ------------------------------------ | -------------------------------------------- | ------------------------------------------------- |
 | `userId` / `formId`                  | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win              |
-| `apiUrl`                             | origin of the `<script>` tag                 | Override only when the bundle is hosted elsewhere |
+| `apiUrl`                             | origin of the `<script>` tag                 | Override only when the bundle is hosted elsewhere (CDN / npm import — otherwise the SDK warns and `submit()` throws) |
 | `turnstileSiteKey`                   | —                                            | Set when the form has Turnstile on (see below)    |
 | `redirectUrl`                        | —                                            | The form's own redirectUrl wins when set          |
 | `resetOnSuccess`                     | `true`                                       | Skipped when redirecting                          |
 | `honeypot`                           | `true`                                       | Adds the hidden trap input                        |
-| `messages`                           | see code                                     | `sending`, `success`, `error`                     |
+| `messages`                           | see code                                     | `sending`, `verifying`, `success`, `error`       |
 | `onSuccess` / `onError` / `onSubmit` | —                                            | Errors in callbacks never break the flow          |
 
 ## Turnstile
@@ -175,6 +200,12 @@ Or per form: `<form data-cms-form data-turnstile-site-key="…">`, or
 via `SendCMS.init({ turnstileSiteKey: "…" })`. Without a site key the
 SDK never loads the Turnstile script. The secret key
 (`TURNSTILE_SECRET_KEY`) stays server-side — see `.env.example`.
+
+The token is fetched before the submission, with a 15 s timeout for
+both the Turnstile script load and the token wait (aligned with the
+15 s submit timeout); the status line shows "Verifying…" while
+waiting. Both fail closed: no token, no submission. The widget is
+torn down through the Turnstile API after every attempt.
 
 ## Styling
 

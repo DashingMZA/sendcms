@@ -22,6 +22,7 @@ import {
 } from "@sendcms/ai"
 import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
 import { checkLimitStrict } from "@sendcms/plans"
+import { isTurnstileConfigured } from "@sendcms/submissions/turnstile"
 
 import type {
   AddNotificationEmailInput,
@@ -142,6 +143,62 @@ export type FormWithCounts = Awaited<
   ReturnType<typeof listFormsForUser>
 >[number]
 
+// DSH-107: the paged list — see listDomainsPageForUser for the
+// contract. `listFormsForUser` above stays the unpaged call the
+// dashboard pages and MCP tools use; the API route takes this one
+// so `?search=&page=&perPage=` (or `limit=`) is honoured instead of
+// silently dropped. Pagination is clamped here, at the service.
+export type FormListQuery = {
+  search?: string
+  page?: number
+  perPage?: number
+  sortBy?: "createdAt" | "name"
+  sortDir?: "asc" | "desc"
+}
+
+export type FormListResult = {
+  items: FormWithCounts[]
+  total: number
+  page: number
+  perPage: number
+}
+
+export async function listFormsPageForUser(
+  userId: string,
+  query: FormListQuery = {}
+): Promise<FormListResult> {
+  const page = Number.isFinite(query.page)
+    ? Math.max(1, Math.floor(query.page as number))
+    : 1
+  const perPage = Number.isFinite(query.perPage)
+    ? Math.min(100, Math.max(1, Math.floor(query.perPage as number)))
+    : 20
+  const where: Prisma.FormWhereInput = { ownerId: userId, deletedAt: null }
+  const search = query.search?.trim()
+  if (search) {
+    where.name = { contains: search, mode: "insensitive" }
+  }
+  const orderBy =
+    query.sortBy === "name"
+      ? { name: query.sortDir ?? "asc" }
+      : { createdAt: query.sortDir ?? "desc" }
+  const [total, items] = await Promise.all([
+    db.form.count({ where }),
+    db.form.findMany({
+      where,
+      include: {
+        _count: {
+          select: { fields: true, domainLinks: true, submissions: true },
+        },
+      },
+      orderBy,
+      skip: (page - 1) * perPage,
+      take: perPage,
+    }),
+  ])
+  return { items, total, page, perPage }
+}
+
 export async function getFormForUser(userId: string, formId: string) {
   const form = await getOwnedFormOrThrow(userId, formId)
   // EML-004: the dashboard must show which recipients are unconfirmed.
@@ -183,49 +240,67 @@ export async function createFormForUser(
   userId: string,
   input: CreateFormInput
 ) {
-  // Entitlement guard (Phase 4): the FORMS limit from the user's
-  // effective plan. SRC-216: fail CLOSED — a plans-module error
-  // refuses the creation (503) instead of silently granting
-  // unlimited forms.
-  const limit = await checkLimitStrict(userId, "FORMS")
-  if (!limit.allowed) {
+  // SDK-016: a form with Turnstile on and no server secret is bricked
+  // — every submit 503s. Refuse to create one in an unconfigured
+  // environment instead of building a form that can never accept a
+  // submission.
+  if (input.turnstileEnabled && !isTurnstileConfigured()) {
     throw new ApiError(
-      `Your plan allows at most ${limit.limit} forms. Upgrade your plan or ask an admin to raise your limit.`,
-      409
+      "Turnstile cannot be enabled: bot protection is not configured on this server.",
+      422
     )
   }
-  // SEC-210: an absolute redirect may only point at a VERIFIED domain
-  // the owner controls (the form has no linked domains yet at creation,
-  // so the owner's verified domains are the allowlist). Relative
-  // redirects are same-site and need no lookup.
-  if (input.redirectUrl && !input.redirectUrl.trim().startsWith("/")) {
-    const verified = await db.domain.findMany({
-      where: { ownerId: userId, status: DomainStatus.VERIFIED },
-      select: { domain: true },
+  // DB-029: the plan quota check and the create run under a per-user
+  // advisory lock, so two concurrent creates cannot both see
+  // `used = limit - 1` and both succeed (same pattern as
+  // createDomainForUser). The redirect check runs inside the
+  // transaction too, so the quota-first error precedence is kept.
+  const created = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"sendcms:create:form:" + userId}))`
+    // Entitlement guard (Phase 4): the FORMS limit from the user's
+    // effective plan. SRC-216: fail CLOSED — a plans-module error
+    // refuses the creation (503) instead of silently granting
+    // unlimited forms.
+    const limit = await checkLimitStrict(userId, "FORMS")
+    if (!limit.allowed) {
+      throw new ApiError(
+        `Your plan allows at most ${limit.limit} forms. Upgrade your plan or ask an admin to raise your limit.`,
+        409
+      )
+    }
+    // SEC-210: an absolute redirect may only point at a VERIFIED domain
+    // the owner controls (the form has no linked domains yet at creation,
+    // so the owner's verified domains are the allowlist). Relative
+    // redirects are same-site and need no lookup.
+    if (input.redirectUrl && !input.redirectUrl.trim().startsWith("/")) {
+      const verified = await db.domain.findMany({
+        where: { ownerId: userId, status: DomainStatus.VERIFIED },
+        select: { domain: true },
+      })
+      assertRedirectHostAllowed(
+        input.redirectUrl,
+        verified.map((d) => d.domain)
+      )
+    }
+    return tx.form.create({
+      data: {
+        name: input.name,
+        description: input.description,
+        successMessage: input.successMessage,
+        redirectUrl: input.redirectUrl,
+        honeypotEnabled: input.honeypotEnabled ?? true,
+        turnstileEnabled: input.turnstileEnabled ?? false,
+        dailyLimit: input.dailyLimit,
+        ownerId: userId,
+        fields: { create: defaultFormFields() },
+      },
+      include: {
+        fields: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
+        domainLinks: { include: { domain: true } },
+        notificationSettings: true,
+        _count: { select: { submissions: true } },
+      },
     })
-    assertRedirectHostAllowed(
-      input.redirectUrl,
-      verified.map((d) => d.domain)
-    )
-  }
-  const created = await db.form.create({
-    data: {
-      name: input.name,
-      description: input.description,
-      successMessage: input.successMessage,
-      redirectUrl: input.redirectUrl,
-      honeypotEnabled: input.honeypotEnabled ?? true,
-      turnstileEnabled: input.turnstileEnabled ?? false,
-      dailyLimit: input.dailyLimit,
-      ownerId: userId,
-      fields: { create: defaultFormFields() },
-    },
-    include: {
-      fields: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
-      domainLinks: { include: { domain: true } },
-      notificationSettings: true,
-      _count: { select: { submissions: true } },
-    },
   })
   await logAudit({
     userId,
@@ -245,6 +320,18 @@ export async function updateFormForUser(
   input: UpdateFormInput
 ) {
   const form = await getOwnedFormOrThrow(userId, formId)
+  // SDK-016: refuse to NEWLY enable Turnstile while the server secret
+  // is unset — the form would be bricked (every submit 503s). A form
+  // that already has Turnstile on keeps working (and keeps being
+  // editable) — only the false → true transition is refused.
+  if (input.turnstileEnabled === true && !form.turnstileEnabled) {
+    if (!isTurnstileConfigured()) {
+      throw new ApiError(
+        "Turnstile cannot be enabled: bot protection is not configured on this server.",
+        422
+      )
+    }
+  }
   // SEC-210: an absolute redirect may only point at one of the form's
   // linked (hence VERIFIED) domains.
   if (input.redirectUrl) {
@@ -361,24 +448,13 @@ export async function addFieldToForm(
       : 0)
   // An explicit order inserts at that position and shifts the siblings
   // (DSH-105): a verbatim write would duplicate the order value.
-  const field =
-    input.order === undefined
-      ? await db.formField.create({
-          data: {
-            formId: form.id,
-            name: input.name,
-            label: input.label,
-            type: input.type,
-            required: input.required ?? false,
-            placeholder: input.placeholder,
-            options: input.options ?? undefined,
-            minLength: input.minLength,
-            maxLength: input.maxLength,
-            order,
-          },
-        })
-      : await db.$transaction(async (tx) => {
-          const created = await tx.formField.create({
+  // SRC-206: the pre-check above is not enough — a concurrent
+  // duplicate key surfaces as P2002, which is a 409, never a 500.
+  let field
+  try {
+    field =
+      input.order === undefined
+        ? await db.formField.create({
             data: {
               formId: form.id,
               name: input.name,
@@ -392,15 +468,42 @@ export async function addFieldToForm(
               order,
             },
           })
-          const next = [...form.fields]
-          next.splice(
-            Math.max(0, Math.min(input.order!, form.fields.length)),
-            0,
-            created
-          )
-          await resequenceFields(tx, next)
-          return created
-        })
+        : await db.$transaction(async (tx) => {
+            const created = await tx.formField.create({
+              data: {
+                formId: form.id,
+                name: input.name,
+                label: input.label,
+                type: input.type,
+                required: input.required ?? false,
+                placeholder: input.placeholder,
+                options: input.options ?? undefined,
+                minLength: input.minLength,
+                maxLength: input.maxLength,
+                order,
+              },
+            })
+            const next = [...form.fields]
+            next.splice(
+              Math.max(0, Math.min(input.order!, form.fields.length)),
+              0,
+              created
+            )
+            await resequenceFields(tx, next)
+            return created
+          })
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError(
+        `A field with the key "${input.name}" already exists on this form.`,
+        409
+      )
+    }
+    throw err
+  }
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -533,10 +636,26 @@ export async function linkDomainToForm(
   if (existing) {
     throw new ApiError(`${domain.domain} is already linked to this form.`, 409)
   }
-  const link = await db.formDomain.create({
-    data: { formId: form.id, domainId: domain.id },
-    include: { domain: true },
-  })
+  // DB-028: the pre-check is not enough — a concurrent duplicate
+  // link surfaces as P2002, which is a 409, never a 500.
+  let link
+  try {
+    link = await db.formDomain.create({
+      data: { formId: form.id, domainId: domain.id },
+      include: { domain: true },
+    })
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError(
+        `${domain.domain} is already linked to this form.`,
+        409
+      )
+    }
+    throw err
+  }
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
@@ -695,9 +814,25 @@ export async function addNotificationEmailToForm(
   }
   // Disabled until confirmed (EML-004): no notification job is created
   // for this address until the recipient clicks the confirmation link.
-  const created = await db.notificationSettings.create({
-    data: { formId: form.id, email, enabled: false },
-  })
+  // DB-028: the pre-check is not enough — a concurrent duplicate
+  // recipient surfaces as P2002, which is a 409, never a 500.
+  let created
+  try {
+    created = await db.notificationSettings.create({
+      data: { formId: form.id, email, enabled: false },
+    })
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError(
+        `${email} is already a notification recipient for this form.`,
+        409
+      )
+    }
+    throw err
+  }
   const token = await createRecipientConfirmation(created.id)
   await sendRecipientConfirmation({
     formId: form.id,
@@ -825,10 +960,25 @@ export async function updateNotificationEmailForUser(
       )
     }
   }
-  return db.notificationSettings.update({
+  // SRC-236: the update had no audit entry while add/confirm/remove
+  // all log one — an enabled-toggle is a notification-affecting
+  // change and belongs in the trail too.
+  const updated = await db.notificationSettings.update({
     where: { id: row.id },
     data: { enabled: input.enabled },
   })
+  await logAudit({
+    userId,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.FORM,
+    resourceId: form.id,
+    detail: {
+      event: "notification-updated",
+      email: row.email,
+      enabled: input.enabled,
+    },
+  })
+  return updated
 }
 
 export async function deleteNotificationEmailForUser(

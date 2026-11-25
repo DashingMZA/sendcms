@@ -38,7 +38,10 @@ export default async function FormDetailPage({ params }: Params) {
         <TranslationProvider dictionaries={dictionaries}>
           <FormDetail
             initialForm={form}
-            appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+            appUrl={process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}
+            turnstileSiteKey={
+              process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
+            }
           />
         </TranslationProvider>
       </div>

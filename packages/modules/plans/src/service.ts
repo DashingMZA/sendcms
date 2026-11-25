@@ -519,6 +519,45 @@ async function nextVersionNumber(planId: string): Promise<number> {
   return (latest?.version ?? 0) + 1
 }
 
+// SRC-206 / DB-028: the version number is max + 1 computed outside
+// the insert, so two concurrent version creates can both compute N+1
+// — the loser gets P2002 on @@unique([planId, version]). The number
+// is system-computed, not user input, so a duplicate is not a client
+// error: retry with a freshly computed number. Bounded at three
+// attempts; a third collision is a 409 asking for a retry.
+async function createPlanVersionWithRetry(
+  planId: string,
+  buildData: () => Omit<Prisma.PlanVersionUncheckedCreateInput, "version">
+): Promise<PlanVersion> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await db.planVersion.create({
+        data: {
+          ...buildData(),
+          version: await nextVersionNumber(planId),
+        },
+      })
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        if (attempt < 2) continue
+        throw new ApiError(
+          "Another plan version was created at the same time. Please try again.",
+          409
+        )
+      }
+      throw err
+    }
+  }
+  // Unreachable: the loop always returns or throws.
+  throw new ApiError(
+    "Could not create the plan version. Please try again.",
+    409
+  )
+}
+
 async function getPlanOrThrow(planId: string) {
   const plan = await db.plan.findUnique({
     where: { id: planId },
@@ -780,21 +819,18 @@ export async function createPlanVersion(
   if (plan.status === "ARCHIVED") {
     throw new ApiError("An archived plan cannot get a new version.", 409)
   }
-  const version = await db.planVersion.create({
-    data: {
-      planId,
-      version: await nextVersionNumber(planId),
-      status: "DRAFT",
-      priceAmount: input.priceAmount ?? null,
-      priceCurrency: input.priceCurrency ?? "USD",
-      billingInterval: input.billingInterval ?? "MONTHLY",
-      trialDays: input.trialDays ?? 0,
-      entitlements,
-      changeReason: input.changeReason ?? null,
-      createdById: actor.user.id,
-    },
-    include: { plan: { select: { name: true } } },
-  })
+  const created = await createPlanVersionWithRetry(planId, () => ({
+    planId,
+    status: "DRAFT",
+    priceAmount: input.priceAmount ?? null,
+    priceCurrency: input.priceCurrency ?? "USD",
+    billingInterval: input.billingInterval ?? "MONTHLY",
+    trialDays: input.trialDays ?? 0,
+    entitlements,
+    changeReason: input.changeReason ?? null,
+    createdById: actor.user.id,
+  }))
+  const version = { ...created, plan: { name: plan.name } }
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.CREATE,
@@ -1991,21 +2027,21 @@ export async function ensureDefaultFreePlan(): Promise<
     if (existing.status === "ARCHIVED") return null
     if (existing.currentVersion) return existing
     // A Free plan exists but has no published version: publish a fresh
-    // one (next version number) so the default always resolves.
-    const version = await db.planVersion.create({
-      data: {
-        planId: existing.id,
-        version: await nextVersionNumber(existing.id),
-        status: "PUBLISHED",
-        priceAmount: null,
-        priceCurrency: "USD",
-        billingInterval: "MONTHLY",
-        trialDays: 0,
-        entitlements: FREE_PLAN_V1_ENTITLEMENTS,
-        changeReason: "Default free plan",
-        publishedAt: new Date(),
-      },
-    })
+    // one (next version number) so the default always resolves. The
+    // retry helper covers the concurrent-repair race (DB-028): two
+    // first-requests after an archived-then-restored Free plan used to
+    // both compute N+1 and one 500d on P2002.
+    const version = await createPlanVersionWithRetry(existing.id, () => ({
+      planId: existing.id,
+      status: "PUBLISHED",
+      priceAmount: null,
+      priceCurrency: "USD",
+      billingInterval: "MONTHLY",
+      trialDays: 0,
+      entitlements: FREE_PLAN_V1_ENTITLEMENTS,
+      changeReason: "Default free plan",
+      publishedAt: new Date(),
+    }))
     return db.plan.update({
       where: { id: existing.id },
       data: { status: "PUBLISHED", currentVersionId: version.id },
@@ -2131,35 +2167,66 @@ export async function getEffectiveEntitlements(
   // `null` means unlimited for the nullable limits; API_KEYS and
   // MCP_REQUESTS are never nullable (setEntitlementOverride rejects a
   // null value for them), so a null there is ignored defensively.
+  // SRC-236: an override only counts — in `source` and in
+  // `overriddenMeters` — when it actually changes the merged value.
+  // A no-op override (same value as the base, or an ignored null)
+  // leaves the source as the base plan's, so the admin badge tells
+  // the truth about what the user is really on.
   const overriddenMeters: UsageMeter[] = []
   if (overrides.length > 0) {
     const merged: PlanEntitlements = { ...entitlements }
+    let changed = false
     for (const override of overrides) {
       switch (override.meter) {
         case "FORMS":
-          merged.forms = override.value
+          if (merged.forms !== override.value) {
+            merged.forms = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
         case "DOMAINS":
-          merged.domains = override.value
+          if (merged.domains !== override.value) {
+            merged.domains = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
         case "SUBMISSIONS":
-          merged.submissionsPerMonth = override.value
+          if (merged.submissionsPerMonth !== override.value) {
+            merged.submissionsPerMonth = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
         case "API_KEYS":
-          if (override.value !== null) merged.apiKeys = override.value
+          if (override.value !== null && merged.apiKeys !== override.value) {
+            merged.apiKeys = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
         case "MCP_REQUESTS":
-          if (override.value !== null)
+          if (
+            override.value !== null &&
+            merged.mcpRequestsPerHour !== override.value
+          ) {
             merged.mcpRequestsPerHour = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
         case "AI_REQUESTS":
-          merged.aiRequestsPerDay = override.value
+          if (merged.aiRequestsPerDay !== override.value) {
+            merged.aiRequestsPerDay = override.value
+            overriddenMeters.push(override.meter)
+            changed = true
+          }
           break
       }
-      overriddenMeters.push(override.meter)
     }
     entitlements = merged
-    source = "override"
+    if (changed) source = "override"
   }
   // Precedence 1: the emergency switch beats everything, including
   // overrides — AI + MCP are denied, the rest keeps working.

@@ -158,6 +158,18 @@ export async function createTicket(
   userId: string,
   input: CreateTicketInput
 ): Promise<TicketDetailRow> {
+  // SRC-236: a suspended/disabled user cannot file tickets
+  // (contrast saveUserAiKey, which asserts not-suspended). Checked
+  // BEFORE the transaction — the user lookup used to live inside it
+  // (SRC-238), where it only echoed the author back.
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, status: true },
+  })
+  if (!user) throw new ApiError("User not found.", 404)
+  if (user.status !== "ACTIVE") {
+    throw new ApiError("A suspended account cannot open a support ticket.", 403)
+  }
   const created = await db.$transaction(async (tx) => {
     const ticket = await tx.supportTicket.create({
       data: {
@@ -169,11 +181,7 @@ export async function createTicket(
     const message = await tx.ticketMessage.create({
       data: { ticketId: ticket.id, authorId: userId, body: input.body },
     })
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { id: true, name: true, email: true },
-    })
-    return { ticket, message, user }
+    return { ticket, message }
   })
   await logAudit({
     userId,
@@ -186,10 +194,11 @@ export async function createTicket(
       priority: input.priority,
     },
   })
+  const author = { id: user.id, name: user.name, email: user.email }
   return {
     id: created.ticket.id,
     userId,
-    user: created.user,
+    user: author,
     subject: created.ticket.subject,
     status: created.ticket.status,
     priority: created.ticket.priority,
@@ -202,7 +211,7 @@ export async function createTicket(
       {
         id: created.message.id,
         authorId: created.message.authorId,
-        author: created.user,
+        author,
         body: created.message.body,
         createdAt: created.message.createdAt,
       },
@@ -267,7 +276,8 @@ export async function getMyTicket(
   userId: string,
   ticketId: string
 ): Promise<TicketDetailRow> {
-  await getOwnedTicketOrThrow(userId, ticketId)
+  // SRC-236: one query, not two — the existence/ownership check used
+  // to fetch the row and then fetch the same row again with includes.
   const row = await db.supportTicket.findUnique({
     where: { id: ticketId },
     include: {
@@ -282,7 +292,9 @@ export async function getMyTicket(
       _count: { select: { messages: true } },
     },
   })
-  if (!row) throw new ApiError("Ticket not found.", 404)
+  if (!row || row.userId !== userId) {
+    throw new ApiError("Ticket not found.", 404)
+  }
   return toTicketDetailRow(row)
 }
 
@@ -398,7 +410,8 @@ export async function getTicket(
   ticketId: string
 ): Promise<TicketDetailRow> {
   requireAdmin(actor, "VIEW_CUSTOMER_DATA")
-  await getTicketOrThrow(ticketId)
+  // SRC-236: one query, not two — the existence check used to fetch
+  // the row and then fetch the same row again with includes.
   const row = await db.supportTicket.findUnique({
     where: { id: ticketId },
     include: {

@@ -27,7 +27,13 @@ const FORM_ID = "cmwlcr5xs0000gouynm83kjpm"
 
 const REASON_OPTIONS = ["Support", "Sales", "Partnership", "Other"]
 
-const SDK_SNIPPET = `<script src="https://api.sendcms.bond/forms/v1.js"
+// The displayed snippets are built from the same api origin the page
+// runs against (apiUrl()), so the code a visitor copies is the code
+// this page is actually running — in dev that is the local api app, in
+// production api.sendcms.bond (SDK-029). They were hardcoded production
+// URLs while the live script/REST calls used the environment origin.
+function buildSdkSnippet(api: string): string {
+  return `<script src="${api}/forms/v1.js"
   data-user-id="${FORM_USER_ID}"
   data-form-id="${FORM_ID}"></script>
 
@@ -44,9 +50,11 @@ const SDK_SNIPPET = `<script src="https://api.sendcms.bond/forms/v1.js"
   <textarea name="message" required></textarea>
   <button type="submit">Send</button>
 </form>`
+}
 
-const REST_SNIPPET = `const res = await fetch(
-  "https://api.sendcms.bond/api/public/v1/submit",
+function buildRestSnippet(api: string): string {
+  return `const res = await fetch(
+  "${api}/api/public/v1/submit",
   {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -60,6 +68,7 @@ const REST_SNIPPET = `const res = await fetch(
   }
 );
 // 201 → { ok: true, id, message, redirectUrl }`
+}
 
 type Tab = "sdk" | "rest"
 
@@ -115,6 +124,10 @@ export default function ContactUsDemoPage() {
     setRestSending(true)
     setRestResult(null)
     try {
+      // SRC-109: raw fetch stays here ON PURPOSE — this tab runs the
+      // REST sample shown above (buildRestSnippet) verbatim, so the
+      // code a visitor copies is the code that just ran. The real
+      // contact form (app/contact) goes through apiFetch instead.
       const res = await fetch(`${api}/api/public/v1/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -318,7 +331,7 @@ export default function ContactUsDemoPage() {
               Embed code
             </h3>
             <pre className="overflow-x-auto rounded-lg bg-slate-950 p-4 font-mono text-[13px] leading-relaxed text-slate-200">
-              <code>{SDK_SNIPPET}</code>
+              <code>{buildSdkSnippet(api)}</code>
             </pre>
           </div>
         </Card>
@@ -429,7 +442,7 @@ export default function ContactUsDemoPage() {
               Request
             </h3>
             <pre className="overflow-x-auto rounded-lg bg-slate-950 p-4 font-mono text-[13px] leading-relaxed text-slate-200">
-              <code>{REST_SNIPPET}</code>
+              <code>{buildRestSnippet(api)}</code>
             </pre>
           </div>
         </Card>

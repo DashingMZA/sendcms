@@ -209,6 +209,17 @@ const { store, mockDb } = vi.hoisted(() => {
   }
 
   const mockDb = {
+    // SRC-236: setMcpSettings / setUserMcpSettings read the "before"
+    // row under an advisory lock in one transaction (DB-051's shape).
+    // The callback runs against this same mock; $executeRaw is the
+    // advisory lock (a no-op here).
+    $executeRaw: vi.fn(async () => undefined),
+    $transaction: vi.fn(async (arg: unknown) => {
+      if (typeof arg === "function") {
+        return (arg as (tx: typeof mockDb) => unknown)(mockDb)
+      }
+      return arg
+    }),
     user: {
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) =>
@@ -1184,6 +1195,25 @@ describe("mcp-admin service — per-user settings", () => {
     expect(updated.allowedTools).toBeNull()
   })
 
+  // SRC-236: a call with only `reason` changes nothing — it used to
+  // upsert a settings row with an empty update (creating a row out of
+  // thin air) and audit a change that never happened.
+  it("creates no row and audits nothing when only a reason is given", async () => {
+    const before = mockLogAudit.mock.calls.length
+    const row = await setUserMcpSettings(ownerSession, "user-1", {
+      reason: "nothing to change",
+    })
+    expect(row).toEqual({
+      userId: "user-1",
+      isEnabled: true,
+      allowedTools: null,
+      minuteLimit: null,
+      hourLimit: null,
+    })
+    expect(mockDb.mcpUserSettings.upsert).not.toHaveBeenCalled()
+    expect(mockLogAudit.mock.calls.length).toBe(before)
+  })
+
   it("forbids MANAGER from changing a user's controls", async () => {
     await expect(
       setUserMcpSettings(managerSession, "user-1", {
@@ -1341,6 +1371,15 @@ describe("mcp-admin service — keys", () => {
     for (const key of result.keys) {
       expect(key).not.toHaveProperty("keyHash")
     }
+  })
+
+  // DB-049: the service clamps pagination itself — a direct caller
+  // must not be able to make the service load 100k rows.
+  it("clamps unclamped pagination at the service (perPage 100, page >= 1)", async () => {
+    const result = await listMcpKeys(ownerSession, 0, 100000)
+    expect(result.page).toBe(1)
+    expect(result.perPage).toBe(100)
+    expect(result.keys.length).toBeLessThanOrEqual(100)
   })
 
   it("revokes through @sendcms/api-keys and audits the admin action", async () => {

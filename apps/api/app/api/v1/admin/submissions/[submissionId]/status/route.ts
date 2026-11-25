@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto"
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { updatePlatformSubmissionStatus } from "@sendcms/platform-ops"
 import { UpdatePlatformSubmissionStatusSchema } from "@sendcms/platform-ops/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function POST(
   req: NextRequest,
@@ -18,15 +22,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const parsed = UpdatePlatformSubmissionStatusSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await updatePlatformSubmissionStatus(
       session,

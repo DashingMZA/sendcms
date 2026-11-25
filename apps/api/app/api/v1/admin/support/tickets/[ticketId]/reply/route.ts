@@ -1,9 +1,13 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { adminReply } from "@sendcms/support"
 import { ReplyToTicketSchema } from "@sendcms/support/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // A staff reply to a ticket. MANAGE_USERS holders and SUPPORT-role
 // staff may reply (enforced at the route and in the service).
@@ -19,15 +23,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const parsed = ReplyToTicketSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const ticket = await adminReply(session, ticketId, parsed.data)
     return ok(ticket)

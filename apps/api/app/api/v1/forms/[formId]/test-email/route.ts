@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { enforceTestEmailRateLimit } from "@/lib/rate-limit"
 import { sendTestSubmissionEmail } from "@sendcms/notifications"
 import { TestEmailSchema } from "@sendcms/notifications/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 type Params = { params: Promise<{ formId: string }> }
 
@@ -19,15 +24,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const parsed = TestEmailSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await sendTestSubmissionEmail(
       session.user.id,

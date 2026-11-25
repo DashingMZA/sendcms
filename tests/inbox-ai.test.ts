@@ -6,8 +6,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockDb = vi.hoisted(() => ({
-  submission: { findFirst: vi.fn() },
+  submission: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    update: vi.fn(),
+  },
   submissionEvent: { create: vi.fn() },
+  // AIM-011: bulkUpdate runs inside a callback transaction (tx IS
+  // mockDb in this file).
+  $transaction: vi.fn(async (arg: unknown) => {
+    if (typeof arg === "function") {
+      return (arg as (tx: typeof mockDb) => unknown)(mockDb)
+    }
+    if (Array.isArray(arg)) return Promise.all(arg)
+    return arg
+  }),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
@@ -34,7 +47,11 @@ vi.mock("@sendcms/notifications", () => ({
 }))
 vi.mock("@sendcms/security", () => ({ logAudit: vi.fn(async () => {}) }))
 
-import { draftReplyForSubmission, sendReplyToSubmission } from "@sendcms/inbox"
+import {
+  bulkUpdateSubmissionsForUser,
+  draftReplyForSubmission,
+  sendReplyToSubmission,
+} from "@sendcms/inbox"
 
 const AI_ENV = { apiKeys: { openai: "sk-test" } }
 
@@ -155,5 +172,52 @@ describe("sendReplyToSubmission", () => {
       sendReplyToSubmission("user-1", "sub-1", { subject: "Hi", body: "" })
     ).rejects.toMatchObject({ status: 422 })
     expect(mockEnqueueReply).not.toHaveBeenCalled()
+  })
+})
+
+describe("bulkUpdateSubmissionsForUser (AIM-011)", () => {
+  beforeEach(() => {
+    mockDb.submission.findMany.mockResolvedValue([])
+    mockDb.submission.update.mockResolvedValue({})
+    mockDb.submissionEvent.create.mockResolvedValue({})
+  })
+
+  it("reports entirely-bogus ids as notFound, not a silent success", async () => {
+    const result = await bulkUpdateSubmissionsForUser(
+      "user-1",
+      ["cm0000000000000000000000"],
+      "read"
+    )
+    expect(result).toEqual({ updated: 0, skipped: 0, notFound: 1 })
+  })
+
+  it("splits a mixed batch into updated + notFound", async () => {
+    mockDb.submission.findMany.mockResolvedValue([
+      { id: "sub-1", status: "NEW" },
+    ])
+    const result = await bulkUpdateSubmissionsForUser(
+      "user-1",
+      ["sub-1", "cm0000000000000000000000"],
+      "read"
+    )
+    expect(result).toEqual({ updated: 1, skipped: 0, notFound: 1 })
+    expect(mockDb.submission.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "sub-1" },
+        data: { status: "READ" },
+      })
+    )
+  })
+
+  it("still counts an already-read row as skipped, not notFound", async () => {
+    mockDb.submission.findMany.mockResolvedValue([
+      { id: "sub-1", status: "READ" },
+    ])
+    const result = await bulkUpdateSubmissionsForUser(
+      "user-1",
+      ["sub-1"],
+      "read"
+    )
+    expect(result).toEqual({ updated: 0, skipped: 1, notFound: 0 })
   })
 })

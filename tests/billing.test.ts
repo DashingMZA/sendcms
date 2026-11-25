@@ -318,6 +318,7 @@ import {
   setProviderConfig,
 } from "@sendcms/billing"
 import { listPublishedPlans } from "@sendcms/plans"
+import { setProviderConfigSchema } from "@sendcms/billing/validators"
 import {
   isProviderConfigured,
   missingEnvVars,
@@ -469,6 +470,20 @@ describe("admin provider configs", () => {
     expect(rows.every((r) => r.countries.length === 0)).toBe(true)
     expect(store.configs.size).toBe(0)
     expect(mockDb.billingProviderConfig.upsert).not.toHaveBeenCalled()
+  })
+
+  // ADM-125: a missing required `reason` fails with the human,
+  // field-named message — not Zod's raw "Invalid input: expected
+  // string, received undefined".
+  it("names a missing reason instead of raw Zod phrasing", () => {
+    const parsed = setProviderConfigSchema.safeParse({ isEnabled: true })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe("A reason is required")
+      expect(JSON.stringify(parsed.error.issues)).not.toContain(
+        "expected string, received undefined"
+      )
+    }
   })
 
   // BIL-125 (Phase 16, Wave 3): the owner-approved country defaults

@@ -1,4 +1,15 @@
 import { z } from "zod"
+
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
 import { BillingProvider } from "@sendcms/database"
 
 const providerSchema = z.nativeEnum(BillingProvider)
@@ -14,7 +25,9 @@ export const setProviderConfigSchema = z.object({
   // null/omitted = everywhere (no mapping rows = all countries);
   // a list restricts the provider to exactly those countries.
   countries: z.array(isoCountryCode).optional(),
-  reason: z.string().trim().min(1, "A reason is required"),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required"),
 })
 
 // POST /admin/billing/providers body: same as the PATCH, plus the

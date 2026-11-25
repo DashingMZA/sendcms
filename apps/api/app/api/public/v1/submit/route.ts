@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { processEmailOutbox } from "@sendcms/notifications"
 import { createLogger } from "@sendcms/observability"
-import { submitForm } from "@sendcms/submissions"
+import { submitForm, type SubmitResult } from "@sendcms/submissions"
 import { isVerifiedOrigin } from "@sendcms/domains"
 import {
   ApiError,
   getEffectiveOrigin,
   handleApiError,
+  methodNotAllowed,
+  validationErrorMessage,
 } from "@sendcms/api-client"
 import {
   SubmitBodySchema,
   formDataToSubmitBody,
+  type SubmitBodyInput,
 } from "@sendcms/submissions/validators"
 
 const logger = createLogger("api")
@@ -19,7 +22,10 @@ const logger = createLogger("api")
 // Origin allowlist (enforced in the service): the submitting site must be
 // a VERIFIED domain linked to the form. CORS headers are only echoed for
 // origins that passed that check, so a rejected origin cannot read the
-// response — including error responses.
+// response — including error responses. Pre-service errors (route-level
+// validation, the size guard, malformed JSON, the form-lookup 404) never
+// reach that check, so they echo CORS for any VERIFIED domain instead
+// (SDK-015/SDK-022); a non-verified origin still gets no CORS headers.
 //
 // Two content types are accepted:
 //   - application/json (the SDK and direct REST clients)
@@ -75,103 +81,190 @@ export async function POST(req: NextRequest) {
     contentType.includes("application/x-www-form-urlencoded") ||
     contentType.includes("multipart/form-data")
   try {
-    // Cheap size guard before parsing: the service also caps the
-    // sanitized payload after validation.
-    const contentLength = req.headers.get("content-length")
-    if (contentLength && Number(contentLength) > 64_000) {
-      throw new ApiError("Submission is too large.", 413)
-    }
-
-    const rawBody = isFormPost
-      ? formDataToSubmitBody(await req.formData())
-      : await req.json().catch(() => ({}))
-    // A no-JS form has no pageUrl field; the referer is the page it
-    // was submitted from.
-    if (
-      isFormPost &&
-      typeof rawBody === "object" &&
-      rawBody !== null &&
-      !("pageUrl" in rawBody) &&
-      referer
-    ) {
-      ;(rawBody as Record<string, unknown>).pageUrl = referer
-    }
-    const parsed = SubmitBodySchema.safeParse(rawBody)
-    if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      throw new ApiError(messages.join("; ") || "Validation failed", 422)
-    }
-
-    const result = await submitForm(parsed.data, {
+    const parsed = await parseSubmitBody(req, isFormPost, referer)
+    const result = await submitForm(parsed, {
       origin,
       ip: getClientIp(req),
       userAgent: req.headers.get("user-agent"),
     })
-
-    if (result.kind === "created") {
-      // Notifications are already queued (the service enqueues after
-      // the durable save). Attempt delivery now, after the response is
-      // sent — failures stay queued for the cron worker to retry.
-      after(async () => {
-        try {
-          await processEmailOutbox({ limit: 25 })
-        } catch (err) {
-          logger.error("outbox run failed", { error: err })
-        }
-      })
-    }
-
-    if (isFormPost) {
-      const target =
-        result.redirectUrl ?? withQuery(referer, "cms_submitted", "1")
-      if (target) {
-        return NextResponse.redirect(target, { status: 303 })
-      }
-      // No referer and no redirectUrl: fall through to JSON.
-    }
-
-    const headers = origin ? publicCorsHeaders(origin) : undefined
-    const payload = {
-      ok: true,
-      id: result.kind === "honeypot" ? result.fakeId : result.submission.id,
-      message: result.message,
-      redirectUrl: result.redirectUrl,
-    }
-    return NextResponse.json(payload, {
-      status: result.kind === "duplicate" ? 200 : 201,
-      headers,
-    })
+    if (result.kind === "created") scheduleOutboxDelivery()
+    return submitSuccessResponse(result, isFormPost, referer, origin)
   } catch (err) {
-    // A form post that fails goes back to the page it came from with
-    // the error in the query string (JSON only when there is nowhere
-    // to go back to).
-    if (isFormPost && referer) {
-      const message =
-        err instanceof ApiError ? err.message : "Internal server error"
-      const target = withQuery(referer, "cms_error", message)
-      if (target) {
-        return NextResponse.redirect(target, { status: 303 })
-      }
-    }
-    // Only echo CORS headers when the service confirmed the origin is
-    // allowed; otherwise the browser cannot read the error at all.
-    // Errors use the same public CORS headers as successes (not the
-    // legacy admin corsHeaders — this endpoint has no GET/PATCH and
-    // takes no Authorization header).
-    const allowedOrigin =
-      err instanceof ApiError && err.originAllowed && origin
-        ? origin
-        : undefined
-    return handleApiError(
-      err,
-      undefined,
-      allowedOrigin ? publicCorsHeaders(allowedOrigin) : undefined
-    )
+    // await, not bare return: a bare `return submitErrorResponse()`
+    // would let its rejection skip this catch and surface as a 500.
+    return await submitErrorResponse(err, { origin, isFormPost, referer })
   }
+}
+
+// Parses + validates the request body: the 64 KiB size guard, the
+// form-data / JSON split, the malformed-JSON 400, the referer
+// pageUrl default for no-JS forms, and the Zod 422.
+async function parseSubmitBody(
+  req: NextRequest,
+  isFormPost: boolean,
+  referer: string | null
+): Promise<SubmitBodyInput> {
+  // Cheap size guard before parsing: the service also caps the
+  // sanitized payload after validation.
+  const contentLength = req.headers.get("content-length")
+  if (contentLength && Number(contentLength) > 64_000) {
+    throw new ApiError("Submission is too large.", 413)
+  }
+  const rawBody = isFormPost
+    ? formDataToSubmitBody(await req.formData())
+    : await req.json().catch(() => null)
+  // SDK-017/SDK-023: a syntactically invalid JSON body is a 400 with
+  // a clean message. It used to be coerced to {} and fail Zod with a
+  // raw schema dump ("Invalid input: expected string, received
+  // undefined; …") that never said "malformed JSON".
+  if (rawBody === null) {
+    throw new ApiError("Malformed JSON body.", 400)
+  }
+  // A no-JS form has no pageUrl field; the referer is the page it
+  // was submitted from.
+  if (
+    isFormPost &&
+    typeof rawBody === "object" &&
+    rawBody !== null &&
+    !("pageUrl" in rawBody) &&
+    referer
+  ) {
+    ;(rawBody as Record<string, unknown>).pageUrl = referer
+  }
+  const parsed = SubmitBodySchema.safeParse(rawBody)
+  if (!parsed.success) {
+    throw new ApiError(validationErrorMessage(parsed.error), 422)
+  }
+  return parsed.data
+}
+
+// Notifications are already queued (the service enqueues after the
+// durable save). Attempt delivery now, after the response is sent —
+// failures stay queued for the cron worker to retry.
+function scheduleOutboxDelivery(): void {
+  after(async () => {
+    try {
+      await processEmailOutbox({ limit: 25 })
+    } catch (err) {
+      logger.error("outbox run failed", { error: err })
+    }
+  })
+}
+
+// Success: a form post 303-redirects (to the form's redirectUrl, else
+// the referring page with ?cms_submitted=1); anything else gets the
+// JSON body, 201 for a new submission, 200 for a deduped retry.
+function submitSuccessResponse(
+  result: SubmitResult,
+  isFormPost: boolean,
+  referer: string | null,
+  origin: string | null
+): NextResponse {
+  if (isFormPost) {
+    const target =
+      result.redirectUrl ?? withQuery(referer, "cms_submitted", "1")
+    if (target) {
+      return NextResponse.redirect(target, { status: 303 })
+    }
+    // No referer and no redirectUrl: fall through to JSON.
+  }
+  const headers = origin ? publicCorsHeaders(origin) : undefined
+  const payload = {
+    ok: true,
+    id: result.kind === "honeypot" ? result.fakeId : result.submission.id,
+    message: result.message,
+    redirectUrl: result.redirectUrl,
+  }
+  return NextResponse.json(payload, {
+    status: result.kind === "duplicate" ? 200 : 201,
+    headers,
+  })
+}
+
+type SubmitErrorContext = {
+  origin: string | null
+  isFormPost: boolean
+  referer: string | null
+}
+
+// Failure: a form post goes back to the page it came from with the
+// error in the query string (JSON only when there is nowhere to go
+// back to); anything else gets the JSON error, with CORS per the
+// origin decision below and a Retry-After when the service says how
+// long to wait (SDK-019).
+async function submitErrorResponse(
+  err: unknown,
+  ctx: SubmitErrorContext
+): Promise<NextResponse> {
+  // SRC-237: the service used to report monthly quota exhaustion as
+  // 402 ("Payment Required"), which no client handles and the
+  // documented ApiError vocabulary does not include. The service now
+  // emits 429 directly; this remap stays as a backstop in case a 402
+  // ever slips through again — same message, same originAllowed flag,
+  // so the CORS behaviour is unchanged.
+  let error: unknown = err
+  if (error instanceof ApiError && error.status === 402) {
+    const quotaError = new ApiError(error.message, 429)
+    quotaError.originAllowed = error.originAllowed
+    error = quotaError
+  }
+  if (ctx.isFormPost && ctx.referer) {
+    const message =
+      error instanceof ApiError ? error.message : "Internal server error"
+    const target = withQuery(ctx.referer, "cms_error", message)
+    if (target) {
+      return NextResponse.redirect(target, { status: 303 })
+    }
+  }
+  const allowedOrigin = await resolveErrorOrigin(error, ctx.origin)
+  // SDK-019: rate-limit throws carry `retryAfterSeconds` (see
+  // submitForm's fail()) — surface it as a Retry-After header so
+  // clients and proxies back off for exactly the right wait.
+  const retryAfter =
+    error instanceof ApiError
+      ? (error as ApiError & { retryAfterSeconds?: number }).retryAfterSeconds
+      : undefined
+  const headers = {
+    ...(allowedOrigin ? publicCorsHeaders(allowedOrigin) : undefined),
+    ...(retryAfter !== undefined ? { "Retry-After": String(retryAfter) } : {}),
+  }
+  return handleApiError(error, undefined, headers)
+}
+
+// CORS on errors. The service sets originAllowed on the errors it
+// throws (true = verified + linked to this form, false = rejected
+// for this form) — that decision is respected as-is. Pre-service
+// errors never reach the service's allowlist check, so
+// originAllowed is unset: the route-level Zod 422, the 413 size
+// guard, the malformed-JSON 400, and the form-lookup 404. For
+// those (SDK-015/SDK-022), echo CORS when the origin's host is a
+// VERIFIED domain — the SDK-021 owner decision is "no CORS
+// headers for non-verified origins", and a verified origin must be
+// able to read the validation message. The lookup is best-effort:
+// if it fails (e.g. the DB is down) the error goes out without
+// CORS headers rather than failing the error path itself.
+// Errors use the same public CORS headers as successes (not the
+// legacy admin corsHeaders — this endpoint has no GET/PATCH and
+// takes no Authorization header).
+async function resolveErrorOrigin(
+  error: unknown,
+  origin: string | null
+): Promise<string | undefined> {
+  if (!origin) return undefined
+  if (error instanceof ApiError && error.originAllowed === true) {
+    return origin
+  }
+  if (error instanceof ApiError && error.originAllowed === false) {
+    // The service rejected this origin for this form — no CORS
+    // headers, as before.
+    return undefined
+  }
+  try {
+    if (await isVerifiedOrigin(origin)) return origin
+  } catch {
+    // Fail closed: no CORS headers on the error.
+  }
+  return undefined
 }
 
 /** Returns url with one query param set, or null when the url is not
@@ -190,3 +283,10 @@ function withQuery(
     return null
   }
 }
+
+// SDK-031: wrong-method requests get a JSON 405 with an Allow
+// header, not Next.js's empty 405.
+export const GET = () => methodNotAllowed(["POST", "OPTIONS"])
+export const PUT = () => methodNotAllowed(["POST", "OPTIONS"])
+export const PATCH = () => methodNotAllowed(["POST", "OPTIONS"])
+export const DELETE = () => methodNotAllowed(["POST", "OPTIONS"])

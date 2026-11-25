@@ -14,6 +14,9 @@ export { HONEYPOT_FIELD }
 export type SendCMSMessages = {
   /** Shown on the submit button while a submission is in flight. */
   sending?: string
+  /** Shown while a Turnstile token is being fetched (only when the
+      form has Turnstile on). Defaults to "Verifying…". */
+  verifying?: string
   /** Shown when the server returns a success message of its own — the
       server's message wins; this is the fallback. */
   success?: string
@@ -82,6 +85,7 @@ export type ResolvedFormConfig = {
 
 export const DEFAULT_MESSAGES: Required<SendCMSMessages> = {
   sending: "Sending…",
+  verifying: "Verifying…",
   success: "Thanks! Your message has been sent.",
   error: "Something went wrong. Please try again.",
 }

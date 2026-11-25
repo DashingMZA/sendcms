@@ -1,8 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { enforceSendReplyRateLimit } from "@/lib/rate-limit"
 import { sendReplyToSubmission } from "@sendcms/inbox"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { SendReplySchema } from "@sendcms/inbox/validators"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // Sends the owner's reply to a submission's sender through the
 // outbox (Phase 12, Step 4). The body is the owner's own (reviewed
@@ -22,17 +28,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     )
     if (limited) return limited
     const body = await req.json().catch(() => ({}))
-    const subject = typeof body.subject === "string" ? body.subject : ""
-    const replyBody = typeof body.body === "string" ? body.body : ""
-    if (!subject.trim() || !replyBody.trim()) {
-      return NextResponse.json(
-        { error: "Subject and body are both required." },
-        { status: 422 }
-      )
+    // SRC-104: validated with Zod, not by hand — subject/body are
+    // capped (200/2000, mirroring the service's limits), so no
+    // unbounded string reaches the outbox.
+    const parsed = SendReplySchema.safeParse(body)
+    if (!parsed.success) {
+      return validationErrorResponse(parsed.error)
     }
     const result = await sendReplyToSubmission(session.user.id, submissionId, {
-      subject,
-      body: replyBody,
+      subject: parsed.data.subject,
+      body: parsed.data.body,
     })
     return ok(result)
   } catch (err) {

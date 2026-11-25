@@ -9,6 +9,17 @@
 // from the service, not a second copy of the enum list in this file.
 import { z } from "zod"
 
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
+
 // Shared pagination for admin list endpoints (max 100 per page).
 export const PlatformOpsPaginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -38,7 +49,10 @@ export type CreateFlagInput = z.infer<typeof CreateFlagSchema>
 // sensitive action and the audit record must say why.
 export const SetFlagSchema = z.object({
   isEnabled: z.boolean(),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetFlagInput = z.infer<typeof SetFlagSchema>
@@ -47,7 +61,10 @@ export type SetFlagInput = z.infer<typeof SetFlagSchema>
 // reason is required here too.
 export const SetFlagOverrideSchema = z.object({
   isEnabled: z.boolean(),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetFlagOverrideInput = z.infer<typeof SetFlagOverrideSchema>
@@ -127,7 +144,10 @@ export type UpdateAnnouncementInput = z.infer<typeof UpdateAnnouncementSchema>
 
 export const SetAnnouncementActiveSchema = z.object({
   isActive: z.boolean(),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetAnnouncementActiveInput = z.infer<
@@ -195,7 +215,10 @@ export type PlatformSubmissionsQuery = z.infer<
 // restore lands on READ — the inbox's rule, not a second rulebook.
 export const UpdatePlatformSubmissionStatusSchema = z.object({
   status: z.enum(["NEW", "SPAM", "ARCHIVED"]),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type UpdatePlatformSubmissionStatusInput = z.infer<
@@ -206,7 +229,10 @@ export type UpdatePlatformSubmissionStatusInput = z.infer<
 
 export const ReviewDeletionRequestSchema = z.object({
   decision: z.enum(["APPROVED", "REJECTED"]),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type ReviewDeletionRequestInput = z.infer<
@@ -214,7 +240,10 @@ export type ReviewDeletionRequestInput = z.infer<
 >
 
 export const ExecuteErasureSchema = z.object({
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type ExecuteErasureInput = z.infer<typeof ExecuteErasureSchema>

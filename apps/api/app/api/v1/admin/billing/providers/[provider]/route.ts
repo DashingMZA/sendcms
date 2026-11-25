@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
-import { BillingProvider } from "@sendcms/database"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setProviderConfig } from "@sendcms/billing"
-import { setProviderConfigSchema } from "@sendcms/billing/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  setProviderConfigBodySchema,
+  setProviderConfigSchema,
+} from "@sendcms/billing/validators"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 type Params = { params: Promise<{ provider: string }> }
 
@@ -16,9 +22,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const rateLimited = await enforceAdminApiRateLimit(req, session.user.id)
     if (rateLimited) return rateLimited
     const { provider } = await params
-    const parsedProvider =
-      BillingProvider[provider.toUpperCase() as keyof typeof BillingProvider]
-    if (!parsedProvider) {
+    // SRC-112: the provider name is parsed by the billing module's own
+    // validator (the `provider` field of its body schema), not by
+    // importing the Prisma enum value from the database package —
+    // route handlers never import that package at runtime (layered
+    // flow).
+    const parsedProvider = setProviderConfigBodySchema.shape.provider.safeParse(
+      provider.toUpperCase()
+    )
+    if (!parsedProvider.success) {
       return NextResponse.json(
         { error: `Unknown billing provider: ${provider}` },
         { status: 404 }
@@ -27,17 +39,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const parsed = setProviderConfigSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
-    return ok(await setProviderConfig(session, parsedProvider, parsed.data))
+    return ok(
+      await setProviderConfig(session, parsedProvider.data, parsed.data)
+    )
   } catch (err) {
     return handleApiError(err)
   }

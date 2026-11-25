@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import {
@@ -9,7 +9,12 @@ import {
   EntitlementOverrideListQuerySchema,
   SetEntitlementOverrideSchema,
 } from "@sendcms/plans/validators"
-import { created, handleApiError, ok } from "@sendcms/api-client"
+import {
+  created,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function GET(
   req: NextRequest,
@@ -25,15 +30,7 @@ export async function GET(
       userId,
     })
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const overrides = await listEntitlementOverrides(session, parsed.data)
     return ok(overrides)
@@ -54,15 +51,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const parsed = SetEntitlementOverrideSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const override = await setEntitlementOverride(session, userId, parsed.data)
     return created(override)

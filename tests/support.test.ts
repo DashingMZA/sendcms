@@ -135,7 +135,10 @@ describe("createTicket", () => {
     }
     mockDb.supportTicket.create.mockResolvedValue(ticketRow)
     mockDb.ticketMessage.create.mockResolvedValue(messageRow)
-    mockDb.user.findUnique.mockResolvedValue(makeUserRef(customerId))
+    mockDb.user.findUnique.mockResolvedValue({
+      ...makeUserRef(customerId),
+      status: "ACTIVE",
+    })
 
     const created = await createTicket(customerId, {
       subject: "Cannot sign in",
@@ -156,6 +159,24 @@ describe("createTicket", () => {
         detail: expect.objectContaining({ event: "ticket-created" }),
       })
     )
+  })
+
+  it("refuses a ticket from a suspended account (403, no transaction)", async () => {
+    mockDb.user.findUnique.mockResolvedValue({
+      ...makeUserRef(customerId),
+      status: "SUSPENDED",
+    })
+    await expect(
+      createTicket(customerId, {
+        subject: "Cannot sign in",
+        body: "I cannot sign in since yesterday.",
+        priority: "NORMAL",
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "A suspended account cannot open a support ticket.",
+    })
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 })
 

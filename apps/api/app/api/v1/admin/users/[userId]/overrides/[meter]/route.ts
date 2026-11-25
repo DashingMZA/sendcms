@@ -3,7 +3,7 @@ import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { removeEntitlementOverride } from "@sendcms/plans"
 import { UsageMeterSchema } from "@sendcms/plans/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, noContent } from "@sendcms/api-client"
 
 export async function DELETE(
   _req: NextRequest,
@@ -18,8 +18,11 @@ export async function DELETE(
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid meter" }, { status: 422 })
     }
-    const result = await removeEntitlementOverride(session, userId, parsed.data)
-    return ok(result)
+    // SRC-121: DELETE returns 204 with an empty body, like the other
+    // DELETE handlers — the removed row is not returned. (The admin
+    // hook only invalidates its queries on success.)
+    await removeEntitlementOverride(session, userId, parsed.data)
+    return noContent()
   } catch (err) {
     return handleApiError(err)
   }

@@ -142,7 +142,15 @@ export async function getSubmissionAnalytics(
   userId: string,
   days = 30
 ): Promise<SubmissionAnalytics> {
-  const since = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)
+  // SRC-236: clamp `days` to 1–365 at the service — a negative value
+  // used to yield an empty result and a huge one loaded the whole
+  // table (the unbounded findMany below). Callers happen to be safe
+  // (dashboard hardcodes 30; MCP zod-validates 1–365); this is the
+  // defense-in-depth half.
+  const clampedDays = Number.isFinite(days)
+    ? Math.min(365, Math.max(1, Math.floor(days)))
+    : 30
+  const since = new Date(Date.now() - (clampedDays - 1) * 24 * 60 * 60 * 1000)
   const [total, rows, byFormRaw, byDomainRaw, byStatusRaw] = await Promise.all([
     db.submission.count({
       where: { ownerId: userId, createdAt: { gte: since } },
@@ -186,7 +194,7 @@ export async function getSubmissionAnalytics(
     total,
     byDay: bucketByDay(
       rows.map((row) => row.createdAt),
-      days
+      clampedDays
     ),
     byForm: byFormRaw.map((row) => ({
       formId: row.formId,

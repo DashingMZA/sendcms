@@ -4,7 +4,9 @@ import {
   AddNotificationEmailSchema,
   CreateFieldSchema,
   CreateFormSchema,
+  FormListQuerySchema,
   LinkDomainSchema,
+  SuggestFieldsSchema,
   UpdateFieldSchema,
   UpdateFormSchema,
 } from "@sendcms/forms/validators"
@@ -135,6 +137,21 @@ describe("UpdateFieldSchema", () => {
       UpdateFieldSchema.safeParse({ type: "TEXT", options: null }).success
     ).toBe(true)
   })
+
+  // DSH-108: a PATCH carrying `name` must fail loudly instead of
+  // being silently stripped (200, label updated, key kept, no error).
+  it("rejects a rename with 'Field key cannot be changed.'", () => {
+    const parsed = UpdateFieldSchema.safeParse({
+      name: "renamed",
+      label: "Topic Updated",
+    })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "Field key cannot be changed."
+      )
+    }
+  })
 })
 
 describe("LinkDomainSchema / AddNotificationEmailSchema", () => {
@@ -176,5 +193,60 @@ describe("defaultFormFields", () => {
     expect(fields.map((f) => f.type)).toEqual(["TEXT", "EMAIL", "TEXTAREA"])
     expect(fields.every((f) => f.required)).toBe(true)
     expect(fields.map((f) => f.order)).toEqual([0, 1, 2])
+  })
+})
+
+describe("FormListQuerySchema (DSH-107)", () => {
+  it("honours limit as an alias for perPage", () => {
+    const parsed = FormListQuerySchema.parse({ limit: "1", page: "2" })
+    expect(parsed.perPage).toBe(1)
+    expect(parsed.page).toBe(2)
+  })
+
+  it("prefers limit over perPage when both are given", () => {
+    expect(
+      FormListQuerySchema.parse({ limit: "5", perPage: "50" }).perPage
+    ).toBe(5)
+  })
+
+  it("rejects perPage over 100 at the schema (the service clamps direct callers)", () => {
+    expect(FormListQuerySchema.parse({ perPage: "50" }).perPage).toBe(50)
+    expect(FormListQuerySchema.safeParse({ perPage: "500" }).success).toBe(
+      false
+    )
+    expect(
+      FormListQuerySchema.safeParse({ search: "x".repeat(201) }).success
+    ).toBe(false)
+  })
+})
+
+describe("SuggestFieldsSchema (SRC-104)", () => {
+  it("accepts a prompt with a browser-only key + provider", () => {
+    expect(
+      SuggestFieldsSchema.safeParse({
+        prompt: "Add a company field",
+        browserKey: "sk-test",
+        browserProvider: "openai",
+      }).success
+    ).toBe(true)
+  })
+
+  it("rejects a browser key without its provider", () => {
+    const parsed = SuggestFieldsSchema.safeParse({
+      prompt: "Add a company field",
+      browserKey: "sk-test",
+    })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "A browser-only key needs its provider."
+      )
+    }
+  })
+
+  it("rejects a prompt over 1000 chars", () => {
+    expect(
+      SuggestFieldsSchema.safeParse({ prompt: "x".repeat(1001) }).success
+    ).toBe(false)
   })
 })

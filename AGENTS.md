@@ -137,7 +137,7 @@ User ──< Domain ──< DomainVerification
 ### Form SDK specifics (`packages/sdk/`)
 
 - Dependency-free vanilla TS, built by esbuild to `apps/api/public/forms/v1.js`
-  (~7 KB minified). Config resolves form data attrs > `init()` options >
+  (~10 KB minified). Config resolves form data attrs > `init()` options >
   script tag data attrs; API origin resolves script `src` origin >
   build-time `__APP_URL__` (the api app's URL — the bundle is served by
   the api app, so the script origin IS the submit API's origin).

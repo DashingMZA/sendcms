@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { enforceBillingWebhookRateLimit } from "@/lib/rate-limit"
 import { handleWebhook } from "@sendcms/billing"
-import { handleApiError, ok } from "@sendcms/api-client"
+import { handleApiError, methodNotAllowed, ok } from "@sendcms/api-client"
 
 // Stripe webhook — no session. The signature is verified against
 // the RAW body (req.text(), never req.json() first). Always 2xx on
@@ -18,3 +18,11 @@ export async function POST(req: NextRequest) {
     return handleApiError(err)
   }
 }
+
+// SDK-031: wrong-method requests get a JSON 405 with an Allow
+// header, not Next.js's empty 405.
+export const GET = () => methodNotAllowed(["POST"])
+export const PUT = () => methodNotAllowed(["POST"])
+export const PATCH = () => methodNotAllowed(["POST"])
+export const DELETE = () => methodNotAllowed(["POST"])
+export const OPTIONS = () => methodNotAllowed(["POST"])

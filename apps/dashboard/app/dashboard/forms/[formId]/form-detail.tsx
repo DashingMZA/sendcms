@@ -15,7 +15,7 @@ import {
   useUpdateForm,
   useUpdateNotificationEmail,
 } from "@sendcms/forms/queries"
-import type { FormDetail } from "@sendcms/forms/queries"
+import type { FormDetail, FormDetailResponse } from "@sendcms/forms/queries"
 import { useSendTestEmail } from "@sendcms/notifications/queries"
 import { ApiClientError } from "@sendcms/shared"
 
@@ -38,86 +38,7 @@ import { DomainStatusBadge } from "../../domains/domain-status-badge"
 import { FieldsSection } from "./fields-section"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
 import { useTranslation } from "@/components/dashboard/translation-provider"
-
-function escapeAttr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-}
-
-/** Builds the copy-paste embed snippet for a form: the SDK script tag
-    plus a <form> with this form's fields. The SDK auto-enhances the
-    form — no JavaScript of your own is needed. */
-export function buildEmbedSnippet(appUrl: string, form: FormDetail): string {
-  const lines: string[] = [
-    `<script src="${appUrl}/forms/v1.js" data-user-id="${form.ownerId}" data-form-id="${form.id}"></script>`,
-    `<form data-cms-form>`,
-  ]
-  for (const field of form.fields) {
-    const required = field.required ? " required" : ""
-    const placeholder = field.placeholder
-      ? ` placeholder="${escapeAttr(field.placeholder)}"`
-      : ""
-    const options = Array.isArray(field.options)
-      ? (field.options as unknown[]).filter(
-          (o): o is string => typeof o === "string"
-        )
-      : []
-    const label = escapeAttr(field.label)
-    switch (field.type) {
-      case "TEXTAREA":
-        lines.push(
-          `  <label>${label}`,
-          `    <textarea name="${field.name}"${placeholder}${required}></textarea>`,
-          `  </label>`
-        )
-        break
-      case "SELECT":
-        lines.push(
-          `  <label>${label}`,
-          `    <select name="${field.name}"${required}>`,
-          ...options.map(
-            (o) =>
-              `      <option value="${escapeAttr(o)}">${escapeAttr(o)}</option>`
-          ),
-          `    </select>`,
-          `  </label>`
-        )
-        break
-      case "CHECKBOX":
-      case "RADIO": {
-        const inputType = field.type === "CHECKBOX" ? "checkbox" : "radio"
-        lines.push(`  <fieldset>`, `    <legend>${label}</legend>`)
-        for (const o of options) {
-          lines.push(
-            `    <label><input type="${inputType}" name="${field.name}" value="${escapeAttr(o)}"${required}> ${escapeAttr(o)}</label>`
-          )
-        }
-        lines.push(`  </fieldset>`)
-        break
-      }
-      default: {
-        const inputType =
-          field.type === "EMAIL"
-            ? "email"
-            : field.type === "NUMBER"
-              ? "number"
-              : field.type === "URL"
-                ? "url"
-                : field.type === "TEL"
-                  ? "tel"
-                  : field.type === "DATE"
-                    ? "date"
-                    : "text"
-        lines.push(
-          `  <label>${label}`,
-          `    <input type="${inputType}" name="${field.name}"${placeholder}${required}>`,
-          `  </label>`
-        )
-      }
-    }
-  }
-  lines.push(`  <button type="submit">Send</button>`, `</form>`)
-  return lines.join("\n")
-}
+import { buildEmbedSnippet } from "@sendcms/sdk/snippet"
 
 function Section({
   title,
@@ -140,9 +61,13 @@ function Section({
 export function FormDetail({
   initialForm,
   appUrl,
+  turnstileSiteKey,
 }: {
-  initialForm: FormDetail
+  initialForm: FormDetailResponse
   appUrl: string
+  /** Public Turnstile site key (NEXT_PUBLIC_TURNSTILE_SITE_KEY) — null
+      when unset. Only used for the embed snippet. */
+  turnstileSiteKey: string | null
 }) {
   const { t } = useTranslation("forms")
   const router = useRouter()
@@ -342,6 +267,19 @@ export function FormDetail({
               onCheckedChange={setTurnstileEnabled}
             />
           </div>
+          {form.turnstileEnabled && form.turnstileConfigured === false && (
+            // SDK-016: Turnstile is on but the API server has no
+            // secret (TURNSTILE_SECRET_KEY unset), so every
+            // submission to this form is rejected with 503. The flag
+            // comes from the API (useForm) — the dashboard process
+            // cannot know the API server's secret.
+            <p
+              role="alert"
+              className="rounded-lg border border-amber-500/50 bg-amber-50 p-4 text-sm text-amber-900"
+            >
+              {t("turnstileServerMissing")}
+            </p>
+          )}
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div>
               <Label htmlFor="settings-ai">{t("aiLabel")}</Label>
@@ -373,14 +311,32 @@ export function FormDetail({
       </Section>
 
       <Section title={t("embedTitle")} description={t("embedDescription")}>
-        <InstallSnippet code={buildEmbedSnippet(appUrl, form)} domain="forms" />
-        <p className="mt-3 text-sm text-muted-foreground">
-          {t("embedPlainIntro")}{" "}
-          <code className="font-mono text-xs">{"<form>"}</code>{" "}
-          {t("embedPlainPosting")}{" "}
-          <code className="font-mono text-xs">{`${appUrl}/api/public/v1/submit`}</code>{" "}
-          {t("embedPlainSuffix")}
-        </p>
+        {form.turnstileEnabled && !turnstileSiteKey ? (
+          // No site key, no working snippet: without
+          // data-turnstile-site-key the SDK sends no token and the
+          // server rejects every submission with 422 — so show the
+          // warning instead of a snippet that looks ready to paste.
+          <p
+            role="alert"
+            className="rounded-lg border border-amber-500/50 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            {t("embedTurnstileKeyMissing")}
+          </p>
+        ) : (
+          <>
+            <InstallSnippet
+              code={buildEmbedSnippet(appUrl, form, turnstileSiteKey)}
+              domain="forms"
+            />
+            <p className="mt-3 text-sm text-muted-foreground">
+              {t("embedPlainIntro")}{" "}
+              <code className="font-mono text-xs">{"<form>"}</code>{" "}
+              {t("embedPlainPosting")}{" "}
+              <code className="font-mono text-xs">{`${appUrl}/api/public/v1/submit`}</code>{" "}
+              {t("embedPlainSuffix")}
+            </p>
+          </>
+        )}
       </Section>
 
       <DomainsSection form={form} />

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { enforceCustomerAiRateLimit } from "@/lib/rate-limit"
 import {
@@ -6,7 +6,12 @@ import {
   setUserAiBillingMode,
 } from "@sendcms/ai-settings"
 import { SetBillingModeSchema } from "@sendcms/ai-settings/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // The customer's AI billing mode: BYOK (my keys), PLATFORM (the
 // system's key), or DISABLED. BYOK pauses the platform key for this
@@ -31,15 +36,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = SetBillingModeSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const billingMode = await setUserAiBillingMode(
       session.user.id,

@@ -23,6 +23,7 @@ import {
   listActiveAnnouncements,
   listAnnouncements,
   listAuditLogs,
+  listDeletionRequests,
   listFlags,
   listPlatformSubmissions,
   removeFlagOverride,
@@ -1379,6 +1380,22 @@ describe("feature flags", () => {
     ).toThrow()
   })
 
+  // ADM-097 / ADM-125: a missing required `reason` fails with the
+  // human, field-named message — not Zod's raw "Invalid input:
+  // expected string, received undefined".
+  it("names the missing reason instead of raw Zod phrasing", () => {
+    const parsed = SetFlagSchema.safeParse({ isEnabled: true })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe("A reason is required")
+    }
+    const override = SetFlagOverrideSchema.safeParse({ isEnabled: true })
+    expect(override.success).toBe(false)
+    if (!override.success) {
+      expect(override.error.issues[0]?.message).toBe("A reason is required")
+    }
+  })
+
   it("override set/remove falls back to the global flag", async () => {
     await setFlagOverride(ownerSession, "beta-ui", "user-2", {
       isEnabled: true,
@@ -1464,6 +1481,18 @@ describe("announcements", () => {
     await expect(listAnnouncements(supportSession)).rejects.toThrowError(
       ApiError
     )
+  })
+
+  // DB-049: the service clamps pagination itself — a direct caller
+  // must not be able to make the service load 100k rows.
+  it("clamps unclamped pagination at the service (perPage 100, page >= 1)", async () => {
+    const huge = await listAnnouncements(ownerSession, {
+      perPage: 100000,
+      page: 0,
+    })
+    expect(huge.perPage).toBe(100)
+    expect(huge.page).toBe(1)
+    expect(huge.announcements.length).toBeLessThanOrEqual(100)
   })
 })
 
@@ -1906,6 +1935,18 @@ describe("deletion workflow", () => {
     await expect(
       requestDeletion(ownerSession, "user-4", { reason: "Again" })
     ).rejects.toThrowError(ApiError)
+  })
+
+  // DB-049: the service clamps pagination itself — a direct caller
+  // must not be able to make the service load 100k rows.
+  it("clamps unclamped pagination at the service (perPage 100, page >= 1)", async () => {
+    const huge = await listDeletionRequests(ownerSession, {
+      perPage: 100000,
+      page: 0,
+    })
+    expect(huge.perPage).toBe(100)
+    expect(huge.page).toBe(1)
+    expect(huge.requests.length).toBeLessThanOrEqual(100)
   })
 })
 

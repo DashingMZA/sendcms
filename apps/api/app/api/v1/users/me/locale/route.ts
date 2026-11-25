@@ -1,8 +1,13 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { setUserLocale } from "@sendcms/users"
 import { SetLocaleSchema } from "@sendcms/users/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // Stores the signed-in user's preferred UI locale in the database, so a
 // language switch (e.g. en -> ur) survives across browsers and sessions.
@@ -15,15 +20,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = SetLocaleSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const user = await setUserLocale(session.user.id, parsed.data.locale)
     return ok({ locale: user.locale })

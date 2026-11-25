@@ -38,18 +38,16 @@ export const SDK_STYLES = `
 }
 `
 
-let injected = false
-
-/** Injects the SDK stylesheet once per page. Safe to call repeatedly. */
+/** Injects the SDK stylesheet once per page. Safe to call repeatedly:
+    an existing `style[data-sendcms]` element means the styles are
+    already there; if the host page removes it, the styles are
+    re-injected on the next call instead of staying gone. */
 export function ensureStyles(): void {
-  if (injected) return
   if (document.querySelector("style[data-sendcms]")) {
-    injected = true
     return
   }
   const style = document.createElement("style")
   style.setAttribute("data-sendcms", "")
   style.textContent = SDK_STYLES
   document.head.appendChild(style)
-  injected = true
 }

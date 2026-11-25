@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { bulkUpdateSubmissionsForUser } from "@sendcms/inbox"
 import { BulkUpdateSubmissionsSchema } from "@sendcms/inbox/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,15 +17,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = BulkUpdateSubmissionsSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await bulkUpdateSubmissionsForUser(
       session.user.id,

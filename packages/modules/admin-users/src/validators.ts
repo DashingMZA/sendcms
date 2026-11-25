@@ -1,5 +1,16 @@
 import { z } from "zod"
 
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
+
 // Admin user management (Phase 3) — Zod schemas for every request body
 // and list query. Shared by the api routes and the admin UI's hooks.
 // Query params arrive as strings, so page/perPage coerce and clamp here
@@ -42,7 +53,10 @@ export const AdminNotesQuerySchema = AdminPaginationQuerySchema
 // Suspend / disable require a reason (non-empty, max 500 chars) — the
 // reason is stored on the user and in the audit log.
 export const SuspendUserSchema = z.object({
-  reason: z.string().trim().min(1, "Reason is required").max(500),
+  reason: requiredString("Reason is required")
+    .trim()
+    .min(1, "Reason is required")
+    .max(500),
 })
 
 export const DisableUserSchema = SuspendUserSchema
@@ -64,8 +78,26 @@ export const AddAdminNoteSchema = z.object({
 })
 
 export const RequestDeletionSchema = z.object({
-  reason: z.string().trim().min(1, "Reason is required").max(500),
+  reason: requiredString("Reason is required")
+    .trim()
+    .min(1, "Reason is required")
+    .max(500),
 })
+
+// SRC-104: step-up verification used to validate by hand in the
+// route (`typeof body.password === "string"`, no length cap) — an
+// unbounded string went straight to password-hash comparison. The
+// cap is 128, the auth convention (users validators: minPasswordLength
+// 8, maxPasswordLength 128) — a step-up password is a login password,
+// so the same bound applies. A missing password fails with the human
+// message, not Zod's invalid_type text.
+export const StepUpVerifySchema = z.object({
+  password: requiredString("Password is required")
+    .min(1, "Password is required")
+    .max(128, "Password is too long."),
+})
+
+export type StepUpVerifyInput = z.infer<typeof StepUpVerifySchema>
 
 export type AdminPaginationQuery = z.infer<typeof AdminPaginationQuerySchema>
 export type AdminUserListQuery = z.infer<typeof AdminUserListQuerySchema>

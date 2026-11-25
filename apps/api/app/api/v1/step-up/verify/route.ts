@@ -1,6 +1,12 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
+import { StepUpVerifySchema } from "@sendcms/admin-users/validators"
 import { isStepUpAction, verifyStepUp } from "@sendcms/security"
 
 // Customer step-up verification (Phase 16, Wave 2: SEC-007): the
@@ -16,36 +22,36 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
-    const body = (await req.json().catch(() => ({}))) as unknown
-    const password =
-      typeof body === "object" &&
-      body !== null &&
-      "password" in body &&
-      typeof (body as { password: unknown }).password === "string"
-        ? (body as { password: string }).password
-        : undefined
-    const action =
-      typeof body === "object" &&
-      body !== null &&
-      "action" in body &&
-      typeof (body as { action: unknown }).action === "string"
-        ? (body as { action: string }).action
-        : undefined
-    if (password === undefined) {
-      return NextResponse.json(
-        { error: "Password is required." },
-        { status: 422 }
-      )
+    const body = await req.json().catch(() => ({}))
+    // SRC-104: the password is validated with the shared Zod schema
+    // (capped at 128 chars) instead of the hand-rolled typeof check
+    // — the same defect the admin step-up route had.
+    const parsed = StepUpVerifySchema.safeParse(body)
+    if (!parsed.success) {
+      return validationErrorResponse(parsed.error)
     }
-    if (!isStepUpAction(action)) {
-      return NextResponse.json(
-        { error: "A valid action is required." },
-        { status: 422 }
-      )
-    }
-    const result = await verifyStepUp(session, password, { action })
+    const action = stepUpAction(body)
+    const result = await verifyStepUp(session, parsed.data.password, {
+      action,
+    })
     return ok(result)
   } catch (err) {
     return handleApiError(err)
   }
+}
+
+// Extracts the step-up action from the body, or throws the 422 the
+// route used to return inline.
+function stepUpAction(body: unknown): string {
+  const action =
+    typeof body === "object" &&
+    body !== null &&
+    "action" in body &&
+    typeof (body as { action: unknown }).action === "string"
+      ? (body as { action: string }).action
+      : undefined
+  if (!isStepUpAction(action)) {
+    throw new ApiError("A valid action is required.", 422)
+  }
+  return action
 }

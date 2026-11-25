@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { createAnnouncement, listAnnouncements } from "@sendcms/platform-ops"
@@ -7,7 +7,11 @@ import {
   AnnouncementsQuerySchema,
   CreateAnnouncementSchema,
 } from "@sendcms/platform-ops/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,15 +22,7 @@ export async function GET(req: NextRequest) {
       Object.fromEntries(req.nextUrl.searchParams)
     )
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const result = await listAnnouncements(session, parsed.data)
     return ok(result)
@@ -43,15 +39,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = CreateAnnouncementSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const announcement = await createAnnouncement(session, parsed.data, {
       correlationId: randomUUID(),

@@ -206,42 +206,51 @@ export async function saveUserAiKey(
     userId,
     provider: input.provider,
   })
-  const existing = await db.userAiKey.findUnique({
+  // SRC-206 / DB-028: create-or-replace is a single atomic upsert on
+  // the (userId, provider) unique — the old findUnique → create /
+  // update raced (two concurrent saves could both try to create, and
+  // both read version N and both write N+1, losing an increment).
+  // The update arm increments the version atomically. The pre-read
+  // below exists ONLY to label the audit row CREATE vs UPDATE; it is
+  // advisory, and a race there can mislabel the audit action, never
+  // the data.
+  const preExisting = await db.userAiKey.findUnique({
     where: {
       userId_provider: {
         userId,
         provider: PROVIDER_NAME_TO_ENUM[input.provider],
       },
     },
-    select: { id: true, keyVersion: true },
+    select: { id: true },
   })
-  const row = existing
-    ? await db.userAiKey.update({
-        where: { id: existing.id },
-        data: {
-          ...encrypted,
-          // A provided model replaces the old one; omitting it keeps
-          // the previous choice (Prisma skips undefined fields).
-          model: input.model,
-          isEnabled: true,
-          keyVersion: existing.keyVersion + 1,
-          lastTestStatus: "UNTESTED",
-          lastTestedAt: null,
-        },
-        select: keyMetaSelect,
-      })
-    : await db.userAiKey.create({
-        data: {
-          userId,
-          provider: PROVIDER_NAME_TO_ENUM[input.provider],
-          ...encrypted,
-          model: input.model ?? null,
-        },
-        select: keyMetaSelect,
-      })
+  const row = await db.userAiKey.upsert({
+    where: {
+      userId_provider: {
+        userId,
+        provider: PROVIDER_NAME_TO_ENUM[input.provider],
+      },
+    },
+    create: {
+      userId,
+      provider: PROVIDER_NAME_TO_ENUM[input.provider],
+      ...encrypted,
+      model: input.model ?? null,
+    },
+    update: {
+      ...encrypted,
+      // A provided model replaces the old one; omitting it keeps
+      // the previous choice (Prisma skips undefined fields).
+      model: input.model,
+      isEnabled: true,
+      keyVersion: { increment: 1 },
+      lastTestStatus: "UNTESTED",
+      lastTestedAt: null,
+    },
+    select: keyMetaSelect,
+  })
   await logAudit({
     userId,
-    action: existing ? AuditAction.UPDATE : AuditAction.CREATE,
+    action: preExisting ? AuditAction.UPDATE : AuditAction.CREATE,
     resourceType: AuditResource.AI_KEY,
     resourceId: row.id,
     detail: {
@@ -1505,7 +1514,10 @@ export async function listUserAiKeysForAdmin(
   actor: AdminSession,
   userId: string
 ): Promise<UserAiKeyMeta[]> {
-  requireAdmin(actor, "VIEW_CUSTOMER_DATA")
+  // SRC-236: one capability, not two — the route already gates on
+  // MANAGE_AI, and every sibling admin AI function takes MANAGE_AI
+  // alone. Requiring VIEW_CUSTOMER_DATA as well locked out the very
+  // staff the AI section is for.
   requireAdmin(actor, "MANAGE_AI")
   await getUserOrThrow(userId)
   return listUserAiKeys(userId)

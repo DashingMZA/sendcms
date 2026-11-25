@@ -46,8 +46,12 @@ function mockFetch(status: number, body: Record<string, unknown>) {
   return fn
 }
 
-/** Loads the bundle in the test's own context and enhances the page. */
+/** Loads the bundle in the test's own context and enhances the page.
+    A previous load is destroyed first: the bundle guards against a
+    second evaluation (SDK-013), so without destroy() the re-eval
+    would be a no-op and the fresh form would never be enhanced. */
 function loadSdk(bodyHtml = FORM_HTML) {
+  window.SendCMS?.destroy?.()
   document.head.innerHTML = ""
   document.body.innerHTML = bodyHtml
   window.eval(bundle)

@@ -1,6 +1,7 @@
 import type { AdminSession } from "@sendcms/auth"
 import {
   DomainStatus,
+  Prisma,
   SubmissionStatus,
   SubscriptionStatus,
   UserStatus,
@@ -14,10 +15,10 @@ import type { OverviewQuery, OverviewRangeKey } from "./validators"
 // Framework-independent (no Next.js imports); only services import
 // @sendcms/database. Reads need VIEW_ADMIN_DASHBOARD.
 //
-// The per-day series follows the @sendcms/analytics precedent: one
-// query selects the createdAt values in range, and the bucketing is
-// pure JS (no N+1, no raw SQL). Status breakdowns always list every
-// status (missing ones are 0), so the client renders a stable shape.
+// The per-day series is aggregated in SQL (DATE_TRUNC + GROUP BY) —
+// the old shape loaded every submission timestamp in range into
+// memory (SRC-236). Status breakdowns always list every status
+// (missing ones are 0), so the client renders a stable shape.
 
 export type DayCount = { date: string; count: number }
 
@@ -103,6 +104,19 @@ export function bucketOverviewByDay(
     const key = dayKey(date)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
+  return expandDayCounts(counts, from, to)
+}
+
+/** Pure: expand a day → count map into the full per-day series from
+    the UTC day of `from` through the UTC day of `to`. Days absent
+    from the map get count 0. The SQL-aggregated series feeds this
+    directly (one row per day that has submissions); the timestamp
+    bucketing above is the same expansion over a counted map. */
+export function expandDayCounts(
+  counts: Map<string, number>,
+  from: Date,
+  to: Date
+): DayCount[] {
   const start = new Date(from)
   start.setUTCHours(0, 0, 0, 0)
   const end = new Date(to)
@@ -139,7 +153,7 @@ export async function getAdminOverview(
     submissionTotal,
     submissionsInRange,
     submissionsByStatusRaw,
-    submissionDates,
+    perDayRows,
     formTotal,
     formsActive,
     domainTotal,
@@ -155,7 +169,23 @@ export async function getAdminOverview(
     db.submission.count(),
     db.submission.count({ where: inRange }),
     db.submission.groupBy({ by: ["status"], where: inRange, _count: true }),
-    db.submission.findMany({ where: inRange, select: { createdAt: true } }),
+    // SRC-236: the per-day series is aggregated in SQL (one row per
+    // day that has submissions) instead of loading every in-range
+    // timestamp into memory. The day is rendered as a YYYY-MM-DD
+    // string in UTC, so no session-timezone skew can move a
+    // submission onto the wrong day; COUNT(*)::int keeps the count
+    // a JS number, not a bigint.
+    db.$queryRaw<{ day: string; count: number }[]>(Prisma.sql`
+      SELECT TO_CHAR(
+          DATE_TRUNC('day', "createdAt" AT TIME ZONE 'UTC'),
+          'YYYY-MM-DD'
+        ) AS day,
+        COUNT(*)::int AS count
+      FROM "Submission"
+      WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+      GROUP BY 1
+      ORDER BY 1
+    `),
     db.form.count(),
     db.form.count({ where: { active: true } }),
     db.domain.count(),
@@ -212,8 +242,8 @@ export async function getAdminOverview(
         status,
         count: submissionsByStatusMap.get(status) ?? 0,
       })),
-      perDay: bucketOverviewByDay(
-        submissionDates.map((row) => row.createdAt),
+      perDay: expandDayCounts(
+        new Map(perDayRows.map((row) => [row.day, row.count])),
         from,
         to
       ),

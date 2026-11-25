@@ -19,33 +19,7 @@ export async function POST(req: Request) {
     const raw = await req.text()
     const text =
       raw.length > MAX_REPORT_BYTES ? raw.slice(0, MAX_REPORT_BYTES) : raw
-    let report: unknown = null
-    try {
-      report = text ? JSON.parse(text) : null
-    } catch {
-      report = { unparsed: text.slice(0, 200) }
-    }
-    const body =
-      report !== null && typeof report === "object" && !Array.isArray(report)
-        ? (report as Record<string, unknown>)
-        : { report }
-    // The classic `report-uri` shape nests the fields under
-    // `csp-report`; the newer Reporting API shape sends them flat.
-    const csp =
-      body["csp-report"] !== null &&
-      typeof body["csp-report"] === "object" &&
-      !Array.isArray(body["csp-report"])
-        ? (body["csp-report"] as Record<string, unknown>)
-        : body
-    logger.warn("csp violation", {
-      documentUri: csp["document-uri"],
-      blockedUri: csp["blocked-uri"],
-      violatedDirective: csp["violated-directive"],
-      effectiveDirective: csp["effective-directive"],
-      originalPolicy: csp["original-policy"],
-      sourceFile: csp["source-file"],
-      lineNumber: csp["line-number"],
-    })
+    logCspReport(parseReportBody(text))
   } catch (err) {
     // Reporting must never fail the browser's report (or the request
     // that triggered it): log and still answer 204.
@@ -54,5 +28,41 @@ export async function POST(req: Request) {
   return new Response(null, {
     status: 204,
     headers: { "Cache-Control": "no-store" },
+  })
+}
+
+// Parses a report leniently: a malformed report still yields a
+// loggable object, never a throw. The classic `report-uri` shape
+// nests the fields under `csp-report`; the newer Reporting API shape
+// sends them flat.
+function parseReportBody(text: string): Record<string, unknown> {
+  let report: unknown = null
+  try {
+    report = text ? JSON.parse(text) : null
+  } catch {
+    report = { unparsed: text.slice(0, 200) }
+  }
+  const body =
+    report !== null && typeof report === "object" && !Array.isArray(report)
+      ? (report as Record<string, unknown>)
+      : { report }
+  const csp =
+    body["csp-report"] !== null &&
+    typeof body["csp-report"] === "object" &&
+    !Array.isArray(body["csp-report"])
+      ? (body["csp-report"] as Record<string, unknown>)
+      : body
+  return csp
+}
+
+function logCspReport(csp: Record<string, unknown>): void {
+  logger.warn("csp violation", {
+    documentUri: csp["document-uri"],
+    blockedUri: csp["blocked-uri"],
+    violatedDirective: csp["violated-directive"],
+    effectiveDirective: csp["effective-directive"],
+    originalPolicy: csp["original-policy"],
+    sourceFile: csp["source-file"],
+    lineNumber: csp["line-number"],
   })
 }

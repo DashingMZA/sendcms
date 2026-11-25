@@ -333,20 +333,25 @@ export async function updatePlatformSubmissionStatus(
     })
     return { id: submission.id, status: transition.status, changed: true }
   })
-  await logAudit({
-    userId: actor.user.id,
-    action: AuditAction.UPDATE,
-    resourceType: AuditResource.SUBMISSION,
-    resourceId: submissionId,
-    detail: {
-      event: "platform-submission-status-changed",
+  // SRC-236: a no-op transition (already in the target state) writes
+  // no audit row — it used to log `changed: false` noise on every
+  // redundant call from the abuse queue.
+  if (result.changed) {
+    await logAudit({
+      userId: actor.user.id,
+      action: AuditAction.UPDATE,
+      resourceType: AuditResource.SUBMISSION,
+      resourceId: submissionId,
+      detail: {
+        event: "platform-submission-status-changed",
+        reason: input.reason,
+        requestedStatus: input.status,
+        status: result.status,
+        changed: result.changed,
+      },
       reason: input.reason,
-      requestedStatus: input.status,
-      status: result.status,
-      changed: result.changed,
-    },
-    reason: input.reason,
-    correlationId: opts.correlationId,
-  })
+      correlationId: opts.correlationId,
+    })
+  }
   return result
 }

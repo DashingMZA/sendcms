@@ -114,7 +114,10 @@ import {
   suspendUser,
   triggerPasswordReset,
 } from "@sendcms/admin-users"
-import { SuspendUserSchema } from "@sendcms/admin-users/validators"
+import {
+  StepUpVerifySchema,
+  SuspendUserSchema,
+} from "@sendcms/admin-users/validators"
 import { ApiError } from "@sendcms/api-client"
 import { Prisma } from "@sendcms/database"
 
@@ -1015,5 +1018,42 @@ describe("executeErasure", () => {
         detail: expect.objectContaining({ event: "account-erased" }),
       })
     )
+  })
+})
+
+// SRC-104: step-up verify used to validate by hand in the route
+// (`typeof body.password === "string"`, no length cap) — an
+// unbounded string went straight to password-hash comparison.
+describe("StepUpVerifySchema", () => {
+  it("accepts a normal password", () => {
+    expect(
+      StepUpVerifySchema.safeParse({ password: "correct-horse" }).success
+    ).toBe(true)
+  })
+
+  it("names a missing password instead of raw Zod phrasing", () => {
+    const parsed = StepUpVerifySchema.safeParse({})
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe("Password is required")
+      expect(JSON.stringify(parsed.error.issues)).not.toContain(
+        "expected string, received undefined"
+      )
+    }
+  })
+
+  it("rejects an unbounded password (100k chars) with 422 at the schema", () => {
+    expect(
+      StepUpVerifySchema.safeParse({ password: "x".repeat(100000) }).success
+    ).toBe(false)
+  })
+
+  it("caps the password at 128 chars, the auth convention", () => {
+    expect(
+      StepUpVerifySchema.safeParse({ password: "x".repeat(128) }).success
+    ).toBe(true)
+    expect(
+      StepUpVerifySchema.safeParse({ password: "x".repeat(129) }).success
+    ).toBe(false)
   })
 })

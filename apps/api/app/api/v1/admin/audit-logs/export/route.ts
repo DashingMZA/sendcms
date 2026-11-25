@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { exportAuditLogs } from "@sendcms/platform-ops"
 import { AuditLogsQuerySchema } from "@sendcms/platform-ops/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  invalidDateFilterResponse,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // The filtered audit rows as JSON, for download. The rows are
 // returned as stored — safe only because services never write
@@ -17,16 +22,15 @@ export async function GET(req: NextRequest) {
       Object.fromEntries(req.nextUrl.searchParams)
     )
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
+    // SRC-231: same date guard as the list route — a bad `from`/`to`
+    // is a 422, not a silently dropped export filter.
+    const dateError = invalidDateFilterResponse({
+      from: parsed.data.from,
+      to: parsed.data.to,
+    })
+    if (dateError) return dateError
     const result = await exportAuditLogs(session, parsed.data)
     return ok(result)
   } catch (err) {

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
 import { apiUrl } from "@/lib/app-links"
-import { cn } from "@sendcms/shared"
+import { ApiClientError, apiFetch, cn } from "@sendcms/shared"
 import { Button } from "@sendcms/ui"
 
 // The real Contact us form (admin@csofts.com's account — the first /
@@ -57,52 +57,53 @@ export default function ContactForm() {
     setSending(true)
     setResult(null)
     try {
-      const res = await fetch(`${api}/api/public/v1/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: FORM_USER_ID,
-          formId: FORM_ID,
-          fields: {
-            name: form.name,
-            email: form.email,
-            company: form.company,
-            reason: form.reason,
-            message: form.message,
-          },
-          idempotencyKey:
-            typeof crypto !== "undefined" &&
-            typeof crypto.randomUUID === "function"
-              ? crypto.randomUUID()
-              : `sc-${Date.now().toString(36)}`,
-          pageUrl: window.location.href,
-          _sendcms_honeypot: "",
-        }),
+      // SRC-109: the submit goes through apiFetch, not raw fetch —
+      // typed errors + the same handling as every other client call.
+      // (The demo page at /demo/contact-us keeps raw fetch on
+      // purpose: it IS the displayed REST sample.)
+      const data = await apiFetch<{ id?: unknown; message?: unknown }>(
+        `${api}/api/public/v1/submit`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            userId: FORM_USER_ID,
+            formId: FORM_ID,
+            fields: {
+              name: form.name,
+              email: form.email,
+              company: form.company,
+              reason: form.reason,
+              message: form.message,
+            },
+            idempotencyKey:
+              typeof crypto !== "undefined" &&
+              typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `sc-${Date.now().toString(36)}`,
+            pageUrl: window.location.href,
+            _sendcms_honeypot: "",
+          }),
+        }
+      )
+      setResult({
+        ok: true,
+        // End-user message only — the submission id stays in the API
+        // response for the integrator, it is not shown to the visitor.
+        text:
+          typeof data.message === "string" && data.message
+            ? data.message
+            : "Thanks! We'll get back to you soon.",
       })
-      const body: unknown = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        const message =
-          typeof body === "object" && body !== null && "error" in body
-            ? String((body as { error: unknown }).error)
-            : "Submission failed."
-        setResult({ ok: false, text: `Error (${res.status}): ${message}` })
-      } else {
-        const data = body as { id?: unknown; message?: unknown }
-        setResult({
-          ok: true,
-          // End-user message only — the submission id stays in the API
-          // response for the integrator, it is not shown to the visitor.
-          text:
-            typeof data.message === "string" && data.message
-              ? data.message
-              : "Thanks! We'll get back to you soon.",
-        })
-        setForm(EMPTY_FORM)
-      }
-    } catch {
+      setForm(EMPTY_FORM)
+    } catch (err) {
+      // apiFetch throws ApiClientError with the server's message and
+      // status; a network failure throws the fetch error itself.
       setResult({
         ok: false,
-        text: "Could not reach the server. Check your connection and try again.",
+        text:
+          err instanceof ApiClientError
+            ? `Error (${err.status}): ${err.message}`
+            : "Could not reach the server. Check your connection and try again.",
       })
     } finally {
       setSending(false)

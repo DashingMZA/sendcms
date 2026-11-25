@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { pickAiEnvConfig } from "@sendcms/ai"
 import { suggestFieldsForForm } from "@sendcms/forms"
-import { AiProviderNameSchema } from "@sendcms/ai-settings/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { SuggestFieldsSchema } from "@sendcms/forms/validators"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // AI-assisted form building (Phase 12, Step 4). The owner describes
 // the form; the model suggests fields. Returns suggestions only — the
@@ -19,55 +24,25 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
     const { formId } = await params
     const body = await req.json().catch(() => ({}))
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
-    if (!prompt) {
-      return NextResponse.json(
-        { error: "A description is required." },
-        { status: 422 }
-      )
+    // SRC-104: validated with Zod, not by hand — the prompt is capped
+    // at 1000 chars and the browser-only key trio is the shared
+    // schema (a key without its provider 422s), so the two AI routes
+    // no longer duplicate the parsing block.
+    const parsed = SuggestFieldsSchema.safeParse(body)
+    if (!parsed.success) {
+      return validationErrorResponse(parsed.error)
     }
-    if (prompt.length > 1000) {
-      return NextResponse.json(
-        { error: "Description is too long." },
-        { status: 422 }
-      )
-    }
-    const browserKey =
-      typeof body.browserKey === "string" && body.browserKey.trim()
-        ? body.browserKey.trim()
-        : undefined
-    const browserProviderParsed = AiProviderNameSchema.safeParse(
-      body.browserProvider
-    )
-    if (browserKey && !browserProviderParsed.success) {
-      return NextResponse.json(
-        { error: "A browser-only key needs its provider." },
-        { status: 422 }
-      )
-    }
-    if (browserKey && browserKey.length > 500) {
-      return NextResponse.json(
-        { error: "Browser key is too long." },
-        { status: 422 }
-      )
-    }
-    const browserModel =
-      typeof body.browserModel === "string" && body.browserModel.trim()
-        ? body.browserModel.trim()
-        : undefined
     const suggestions = await suggestFieldsForForm(
       session.user.id,
       formId,
-      prompt,
+      parsed.data.prompt,
       // SRC-123: only the AI vars reach the service, never the
       // whole process.env.
       pickAiEnvConfig(process.env),
       {
-        provider: browserProviderParsed.success
-          ? browserProviderParsed.data
-          : undefined,
-        browserKey,
-        browserModel,
+        provider: parsed.data.browserProvider,
+        browserKey: parsed.data.browserKey,
+        browserModel: parsed.data.browserModel,
       }
     )
     return ok(suggestions)

@@ -12,7 +12,7 @@ import {
 } from "@/lib/i18n"
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
-import { InboxTable } from "./inbox-table"
+import { InboxTable } from "../inbox-table"
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>
@@ -28,7 +28,11 @@ export default async function InboxPage({ searchParams }: Props) {
     if (typeof value === "string") flat[key] = value
   }
   const parsed = InboxListQuerySchema.safeParse(flat)
-  const params = parsed.success ? parsed.data : { tab: "all" as const, page: 1 }
+  // SRC-119: the list-page policy — an invalid filter falls back to
+  // the schema defaults, never throws and never 500s (same policy as
+  // the admin users page). A mistyped `?tab=` shows "all"; a bad
+  // `?from=` date drops the date filter.
+  const params = parsed.success ? parsed.data : InboxListQuerySchema.parse({})
 
   const [list, forms, domains] = await Promise.all([
     listSubmissionsForUser(userId, params),

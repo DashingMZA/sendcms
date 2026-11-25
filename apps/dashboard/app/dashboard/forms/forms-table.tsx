@@ -1,12 +1,20 @@
 "use client"
 
 import Link from "next/link"
-import { useForms } from "@sendcms/forms/queries"
-import type { FormWithCounts } from "@sendcms/forms/queries"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useFormsPage } from "@sendcms/forms/queries"
+import type { FormListQueryInput, FormListResult } from "@sendcms/forms/queries"
 
+import { ListSearchInput } from "@/components/dashboard/list-search-input"
 import {
   Badge,
   Button,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Table,
   TableBody,
   TableCell,
@@ -27,15 +35,79 @@ function formatDate(value: string | Date | null) {
   })
 }
 
-export function FormsTable({
-  initialForms,
-}: {
-  initialForms: FormWithCounts[]
-}) {
-  const { t } = useTranslation("forms")
-  const { data: forms = initialForms } = useForms(initialForms)
+type SortOption = "newest" | "oldest" | "nameAsc" | "nameDesc"
 
-  if (forms.length === 0) {
+function sortValue(params: FormListQueryInput): SortOption {
+  if (params.sortBy === "name") {
+    return params.sortDir === "asc" ? "nameAsc" : "nameDesc"
+  }
+  return params.sortDir === "asc" ? "oldest" : "newest"
+}
+
+export function FormsTable({
+  initialData,
+  params,
+}: {
+  initialData: FormListResult
+  params: FormListQueryInput
+}) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const { t } = useTranslation("forms")
+  const { data } = useFormsPage(params, initialData)
+  const list = data ?? initialData
+
+  const pageCount = Math.max(1, Math.ceil(list.total / list.perPage))
+  const from = list.total === 0 ? 0 : (list.page - 1) * list.perPage + 1
+  const to = Math.min(list.total, list.page * list.perPage)
+
+  function pushParams(next: URLSearchParams) {
+    const text = next.toString()
+    router.push(text ? `${pathname}?${text}` : pathname)
+  }
+
+  function setParam(key: string, value: string | null) {
+    const next = new URLSearchParams(searchParams.toString())
+    if (value === null || value === "") {
+      next.delete(key)
+    } else {
+      next.set(key, value)
+    }
+    next.delete("page")
+    pushParams(next)
+  }
+
+  function setPage(page: number) {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set("page", String(page))
+    pushParams(next)
+  }
+
+  function onSortChange(value: string) {
+    const next = new URLSearchParams(searchParams.toString())
+    switch (value as SortOption) {
+      case "oldest":
+        next.set("sortBy", "createdAt")
+        next.set("sortDir", "asc")
+        break
+      case "nameAsc":
+        next.set("sortBy", "name")
+        next.set("sortDir", "asc")
+        break
+      case "nameDesc":
+        next.set("sortBy", "name")
+        next.set("sortDir", "desc")
+        break
+      default:
+        next.set("sortBy", "createdAt")
+        next.set("sortDir", "desc")
+    }
+    next.delete("page")
+    pushParams(next)
+  }
+
+  if (list.total === 0 && !params.search) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20 text-center">
         <RiInboxLine
@@ -59,41 +131,106 @@ export function FormsTable({
   }
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("colForm")}</TableHead>
-            <TableHead>{t("colStatus")}</TableHead>
-            <TableHead>{t("colFields")}</TableHead>
-            <TableHead>{t("colDomains")}</TableHead>
-            <TableHead>{t("colSubmissions")}</TableHead>
-            <TableHead>{t("colCreated")}</TableHead>
-            <TableHead className="w-20" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {forms.map((form) => (
-            <TableRow key={form.id}>
-              <TableCell className="font-medium">{form.name}</TableCell>
-              <TableCell>
-                <Badge variant={form.active ? "default" : "secondary"}>
-                  {form.active ? t("statusActive") : t("statusPaused")}
-                </Badge>
-              </TableCell>
-              <TableCell>{form._count.fields}</TableCell>
-              <TableCell>{form._count.domainLinks}</TableCell>
-              <TableCell>{form._count.submissions}</TableCell>
-              <TableCell>{formatDate(form.createdAt)}</TableCell>
-              <TableCell>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href={`/dashboard/forms/${form.id}`}>{t("open")}</Link>
-                </Button>
-              </TableCell>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <ListSearchInput domain="forms" defaultValue={params.search ?? ""} />
+        <div className="space-y-1">
+          <Label htmlFor="forms-sort">{t("sortLabel")}</Label>
+          <Select value={sortValue(params)} onValueChange={onSortChange}>
+            <SelectTrigger id="forms-sort" className="h-9 w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">{t("sortNewest")}</SelectItem>
+              <SelectItem value="oldest">{t("sortOldest")}</SelectItem>
+              <SelectItem value="nameAsc">{t("sortNameAsc")}</SelectItem>
+              <SelectItem value="nameDesc">{t("sortNameDesc")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("colForm")}</TableHead>
+              <TableHead>{t("colStatus")}</TableHead>
+              <TableHead>{t("colFields")}</TableHead>
+              <TableHead>{t("colDomains")}</TableHead>
+              <TableHead>{t("colSubmissions")}</TableHead>
+              <TableHead>{t("colCreated")}</TableHead>
+              <TableHead className="w-20" />
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {list.items.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-12 text-center">
+                  <p className="mb-2 font-medium">{t("noResults")}</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setParam("search", null)}
+                  >
+                    {t("clearSearch")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )}
+            {list.items.map((form) => (
+              <TableRow key={form.id}>
+                <TableCell className="font-medium">{form.name}</TableCell>
+                <TableCell>
+                  <Badge variant={form.active ? "default" : "secondary"}>
+                    {form.active ? t("statusActive") : t("statusPaused")}
+                  </Badge>
+                </TableCell>
+                <TableCell>{form._count.fields}</TableCell>
+                <TableCell>{form._count.domainLinks}</TableCell>
+                <TableCell>{form._count.submissions}</TableCell>
+                <TableCell>{formatDate(form.createdAt)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/dashboard/forms/${form.id}`}>
+                      {t("open")}
+                    </Link>
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          {list.total === 1
+            ? t("showingResultsOne", { from, to, total: list.total })
+            : t("showingResultsOther", { from, to, total: list.total })}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={list.page <= 1}
+            onClick={() => setPage(list.page - 1)}
+          >
+            {t("previous")}
+          </Button>
+          <span className="self-center">
+            {t("pageOf", { page: list.page, totalPages: pageCount })}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={list.page >= pageCount}
+            onClick={() => setPage(list.page + 1)}
+          >
+            {t("next")}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

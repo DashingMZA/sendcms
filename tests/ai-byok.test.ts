@@ -173,7 +173,18 @@ const { store, mockDb } = vi.hoisted(() => {
     data: Record<string, unknown>
   ): void {
     for (const [k, v] of Object.entries(data)) {
-      if (v !== undefined) row[k] = v
+      if (v === undefined) continue
+      // Prisma numeric update ops (DB-028: saveUserAiKey's upsert
+      // increments keyVersion atomically instead of read-then-write).
+      if (v && typeof v === "object" && "increment" in v) {
+        row[k] = (row[k] as number) + (v as { increment: number }).increment
+        continue
+      }
+      if (v && typeof v === "object" && "decrement" in v) {
+        row[k] = (row[k] as number) - (v as { decrement: number }).decrement
+        continue
+      }
+      row[k] = v
     }
     row.updatedAt = new Date()
   }
@@ -264,6 +275,55 @@ const { store, mockDb } = vi.hoisted(() => {
           const row = [...store.keys.values()].find((k) => k.id === where.id)
           if (!row) throw new Error("Record not found")
           applyData(row as unknown as Record<string, unknown>, data)
+          return row
+        }
+      ),
+      // SRC-206 / DB-028: saveUserAiKey is a single upsert on
+      // (userId, provider) now — the update arm increments
+      // keyVersion atomically (applyData handles { increment }).
+      upsert: vi.fn(
+        async ({
+          where,
+          create,
+          update,
+        }: {
+          where: { userId_provider: { userId: string; provider: string } }
+          create: Record<string, unknown>
+          update: Record<string, unknown>
+        }) => {
+          const existing =
+            store.keys.get(
+              keyId(
+                where.userId_provider.userId,
+                where.userId_provider.provider
+              )
+            ) ?? null
+          if (existing) {
+            applyData(existing as unknown as Record<string, unknown>, update)
+            return existing
+          }
+          const row: StoredKey = {
+            id: `key-${store.keySeq++}`,
+            keyVersion: 1,
+            isEnabled: true,
+            lastTestedAt: null,
+            lastTestStatus: "UNTESTED",
+            masterKeyVersion: 1,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...(create as unknown as Omit<
+              StoredKey,
+              | "id"
+              | "keyVersion"
+              | "isEnabled"
+              | "lastTestedAt"
+              | "lastTestStatus"
+              | "masterKeyVersion"
+              | "createdAt"
+              | "updatedAt"
+            >),
+          }
+          store.keys.set(keyId(row.userId, row.provider), row)
           return row
         }
       ),
@@ -498,7 +558,11 @@ import {
   testUserAiKey,
 } from "@sendcms/ai-settings"
 import { decryptByokKey } from "@sendcms/ai"
-import { SaveAiKeySchema } from "@sendcms/ai-settings/validators"
+import {
+  BrowserKeyOptionsSchema,
+  SaveAiKeySchema,
+  parseBrowserKeyOptions,
+} from "@sendcms/ai-settings/validators"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -1301,5 +1365,59 @@ describe("admin provider config and user keys", () => {
     await expect(
       listUserAiKeysForAdmin(managerSession, "user-1")
     ).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+// SRC-104: the browser-only key trio, shared by the AI routes
+// (suggest-fields, draft-reply) instead of hand-rolled in each one.
+describe("BrowserKeyOptionsSchema / parseBrowserKeyOptions", () => {
+  it("accepts an absent trio and a complete trio", () => {
+    expect(BrowserKeyOptionsSchema.safeParse({}).success).toBe(true)
+    expect(
+      BrowserKeyOptionsSchema.safeParse({
+        browserKey: "sk-test",
+        browserProvider: "openai",
+        browserModel: "gpt-4o",
+      }).success
+    ).toBe(true)
+  })
+
+  it("rejects a browser key without its provider", () => {
+    const parsed = BrowserKeyOptionsSchema.safeParse({
+      browserKey: "sk-test",
+    })
+    expect(parsed.success).toBe(false)
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "A browser-only key needs its provider."
+      )
+    }
+  })
+
+  it("caps the browser key at 500 chars", () => {
+    expect(
+      BrowserKeyOptionsSchema.safeParse({
+        browserKey: "x".repeat(501),
+        browserProvider: "openai",
+      }).success
+    ).toBe(false)
+  })
+
+  it("parseBrowserKeyOptions normalises empty keys/models to absent", () => {
+    const parsed = parseBrowserKeyOptions({
+      browserKey: "   ",
+      browserProvider: "openai",
+      browserModel: "",
+    })
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.options.browserKey).toBeUndefined()
+      expect(parsed.options.browserModel).toBeUndefined()
+    }
+    const bad = parseBrowserKeyOptions({ browserKey: "sk-test" })
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) {
+      expect(bad.error).toContain("A browser-only key needs its provider.")
+    }
   })
 })

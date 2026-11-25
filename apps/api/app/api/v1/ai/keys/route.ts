@@ -1,9 +1,15 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { enforceCustomerAiRateLimit } from "@/lib/rate-limit"
 import { listUserAiKeys, saveUserAiKey } from "@sendcms/ai-settings"
 import { SaveAiKeySchema } from "@sendcms/ai-settings/validators"
-import { ApiError, created, handleApiError, ok } from "@sendcms/api-client"
+import {
+  ApiError,
+  created,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // The customer's own BYOK keys. List/save return metadata only —
 // never the key or any ciphertext field.
@@ -27,15 +33,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const parsed = SaveAiKeySchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const key = await saveUserAiKey(session.user.id, parsed.data)
     return created({ key })

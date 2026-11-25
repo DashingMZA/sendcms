@@ -77,6 +77,21 @@ function parseWindowDate(
   return d
 }
 
+// DB-049: services clamp pagination themselves — same helper as
+// deletion.ts (`page` floors at 1, `perPage` clamps to 1..100,
+// non-finite input falls back to the defaults).
+function clampPagination(
+  page: number | undefined,
+  perPage: number | undefined
+): { page: number; perPage: number } {
+  return {
+    page: Number.isFinite(page) ? Math.max(1, Math.floor(page as number)) : 1,
+    perPage: Number.isFinite(perPage)
+      ? Math.min(100, Math.max(1, Math.floor(perPage as number)))
+      : 20,
+  }
+}
+
 /** Every announcement, newest first, with status/audience filters.
     MANAGE_ANNOUNCEMENTS (the announcements page is a management
     page — owner + SUPER_ADMIN only). */
@@ -96,8 +111,9 @@ export async function listAnnouncements(
   totalPages: number
 }> {
   requireAdmin(actor, "MANAGE_ANNOUNCEMENTS")
-  const page = filters.page ?? 1
-  const perPage = filters.perPage ?? 20
+  // DB-049: the service clamps pagination itself — see
+  // listDeletionRequests for the rationale.
+  const { page, perPage } = clampPagination(filters.page, filters.perPage)
   const where: Prisma.AnnouncementWhereInput = {}
   if (filters.isActive !== undefined) where.isActive = filters.isActive
   if (filters.audience) where.audience = filters.audience

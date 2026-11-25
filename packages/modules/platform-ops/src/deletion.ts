@@ -74,6 +74,21 @@ const deletionRequestSelect = {
   reviewedBy: { select: { id: true, name: true, email: true } },
 } as const
 
+// DB-049: services clamp pagination themselves. `page` floors at 1,
+// `perPage` clamps to 1..100 (the routes' max); non-finite input
+// falls back to the defaults instead of reaching Prisma as NaN.
+function clampPagination(
+  page: number | undefined,
+  perPage: number | undefined
+): { page: number; perPage: number } {
+  return {
+    page: Number.isFinite(page) ? Math.max(1, Math.floor(page as number)) : 1,
+    perPage: Number.isFinite(perPage)
+      ? Math.min(100, Math.max(1, Math.floor(perPage as number)))
+      : 20,
+  }
+}
+
 /** Every deletion request, newest first, with a status filter.
     MANAGE_USERS. */
 export async function listDeletionRequests(
@@ -91,8 +106,11 @@ export async function listDeletionRequests(
   totalPages: number
 }> {
   requireAdmin(actor, "MANAGE_USERS")
-  const page = filters.page ?? 1
-  const perPage = filters.perPage ?? 20
+  // DB-049: the service clamps pagination itself — a direct caller
+  // (another service, an MCP tool, a server component) must not be
+  // able to make the service load 100k rows. The route validates
+  // too, but the service is the last line.
+  const { page, perPage } = clampPagination(filters.page, filters.perPage)
   const where: Prisma.DeletionRequestWhereInput = {}
   if (filters.status) where.status = filters.status
   const [total, rows] = await Promise.all([

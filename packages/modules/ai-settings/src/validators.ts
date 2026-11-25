@@ -54,6 +54,59 @@ export const TestBrowserKeySchema = z.object({
 
 export type TestBrowserKeyInput = z.infer<typeof TestBrowserKeySchema>
 
+// ─── Browser-only keys (SRC-104) ──────────────────────────────────────
+
+// The per-request browser-only key trio, shared by the AI routes
+// (suggest-fields, draft-reply) instead of hand-rolled in each one.
+// The key travels in the request body for this one call and is NEVER
+// stored or logged. `browserKey` is capped at 500 chars (the routes'
+// old inline check); `browserModel` at 200 (same as SaveAiKeySchema).
+// An empty/whitespace key counts as absent — the resolver ignores it
+// downstream — so only a non-empty key needs its provider.
+export const BrowserKeyOptionsSchema = z
+  .object({
+    browserKey: z
+      .string()
+      .trim()
+      .max(500, "Browser key is too long.")
+      .optional(),
+    browserProvider: AiProviderNameSchema.optional(),
+    browserModel: z.string().trim().max(200).optional(),
+  })
+  .refine((v) => !v.browserKey || v.browserProvider !== undefined, {
+    message: "A browser-only key needs its provider.",
+    path: ["browserProvider"],
+  })
+
+export type BrowserKeyOptions = z.infer<typeof BrowserKeyOptionsSchema>
+
+/** Parses the browser-only key trio out of a request body. The
+    routes' shared replacement for the hand-rolled block SRC-104
+    removed: one parse, one error shape, no duplicated provider
+    checks. Empty keys/models normalise to `undefined` (absent). */
+export function parseBrowserKeyOptions(
+  body: unknown
+): { ok: true; options: BrowserKeyOptions } | { ok: false; error: string } {
+  const parsed = BrowserKeyOptionsSchema.safeParse(body)
+  if (!parsed.success) {
+    const flat = parsed.error.flatten()
+    const messages = [
+      ...flat.formErrors,
+      ...Object.values(flat.fieldErrors).flat(),
+    ].filter(Boolean)
+    return { ok: false, error: messages.join("; ") || "Validation failed" }
+  }
+  const { browserKey, browserModel, ...rest } = parsed.data
+  return {
+    ok: true,
+    options: {
+      ...rest,
+      ...(browserKey ? { browserKey } : {}),
+      ...(browserModel ? { browserModel } : {}),
+    },
+  }
+}
+
 // ─── Billing mode ─────────────────────────────────────────────────────
 
 export const SetBillingModeSchema = z.object({

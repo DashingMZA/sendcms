@@ -371,6 +371,39 @@ describe("createPlanVersion", () => {
       })
     ).rejects.toMatchObject({ status: 409 })
   })
+
+  // SRC-206 / DB-028: the version number is max + 1 computed
+  // outside the insert, so two concurrent creates can both compute
+  // N+1 — the loser gets P2002. The number is system-computed, not
+  // user input, so a duplicate is retried with a fresh number, never
+  // a 500.
+  it("retries a concurrent version-number collision (P2002) instead of 500ing", async () => {
+    mockDb.plan.findUnique.mockResolvedValue(makePlan())
+    mockDb.planVersion.findFirst
+      .mockResolvedValueOnce(makeVersion({ version: 1 }))
+      .mockResolvedValueOnce(makeVersion({ version: 2 }))
+    mockDb.planVersion.create
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "7",
+        })
+      )
+      .mockResolvedValueOnce(
+        makeVersion({ id: "version-3", version: 3, status: "DRAFT" })
+      )
+    const version = await createPlanVersion(ownerActor(), "plan-1", {
+      entitlements: proEntitlements,
+      changeReason: "Race",
+    })
+    expect(version.version).toBe(3)
+    expect(mockDb.planVersion.create).toHaveBeenCalledTimes(2)
+    expect(mockDb.planVersion.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ version: 3 }),
+      })
+    )
+  })
 })
 
 describe("publishPlanVersion", () => {
@@ -884,6 +917,38 @@ describe("getEffectiveEntitlements", () => {
     expect(effective.entitlements?.forms).toBe(3)
     // Other limits still come from the subscription.
     expect(effective.entitlements?.apiKeys).toBe(25)
+  })
+
+  it("ignores a no-op override: same value keeps the subscription source", async () => {
+    mockDb.subscription.findFirst.mockResolvedValue(
+      makeSubscription({
+        planVersion: makeVersion({ entitlements: proEntitlements }),
+      })
+    )
+    mockDb.entitlementOverride.findMany.mockResolvedValue([
+      {
+        id: "ov-1",
+        userId,
+        meter: "FORMS",
+        value: proEntitlements.forms,
+        reason: "No-op",
+        adminId: adminId,
+        expiresAt: null,
+      },
+      {
+        id: "ov-2",
+        userId,
+        meter: "API_KEYS",
+        value: null,
+        reason: "Ignored null",
+        adminId: adminId,
+        expiresAt: null,
+      },
+    ])
+    const effective = await getEffectiveEntitlements(userId)
+    expect(effective.source).toBe("subscription")
+    expect(effective.overriddenMeters).toEqual([])
+    expect(effective.entitlements).toEqual(proEntitlements)
   })
 
   it("denies a suspended user entirely", async () => {

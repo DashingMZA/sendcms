@@ -19,7 +19,10 @@ export type SubmitPayload = {
   [HONEYPOT_FIELD]?: string
 }
 
-function newIdempotencyKey(): string {
+/** Mints one idempotency key. Exported so the per-form store in
+    enhance.ts can mint the key for a fill — callers must NOT mint
+    per attempt (see buildSubmitPayload). */
+export function newIdempotencyKey(): string {
   // crypto.randomUUID is available in all modern browsers; fall back to
   // a random hex string so the SDK never crashes on an old one.
   const cryptoObj = typeof crypto !== "undefined" ? crypto : undefined
@@ -37,13 +40,19 @@ export function buildSubmitPayload(
   fields: Record<string, unknown>,
   pageUrl: string,
   turnstileToken?: string,
-  honeypotValue?: string
+  honeypotValue?: string,
+  idempotencyKey?: string
 ): SubmitPayload {
   const payload: SubmitPayload = {
     userId,
     formId,
     fields,
-    idempotencyKey: newIdempotencyKey(),
+    // SRC-308: one key per form-fill, reused across retries of that
+    // fill — a retry after a successful-but-unacknowledged submit is
+    // deduplicated by the server instead of creating a second
+    // submission. The form flows pass the stored per-form key in;
+    // only a direct caller with no stored key mints a fresh one here.
+    idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
     pageUrl,
   }
   if (turnstileToken) payload.turnstileToken = turnstileToken
@@ -51,9 +60,12 @@ export function buildSubmitPayload(
   return payload
 }
 
-/** POSTs one submission. A fresh idempotency key is generated per
-    call, so a retry after a network failure is not mistaken for a
-    duplicate of the failed attempt. */
+/** POSTs one submission. The payload carries the idempotency key
+    minted once per form-fill (see buildSubmitPayload): retries of
+    the same fill send the same key, so the server deduplicates a
+    retry after a successful-but-unacknowledged submit instead of
+    storing it twice. (An earlier comment here claimed per-call
+    minting was correct — it inverted idempotency; SRC-308.) */
 export async function submitToApi(
   apiUrl: string,
   payload: SubmitPayload
@@ -83,9 +95,17 @@ export async function submitToApi(
 
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
+    // Prefer a string `.error`, then a string `.message` (e.g. a
+    // rate-limit body from a proxy/CDN), then a status-based generic.
+    // A non-string `.error` must never render as "[object Object]".
+    const raw =
+      typeof data === "object" && data !== null
+        ? ((data as { error?: unknown }).error ??
+          (data as { message?: unknown }).message)
+        : undefined
     const message =
-      typeof data === "object" && data !== null && "error" in data
-        ? String((data as { error: unknown }).error)
+      typeof raw === "string" && raw
+        ? raw
         : `Submission failed (${res.status}).`
     throw {
       ok: false,

@@ -1,5 +1,16 @@
 import { z } from "zod"
 
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
+
 // Plans & entitlements (Phase 4) — Zod schemas for every request body
 // and list query, plus the typed entitlement config stored on
 // PlanVersion.entitlements. Shared by the api routes and the admin UI's
@@ -166,7 +177,10 @@ export const CreatePlanVersionSchema = z
 // Publishing a version changes what new subscribers get — a reason is
 // required so the audit trail explains the change.
 export const PublishPlanVersionSchema = z.object({
-  reason: z.string().trim().min(1, "Reason is required").max(500),
+  reason: requiredString("Reason is required")
+    .trim()
+    .min(1, "Reason is required")
+    .max(500),
 })
 
 export const ArchivePlanSchema = z.object({
@@ -191,7 +205,10 @@ export const DuplicatePlanSchema = z.object({
 export const AssignSubscriptionSchema = z.object({
   userId: z.string().trim().min(1),
   planVersionId: z.string().trim().min(1),
-  reason: z.string().trim().min(1, "Reason is required").max(500),
+  reason: requiredString("Reason is required")
+    .trim()
+    .min(1, "Reason is required")
+    .max(500),
 })
 
 export const MigrationPreviewSchema = z
@@ -215,7 +232,10 @@ export const ExecuteMigrationSchema = z
     // the rest.
     userIds: z.array(z.string().trim().min(1)).max(1000).optional(),
     allOnVersionId: z.string().trim().min(1).optional(),
-    reason: z.string().trim().min(1, "Reason is required").max(500),
+    reason: requiredString("Reason is required")
+      .trim()
+      .min(1, "Reason is required")
+      .max(500),
   })
   .refine((v) => Boolean(v.userIds?.length) !== Boolean(v.allOnVersionId), {
     message:
@@ -233,7 +253,10 @@ export const SetEntitlementOverrideSchema = z.object({
   meter: UsageMeterSchema,
   // null = unlimited for that meter.
   value: z.number().int().min(0).nullable(),
-  reason: z.string().trim().min(1, "Reason is required").max(500),
+  reason: requiredString("Reason is required")
+    .trim()
+    .min(1, "Reason is required")
+    .max(500),
   expiresAt: z.string().datetime().optional(),
 })
 

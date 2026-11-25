@@ -1,5 +1,5 @@
 import type { AdminSession } from "@sendcms/auth"
-import { AuditAction, AuditResource, db } from "@sendcms/database"
+import { AuditAction, AuditResource, Prisma, db } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
 import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
@@ -113,13 +113,26 @@ export async function createFlag(
   if (existing) {
     throw new ApiError(`Feature flag "${input.key}" already exists.`, 409)
   }
-  const flag = await db.featureFlag.create({
-    data: {
-      key: input.key,
-      name: input.name,
-      description: input.description ?? null,
-    },
-  })
+  // SRC-206: the pre-check is not enough — a concurrent duplicate
+  // key surfaces as P2002, which is a 409, never a 500.
+  let flag
+  try {
+    flag = await db.featureFlag.create({
+      data: {
+        key: input.key,
+        name: input.name,
+        description: input.description ?? null,
+      },
+    })
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new ApiError(`Feature flag "${input.key}" already exists.`, 409)
+    }
+    throw err
+  }
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.CREATE,

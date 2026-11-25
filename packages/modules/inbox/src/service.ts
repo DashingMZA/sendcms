@@ -21,6 +21,7 @@ import {
 } from "@sendcms/ai"
 import { recordAiUsage, resolveAiModelForUser } from "@sendcms/ai-settings"
 import { enqueueReply } from "@sendcms/notifications"
+import { isValidCalendarDate } from "./validators"
 
 // ---------------------------------------------------------------------------
 // Inbox dashboard. Admin-side reads and status changes.
@@ -185,6 +186,19 @@ function tabStatuses(tab: InboxTab): SubmissionStatus[] | null {
   }
 }
 
+function assertValidDateFilter(
+  value: string | undefined,
+  field: "from" | "to"
+): void {
+  if (value === undefined) return
+  if (!isValidCalendarDate(value)) {
+    throw new ApiError(
+      `Invalid ${field} date. Expected a valid calendar date (YYYY-MM-DD).`,
+      422
+    )
+  }
+}
+
 function buildInboxWhere(
   userId: string,
   filters: InboxFilters,
@@ -237,6 +251,13 @@ export async function listSubmissionsForUser(
   userId: string,
   filters: InboxFilters
 ): Promise<InboxListResult> {
+  // DSH-202: the route validates the shape, but direct service
+  // callers (MCP tools, server components) can pass impossible dates
+  // that Postgres rejects as a cast error (500). Fail with a 422
+  // here instead — the codebase's rule for bad filter values
+  // (SRC-231). `from > to` stays defined (empty result, as today).
+  assertValidDateFilter(filters.from, "from")
+  assertValidDateFilter(filters.to, "to")
   const page = Math.max(1, filters.page ?? 1)
   const offset = (page - 1) * INBOX_PAGE_SIZE
 
@@ -363,14 +384,18 @@ export async function updateSubmissionStatusForUser(
   })
   // Audit after the transaction commits (best-effort — logAudit never
   // throws). The per-action SubmissionEvent already records the change;
-  // the AuditLog row is the cross-resource trail.
-  await logAudit({
-    userId,
-    action: AuditAction.UPDATE,
-    resourceType: AuditResource.SUBMISSION,
-    resourceId: submissionId,
-    detail: { action, status: result.status, changed: result.changed },
-  })
+  // the AuditLog row is the cross-resource trail. SRC-236: a no-op
+  // transition (already in the target state) writes no audit row —
+  // it used to log `changed: false` noise on every redundant call.
+  if (result.changed) {
+    await logAudit({
+      userId,
+      action: AuditAction.UPDATE,
+      resourceType: AuditResource.SUBMISSION,
+      resourceId: submissionId,
+      detail: { action, status: result.status, changed: result.changed },
+    })
+  }
   return result
 }
 
@@ -378,11 +403,15 @@ export async function bulkUpdateSubmissionsForUser(
   userId: string,
   submissionIds: string[],
   action: InboxAction
-): Promise<{ updated: number; skipped: number }> {
+): Promise<{ updated: number; skipped: number; notFound: number }> {
+  // SRC-236: dedupe the ids first — a duplicated id used to count
+  // twice (once found, once in `notFound`), so `skipped`/`notFound`
+  // miscounted. The validator still caps the raw list at 100.
+  const ids = [...new Set(submissionIds)]
   const result = await db.$transaction(async (tx) => {
     const submissions = await tx.submission.findMany({
       where: {
-        id: { in: submissionIds },
+        id: { in: ids },
         form: { ownerId: userId },
       },
       select: { id: true, status: true },
@@ -394,17 +423,21 @@ export async function bulkUpdateSubmissionsForUser(
       if (result.changed) updated++
       else skipped++
     }
-    // Ids that don't exist or belong to someone else are skipped
-    // silently — the caller never learns whether they exist.
-    skipped += submissionIds.length - submissions.length
-    return { updated, skipped }
+    // AIM-011: ids that don't exist (or belong to someone else) used
+    // to be folded into `skipped`, so a bulk call with only bogus ids
+    // returned a silent SUCCESS (`updated: 0, skipped: 1`) that was
+    // indistinguishable from "already in the target state". They are
+    // now reported as `notFound` — a count only, never which ids, so
+    // the cross-owner invisibility rule still holds.
+    const notFound = ids.length - submissions.length
+    return { updated, skipped, notFound }
   })
   await logAudit({
     userId,
     action: AuditAction.UPDATE,
     resourceType: AuditResource.SUBMISSION,
-    resourceId: submissionIds.join(","),
-    detail: { action, submissionIds, ...result },
+    resourceId: ids.join(","),
+    detail: { action, submissionIds: ids, ...result },
   })
   return result
 }

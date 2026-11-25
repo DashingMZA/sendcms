@@ -1,9 +1,13 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import { setAdminRole } from "@sendcms/admin-users"
 import { SetAdminRoleSchema } from "@sendcms/admin-users/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 export async function POST(
   req: NextRequest,
@@ -17,15 +21,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const parsed = SetAdminRoleSchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const updated = await setAdminRole(session, userId, parsed.data)
     return ok(updated)

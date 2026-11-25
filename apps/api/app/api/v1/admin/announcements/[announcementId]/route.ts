@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/require-admin-api"
 import { enforceAdminApiRateLimit } from "@/lib/rate-limit"
 import {
@@ -11,7 +11,11 @@ import {
   SetAnnouncementActiveSchema,
   UpdateAnnouncementBodySchema,
 } from "@sendcms/platform-ops/validators"
-import { handleApiError, ok } from "@sendcms/api-client"
+import {
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // One announcement: GET the row, PATCH to edit fields or to flip the
 // active switch (when `isActive` is present the toggle wins and the
@@ -44,15 +48,7 @@ export async function PATCH(
     const body = await req.json().catch(() => ({}))
     const parsed = UpdateAnnouncementBodySchema.safeParse(body)
     if (!parsed.success) {
-      const flat = parsed.error.flatten()
-      const messages = [
-        ...flat.formErrors,
-        ...Object.values(flat.fieldErrors).flat(),
-      ].filter(Boolean)
-      return NextResponse.json(
-        { error: messages.join("; ") || "Validation failed" },
-        { status: 422 }
-      )
+      return validationErrorResponse(parsed.error)
     }
     const correlationId = randomUUID()
     if (parsed.data.isActive !== undefined) {
@@ -61,15 +57,7 @@ export async function PATCH(
         reason: parsed.data.reason,
       })
       if (!active.success) {
-        const flat = active.error.flatten()
-        const messages = [
-          ...flat.formErrors,
-          ...Object.values(flat.fieldErrors).flat(),
-        ].filter(Boolean)
-        return NextResponse.json(
-          { error: messages.join("; ") || "Validation failed" },
-          { status: 422 }
-        )
+        return validationErrorResponse(active.error)
       }
       const announcement = await setAnnouncementActive(
         session,

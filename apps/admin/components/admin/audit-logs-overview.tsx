@@ -9,6 +9,7 @@ import {
 } from "@sendcms/permissions"
 import type { AuditLogRow } from "@sendcms/platform-ops"
 import { useAuditLog, useAuditLogs } from "@sendcms/platform-ops/queries"
+import { apiFetch } from "@sendcms/shared"
 import {
   Badge,
   Button,
@@ -162,11 +163,13 @@ function AuditLogsInner({ actorRole }: Props) {
   async function exportLogs() {
     setExporting(true)
     try {
-      const res = await fetch(
+      // SRC-109: the export goes through apiFetch, not raw fetch —
+      // typed errors + the same auth/timeout handling as every other
+      // client call. (A download has no React Query hook; apiFetch
+      // is the documented path for it.)
+      const body = await apiFetch<unknown>(
         `/api/v1/admin/audit-logs/export${toQueryString(applied)}`
       )
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`)
-      const body = await res.json()
       downloadJson(body, "sendcms-audit-logs.json")
       toast.success(t("exported"))
     } catch {

@@ -8,6 +8,17 @@
 // checks the value is a real status.
 import { z } from "zod"
 
+// ADM-097 / ADM-125: a missing required string must fail with a
+// human, field-named message — Zod's default invalid_type text
+// ("Invalid input: expected string, received undefined") names no
+// field. The `error` callback only overrides invalid_type; too_small
+// / too_big keep their own messages.
+function requiredString(message: string) {
+  return z.string({
+    error: (issue) => (issue.code === "invalid_type" ? message : undefined),
+  })
+}
+
 // Shared pagination for list endpoints.
 export const SupportPaginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -35,7 +46,10 @@ export const CreateTicketSchema = z.object({
 export type CreateTicketInput = z.infer<typeof CreateTicketSchema>
 
 export const ReplyToTicketSchema = z.object({
-  body: z.string().trim().min(1).max(2000),
+  body: requiredString("A reply is required.")
+    .trim()
+    .min(1, "A reply is required.")
+    .max(2000),
 })
 
 export type ReplyToTicketInput = z.infer<typeof ReplyToTicketSchema>
@@ -62,7 +76,10 @@ export type AdminTicketsQuery = z.infer<typeof AdminTicketsQuerySchema>
 // action and the audit record must say why.
 export const SetTicketStatusSchema = z.object({
   status: TicketStatusSchema,
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type SetTicketStatusInput = z.infer<typeof SetTicketStatusSchema>
@@ -71,7 +88,10 @@ export type SetTicketStatusInput = z.infer<typeof SetTicketStatusSchema>
 // the audit record must say why.
 export const AssignTicketSchema = z.object({
   assignedToId: z.string().trim().min(1),
-  reason: z.string().trim().min(1).max(500),
+  reason: requiredString("A reason is required")
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
 })
 
 export type AssignTicketInput = z.infer<typeof AssignTicketSchema>

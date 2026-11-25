@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@sendcms/shared"
-import type { FormDetail, FormWithCounts } from "./service"
+import type { FormDetail, FormListResult, FormWithCounts } from "./service"
 import type {
   FormDomain,
   FormField,
@@ -12,14 +12,27 @@ import type {
   AddNotificationEmailInput,
   CreateFieldInput,
   CreateFormInput,
+  FormListQueryInput,
   UpdateFieldInput,
   UpdateFormInput,
 } from "./validators"
 
-export type { FormDetail, FormWithCounts }
+export type { FormDetail, FormListResult, FormWithCounts }
+
+export type { FormListQueryInput }
+
+/** Form detail as the API returns it: the stored detail plus the
+    server's Turnstile configuration state (SDK-016) — the dashboard
+    process cannot know the API server's secret, so the flag comes
+    from the API and the form page warns when Turnstile is on but the
+    server cannot verify tokens. */
+export type FormDetailResponse = FormDetail & {
+  turnstileConfigured?: boolean
+}
 
 export const formKeys = {
   list: ["forms"] as const,
+  page: (params: FormListQueryInput) => ["forms", "page", params] as const,
   detail: (id: string) => ["forms", id] as const,
 }
 
@@ -31,10 +44,39 @@ export function useForms(initialData?: FormWithCounts[]) {
   })
 }
 
-export function useForm(id: string, initialData?: FormDetail) {
+// DSH-107: the paged list the dashboard tables use — search, sort and
+// pagination ride in the URL (the page passes its parsed params in),
+// so the table refetches when the user pages or searches. The key
+// nests under formKeys.list, so the create/update/delete mutations'
+// invalidateQueries({ queryKey: formKeys.list }) refreshes paged
+// lists too.
+export function useFormsPage(
+  params: FormListQueryInput,
+  initialData?: FormListResult
+) {
+  return useQuery({
+    queryKey: formKeys.page(params),
+    queryFn: () =>
+      apiFetch<FormListResult>(`/api/v1/forms${toQueryString(params)}`),
+    initialData,
+  })
+}
+
+function toQueryString(params: FormListQueryInput): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      query.set(key, String(value))
+    }
+  }
+  const text = query.toString()
+  return text ? `?${text}` : ""
+}
+
+export function useForm(id: string, initialData?: FormDetailResponse) {
   return useQuery({
     queryKey: formKeys.detail(id),
-    queryFn: () => apiFetch<FormDetail>(`/api/v1/forms/${id}`),
+    queryFn: () => apiFetch<FormDetailResponse>(`/api/v1/forms/${id}`),
     initialData,
   })
 }

@@ -42,7 +42,7 @@ import {
   enqueueDigest,
   enqueueSubmissionNotifications,
 } from "@sendcms/notifications"
-import { verifyTurnstileToken } from "./turnstile"
+import { isTurnstileConfigured, verifyTurnstileToken } from "./turnstile"
 import { HONEYPOT_FIELD, type SubmitBodyInput } from "./validators"
 
 const logger = createLogger("submissions")
@@ -294,6 +294,28 @@ export function detectSpam(data: Record<string, SanitizedValue>): string[] {
 // Submission flow
 // ---------------------------------------------------------------------------
 
+// SDK-019: seconds until the next UTC midnight — the daily-limit
+// 429's `Retry-After` (the form's daily counter resets at midnight
+// UTC). At least 1 so the header is never 0.
+function secondsUntilMidnightUtc(): number {
+  const now = new Date()
+  const midnight = new Date(now)
+  midnight.setUTCHours(24, 0, 0, 0)
+  return Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / 1000))
+}
+
+// SRC-237: seconds until the next UTC month — the monthly-quota
+// 429's `Retry-After` (the owner's monthly counter resets on the 1st,
+// UTC). Quota exhaustion is a 429, not a 402: no client handles 402
+// and the documented ApiError vocabulary has no 402 in it.
+function secondsUntilNextUtcMonth(): number {
+  const now = new Date()
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+  )
+  return Math.max(1, Math.ceil((nextMonth.getTime() - now.getTime()) / 1000))
+}
+
 export async function submitForm(
   body: SubmitBodyInput,
   meta: SubmitMeta
@@ -311,9 +333,24 @@ export async function submitForm(
   // Returns (rather than throws) the error so call sites use a plain
   // `throw` — TS narrows after `throw` but not after a call to a
   // never-returning closure (verified with TS 6.0.3).
-  const fail = (message: string, status: number): ApiError => {
+  // SDK-019: rate-limit throws carry the wait in seconds so the route
+  // can emit a `Retry-After` header. ApiError has no retry field (it
+  // lives in @sendcms/shared, outside this module), so the value rides
+  // as an optional `retryAfterSeconds` property — the same pattern as
+  // `originAllowed` above, which the route already reads. The header
+  // itself is the route/api-client stream's part; the service's part
+  // is emitting the value on every 429.
+  const fail = (
+    message: string,
+    status: number,
+    retryAfterSeconds?: number
+  ): ApiError => {
     const err = new ApiError(message, status)
     err.originAllowed = originAllowed
+    if (retryAfterSeconds !== undefined) {
+      ;(err as ApiError & { retryAfterSeconds?: number }).retryAfterSeconds =
+        retryAfterSeconds
+    }
     return err
   }
 
@@ -342,14 +379,21 @@ export async function submitForm(
     }
   }
 
-  // Turnstile (only when the form has it on).
+  // Turnstile (only when the form has it on). SDK-016: the token
+  // check comes FIRST — with the secret check first, the 422
+  // "Verification is required" branch was unreachable (every submit
+  // 503d while the secret was unset, token or not). No token → 422
+  // either way; a token with no server secret → 503 fail-closed,
+  // worded for the owner (the misconfiguration is theirs to fix, not
+  // the submitter's). The form service refuses to enable Turnstile in
+  // an unconfigured environment, so the 503 should be rare.
   if (form.turnstileEnabled) {
-    if (!process.env.TURNSTILE_SECRET_KEY) {
-      throw fail("Bot protection is not configured for this form.", 503)
-    }
     const token = body.turnstileToken
     if (!token) {
       throw fail("Verification is required for this form.", 422)
+    }
+    if (!isTurnstileConfigured()) {
+      throw fail("Bot protection is not configured on this server.", 503)
     }
     const ok = await verifyTurnstileToken(token, meta.ip)
     if (!ok) {
@@ -411,7 +455,11 @@ export async function submitForm(
       where: { formId: form.id, createdAt: { gte: dayStart } },
     })
     if (today >= form.dailyLimit) {
-      throw fail("This form has reached its daily submission limit.", 429)
+      throw fail(
+        "This form has reached its daily submission limit.",
+        429,
+        secondsUntilMidnightUtc()
+      )
     }
   }
   // Plan quota (Phase 4): the form owner's monthly submission quota
@@ -422,7 +470,11 @@ export async function submitForm(
   // was hit.
   const quota = await checkLimitStrict(form.ownerId, "SUBMISSIONS")
   if (!quota.allowed) {
-    throw fail("This form's monthly submission quota is exhausted.", 402)
+    throw fail(
+      "This form's monthly submission quota is exhausted.",
+      429,
+      secondsUntilNextUtcMonth()
+    )
   }
   if (meta.ip) {
     const minuteAgo = new Date(Date.now() - 60_000)
@@ -432,7 +484,8 @@ export async function submitForm(
     if (recent >= IP_MINUTE_LIMIT) {
       throw fail(
         "Too many submissions. Please wait a minute and try again.",
-        429
+        429,
+        60
       )
     }
     const hourAgo = new Date(Date.now() - 3_600_000)
@@ -442,7 +495,8 @@ export async function submitForm(
     if (hourly >= IP_HOUR_LIMIT) {
       throw fail(
         "Too many submissions from this address. Try again later.",
-        429
+        429,
+        3600
       )
     }
   }
@@ -498,12 +552,20 @@ export async function submitForm(
             where: { formId: form.id, createdAt: { gte: dayStart } },
           })
           if (today >= form.dailyLimit) {
-            throw fail("This form has reached its daily submission limit.", 429)
+            throw fail(
+              "This form has reached its daily submission limit.",
+              429,
+              secondsUntilMidnightUtc()
+            )
           }
         }
         const lockedQuota = await checkLimitStrict(form.ownerId, "SUBMISSIONS")
         if (!lockedQuota.allowed) {
-          throw fail("This form's monthly submission quota is exhausted.", 402)
+          throw fail(
+            "This form's monthly submission quota is exhausted.",
+            429,
+            secondsUntilNextUtcMonth()
+          )
         }
         if (meta.ip) {
           const minuteAgo = new Date(Date.now() - 60_000)
@@ -513,7 +575,8 @@ export async function submitForm(
           if (recent >= IP_MINUTE_LIMIT) {
             throw fail(
               "Too many submissions. Please wait a minute and try again.",
-              429
+              429,
+              60
             )
           }
           const hourAgo = new Date(Date.now() - 3_600_000)
@@ -523,7 +586,8 @@ export async function submitForm(
           if (hourly >= IP_HOUR_LIMIT) {
             throw fail(
               "Too many submissions from this address. Try again later.",
-              429
+              429,
+              3600
             )
           }
         }

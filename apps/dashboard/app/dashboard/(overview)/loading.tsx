@@ -1,3 +1,11 @@
+// This skeleton lives in the (overview) route group on purpose, not at
+// app/dashboard/loading.tsx: a loading.tsx wraps its segment's page AND
+// every child route in Suspense, so a dashboard-level one streamed a 200
+// shell before a detail page could call notFound() — every missing or
+// foreign resource rendered the 404 UI with HTTP 200 (DSH-104/204/409).
+// Scoped to the group, it wraps only the overview page; the detail
+// segments ([domainId], [formId], [submissionId], [ticketId]) have no
+// loading boundary above them, so their notFound() yields a real 404.
 import { Separator, Skeleton } from "@sendcms/ui"
 
 export default function DashboardLoading() {

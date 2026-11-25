@@ -147,10 +147,146 @@ describe("POST /api/public/v1/submit", () => {
     expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
   })
 
+  // SDK-019: a rate-limit throw carries `retryAfterSeconds` — the
+  // route surfaces it as a Retry-After header on the JSON error.
+  it("emits Retry-After from a rate-limit error's retryAfterSeconds (SDK-019)", async () => {
+    const err = new ApiError("Too many submissions. Please wait a minute.", 429)
+    err.originAllowed = true
+    ;(err as ApiError & { retryAfterSeconds?: number }).retryAfterSeconds = 60
+    mockSubmitForm.mockRejectedValue(err)
+    const res = await POST(jsonRequest(VALID_BODY))
+    expect(res.status).toBe(429)
+    expect(res.headers.get("retry-after")).toBe("60")
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+  })
+
+  it("omits Retry-After when the error carries no wait (SDK-019)", async () => {
+    const err = new ApiError("This form does not accept submissions.", 403)
+    err.originAllowed = true
+    mockSubmitForm.mockRejectedValue(err)
+    const res = await POST(jsonRequest(VALID_BODY))
+    expect(res.status).toBe(403)
+    expect(res.headers.get("retry-after")).toBeNull()
+  })
+
   it("returns 422 when the body fails validation", async () => {
     const res = await POST(jsonRequest({ userId: "u" }))
     expect(res.status).toBe(422)
     expect(mockSubmitForm).not.toHaveBeenCalled()
+  })
+
+  // SDK-015 / SDK-022: pre-service errors (route-level Zod 422, the
+  // 413 size guard, malformed JSON, the form-lookup 404) never reach
+  // the service's allowlist check, so originAllowed is unset. They
+  // echo CORS when the origin's host is a VERIFIED domain — and only
+  // then.
+  it("echoes CORS on a route-level 422 from a verified origin (SDK-015/SDK-022)", async () => {
+    const res = await POST(jsonRequest({ userId: "u" }))
+    expect(res.status).toBe(422)
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+    expect((await res.json()).error).toContain("Invalid input")
+  })
+
+  it("carries no CORS on a route-level 422 from an unverified origin (SDK-015/SDK-022)", async () => {
+    mockIsVerifiedOrigin.mockResolvedValueOnce(false)
+    const res = await POST(jsonRequest({ userId: "u" }))
+    expect(res.status).toBe(422)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  it("echoes CORS on a 413 from a verified origin and not from an unverified one (SDK-022)", async () => {
+    const verified = await POST(
+      jsonRequest(VALID_BODY, { "content-length": "64001" })
+    )
+    expect(verified.status).toBe(413)
+    expect(verified.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+    mockIsVerifiedOrigin.mockResolvedValueOnce(false)
+    const unverified = await POST(
+      jsonRequest(VALID_BODY, { "content-length": "64001" })
+    )
+    expect(unverified.status).toBe(413)
+    expect(unverified.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  it("echoes CORS on the service form-lookup 404 from a verified origin (SDK-022)", async () => {
+    mockSubmitForm.mockRejectedValue(new ApiError("Form not found", 404))
+    const res = await POST(jsonRequest(VALID_BODY))
+    expect(res.status).toBe(404)
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+  })
+
+  it("still carries no CORS when the service explicitly rejected the origin, even if the domain is verified (SDK-015/SDK-022)", async () => {
+    const err = new ApiError(
+      "This form does not accept submissions from this site.",
+      403
+    )
+    err.originAllowed = false
+    mockSubmitForm.mockRejectedValue(err)
+    const res = await POST(jsonRequest(VALID_BODY))
+    expect(res.status).toBe(403)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+    // The verified-domain fallback must not even be consulted once
+    // the service has decided.
+    expect(mockIsVerifiedOrigin).not.toHaveBeenCalled()
+  })
+
+  // SDK-017 / SDK-023: malformed JSON is a clean 400, not a 422 with
+  // a raw Zod dump.
+  it("returns 400 with 'Malformed JSON body.' for syntactically invalid JSON (SDK-017/SDK-023)", async () => {
+    const res = await POST(
+      new NextRequest(URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+        },
+        body: '{"userId": broken json',
+      })
+    )
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: "Malformed JSON body." })
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+    expect(mockSubmitForm).not.toHaveBeenCalled()
+  })
+
+  it("returns 400 without CORS for malformed JSON from an unverified origin (SDK-017/SDK-023)", async () => {
+    mockIsVerifiedOrigin.mockResolvedValueOnce(false)
+    const res = await POST(
+      new NextRequest(URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: "{bad json",
+      })
+    )
+    expect(res.status).toBe(400)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  it("keeps the Zod 422 messages for a well-formed but invalid body (SDK-017)", async () => {
+    const res = await POST(jsonRequest({}))
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toContain("Invalid input")
+    expect(mockSubmitForm).not.toHaveBeenCalled()
+  })
+
+  // SRC-237: the service reports monthly quota exhaustion as 402;
+  // the route remaps it to 429, the documented vocabulary.
+  it("remaps a service 402 quota error to 429 with the same message (SRC-237)", async () => {
+    const err = new ApiError(
+      "This form's monthly submission quota is exhausted.",
+      402
+    )
+    err.originAllowed = true
+    mockSubmitForm.mockRejectedValue(err)
+    const res = await POST(jsonRequest(VALID_BODY))
+    expect(res.status).toBe(429)
+    expect(await res.json()).toEqual({
+      error: "This form's monthly submission quota is exhausted.",
+    })
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
   })
 
   it("returns 413 when content-length exceeds 64 KB", async () => {

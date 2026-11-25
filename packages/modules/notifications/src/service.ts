@@ -267,15 +267,25 @@ export function parseDigestPayload(payload: unknown): DigestProps | null {
         (item): item is Record<string, unknown> =>
           typeof item === "object" && item !== null
       )
-      .map((item) => ({
-        senderName:
-          typeof item.senderName === "string" ? item.senderName : null,
-        snippet: typeof item.snippet === "string" ? item.snippet : "",
-        receivedAt:
+      .map((item) => {
+        // SRC-236: an unparseable receivedAt used to become an
+        // Invalid Date and ride into the rendered digest. Such an
+        // item is dropped instead — the stored payload is corrupt
+        // and the time is part of the rendered row. (DigestItem
+        // requires a Date, so null is not an option here.)
+        const receivedAt =
           item.receivedAt instanceof Date
             ? item.receivedAt
-            : new Date(String(item.receivedAt)),
-      })),
+            : new Date(String(item.receivedAt))
+        if (Number.isNaN(receivedAt.getTime())) return null
+        return {
+          senderName:
+            typeof item.senderName === "string" ? item.senderName : null,
+          snippet: typeof item.snippet === "string" ? item.snippet : "",
+          receivedAt,
+        }
+      })
+      .filter((item): item is DigestProps["items"][number] => item !== null),
     inboxUrl: p.inboxUrl,
     accentColor: typeof p.accentColor === "string" ? p.accentColor : "#0891b2",
     footerText:

@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { pickAiEnvConfig } from "@sendcms/ai"
 import { draftReplyForSubmission } from "@sendcms/inbox"
-import { AiProviderNameSchema } from "@sendcms/ai-settings/validators"
-import { ApiError, handleApiError, ok } from "@sendcms/api-client"
+import { DraftReplySchema } from "@sendcms/inbox/validators"
+import {
+  ApiError,
+  handleApiError,
+  ok,
+  validationErrorResponse,
+} from "@sendcms/api-client"
 
 // Auto-reply drafts (Phase 12, Step 4). The model drafts a reply to
 // one submission. Returns the draft only — nothing is sent. The
@@ -18,29 +23,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!session?.user?.id) throw new ApiError("Unauthorized", 401)
     const { submissionId } = await params
     const body = await req.json().catch(() => ({}))
-    const browserKey =
-      typeof body.browserKey === "string" && body.browserKey.trim()
-        ? body.browserKey.trim()
-        : undefined
-    const browserProviderParsed = AiProviderNameSchema.safeParse(
-      body.browserProvider
-    )
-    if (browserKey && !browserProviderParsed.success) {
-      return NextResponse.json(
-        { error: "A browser-only key needs its provider." },
-        { status: 422 }
-      )
+    // SRC-104: the body is exactly the shared browser-only key trio
+    // — no hand-rolled provider/key parsing in the route.
+    const parsed = DraftReplySchema.safeParse(body)
+    if (!parsed.success) {
+      return validationErrorResponse(parsed.error)
     }
-    if (browserKey && browserKey.length > 500) {
-      return NextResponse.json(
-        { error: "Browser key is too long." },
-        { status: 422 }
-      )
-    }
-    const browserModel =
-      typeof body.browserModel === "string" && body.browserModel.trim()
-        ? body.browserModel.trim()
-        : undefined
     const draft = await draftReplyForSubmission(
       session.user.id,
       submissionId,
@@ -48,11 +36,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       // whole process.env.
       pickAiEnvConfig(process.env),
       {
-        provider: browserProviderParsed.success
-          ? browserProviderParsed.data
-          : undefined,
-        browserKey,
-        browserModel,
+        provider: parsed.data.browserProvider,
+        browserKey: parsed.data.browserKey,
+        browserModel: parsed.data.browserModel,
       }
     )
     return ok(draft)

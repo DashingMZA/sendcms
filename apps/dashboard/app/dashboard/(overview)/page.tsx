@@ -10,7 +10,7 @@ import { SubmissionActivityChart } from "@/components/dashboard/submission-activ
 import {
   SUBMISSION_STATUS_LABEL_KEYS,
   SubmissionStatusBadge,
-} from "./inbox/submission-status-badge"
+} from "../inbox/submission-status-badge"
 import { Avatar, AvatarFallback, Badge, Button, Separator } from "@sendcms/ui"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 

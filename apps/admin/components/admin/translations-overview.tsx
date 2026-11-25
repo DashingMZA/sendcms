@@ -8,6 +8,7 @@ import {
   type PlatformRole,
 } from "@sendcms/permissions"
 import { useTranslationCompletion } from "@sendcms/platform-ops/queries"
+import { apiFetch } from "@sendcms/shared"
 import {
   Badge,
   Button,
@@ -71,9 +72,12 @@ function TranslationsInner() {
   async function exportLocale(code: string) {
     setExporting(code)
     try {
-      const res = await fetch(`/api/v1/admin/translations/${code}/export`)
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`)
-      const body = await res.json()
+      // SRC-109: the export goes through apiFetch, not raw fetch —
+      // typed errors + the same auth/timeout handling as every other
+      // client call.
+      const body = await apiFetch<unknown>(
+        `/api/v1/admin/translations/${code}/export`
+      )
       downloadJson(body, `sendcms-translations-${code}.json`)
       toast.success(t("exported"))
     } catch {
