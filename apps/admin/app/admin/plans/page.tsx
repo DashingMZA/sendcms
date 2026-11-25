@@ -7,9 +7,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { PlansTable } from "@/components/admin/plans-table"
 
-export const metadata: Metadata = {
-  title: "Plans — SendCMS Admin",
-  description: "Create and manage versioned plans.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "plans")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Admin plan list (Phase 4). The server fetches the first page via the
@@ -34,7 +41,7 @@ export default async function AdminPlansPage({
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "plans")
 
   return (

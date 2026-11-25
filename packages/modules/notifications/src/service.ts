@@ -14,11 +14,13 @@ import { ApiError, getSubmissionSender } from "@sendcms/shared"
 import { getDigestIntervalHours, getNextDigestAt } from "@sendcms/ai"
 import { logAudit } from "@sendcms/security"
 import {
+  getEmailTranslator,
   notificationDeps,
   type DigestProps,
   type SubmissionNotificationField,
   type SubmissionNotificationProps,
 } from "@sendcms/email"
+import { getUserLocale } from "@sendcms/users"
 import { createLogger } from "@sendcms/observability"
 import {
   MAX_EMAIL_ATTEMPTS,
@@ -61,13 +63,26 @@ export const EMAIL_JOB_PAGE_SIZE = 20
 
 const logger = createLogger("notifications")
 
+/** The form owner's stored locale for email rendering — null
+    (→ English) when the owner is gone or has no preference. Never
+    throws: a missing locale must not fail a send. */
+async function ownerLocale(ownerId: string): Promise<string | null> {
+  try {
+    return await getUserLocale(ownerId)
+  } catch {
+    return null
+  }
+}
+
 export function buildSubmissionNotificationSubject(
   formName: string,
-  senderName: string | null
+  senderName: string | null,
+  locale = "en"
 ): string {
+  const t = getEmailTranslator(locale)
   return senderName
-    ? `New submission from ${senderName} on ${formName}`
-    : `New submission on ${formName}`
+    ? t("notificationSubjectFrom", { sender: senderName, formName })
+    : t("notificationSubjectOn", { formName })
 }
 
 function dashboardUrl(): string {
@@ -124,9 +139,14 @@ export async function enqueueSubmissionNotifications(
   if (recipients.length === 0) return 0
 
   const sender = getSubmissionSender(submission.data)
+  // The subject is stored on the job at enqueue time, so it is
+  // rendered in the owner's locale here — the send path re-renders
+  // the body in the same locale (renderNotification resolves it again
+  // from the denormalized ownerId).
   const subject = buildSubmissionNotificationSubject(
     submission.form.name,
-    sender.name
+    sender.name,
+    (await ownerLocale(submission.form.ownerId)) ?? "en"
   )
   return enqueueEmailJobs(
     recipients.map((recipient) => ({
@@ -208,8 +228,11 @@ export async function enqueueReply({
 }): Promise<number> {
   // Phase 16 (DB-034): denormalized owner, resolved from the form
   // before the create — the outbox listing filters on this column
-  // instead of joining Form.
+  // instead of joining Form. The reply chrome follows the owner's
+  // locale; the body itself is the owner's own words, never translated.
   const ownerId = await resolveFormOwnerId(formId)
+  const locale = (await ownerLocale(ownerId)) ?? "en"
+  const t = getEmailTranslator(locale)
   return enqueueEmailJobs([
     {
       type: EmailJobType.SUBMISSION_REPLY,
@@ -222,7 +245,8 @@ export async function enqueueReply({
         formName,
         body,
         accentColor: "#0891b2",
-        footerText: `You're receiving this because you messaged us on ${formName}.`,
+        footerText: t("replyFooter", { formName }),
+        locale,
       } as unknown as Prisma.InputJsonValue,
     },
   ])
@@ -230,12 +254,15 @@ export async function enqueueReply({
 
 /** The payload a SUBMISSION_REPLY job carries. Written by the inbox
     service, read by the send path — a malformed one fails the job, it
-    never sends a half-rendered reply. */
+    never sends a half-rendered reply. `locale` is the owner's locale
+    at enqueue time; jobs enqueued before Wave 7 carry none and render
+    English. */
 export function parseReplyPayload(payload: unknown): {
   formName: string
   body: string
   accentColor: string
   footerText: string
+  locale: string
 } | null {
   if (typeof payload !== "object" || payload === null) return null
   const p = payload as Record<string, unknown>
@@ -247,6 +274,7 @@ export function parseReplyPayload(payload: unknown): {
     body: p.body,
     accentColor: typeof p.accentColor === "string" ? p.accentColor : "#0891b2",
     footerText: typeof p.footerText === "string" ? p.footerText : "",
+    locale: typeof p.locale === "string" ? p.locale : "en",
   }
 }
 export function parseDigestPayload(payload: unknown): DigestProps | null {
@@ -297,16 +325,21 @@ export function parseDigestPayload(payload: unknown): DigestProps | null {
       typeof p.footerText === "string"
         ? p.footerText
         : "You're receiving this because you get digests for this form.",
+    // Jobs enqueued before Wave 7 carry no locale and render English.
+    locale: typeof p.locale === "string" ? p.locale : "en",
   }
 }
 
 async function renderNotification(
-  submission: SubmissionWithForm
+  submission: SubmissionWithForm,
+  locale = "en"
 ): Promise<{ subject: string; html: string; text: string }> {
   const sender = getSubmissionSender(submission.data)
+  const t = getEmailTranslator(locale)
   const subject = buildSubmissionNotificationSubject(
     submission.form.name,
-    sender.name
+    sender.name,
+    locale
   )
   const props: SubmissionNotificationProps = {
     formName: submission.form.name,
@@ -318,8 +351,8 @@ async function renderNotification(
     receivedAt: submission.createdAt,
     inboxUrl: `${dashboardUrl()}/dashboard/inbox/${submission.id}`,
     accentColor: "#0891b2",
-    footerText:
-      "You're receiving this because you get notifications for this form.",
+    footerText: t("notificationFooter"),
+    locale,
   }
   const { html, text } = await notificationDeps.renderNotification(props)
   return { subject, html, text }
@@ -397,10 +430,16 @@ async function processOneJob(
     if (!full?.submission || !full.form) {
       throw new Error("Submission or form no longer exists.")
     }
-    const { subject, html, text } = await renderNotification({
-      ...full.submission,
-      form: full.form,
-    })
+    // The body renders in the owner's locale at send time (resolved
+    // from the denormalized ownerId), matching the subject stored at
+    // enqueue time.
+    const { subject, html, text } = await renderNotification(
+      {
+        ...full.submission,
+        form: full.form,
+      },
+      (job.ownerId ? await ownerLocale(job.ownerId) : null) ?? "en"
+    )
     const { messageId } = await notificationDeps.sendEmail({
       to: full.to,
       subject: full.subject || subject,
@@ -681,6 +720,9 @@ export async function sendTestSubmissionEmail(
   if (!form) {
     throw new ApiError("Form not found.", 404)
   }
+  const locale = (await ownerLocale(userId)) ?? "en"
+  const t = getEmailTranslator(locale)
+  const subject = t("testSubject", { formName: form.name })
   const props: SubmissionNotificationProps = {
     formName: form.name,
     senderName: "Test Visitor",
@@ -699,13 +741,14 @@ export async function sendTestSubmissionEmail(
     receivedAt: new Date(),
     inboxUrl: `${dashboardUrl()}/dashboard/forms/${form.id}`,
     accentColor: "#0891b2",
-    footerText: "This is a test email from SendCMS.",
+    footerText: t("testFooter"),
+    locale,
   }
   const { html, text } = await notificationDeps.renderNotification(props)
   try {
     const { messageId, provider } = await notificationDeps.sendEmail({
       to,
-      subject: `Test notification from ${form.name}`,
+      subject,
       html,
       text,
     })
@@ -719,7 +762,7 @@ export async function sendTestSubmissionEmail(
         data: {
           type: EmailJobType.TEST_EMAIL,
           to,
-          subject: `Test notification from ${form.name}`,
+          subject,
           status: EmailJobStatus.SENT,
           providerMessageId: messageId,
           formId: form.id,

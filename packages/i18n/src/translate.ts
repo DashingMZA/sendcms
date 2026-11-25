@@ -26,10 +26,16 @@ export function createTranslator(messages: TranslationMessages): Translator {
   }
 }
 
+import { DEFAULT_LOCALE } from "./locales"
+
 /**
  * Plural-aware formatting for the common `{count}` pattern.
  * `forms` maps Intl plural categories to templates, e.g.
  * `{ one: "{count} user", other: "{count} users" }`.
+ *
+ * Never throws on an unknown locale tag: like the `format.ts`
+ * helpers, an unsupported locale falls back to English instead of
+ * raising a RangeError.
  */
 export function formatPlural(
   locale: string,
@@ -37,7 +43,13 @@ export function formatPlural(
   forms: Partial<Record<Intl.LDMLPluralRule, string>>,
   vars: TranslationVars = {}
 ): string {
-  const rule = new Intl.PluralRules(locale).select(count)
+  let rules: Intl.PluralRules
+  try {
+    rules = new Intl.PluralRules(locale)
+  } catch {
+    rules = new Intl.PluralRules(DEFAULT_LOCALE)
+  }
+  const rule = rules.select(count)
   const template = forms[rule] ?? forms.other ?? forms.one
   if (template === undefined) return "[missing: plural]"
   return interpolate(template, { ...vars, count })

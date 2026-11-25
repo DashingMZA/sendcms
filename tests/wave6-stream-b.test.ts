@@ -30,14 +30,18 @@ const mockSendEmail = vi.hoisted(() =>
 const mockRenderNotification = vi.hoisted(() =>
   vi.fn(async () => ({ html: "<p>hi</p>", text: "hi" }))
 )
-vi.mock("@sendcms/email", () => ({
-  notificationDeps: {
-    sendEmail: mockSendEmail,
-    renderNotification: mockRenderNotification,
-    renderDigest: vi.fn(),
-    renderReply: vi.fn(),
-  },
-}))
+vi.mock("@sendcms/email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/email")>()
+  return {
+    ...actual,
+    notificationDeps: {
+      sendEmail: mockSendEmail,
+      renderNotification: mockRenderNotification,
+      renderDigest: vi.fn(),
+      renderReply: vi.fn(),
+    },
+  }
+})
 
 import { EmailJobStatus, EmailJobType } from "@sendcms/database"
 import { ApiError } from "@sendcms/shared"

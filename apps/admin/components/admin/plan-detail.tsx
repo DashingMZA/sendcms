@@ -50,7 +50,10 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import { RiArrowLeftLine, RiInformationLine } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import {
   formatDate,
   formatDateTime,
@@ -72,6 +75,7 @@ type Props = {
 
 export function PlanDetailView({ initialData, planId, actorRole }: Props) {
   const { t } = useTranslation("plans")
+  const locale = useLocale()
   const router = useRouter()
   const [dialog, setDialog] = useState<DialogKind>(null)
   const [publishVersionId, setPublishVersionId] = useState<string | null>(null)
@@ -166,6 +170,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
                 </VersionField>
                 <VersionField label={t("price")}>
                   {formatPrice(
+                    locale,
                     currentVersion.priceAmount,
                     currentVersion.priceCurrency,
                     t("priceFree")
@@ -177,7 +182,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
                   {currentVersion.trialDays}
                 </VersionField>
                 <VersionField label={t("publishedAt")}>
-                  {formatDateTime(currentVersion.publishedAt)}
+                  {formatDateTime(locale, currentVersion.publishedAt)}
                 </VersionField>
               </dl>
               {currentVersion.changeReason && (
@@ -220,12 +225,15 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
                     </TableCell>
                     <TableCell>
                       {formatPrice(
+                        locale,
                         version.priceAmount,
                         version.priceCurrency,
                         t("priceFree")
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(version.publishedAt)}</TableCell>
+                    <TableCell>
+                      {formatDate(locale, version.publishedAt)}
+                    </TableCell>
                     <TableCell
                       className="font-mono text-xs"
                       title={version.createdById ?? ""}
@@ -408,29 +416,33 @@ export function EntitlementsTable({
   entitlements: PlanEntitlements
 }) {
   const { t } = useTranslation("plans")
+  const locale = useLocale()
   const unlimited = t("limitUnlimited")
   const rows: { label: string; value: string }[] = [
-    { label: t("entForms"), value: formatLimit(entitlements.forms, unlimited) },
+    {
+      label: t("entForms"),
+      value: formatLimit(locale, entitlements.forms, unlimited),
+    },
     {
       label: t("entDomains"),
-      value: formatLimit(entitlements.domains, unlimited),
+      value: formatLimit(locale, entitlements.domains, unlimited),
     },
     {
       label: t("entSubmissions"),
-      value: formatLimit(entitlements.submissionsPerMonth, unlimited),
+      value: formatLimit(locale, entitlements.submissionsPerMonth, unlimited),
     },
     { label: t("entApiKeys"), value: String(entitlements.apiKeys) },
     {
       label: t("entAiRequests"),
-      value: formatLimit(entitlements.aiRequestsPerDay, unlimited),
+      value: formatLimit(locale, entitlements.aiRequestsPerDay, unlimited),
     },
     {
       label: t("entMcpMinute"),
-      value: formatLimit(entitlements.mcpRequestsPerMinute, unlimited),
+      value: formatLimit(locale, entitlements.mcpRequestsPerMinute, unlimited),
     },
     {
       label: t("entMcpHour"),
-      value: formatLimit(entitlements.mcpRequestsPerHour, unlimited),
+      value: formatLimit(locale, entitlements.mcpRequestsPerHour, unlimited),
     },
     {
       label: t("entAiProviders"),
@@ -489,6 +501,7 @@ function VersionCompare({
 }) {
   const { t } = useTranslation("plans")
   const { t: tErrors } = useTranslation("errors")
+  const locale = useLocale()
   const { data, isPending, isError } = usePlanCompare(fromId, toId)
 
   if (!fromId || !toId) {
@@ -539,10 +552,16 @@ function VersionCompare({
             <TableRow key={change.field}>
               <TableCell className="font-medium">{change.label}</TableCell>
               <TableCell>
-                {formatDiffValue(change.field, change.from, data.from, t)}
+                {formatDiffValue(
+                  locale,
+                  change.field,
+                  change.from,
+                  data.from,
+                  t
+                )}
               </TableCell>
               <TableCell>
-                {formatDiffValue(change.field, change.to, data.to, t)}
+                {formatDiffValue(locale, change.field, change.to, data.to, t)}
               </TableCell>
             </TableRow>
           ))}
@@ -554,6 +573,7 @@ function VersionCompare({
 
 /** Render one diff value field-aware (null = unlimited / free). */
 function formatDiffValue(
+  locale: string,
   field: string,
   value: unknown,
   version: { priceCurrency: string },
@@ -562,6 +582,7 @@ function formatDiffValue(
   const unlimited = t("limitUnlimited")
   if (field === "priceAmount") {
     return formatPrice(
+      locale,
       value as number | null,
       version.priceCurrency,
       t("priceFree")
@@ -575,7 +596,7 @@ function formatDiffValue(
     field === "mcpRequestsPerMinute" ||
     field === "mcpRequestsPerHour"
   ) {
-    return formatLimit(value as number | null, unlimited)
+    return formatLimit(locale, value as number | null, unlimited)
   }
   if (field === "billingInterval") {
     return intervalLabel(String(value), t)

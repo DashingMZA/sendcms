@@ -27,16 +27,11 @@ import {
 } from "@sendcms/ui"
 
 import { RiAddLine, RiGlobalLine } from "@remixicon/react"
-import { useTranslation } from "@/components/dashboard/translation-provider"
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
+import { formatDate } from "@sendcms/i18n"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 type SortOption = "newest" | "oldest" | "nameAsc" | "nameDesc"
 
@@ -58,6 +53,7 @@ export function DomainsTable({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { t } = useTranslation("domains")
+  const locale = useLocale()
   const { data } = useDomainsPage(params, initialData)
   const list = data ?? initialData
 
@@ -199,9 +195,25 @@ export function DomainsTable({
                   <TableCell>
                     {verification ? METHOD_LABEL[verification.method] : "—"}
                   </TableCell>
-                  <TableCell>{formatDate(domain.verifiedAt)}</TableCell>
+                  <TableCell>
+                    {domain.verifiedAt
+                      ? formatDate(locale, domain.verifiedAt, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "—"}
+                  </TableCell>
                   <TableCell>{domain._count.formLinks}</TableCell>
-                  <TableCell>{formatDate(domain.createdAt)}</TableCell>
+                  <TableCell>
+                    {domain.createdAt
+                      ? formatDate(locale, domain.createdAt, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "—"}
+                  </TableCell>
                   <TableCell>
                     <Button asChild variant="ghost" size="sm">
                       <Link href={`/dashboard/domains/${domain.id}`}>

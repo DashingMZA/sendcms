@@ -22,7 +22,10 @@ import {
   XAxis,
   YAxis,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { useAdminOverview } from "@sendcms/platform-ops/queries"
 import type { AdminOverview } from "@sendcms/platform-ops"
 import type {
@@ -72,8 +75,8 @@ const byStatusConfig: ChartConfig = {
   },
 }
 
-function formatDayLabel(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
+function formatDayLabel(locale: string, date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
   })
@@ -109,6 +112,7 @@ export function OverviewDashboard({
 }) {
   const router = useRouter()
   const { t } = useTranslation("overview")
+  const locale = useLocale()
   // ADM-006: the refetch status — a range change used to keep the old
   // numbers on screen with no indicator, and a failed refetch stayed
   // silently stale (the security overview's skeleton pattern).
@@ -136,7 +140,7 @@ export function OverviewDashboard({
 
   const perDay = overview.submissions.perDay.map((day) => ({
     ...day,
-    label: formatDayLabel(day.date),
+    label: formatDayLabel(locale, day.date),
   }))
   const byStatus = overview.submissions.byStatus.map((row) => ({
     status: t(STATUS_KEYS[row.status]),

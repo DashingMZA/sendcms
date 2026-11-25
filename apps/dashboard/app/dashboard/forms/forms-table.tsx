@@ -24,16 +24,11 @@ import {
 } from "@sendcms/ui"
 
 import { RiAddLine, RiInboxLine } from "@remixicon/react"
-import { useTranslation } from "@/components/dashboard/translation-provider"
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
+import { formatDate } from "@sendcms/i18n"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 type SortOption = "newest" | "oldest" | "nameAsc" | "nameDesc"
 
@@ -55,6 +50,7 @@ export function FormsTable({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { t } = useTranslation("forms")
+  const locale = useLocale()
   const { data } = useFormsPage(params, initialData)
   const list = data ?? initialData
 
@@ -189,7 +185,15 @@ export function FormsTable({
                 <TableCell>{form._count.fields}</TableCell>
                 <TableCell>{form._count.domainLinks}</TableCell>
                 <TableCell>{form._count.submissions}</TableCell>
-                <TableCell>{formatDate(form.createdAt)}</TableCell>
+                <TableCell>
+                  {form.createdAt
+                    ? formatDate(locale, form.createdAt, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "—"}
+                </TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="sm">
                     <Link href={`/dashboard/forms/${form.id}`}>

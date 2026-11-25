@@ -59,11 +59,17 @@ export default async function ApiPage() {
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("sdkIntro")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 data-cms-form
               </code>{" "}
               {t("sdkIntroMiddle")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 docs/sdk.md
               </code>{" "}
               {t("sdkIntroSuffix")}
@@ -112,15 +118,24 @@ export default async function ApiPage() {
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("restIntroA")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 POST /api/public/v1/submit
               </code>
               {t("restIntroB")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 Origin
               </code>{" "}
               {t("restIntroC")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 &lt;form&gt;
               </code>{" "}
               {t("restIntroD")}
@@ -132,25 +147,40 @@ export default async function ApiPage() {
             />
             <ul className="list-disc pl-5 text-sm text-muted-foreground">
               <li>
-                <code className="rounded bg-muted px-1 font-mono text-xs">
+                <code
+                  dir="ltr"
+                  className="rounded bg-muted px-1 font-mono text-xs"
+                >
                   201
                 </code>{" "}
                 — {t("rest201")};{" "}
-                <code className="rounded bg-muted px-1 font-mono text-xs">
+                <code
+                  dir="ltr"
+                  className="rounded bg-muted px-1 font-mono text-xs"
+                >
                   200
                 </code>{" "}
                 — {t("rest200")}
               </li>
               <li>
-                <code className="rounded bg-muted px-1 font-mono text-xs">
+                <code
+                  dir="ltr"
+                  className="rounded bg-muted px-1 font-mono text-xs"
+                >
                   403
                 </code>{" "}
                 — {t("rest403")};{" "}
-                <code className="rounded bg-muted px-1 font-mono text-xs">
+                <code
+                  dir="ltr"
+                  className="rounded bg-muted px-1 font-mono text-xs"
+                >
                   422
                 </code>{" "}
                 — {t("rest422")};{" "}
-                <code className="rounded bg-muted px-1 font-mono text-xs">
+                <code
+                  dir="ltr"
+                  className="rounded bg-muted px-1 font-mono text-xs"
+                >
                   429
                 </code>{" "}
                 — {t("rest429")}
@@ -165,7 +195,10 @@ export default async function ApiPage() {
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("mcpIntroPrefix")}{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">
+              <code
+                dir="ltr"
+                className="rounded bg-muted px-1 font-mono text-xs"
+              >
                 POST /api/mcp
               </code>{" "}
               {t("mcpIntroMiddle")}{" "}

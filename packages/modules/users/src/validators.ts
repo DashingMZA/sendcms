@@ -52,10 +52,14 @@ export const ChangeEmailSchema = z.object({
 })
 
 // Preferred UI locale. Keep this list in sync with the locale registry in
-// @sendcms/i18n (packages/i18n/src/locales.ts). Only "en" and "ur" have
-// complete translations in Phase 2; the other 8 are registered as
-// coming-soon and fall back to English in the UI, but the preference itself
-// is still stored.
+// @sendcms/i18n (packages/i18n/src/locales.ts). `SupportedLocales` is the
+// full registry (all 10 codes, including coming-soon); only
+// `SelectableLocales` — the locales with complete translation files —
+// may be stored or selected (I18N-307). A coming-soon code used to be
+// storable and then rendered an RTL shell with English content, because
+// no translation files exist for it. The drift-guard test in
+// tests/wave7-stream-b.test.ts asserts SelectableLocales stays equal to
+// SELECTABLE_LOCALES in @sendcms/i18n.
 export const SupportedLocales = [
   "en",
   "ur",
@@ -71,8 +75,13 @@ export const SupportedLocales = [
 
 export type SupportedLocale = (typeof SupportedLocales)[number]
 
+/** Locales with complete translation files — the only storable ones. */
+export const SelectableLocales = ["en", "ur"] as const
+
+export type SelectableLocale = (typeof SelectableLocales)[number]
+
 export const SetLocaleSchema = z.object({
-  locale: z.enum(SupportedLocales),
+  locale: z.enum(SelectableLocales),
 })
 
 export type SetLocaleInput = z.infer<typeof SetLocaleSchema>

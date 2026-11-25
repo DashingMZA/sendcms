@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { formatDistanceToNow } from "date-fns"
+import { formatRelativeDate } from "@sendcms/i18n"
 import { toast } from "sonner"
 import {
   type EmailJobListParams,
@@ -28,7 +28,10 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 const TABS: {
   key: "all" | "PENDING" | "SENDING" | "SENT" | "FAILED"
@@ -75,6 +78,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { t } = useTranslation("notifications")
+  const locale = useLocale()
 
   const { data } = useEmailJobs(params, initialData)
   const list = data ?? initialData
@@ -223,18 +227,14 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                   </TableCell>
                   <TableCell>{job.attempts}</TableCell>
                   <TableCell>
-                    {formatDistanceToNow(new Date(job.createdAt), {
-                      addSuffix: true,
-                    })}
+                    {formatRelativeDate(locale, job.createdAt)}
                   </TableCell>
                   <TableCell>
                     {/* EML-094: claim age is shown for SENDING rows
                         (time since the claim, from `updatedAt`); every
                         other status has no claim to age. */}
                     {job.status === "SENDING" && job.claimAgeMinutes !== null
-                      ? formatDistanceToNow(new Date(job.updatedAt), {
-                          addSuffix: true,
-                        })
+                      ? formatRelativeDate(locale, job.updatedAt)
                       : "—"}
                   </TableCell>
                   <TableCell className="max-w-64 truncate text-sm text-muted-foreground">

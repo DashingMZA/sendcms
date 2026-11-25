@@ -45,7 +45,10 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatPrice } from "./plan-format"
 
 const DEBOUNCE_MS = 300
@@ -58,6 +61,7 @@ type SelectedUser = { id: string; name: string | null; email: string }
 
 export function MigrationWizard({ actorRole }: Props) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const { t: tPlans } = useTranslation("plans")
   const canMigrate = adminCan(actorRole, "MIGRATE_SUBSCRIPTIONS")
 
@@ -228,6 +232,7 @@ export function MigrationWizard({ actorRole }: Props) {
                       {plan.name} v{plan.currentVersion!.version}
                       {plan.currentVersion!.priceAmount !== null &&
                         ` · ${formatPrice(
+                          locale,
                           plan.currentVersion!.priceAmount,
                           plan.currentVersion!.priceCurrency,
                           tPlans("priceFree")
@@ -337,12 +342,12 @@ export function MigrationWizard({ actorRole }: Props) {
           ) : (
             <div className="flex flex-col gap-3">
               <div className="relative max-w-md">
-                <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder={t("migrateUserSearchPlaceholder")}
                   value={search}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  className="pl-9"
+                  className="ps-9"
                 />
               </div>
               {users.length > 0 && (
@@ -354,7 +359,7 @@ export function MigrationWizard({ actorRole }: Props) {
                         key={user.id}
                         type="button"
                         onClick={() => toggleUser(user)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent"
+                        className="flex w-full items-center justify-between px-3 py-2 text-start hover:bg-accent"
                       >
                         <span>
                           <span className="block text-sm font-medium">
@@ -455,11 +460,13 @@ export function MigrationWizard({ actorRole }: Props) {
                           <TableCell>
                             {t("migratePriceFromTo", {
                               from: formatPrice(
+                                locale,
                                 row.priceChange.from,
                                 row.priceChange.currency,
                                 tPlans("priceFree")
                               ),
                               to: formatPrice(
+                                locale,
                                 row.priceChange.to,
                                 row.priceChange.currency,
                                 tPlans("priceFree")

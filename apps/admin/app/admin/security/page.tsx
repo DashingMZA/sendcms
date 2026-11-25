@@ -5,9 +5,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { SecurityOverview } from "@/components/admin/security-overview"
 
-export const metadata: Metadata = {
-  title: "Security — SendCMS Admin",
-  description: "Deletion requests and the account erasure workflow.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "security")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Deletion requests (Phase 7). The server only authenticates and
@@ -22,7 +29,7 @@ export default async function AdminSecurityPage() {
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "security")
 
   return (

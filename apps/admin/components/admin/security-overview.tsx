@@ -42,7 +42,11 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDateTime } from "./plan-format"
 import { StepUpDialog } from "./step-up-dialog"
 
 type Props = {
@@ -55,17 +59,6 @@ const REQUEST_STATUSES = [
   "REJECTED",
   "COMPLETED",
 ] as const
-
-function formatDateTime(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 /**
  * The security page (Phase 7 — deletion requests): the requests
@@ -97,6 +90,7 @@ export function SecurityOverview({ actorRole }: Props) {
 
 function SecurityInner() {
   const { t } = useTranslation("security")
+  const locale = useLocale()
   const [status, setStatus] = useState<
     "all" | "REQUESTED" | "APPROVED" | "REJECTED" | "COMPLETED"
   >("all")
@@ -276,13 +270,13 @@ function SecurityInner() {
                         {row.reason}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(row.createdAt)}
+                        {formatDateTime(locale, row.createdAt)}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(row.reviewedAt)}
+                        {formatDateTime(locale, row.reviewedAt)}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(row.completedAt)}
+                        {formatDateTime(locale, row.completedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">

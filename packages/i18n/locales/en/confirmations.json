@@ -1,13 +1,1 @@
-{
-  "bulkDeleteConfirm": "Delete selected items?",
-  "deleteConfirm": "Are you sure you want to delete this?",
-  "migrateConfirm": "Are you sure you want to migrate the selected subscriptions?",
-  "no": "No",
-  "ok": "OK",
-  "publishConfirm": "Are you sure you want to publish this version?",
-  "reactivateConfirm": "Are you sure you want to reactivate this user?",
-  "revokeConfirm": "Are you sure you want to revoke this key?",
-  "suspendConfirm": "Are you sure you want to suspend this user?",
-  "unsavedChanges": "You have unsaved changes. Leave anyway?",
-  "yes": "Yes"
-}
+{}

@@ -20,6 +20,7 @@ export {
   redactAuthEmailUrl,
 } from "./auth-mailer"
 export { notificationDeps } from "./notification-deps"
+export { getEmailTranslator } from "./email-i18n"
 export type {
   DigestItem,
   DigestProps,
@@ -45,3 +46,5 @@ export {
 } from "./templates/submission-notification"
 export { Digest, digestText } from "./templates/digest"
 export { Reply, replyText } from "./templates/reply"
+export { VerifyEmail } from "./templates/verify-email"
+export { ResetPasswordEmail } from "./templates/reset-password"

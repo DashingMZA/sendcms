@@ -19,7 +19,10 @@ import {
   type LocaleCode,
 } from "@/lib/i18n-client"
 import { useTranslation } from "@/components/admin/translation-provider"
-import { usePersistLocale } from "@/components/admin/use-persist-locale"
+import {
+  awaitPersistLocale,
+  usePersistLocale,
+} from "@/components/admin/use-persist-locale"
 
 /**
  * First-visit language prompt. When there is no stored preference
@@ -27,8 +30,9 @@ import { usePersistLocale } from "@/components/admin/use-persist-locale"
  * detected; if it is a supported locale other than English, the admin
  * is asked whether to stay in English or switch. No detection (or an
  * English browser) means English stays the default and nothing pops.
- * Either choice is stored in the browser cookie and best-effort
- * persisted to the API — the UI never blocks on that call.
+ * Either choice is stored in the browser cookie and persisted to the
+ * API — switching waits for the persist (capped at 2 s, I18N-308)
+ * before reloading, so the choice is durable, not just in the cookie.
  */
 export function LanguagePrompt() {
   const { t } = useTranslation("language")
@@ -53,12 +57,19 @@ export function LanguagePrompt() {
 
   const choose = (locale: LocaleCode) => {
     writeLocaleCookie(locale)
-    persistLocale.mutate(locale)
     setOpen(false)
     if (locale !== "en") {
-      applyLocaleToDocument(locale)
-      // Reload so the server components re-render in the new locale.
-      window.location.reload()
+      // I18N-308: await the DB persist before reloading (capped at
+      // 2 s — see awaitPersistLocale), so the choice is durable and
+      // not just in the cookie. Choosing English needs no reload, so
+      // the POST completes normally in the background.
+      void awaitPersistLocale(persistLocale, locale).then(() => {
+        applyLocaleToDocument(locale)
+        // Reload so the server components re-render in the new locale.
+        window.location.reload()
+      })
+    } else {
+      persistLocale.mutate(locale)
     }
   }
 

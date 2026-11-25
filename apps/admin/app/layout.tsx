@@ -3,7 +3,7 @@ import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
-import { ThemeProvider, Toaster } from "@sendcms/ui"
+import { DirectionProvider, ThemeProvider, Toaster } from "@sendcms/ui"
 import {
   SHELL_TRANSLATION_DOMAINS,
   getDictionaries,
@@ -11,9 +11,13 @@ import {
   getRequestLocale,
   getTranslator,
 } from "@/lib/i18n"
-import { TranslationProvider } from "@/components/admin/translation-provider"
+import {
+  LocaleProvider,
+  TranslationProvider,
+} from "@/components/admin/translation-provider"
 import { QueryProvider } from "@/components/admin/query-provider"
 import { LanguagePrompt } from "@/components/admin/language-prompt"
+import { auth } from "@/lib/auth"
 
 export const metadata: Metadata = {
   title: "SendCMS Admin",
@@ -44,10 +48,20 @@ export default async function RootLayout({
   // the language prompt/selector, or by the stored user preference).
   // English is the fallback; `ur` renders right-to-left (`ar` is
   // registered as RTL too, but has no translation files yet).
-  const locale = await getRequestLocale()
+  // The session user id is passed (I18N-203) so the stored DB
+  // preference resolves for the shell too — without it, an admin with
+  // stored `ur` and no cookie got English despite the preference the
+  // UI itself had written. Signed-out visitors have no session, so
+  // only the cookie applies to them.
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
   const direction = getLocaleDirection(locale)
   const dictionaries = await getDictionaries(locale, SHELL_TRANSLATION_DOMAINS)
   const t = await getTranslator(locale, "dashboard")
+  // The toast live-region label lives in the shared `common` domain
+  // (I18N-105) so it follows the page locale instead of rendering
+  // Sonner's hardcoded English default.
+  const tCommon = await getTranslator(locale, "common")
   // CSP nonce (Admin Control Plane, Phase 9): the proxy sets `x-nonce`
   // on the request, and the inline theme script next-themes renders
   // needs that nonce on its `<script>` tag or the enforcing policy
@@ -72,15 +86,23 @@ export default async function RootLayout({
         >
           {t("skipToContent")}
         </a>
-        <ThemeProvider nonce={nonce}>
-          <QueryProvider>
-            <TranslationProvider dictionaries={dictionaries}>
-              {children}
-              <LanguagePrompt />
-              <Toaster richColors position="top-right" />
-            </TranslationProvider>
-          </QueryProvider>
-        </ThemeProvider>
+        <DirectionProvider dir={direction}>
+          <ThemeProvider nonce={nonce}>
+            <QueryProvider>
+              <LocaleProvider locale={locale}>
+                <TranslationProvider dictionaries={dictionaries}>
+                  {children}
+                  <LanguagePrompt />
+                  <Toaster
+                    richColors
+                    position="top-right"
+                    containerAriaLabel={tCommon("notifications")}
+                  />
+                </TranslationProvider>
+              </LocaleProvider>
+            </QueryProvider>
+          </ThemeProvider>
+        </DirectionProvider>
       </body>
     </html>
   )

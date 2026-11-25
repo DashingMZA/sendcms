@@ -18,6 +18,8 @@
     "@sendcms/ai-settings": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
+    "@sendcms/email": "workspace:*",
+    "@sendcms/i18n": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/plans": "workspace:*",

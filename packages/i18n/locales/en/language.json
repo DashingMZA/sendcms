@@ -1,14 +1,6 @@
 {
-  "addLanguage": "Add language",
-  "code": "Code",
-  "default": "Default",
   "detectedMessage": "Your browser is set to {language}. Switch the admin to {language}?",
   "detectedTitle": "Switch language?",
-  "direction": "Direction",
-  "enabled": "Enabled",
-  "languageChanged": "Language changed to {language}.",
-  "name": "Name",
-  "nativeName": "Native name",
   "stayInEnglish": "Stay in English",
   "switchLanguage": "Switch to {language}",
   "title": "Languages"

@@ -10,6 +10,7 @@ import { docsUrl } from "@/lib/app-links"
 import { Logo } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
 import { LanguageSelector } from "@/components/dashboard/language-selector"
+import type { LocaleCode } from "@/lib/i18n-client"
 import {
   RiDashboardLine,
   RiLinksLine,
@@ -72,6 +73,13 @@ type Props = {
   inboxCount: number
   /** Which side the sidebar sits on: "left" in LTR, "right" in RTL. */
   side: "left" | "right"
+  /**
+   * Server-resolved locale, handed to the language selector so its
+   * first paint names the active language (I18N-309 / DSH-007).
+   * Without it the selector SSR-rendered "English" on every Urdu
+   * page and only corrected after hydration.
+   */
+  initialLocale?: LocaleCode
 }
 
 export function AppSidebar({
@@ -80,6 +88,7 @@ export function AppSidebar({
   formCount,
   inboxCount,
   side,
+  initialLocale,
 }: Props) {
   const router = useRouter()
   const { t } = useTranslation("navigation")
@@ -285,7 +294,7 @@ export function AppSidebar({
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <LanguageSelector side={side} />
+          <LanguageSelector side={side} initialLocale={initialLocale} />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -352,7 +361,7 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarFooter>
 
-      <SidebarRail />
+      <SidebarRail label={t("toggleSidebar")} />
     </Sidebar>
   )
 }

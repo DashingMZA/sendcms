@@ -4,6 +4,7 @@ import {
   DEFAULT_LOCALE,
   createTranslator,
   getLocaleDirection,
+  isSelectableLocale,
   isSupportedLocale,
   loadLocaleAppDomain,
   loadLocaleDomain,
@@ -34,6 +35,7 @@ export {
   DEFAULT_LOCALE,
   createTranslator,
   getLocaleDirection,
+  isSelectableLocale,
   isSupportedLocale,
 }
 export type { LocaleCode, LocaleInfo, TranslationMessages, Translator }
@@ -112,14 +114,17 @@ async function loadMessages(
 
 /**
  * Resolve the request locale: the cookie first, then the user's stored
- * preference in the database, then English.
+ * preference in the database, then English. Only locales with complete
+ * translation files resolve (I18N-307): a coming-soon code in the
+ * cookie or the DB falls through to English, including the shell
+ * direction, so it can never render an RTL shell with English content.
  */
 export async function getRequestLocale(userId?: string): Promise<LocaleCode> {
   const cookie = (await cookies()).get(LOCALE_COOKIE_NAME)?.value
-  if (cookie && isSupportedLocale(cookie)) return cookie
+  if (cookie && isSelectableLocale(cookie)) return cookie
   if (userId) {
     const stored = await getUserLocale(userId)
-    if (stored && isSupportedLocale(stored)) return stored
+    if (stored && isSelectableLocale(stored)) return stored
   }
   return DEFAULT_LOCALE
 }

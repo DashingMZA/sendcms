@@ -10,13 +10,18 @@ import {
   RiLoaderLine,
 } from "@remixicon/react"
 
-const Toaster = ({ ...props }: ToasterProps) => {
+const Toaster = ({ containerAriaLabel, ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Sonner renders `<section aria-label="{containerAriaLabel}
+      // {hotkeyLabel}">` for its live region; without an explicit label
+      // it falls back to the hardcoded English "Notifications alt+T"
+      // (I18N-105). Apps pass the translated "Notifications" string.
+      containerAriaLabel={containerAriaLabel}
       icons={{
         success: <RiCheckboxCircleLine className="size-4" />,
         info: <RiInformationLine className="size-4" />,

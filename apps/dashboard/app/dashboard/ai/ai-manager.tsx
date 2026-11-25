@@ -36,7 +36,11 @@ import {
   Label,
   Skeleton,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import { formatDate } from "@sendcms/i18n"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 // ─── Browser-only keys (localStorage) ──────────────────────────────────
 // A browser-only key lives ONLY in this browser: localStorage under
@@ -332,7 +336,7 @@ export function AiManager({
                   type="button"
                   onClick={() => onBillingModeChange(m)}
                   disabled={setBillingMode.isPending}
-                  className={`rounded-lg border p-4 text-left ${
+                  className={`rounded-lg border p-4 text-start ${
                     selected ? "border-primary bg-accent" : "hover:bg-accent"
                   }`}
                 >
@@ -574,7 +578,7 @@ function StoragePopup({
           <button
             type="button"
             onClick={() => onBrowserOnly(pending)}
-            className="rounded-lg border p-4 text-left hover:bg-accent"
+            className="rounded-lg border p-4 text-start hover:bg-accent"
           >
             <span className="block text-sm font-semibold">
               {t("browserOnly")}
@@ -587,7 +591,7 @@ function StoragePopup({
             type="button"
             onClick={chooseBoth}
             disabled={busy}
-            className="rounded-lg border p-4 text-left hover:bg-accent"
+            className="rounded-lg border p-4 text-start hover:bg-accent"
           >
             <span className="block text-sm font-semibold">{t("both")}</span>
             <span className="block text-sm text-muted-foreground">
@@ -629,6 +633,7 @@ function ProviderKeyCard({
   onTestBrowser: () => void
 }) {
   const { t } = useTranslation("ai")
+  const locale = useLocale()
   const [showForm, setShowForm] = useState(false)
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState(serverKey?.model ?? "")
@@ -668,7 +673,13 @@ function ProviderKeyCard({
           <p className="text-muted-foreground">
             {t("lastTested")}:{" "}
             {serverKey.lastTestedAt
-              ? new Date(serverKey.lastTestedAt).toLocaleString()
+              ? formatDate(locale, serverKey.lastTestedAt, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
               : t("neverTested")}{" "}
             ·{" "}
             {serverKey.lastTestStatus === "OK"

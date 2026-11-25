@@ -22,8 +22,12 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 import { ListSearchInput } from "@/components/dashboard/list-search-input"
+import { formatDate } from "@sendcms/i18n"
 
 const STATUS_KEYS: Record<TicketStatus, string> = {
   OPEN: "statusOpen",
@@ -63,14 +67,6 @@ type Props = {
   filters: Filters
 }
 
-function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
-
 /**
  * The customer's ticket list: a status filter and pagination driven
  * by the URL, a table of their own tickets, and a link to the
@@ -78,6 +74,7 @@ function formatDate(value: Date | string): string {
  */
 export function SupportList({ initialData, filters }: Props) {
   const { t } = useTranslation("support")
+  const locale = useLocale()
   const router = useRouter()
   const { data } = useMyTickets(filters, initialData)
   const page = data ?? initialData
@@ -199,7 +196,11 @@ export function SupportList({ initialData, filters }: Props) {
                     <TableCell>{t(PRIORITY_KEYS[ticket.priority])}</TableCell>
                     <TableCell>{ticket.messageCount}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(ticket.updatedAt)}
+                      {formatDate(locale, ticket.updatedAt, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </TableCell>
                   </TableRow>
                 ))}

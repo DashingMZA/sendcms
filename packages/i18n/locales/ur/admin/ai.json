@@ -33,7 +33,6 @@
   "defaultModelHint": "خالی کا مطلب ہے پرووائیڈر کا ڈیفالٹ۔ یہ صرف پلیٹ فارم کلید پر لاگو ہوتا ہے۔",
   "defaultModelLabel": "ڈیفالٹ ماڈل",
   "defaultModelPlaceholder": "پرووائیڈر ڈیفالٹ",
-  "description": "پلیٹ فارم AI کا استعمال، پرووائیڈرز، BYOK کلیدیں، اور پلیٹ فارم AI کنٹرولز۔",
   "disabled": "غیر فعال",
   "editProviders": "پرووائیڈرز میں ترمیم کریں",
   "emergencyNeverDisables": "ایمرجنسی سوئچ کبھی فارم سبمشن، ان باکس، یا کسی غیر AI سروس کو بند نہیں کرتا۔",
@@ -93,7 +92,6 @@
   "testFailed": "ناکام",
   "testOk": "ٹھیک",
   "testUntested": "ٹیسٹ نہیں ہوا",
-  "title": "AI",
   "tokensIn": "ان پٹ ٹوکنز",
   "tokensOut": "آؤٹ پٹ ٹوکنز",
   "totalCalls": "کل کالز",
@@ -101,7 +99,6 @@
   "usageSummaryTitle": "AI استعمال کا خلاصہ",
   "usageTitle": "AI استعمال",
   "userAiDescription": "اس صارف کا بلنگ موڈ، محفوظ شدہ BYOK کلیدیں، اور AI استعمال۔",
-  "userAiTitle": "AI ترتیبات",
   "viewFullUsage": "مکمل استعمال دیکھیں",
   "viewPlans": "پلانز دیکھیں"
 }

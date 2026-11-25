@@ -2,11 +2,11 @@ import { render } from "@react-email/render"
 import { sendPlatformEmail } from "./provider"
 import { VerifyEmail } from "./templates/verify-email"
 import { ResetPasswordEmail } from "./templates/reset-password"
+import { getEmailTranslator } from "./email-i18n"
 
 // Auth mail uses its own neutral branding (not the comment-product values
 // in config/config.json — those are rebranded in Phase 9).
 const ACCENT_COLOR = "#0891b2"
-const FOOTER_TEXT = "You're receiving this because you have a SendCMS account."
 
 // EML-002: reset/verification tokens are bearer-equivalent — the dev log
 // is a shared, persistent file, so the token must never land in it by
@@ -80,26 +80,32 @@ async function deliverOrLog({
   }
 }
 
-/** Better Auth `emailVerification.sendVerificationEmail` callback. */
+/** Better Auth `emailVerification.sendVerificationEmail` callback.
+    `locale` is the recipient's stored locale ("en" | "ur"); the
+    auth factory resolves it from the user row and passes it through. */
 export async function sendVerificationEmail({
   user,
   url,
+  locale,
 }: {
   user: AuthEmailUser
   url: string
+  locale?: string
 }): Promise<void> {
+  const t = getEmailTranslator(locale ?? "en")
   const html = await render(
     VerifyEmail({
       userName: user.name,
       url,
       accentColor: ACCENT_COLOR,
-      footerText: FOOTER_TEXT,
+      footerText: t("authFooter"),
+      locale,
     })
   )
   await deliverOrLog({
     kind: "verification",
     to: user.email,
-    subject: "Verify your SendCMS email address",
+    subject: t("authVerifySubject"),
     html,
     url,
   })
@@ -109,22 +115,26 @@ export async function sendVerificationEmail({
 export async function sendPasswordResetEmail({
   user,
   url,
+  locale,
 }: {
   user: AuthEmailUser
   url: string
+  locale?: string
 }): Promise<void> {
+  const t = getEmailTranslator(locale ?? "en")
   const html = await render(
     ResetPasswordEmail({
       userName: user.name,
       url,
       accentColor: ACCENT_COLOR,
-      footerText: FOOTER_TEXT,
+      footerText: t("authFooter"),
+      locale,
     })
   )
   await deliverOrLog({
     kind: "password reset",
     to: user.email,
-    subject: "Reset your SendCMS password",
+    subject: t("resetSubject"),
     html,
     url,
   })

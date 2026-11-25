@@ -78,7 +78,7 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} noValidate className="space-y-3">
       <div className="space-y-2">
         <Label htmlFor="account-current-password">
           {t("currentPasswordLabel")}

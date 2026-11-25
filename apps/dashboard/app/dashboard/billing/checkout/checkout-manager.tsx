@@ -230,7 +230,7 @@ export function CheckoutManager({
                           key={p.provider}
                           type="button"
                           onClick={() => setSelectedProvider(p.provider)}
-                          className={`flex items-center justify-between gap-4 rounded-md border p-4 text-left ${
+                          className={`flex items-center justify-between gap-4 rounded-md border p-4 text-start ${
                             active ? "border-primary" : ""
                           }`}
                         >

@@ -1,26 +1,36 @@
 import { Button, Link, Text } from "react-email"
 import { EmailLayout } from "./layout"
+import { getEmailTranslator } from "../email-i18n"
 
 type Props = {
   userName: string
   url: string
   accentColor: string
   footerText: string
+  /** Recipient locale ("en" | "ur"); defaults to English. */
+  locale?: string
 }
 
-export function VerifyEmail({ userName, url, accentColor, footerText }: Props) {
+export function VerifyEmail({
+  userName,
+  url,
+  accentColor,
+  footerText,
+  locale,
+}: Props) {
+  const t = getEmailTranslator(locale ?? "en")
   return (
     <EmailLayout
-      preview="Verify your SendCMS email address"
+      preview={t("authVerifyPreview")}
       accentColor={accentColor}
       footerText={footerText}
+      locale={locale}
     >
       <Text style={{ fontSize: "16px", fontWeight: 600, margin: "0 0 12px" }}>
-        Hi {userName},
+        {t("greeting", { name: userName })}
       </Text>
       <Text style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 16px" }}>
-        Click the button below to verify your email address and activate your
-        SendCMS account. The link expires in 24 hours.
+        {t("authVerifyIntro")}
       </Text>
       <Button
         href={url}
@@ -35,7 +45,7 @@ export function VerifyEmail({ userName, url, accentColor, footerText }: Props) {
           textDecoration: "none",
         }}
       >
-        Verify email address
+        {t("authVerifyButton")}
       </Button>
       <Text
         style={{
@@ -45,7 +55,7 @@ export function VerifyEmail({ userName, url, accentColor, footerText }: Props) {
           margin: "16px 0 4px",
         }}
       >
-        If the button doesn&apos;t work, paste this link into your browser:
+        {t("buttonFallback")}
       </Text>
       <Link href={url} style={{ fontSize: "13px", wordBreak: "break-all" }}>
         {url}

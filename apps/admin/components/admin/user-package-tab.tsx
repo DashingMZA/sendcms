@@ -47,7 +47,10 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import { RiInformationLine, RiPriceTag3Line } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatDate, formatDateTime } from "./plan-format"
 import {
   AssignDialog,
@@ -88,6 +91,7 @@ export function UserPackageTab({
   actorRole,
 }: Props) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const [assignOpen, setAssignOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [overrideOpen, setOverrideOpen] = useState(false)
@@ -174,10 +178,10 @@ export function UserPackageTab({
                   </Badge>
                 </Field>
                 <Field label={t("periodStartLabel")}>
-                  {formatDateTime(subscription.currentPeriodStart)}
+                  {formatDateTime(locale, subscription.currentPeriodStart)}
                 </Field>
                 <Field label={t("periodEndLabel")}>
-                  {formatDateTime(subscription.currentPeriodEnd)}
+                  {formatDateTime(locale, subscription.currentPeriodEnd)}
                 </Field>
                 <Field label={t("cancelAtPeriodEndLabel")}>
                   {subscription.cancelAtPeriodEnd
@@ -443,6 +447,7 @@ function OverrideRow({
   canRemove: boolean
 }) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const remove = useRemoveEntitlementOverride(userId)
 
   async function handleRemove() {
@@ -461,7 +466,7 @@ function OverrideRow({
       <TableCell className="max-w-48 truncate" title={reason}>
         {reason}
       </TableCell>
-      <TableCell>{formatDate(expiresAt)}</TableCell>
+      <TableCell>{formatDate(locale, expiresAt)}</TableCell>
       <TableCell>
         {canRemove && (
           <Button
@@ -620,6 +625,7 @@ function SetOverrideDialog({
 
 function SubscriptionHistory({ subscriptionId }: { subscriptionId: string }) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const { data, isPending, isError } = useSubscription(subscriptionId)
   const events = data?.events ?? []
 
@@ -689,7 +695,7 @@ function SubscriptionHistory({ subscriptionId }: { subscriptionId: string }) {
               >
                 {event.reason ?? "—"}
               </TableCell>
-              <TableCell>{formatDateTime(event.createdAt)}</TableCell>
+              <TableCell>{formatDateTime(locale, event.createdAt)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

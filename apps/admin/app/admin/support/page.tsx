@@ -7,9 +7,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { SupportQueue } from "@/components/admin/support-queue"
 
-export const metadata: Metadata = {
-  title: "Support — SendCMS Admin",
-  description: "Manage customer support tickets.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "support")
+  return {
+    title: `${t("queueTitle")} — SendCMS Admin`,
+    description: t("queueDescription"),
+  }
 }
 
 // Admin support queue (Phase 8). The server fetches the first page via
@@ -32,7 +39,7 @@ export default async function AdminSupportPage({
   const filters = AdminTicketsQuerySchema.parse(await searchParams)
   const initialData = await listTickets(session, filters)
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "support")
 
   return (

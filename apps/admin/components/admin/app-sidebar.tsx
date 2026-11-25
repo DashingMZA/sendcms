@@ -59,6 +59,7 @@ import {
 } from "@sendcms/ui"
 import { LanguageSelector } from "@/components/admin/language-selector"
 import { useTranslation } from "@/components/admin/translation-provider"
+import type { LocaleCode } from "@/lib/i18n-client"
 
 type NavItem = {
   label: string
@@ -82,9 +83,16 @@ type Props = {
    * not move it. Passed from the server layout (language switching
    * reloads the page, so it is never stale). */
   side: "left" | "right"
+  /**
+   * Server-resolved locale, handed to the language selector so its
+   * first paint names the active language (I18N-206 / I18N-309).
+   * Without it the selector SSR-rendered "English" on every Urdu
+   * page and only corrected after hydration.
+   */
+  initialLocale?: LocaleCode
 }
 
-export function AppSidebar({ user, side }: Props) {
+export function AppSidebar({ user, side, initialLocale }: Props) {
   const { t } = useTranslation("navigation")
   const { t: tDashboard } = useTranslation("dashboard")
   const { t: tCommon } = useTranslation("common")
@@ -314,7 +322,7 @@ export function AppSidebar({ user, side }: Props) {
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <LanguageSelector side={side} />
+          <LanguageSelector side={side} initialLocale={initialLocale} />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -381,7 +389,7 @@ export function AppSidebar({ user, side }: Props) {
         </SidebarMenu>
       </SidebarFooter>
 
-      <SidebarRail />
+      <SidebarRail label={t("toggleSidebar")} />
     </Sidebar>
   )
 }

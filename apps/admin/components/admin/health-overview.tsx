@@ -10,7 +10,11 @@ import {
   CardTitle,
   Skeleton,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDateTime } from "./plan-format"
 import { formatErrorRate } from "./ai-format"
 
 /** One small stat cell in a health card. */
@@ -29,19 +33,9 @@ function Stat({ label, value }: { label: string; value: string }) {
  * uptime. The DB ping is a live query with its latency; a failed
  * ping reports "disconnected" instead of throwing.
  */
-function formatDateTime(value: string | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
 export function HealthOverview() {
   const { t } = useTranslation("health")
+  const locale = useLocale()
   const { data, isLoading, isError, refetch, dataUpdatedAt } =
     usePlatformHealth()
 
@@ -174,13 +168,13 @@ export function HealthOverview() {
               <span className="text-muted-foreground">
                 {t("lastCronRun")}:{" "}
               </span>
-              {formatDateTime(data.outbox.lastCronRunAt)}
+              {formatDateTime(locale, data.outbox.lastCronRunAt)}
             </p>
             <p className="text-sm">
               <span className="text-muted-foreground">
                 {t("workerLastRun")}:{" "}
               </span>
-              {formatDateTime(data.outbox.worker.lastRunAt)}
+              {formatDateTime(locale, data.outbox.worker.lastRunAt)}
             </p>
             {data.outbox.worker.lastError && (
               <p className="text-sm">

@@ -1,42 +1,60 @@
-/** Shared formatting helpers for the admin plans UI. */
+/**
+ * Shared formatting helpers for the admin plans UI (I18N-010,
+ * I18N-205): thin locale-first wrappers over the `@sendcms/i18n`
+ * helpers. The page locale is the first argument everywhere — never
+ * the browser runtime locale (`undefined` in the old code, which is
+ * what rendered English dates on Urdu pages).
+ */
+import {
+  formatCurrency,
+  formatDate as formatDateI18n,
+  formatNumber,
+} from "@sendcms/i18n"
+
+const SHORT_DATE: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+}
+
+const SHORT_DATETIME: Intl.DateTimeFormatOptions = {
+  ...SHORT_DATE,
+  hour: "2-digit",
+  minute: "2-digit",
+}
 
 /** Format a minor-units price (cents) as major units, or `freeLabel` when null. */
 export function formatPrice(
+  locale: string,
   priceAmount: number | null,
   currency: string,
   freeLabel: string
 ): string {
   if (priceAmount === null) return freeLabel
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-  }).format(priceAmount / 100)
+  return formatCurrency(locale, priceAmount / 100, currency)
 }
 
 /** Format a nullable limit: null renders as the unlimited label. */
 export function formatLimit(
+  locale: string,
   value: number | null,
   unlimitedLabel: string
 ): string {
-  return value === null ? unlimitedLabel : String(value)
+  return value === null ? unlimitedLabel : formatNumber(locale, value)
 }
 
-export function formatDate(value: string | Date | null): string {
+export function formatDate(
+  locale: string,
+  value: string | Date | null
+): string {
   if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
+  return formatDateI18n(locale, value, SHORT_DATE)
 }
 
-export function formatDateTime(value: string | Date | null): string {
+export function formatDateTime(
+  locale: string,
+  value: string | Date | null
+): string {
   if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+  return formatDateI18n(locale, value, SHORT_DATETIME)
 }

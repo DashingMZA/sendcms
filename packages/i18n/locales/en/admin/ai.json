@@ -33,7 +33,6 @@
   "defaultModelHint": "Empty means the provider default. This only applies to the platform key.",
   "defaultModelLabel": "Default model",
   "defaultModelPlaceholder": "Provider default",
-  "description": "Platform AI usage, providers, BYOK keys, and platform AI controls.",
   "disabled": "Disabled",
   "editProviders": "Edit providers",
   "emergencyNeverDisables": "The emergency switch never disables form submission, the inbox, or any non-AI service.",
@@ -93,7 +92,6 @@
   "testFailed": "Failed",
   "testOk": "OK",
   "testUntested": "Not tested",
-  "title": "AI",
   "tokensIn": "Tokens in",
   "tokensOut": "Tokens out",
   "totalCalls": "Total calls",
@@ -101,7 +99,6 @@
   "usageSummaryTitle": "AI usage summary",
   "usageTitle": "AI usage",
   "userAiDescription": "This user's billing mode, saved BYOK keys, and AI usage.",
-  "userAiTitle": "AI settings",
   "viewFullUsage": "View full usage",
   "viewPlans": "View plans"
 }

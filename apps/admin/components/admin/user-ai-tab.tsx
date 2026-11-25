@@ -37,7 +37,10 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatCostMicros, providerDisplayName } from "./ai-format"
 import { formatDateTime } from "./plan-format"
 
@@ -67,6 +70,7 @@ export function UserAiTab({
   initialBillingMode,
 }: Props) {
   const { t } = useTranslation("ai")
+  const locale = useLocale()
   const canManageAi = adminCan(actorRole, "MANAGE_AI")
 
   const [billingMode, setBillingMode] =
@@ -178,7 +182,7 @@ export function UserAiTab({
                       </TableCell>
                       <TableCell>
                         {key.lastTestedAt
-                          ? formatDateTime(key.lastTestedAt)
+                          ? formatDateTime(locale, key.lastTestedAt)
                           : t("neverTested")}
                       </TableCell>
                       <TableCell>
@@ -216,7 +220,7 @@ export function UserAiTab({
               <p className="text-sm text-muted-foreground">
                 {t("costReported")}:{" "}
                 {summary
-                  ? (formatCostMicros(summary.byok.costMicros) ?? "—")
+                  ? (formatCostMicros(locale, summary.byok.costMicros) ?? "—")
                   : "—"}
               </p>
             </div>
@@ -230,7 +234,8 @@ export function UserAiTab({
               <p className="text-sm text-muted-foreground">
                 {t("costReported")}:{" "}
                 {summary
-                  ? (formatCostMicros(summary.platform.costMicros) ?? "—")
+                  ? (formatCostMicros(locale, summary.platform.costMicros) ??
+                    "—")
                   : "—"}
               </p>
             </div>

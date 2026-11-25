@@ -44,7 +44,11 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDate } from "./plan-format"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
@@ -57,17 +61,6 @@ function toDatetimeLocal(value: string | Date | null): string {
   if (Number.isNaN(d.getTime())) return ""
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
 }
 
 /**
@@ -98,6 +91,7 @@ export function AnnouncementsOverview({ actorRole }: Props) {
 
 function AnnouncementsInner() {
   const { t } = useTranslation("announcements")
+  const locale = useLocale()
   // ADM-093: the list API's page/perPage + isActive/audience
   // filters are threaded through the hook (audit-explorer pattern),
   // so announcements past page 1 are reachable and the list can be
@@ -323,9 +317,9 @@ function AnnouncementsInner() {
                       <TableCell className="text-sm">
                         {row.startsAt || row.endsAt ? (
                           <>
-                            {formatDate(row.startsAt)}
+                            {formatDate(locale, row.startsAt)}
                             {" — "}
-                            {formatDate(row.endsAt)}
+                            {formatDate(locale, row.endsAt)}
                           </>
                         ) : (
                           t("windowAlways")

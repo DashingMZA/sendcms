@@ -34,7 +34,10 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatCostMicros, providerDisplayName } from "./ai-format"
 import { formatDateTime } from "./plan-format"
 
@@ -61,6 +64,7 @@ type Props = {
  */
 export function AiUsageTable({ actorRole, initialFilters }: Props) {
   const { t } = useTranslation("ai")
+  const locale = useLocale()
   const canViewUsage = adminCan(actorRole, "VIEW_AI_USAGE")
 
   const [provider, setProvider] = useState<string>(
@@ -110,11 +114,15 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
   const rows = data?.usage ?? []
   const totalPages = data?.totalPages ?? 1
   const currentPage = data?.page ?? page
-  const byokCost = summary ? formatCostMicros(summary.byok.costMicros) : null
-  const platformCost = summary
-    ? formatCostMicros(summary.platform.costMicros)
+  const byokCost = summary
+    ? formatCostMicros(locale, summary.byok.costMicros)
     : null
-  const totalCost = summary ? formatCostMicros(summary.total.costMicros) : null
+  const platformCost = summary
+    ? formatCostMicros(locale, summary.platform.costMicros)
+    : null
+  const totalCost = summary
+    ? formatCostMicros(locale, summary.total.costMicros)
+    : null
 
   function resetPage() {
     setPage(1)
@@ -354,13 +362,15 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                       <TableCell>
                         {row.costMicros === null
                           ? "—"
-                          : (formatCostMicros(row.costMicros) ?? "—")}
+                          : (formatCostMicros(locale, row.costMicros) ?? "—")}
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{row.status}</Badge>
                       </TableCell>
                       <TableCell>{row.sourceEvent ?? "—"}</TableCell>
-                      <TableCell>{formatDateTime(row.createdAt)}</TableCell>
+                      <TableCell>
+                        {formatDateTime(locale, row.createdAt)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -1,5 +1,6 @@
 import { Heading, Text } from "react-email"
 import { EmailLayout } from "./layout"
+import { getEmailTranslator } from "../email-i18n"
 import type { ReplyProps } from "../notification-types"
 
 type Props = ReplyProps
@@ -12,18 +13,26 @@ export function replyText({
   return body
 }
 
-export function Reply({ formName, body, accentColor, footerText }: Props) {
+export function Reply({
+  formName,
+  body,
+  accentColor,
+  footerText,
+  locale,
+}: Props) {
+  const t = getEmailTranslator(locale ?? "en")
   return (
     <EmailLayout
-      preview={`Re: your message on ${formName}`}
+      preview={t("replyHeading", { formName })}
       accentColor={accentColor}
       footerText={footerText}
+      locale={locale}
     >
       <Heading
         as="h2"
         style={{ fontSize: "18px", fontWeight: 600, margin: "0 0 16px" }}
       >
-        Re: your message on {formName}
+        {t("replyHeading", { formName })}
       </Heading>
       {body.split(/\n{2,}/).map((paragraph, i) => (
         <Text

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { formatDistanceToNow, format } from "date-fns"
+import { formatDate, formatRelativeDate, formatTime } from "@sendcms/i18n"
 import {
   type InboxSubmissionDetail,
   useDeleteSubmission,
@@ -32,7 +32,10 @@ import {
   Label,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 import { ArrowLeft, ExternalLink, Star, Trash2 } from "lucide-react"
 
@@ -65,6 +68,7 @@ export function SubmissionDetail({
 }) {
   const router = useRouter()
   const { t } = useTranslation("inbox")
+  const locale = useLocale()
   const { data } = useSubmission(initialData.id, initialData)
   const submission = data ?? initialData
   const updateStatus = useUpdateSubmissionStatus()
@@ -242,10 +246,10 @@ export function SubmissionDetail({
                 <dt className="text-muted-foreground">
                   {t("detailsReceived")}
                 </dt>
-                <dd title={format(new Date(submission.createdAt), "PPpp")}>
-                  {formatDistanceToNow(new Date(submission.createdAt), {
-                    addSuffix: true,
-                  })}
+                <dd
+                  title={`${formatDate(locale, submission.createdAt)} ${formatTime(locale, submission.createdAt)}`}
+                >
+                  {formatRelativeDate(locale, submission.createdAt)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
@@ -310,9 +314,7 @@ export function SubmissionDetail({
                       : event.type}
                   </Badge>
                   <span className="text-muted-foreground">
-                    {formatDistanceToNow(new Date(event.createdAt), {
-                      addSuffix: true,
-                    })}
+                    {formatRelativeDate(locale, event.createdAt)}
                     {event.actor
                       ? ` · ${event.actor.name ?? event.actor.email}`
                       : ""}

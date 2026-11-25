@@ -25,7 +25,11 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDate } from "./plan-format"
 
 const STATUS_KEYS: Record<TicketStatus, string> = {
   OPEN: "statusOpen",
@@ -68,14 +72,6 @@ type Props = {
   actorRole: AdminRole | "PLATFORM_OWNER" | "PLATFORM_USER"
 }
 
-function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
-
 /**
  * The admin support queue: status/priority/assignee filters, a
  * debounced subject search, and pagination driven by the URL. The
@@ -84,6 +80,7 @@ function formatDate(value: Date | string): string {
  */
 export function SupportQueue({ initialData, filters, actorRole }: Props) {
   const { t } = useTranslation("support")
+  const locale = useLocale()
   const router = useRouter()
   const { data } = useAdminTickets(filters, initialData)
   const page = data ?? initialData
@@ -261,7 +258,7 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
                     </TableCell>
                     <TableCell>{ticket.messageCount}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(ticket.updatedAt)}
+                      {formatDate(locale, ticket.updatedAt)}
                     </TableCell>
                   </TableRow>
                 ))}

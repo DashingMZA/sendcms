@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { formatDistanceToNow } from "date-fns"
+import { formatRelativeDate } from "@sendcms/i18n"
 import {
   type InboxListParams,
   type InboxListResult,
@@ -50,7 +50,10 @@ import {
   SUBMISSION_STATUS_LABEL_KEYS,
   SubmissionStatusBadge,
 } from "./submission-status-badge"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 import { MoreHorizontal, Trash2 } from "lucide-react"
 
@@ -75,6 +78,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { t } = useTranslation("inbox")
+  const locale = useLocale()
 
   const { data } = useInbox(params, initialData)
   const list = data ?? initialData
@@ -429,7 +433,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                   </p>
                   {item.sender.name && item.sender.email && (
                     <p className="text-sm text-muted-foreground">
-                      {item.sender.email}
+                      <bdi dir="ltr">{item.sender.email}</bdi>
                     </p>
                   )}
                 </TableCell>
@@ -437,11 +441,11 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                   {previewSubmissionText(item.data)}
                 </TableCell>
                 <TableCell>{item.formName}</TableCell>
-                <TableCell>{item.originDomain}</TableCell>
                 <TableCell>
-                  {formatDistanceToNow(new Date(item.createdAt), {
-                    addSuffix: true,
-                  })}
+                  <bdi dir="ltr">{item.originDomain}</bdi>
+                </TableCell>
+                <TableCell>
+                  {formatRelativeDate(locale, item.createdAt)}
                 </TableCell>
                 <TableCell>
                   <SubmissionStatusBadge

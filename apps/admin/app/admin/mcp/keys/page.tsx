@@ -5,9 +5,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { McpKeysTable } from "@/components/admin/mcp-keys-table"
 
-export const metadata: Metadata = {
-  title: "MCP keys — SendCMS Admin",
-  description: "Every MCP API key, its owner, and its recent calls.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "mcp")
+  return {
+    title: `${t("keysTitle")} — SendCMS Admin`,
+    description: t("keysDescription"),
+  }
 }
 
 // MCP keys (Phase 6). The server only authenticates and resolves the
@@ -21,7 +28,7 @@ export default async function AdminMcpKeysPage() {
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "mcp")
 
   return (

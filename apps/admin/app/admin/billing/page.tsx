@@ -6,9 +6,16 @@ import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { BillingEventsTable } from "@/components/admin/billing-events-table"
 import { BillingOverview } from "@/components/admin/billing-overview"
 
-export const metadata: Metadata = {
-  title: "Billing — SendCMS Admin",
-  description: "Manage payment providers, their countries, and checkout.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "billing")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Billing providers (Phase 8) + billing events (Wave 5, ADM-123 /
@@ -25,7 +32,7 @@ export default async function AdminBillingPage() {
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "billing")
 
   return (

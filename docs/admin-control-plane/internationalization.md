@@ -31,7 +31,7 @@ the other 8 land without restructuring, but today:
 | Fact                             | Value                                                                             |
 | -------------------------------- | --------------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                        |
-| Domain files per complete locale | 41                                                                                |
+| Domain files per complete locale | 54 (19 shared + 21 admin + 14 dashboard)                                        |
 | Keys                             | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)       |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                     |
 | Arabic RTL                       | **Not built** — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -78,21 +78,21 @@ packages/i18n/
   scripts/
     validate-translations.mjs  # validation script (pnpm --filter @sendcms/i18n validate)
   locales/
-    en/               # 41 files
+    en/               # 54 files
       navigation.json
       admin/
         users.json billing.json support.json plans.json ...
       dashboard/
-        billing.json support.json ai.json ...
-    ur/               # 41 files, same shape, real Urdu script
+        account.json ai.json analytics.json api.json api-keys.json billing.json domains.json forms.json inbox.json landing.json navigation.json notifications.json overview.json support.json
+    ur/               # 54 files, same shape, real Urdu script
     es/ ar/ fr/ ...   # do not exist yet
 ```
 
 Domain-based JSON files, flat keys — the structure the owner
 showed in the VARKA `en.zip` reference (separate domain files,
 flat key-value JSON). One domain per file: `admin/users.json`
-(178 keys), `admin/support.json` (62 keys),
-`dashboard/support.json` (43 keys), `admin/ai.json` (100 keys),
+(185 keys), `admin/support.json` (59 keys),
+`dashboard/support.json` (44 keys), `admin/ai.json` (102 keys),
 and so on. `admin/` and `dashboard/` subfolders sit inside each
 locale directory. Keys are flat (`"title"`, `"welcome"`) — no
 nesting. Values are real translations, never English as a
@@ -152,15 +152,22 @@ against `en`:
   reported, not crashed.
 - A load failure for one domain never fails the whole report.
 
-Current output (2026-11-22):
+Current output (2026-11-25):
 
 ```
-fr: not started (0/41 files)
-de: not started (0/41 files)
-hi: not started (0/41 files)
-bn: not started (0/41 files)
-id: not started (0/41 files)
-it: not started (0/41 files)
+Translation validation
+Source locale: en — 54 files, 2036 keys
+Completeness:
+  en: 54/54 files, 2036/2036 keys (100%)
+  ur: 54/54 files, 2036/2036 keys (100%)
+  es: not started (0/54 files)
+  ar: not started (0/54 files)
+  fr: not started (0/54 files)
+  de: not started (0/54 files)
+  hi: not started (0/54 files)
+  bn: not started (0/54 files)
+  id: not started (0/54 files)
+  it: not started (0/54 files)
 
 ✓ en and ur are complete and in sync.
 ```
@@ -223,18 +230,27 @@ Two RTL locales are registered: `ur` (complete) and `ar`
 - **Logical CSS.** Components use logical properties and
   classes (`ps` / `pe` / `ms` / `me` / `start`) instead of
   physical `left` / `right`, so padding, margins, and alignment
-  flip with the direction.
-- **Dashboard RTL is a follow-up.** The dashboard shell is
-  still `lang="en"` with no `dir` handling; the
-  `/dashboard/ai` page content is translated, but full
-  dashboard RTL is not built.
+  flip with the direction. The shared UI primitives (table,
+  select, dropdown-menu, dialog, sheet, sidebar) use logical
+  offsets, and both apps wrap their theme provider in Radix's
+  `DirectionProvider` (`packages/ui/src/components/direction-provider.tsx`)
+  so Select/DropdownMenu/Dialog/Sheet popups render `dir="rtl"`
+  instead of the Radix default `dir="ltr"`.
+- **Dashboard RTL is built.** The dashboard root layout sets
+  `lang` and `dir` from the locale, passes the sidebar side from
+  the direction, and wraps the theme provider in the same
+  `DirectionProvider` as the admin app. Dates, times and relative
+  times render through the locale-aware `formatDate` /
+  `formatRelativeDate` helpers (client components read the page
+  locale from the `LocaleProvider`), and technical values
+  (emails, domains, code) are bidi-isolated with `dir="ltr"`.
 
 ## How the apps use it
 
 | App                                   | Locale handling                                                                                                                                                              |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/`                                |
-| `apps/dashboard`                      | Partial: `/dashboard/ai` content translated via the dashboard adapter (`DASHBOARD_BILLING_DOMAINS`, `DASHBOARD_SUPPORT_DOMAINS`); shell still `lang="en"`, no `dir` handling |
+| `apps/dashboard`                      | Full: `getRequestLocale` per request (cookie → stored preference), `lang`/`dir` on `<html>`, sidebar side from direction, shell + per-page domain JSONs under `dashboard/`, locale-aware dates/times/relative times via `formatDate`/`formatRelativeDate` and the `useLocale()` hook |
 | `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                                               |
 
 The admin shell translation domains are registered in
@@ -246,14 +262,19 @@ the registration is not loaded, even if the file exists.
 
 - **The other 8 locales.** `es`, `ar`, `fr`, `de`, `hi`, `bn`,
   `id`, `it` have no files. Adding one means translating the
-  41 domains (real translations, never machine-translated
+  54 domains (real translations, never machine-translated
   placeholders that break interpolation or change a
   provider/model name) and flipping its registry status to
   `complete`. See
   [translation-management](./translation-management.md).
 - **Arabic RTL.** Registered as RTL but with no files, so there
   is nothing to render or verify.
-- **Full dashboard RTL.** Shell `lang`/`dir` handling is owed.
+- **Visual RTL pass and Urdu copy review (owner-side).** The
+  code fixes (logical classes, `DirectionProvider`, bidi
+  isolation, translated chrome) are in place, but no browser /
+  visual RTL pass has been run by the agent, and the new Urdu
+  strings are best-effort translations awaiting the owner's
+  native-speaker review.
 - **No AI translation.** Translation is human-authored and
   version-controlled; machine translation of the files is not
   built.

@@ -10,8 +10,12 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { NewFormForm } from "./new-form-form"
 
 export default async function NewFormPage() {
-  await requireDashboardSession()
-  const locale = await getRequestLocale()
+  const session = await requireDashboardSession()
+  // I18N-311: pass the session user id so the stored DB preference
+  // resolves here like on every sibling page — without it this page
+  // rendered English while /dashboard/forms on either side rendered
+  // Urdu for a stored-`ur` user with no cookie.
+  const locale = await getRequestLocale(session.user.id)
   const dictionaries = await getDictionaries(locale, DASHBOARD_FORMS_DOMAINS)
   const t = await getTranslator(locale, "forms")
 

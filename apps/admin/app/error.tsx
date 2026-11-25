@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@sendcms/ui"
+import { useTranslation } from "@/components/admin/translation-provider"
 
 // Admin error boundary (Phase 16, Wave 2 — SEC-107): when an admin
 // page throws during render, Next.js renders this instead of its
@@ -16,22 +17,22 @@ export default function AdminError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const { t } = useTranslation("navigation")
   return (
     <main
       id="main-content"
       className="flex flex-col items-center justify-center px-4 py-16 text-center"
     >
       <h1 className="mb-3 text-2xl font-bold tracking-tight">
-        Something went wrong
+        {t("errorTitle")}
       </h1>
       <p className="mb-8 max-w-md leading-relaxed text-muted-foreground">
-        This admin page could not be loaded. Try again, or go back to the admin
-        dashboard.
+        {t("errorDescription")}
       </p>
       <div className="flex gap-3">
-        <Button onClick={reset}>Try again</Button>
+        <Button onClick={reset}>{t("errorTryAgain")}</Button>
         <Button asChild variant="outline">
-          <Link href="/admin">Back to the dashboard</Link>
+          <Link href="/admin">{t("errorGoToDashboard")}</Link>
         </Button>
       </div>
     </main>

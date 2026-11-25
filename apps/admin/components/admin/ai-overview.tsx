@@ -25,7 +25,10 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import {
   formatCostMicros,
   formatErrorRate,
@@ -44,6 +47,7 @@ type Props = {
  */
 export function AiOverview({ actorRole }: Props) {
   const { t } = useTranslation("ai")
+  const locale = useLocale()
   const canViewUsage = adminCan(actorRole, "VIEW_AI_USAGE")
   const canManageAi = adminCan(actorRole, "MANAGE_AI")
 
@@ -73,7 +77,7 @@ export function AiOverview({ actorRole }: Props) {
   const total = summary?.total
   const byok = summary?.byok
   const platform = summary?.platform
-  const totalCost = total ? formatCostMicros(total.costMicros) : null
+  const totalCost = total ? formatCostMicros(locale, total.costMicros) : null
 
   return (
     <div className="flex flex-col gap-6">

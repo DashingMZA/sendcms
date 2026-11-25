@@ -1,5 +1,4 @@
 {
-  "backToSupport": "Back to tickets",
   "bodyLabel": "Message",
   "bodyPlaceholder": "Describe the problem in detail…",
   "clearSearch": "Clear search",
@@ -26,7 +25,6 @@
   "priorityLow": "Low",
   "priorityNormal": "Normal",
   "priorityUrgent": "Urgent",
-  "reopenedNote": "Your reply reopened this ticket.",
   "replyClosedNote": "This ticket is closed. If you still need help, please open a new ticket.",
   "replyFailed": "Could not send the reply.",
   "replyPlaceholder": "Write your reply…",

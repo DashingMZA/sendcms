@@ -51,7 +51,10 @@ export function CopyField({
           {copied ? t("copied") : t("copy")}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">
+      <pre
+        dir="ltr"
+        className="overflow-x-auto p-4 font-mono text-sm leading-relaxed"
+      >
         <code>{value}</code>
       </pre>
       {description && (

@@ -3,8 +3,9 @@ import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
-import { ThemeProvider, Toaster } from "@sendcms/ui"
-import { getLocaleDirection, getRequestLocale } from "@/lib/i18n"
+import { DirectionProvider, ThemeProvider, Toaster } from "@sendcms/ui"
+import { auth } from "@/lib/auth"
+import { getLocaleDirection, getRequestLocale, getTranslator } from "@/lib/i18n"
 
 export const metadata: Metadata = {
   title: "SendCMS Dashboard",
@@ -42,8 +43,18 @@ export default async function RootLayout({
   // The dashboard's language comes from the `sendcms-locale` cookie
   // (set by the sidebar language selector, or by the stored user
   // preference). English is the fallback; `ur` renders right-to-left.
-  const locale = await getRequestLocale()
+  // The session user id is passed (DSH-001/DSH-201/DSH-401) so the
+  // stored DB preference resolves for the shell too — without it, a
+  // user with stored `ur` and no cookie got Urdu page content inside
+  // an English LTR `<html>` with the sidebar on the left. Signed-out
+  // visitors have no session, so only the cookie applies to them.
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
   const direction = getLocaleDirection(locale)
+  // Chrome strings (skip link, toast live-region label) come from the
+  // shared `common` domain so they follow the page locale (I18N-101,
+  // I18N-105) instead of rendering hardcoded English.
+  const t = await getTranslator(locale, "common")
 
   return (
     <html
@@ -58,14 +69,20 @@ export default async function RootLayout({
       <body suppressHydrationWarning>
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
+          className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
         >
-          Skip to main content
+          {t("skipToContent")}
         </a>
-        <ThemeProvider nonce={nonce}>
-          {children}
-          <Toaster richColors position="top-right" />
-        </ThemeProvider>
+        <DirectionProvider dir={direction}>
+          <ThemeProvider nonce={nonce}>
+            {children}
+            <Toaster
+              richColors
+              position="top-right"
+              containerAriaLabel={t("notifications")}
+            />
+          </ThemeProvider>
+        </DirectionProvider>
       </body>
     </html>
   )

@@ -5,9 +5,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { AiOverview } from "@/components/admin/ai-overview"
 
-export const metadata: Metadata = {
-  title: "AI — SendCMS Admin",
-  description: "Manage AI providers, BYOK, and platform AI controls.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "ai")
+  return {
+    title: `${t("overviewTitle")} — SendCMS Admin`,
+    description: t("overviewDescription"),
+  }
 }
 
 // AI overview (Phase 5). The server only authenticates and resolves
@@ -23,7 +30,7 @@ export default async function AdminAiPage() {
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "ai")
 
   return (

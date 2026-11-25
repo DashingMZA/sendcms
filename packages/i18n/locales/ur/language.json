@@ -1,14 +1,6 @@
 {
-  "addLanguage": "زبان شامل کریں",
-  "code": "کوڈ",
-  "default": "پہلے سے طے شدہ",
   "detectedMessage": "آپ کا براؤزر {language} پر سیٹ ہے۔ ایڈمن کو {language} میں تبدیل کریں؟",
   "detectedTitle": "زبان تبدیل کریں؟",
-  "direction": "سمت",
-  "enabled": "فعال",
-  "languageChanged": "زبان {language} میں تبدیل ہو گئی۔",
-  "name": "نام",
-  "nativeName": "مقامی نام",
   "stayInEnglish": "انگریزی میں رہیں",
   "switchLanguage": "{language} میں تبدیل کریں",
   "title": "زبانیں"

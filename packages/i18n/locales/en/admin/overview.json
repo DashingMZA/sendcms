@@ -10,7 +10,6 @@
   "fromLabel": "From",
   "inRange": "in range",
   "loadError": "Could not load the overview. Try again.",
-  "loading": "Loading overview…",
   "mcpCalls": "MCP calls",
   "noData": "No data in this range.",
   "noPlanSubscriptions": "No active subscriptions.",

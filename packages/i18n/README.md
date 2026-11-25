@@ -33,7 +33,7 @@ including the acceptance record — is in
 | Fact                             | Value                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                    |
-| Domain files per complete locale | 41 (18 shared + 20 admin + 3 dashboard)                                       |
+| Domain files per complete locale | 54 (19 shared + 21 admin + 14 dashboard)                                       |
 | Key parity                       | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)   |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                 |
 | Arabic RTL                       | Not built — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -109,11 +109,11 @@ packages/i18n/
     load.ts       # Registry + dynamic domain loading + path helpers
     index.ts      # Barrel
   locales/
-    en/           # Source locale (complete, 41 files)
+    en/           # Source locale (complete, 54 files)
       {domain}.json          # Shared domains
       admin/{domain}.json    # Admin-app domains
       dashboard/{domain}.json # Customer-dashboard domains
-    ur/           # Urdu, RTL (complete, 41 files)
+    ur/           # Urdu, RTL (complete, 54 files)
     es/ ar/ fr/ de/ hi/ bn/ id/ it/  # Coming soon (no directories yet)
   scripts/
     validate-translations.mjs
@@ -133,31 +133,36 @@ packages/i18n/
 ## Domains
 
 The domain lists live in `src/load.ts` (`SHARED_DOMAINS`,
-`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 18 + 20 + 3 = 41 files per
+`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 19 + 21 + 14 = 54 files per
 complete locale.
 
 | Shared domains (`locales/{locale}/{domain}.json`) |                 |                 |
 | ------------------------------------------------- | --------------- | --------------- |
 | `actions`                                         | `admins`        | `appearance`    |
 | `auth`                                            | `common`        | `confirmations` |
-| `empty-states`                                    | `errors`        | `forms`         |
-| `language`                                        | `notifications` | `pagination`    |
-| `profile`                                         | `security`      | `settings`      |
-| `tables`                                          | `users`         | `validation`    |
+| `email`                                           | `empty-states`  | `errors`        |
+| `forms`                                           | `language`      | `notifications` |
+| `pagination`                                      | `profile`       | `security`      |
+| `settings`                                        | `tables`        | `users`         |
+| `validation`                                      |                 |                 |
 
 | Admin domains (`locales/{locale}/admin/{domain}.json`) |                 |                |
 | ------------------------------------------------------ | --------------- | -------------- |
 | `ai`                                                   | `announcements` | `audit-logs`   |
 | `billing`                                              | `dashboard`     | `features`     |
-| `health`                                               | `mcp`           | `navigation`   |
-| `overview`                                             | `plans`         | `security`     |
-| `settings`                                             | `step-up`       | `submissions`  |
-| `subscriptions`                                        | `support`       | `translations` |
-| `usage`                                                | `users`         |                |
+| `health`                                               | `landing`       | `mcp`          |
+| `navigation`                                           | `overview`      | `plans`        |
+| `security`                                             | `settings`      | `step-up`      |
+| `submissions`                                          | `subscriptions` | `support`      |
+| `translations`                                         | `usage`         | `users`        |
 
 | Dashboard domains (`locales/{locale}/dashboard/{domain}.json`) |           |           |
 | -------------------------------------------------------------- | --------- | --------- |
-| `ai`                                                           | `billing` | `support` |
+| `account`                                                      | `ai`      | `analytics` |
+| `api`                                                          | `api-keys` | `billing` |
+| `domains`                                                      | `forms`   | `inbox`   |
+| `landing`                                                      | `navigation` | `notifications` |
+| `overview`                                                     | `support` |           |
 
 ## The translator
 
@@ -191,6 +196,7 @@ back to English instead of throwing a `RangeError`.
 | `formatCurrency`     | `Intl.NumberFormat` with `style: "currency"`     |
 | `formatPercent`      | `Intl.NumberFormat` with `style: "percent"`      |
 | `formatRelativeTime` | `Intl.RelativeTimeFormat` with `numeric: "auto"` |
+| `formatRelativeDate` | Relative distance to now ("2 days ago") in the locale, via `formatRelativeTime` |
 
 Dates, times, numbers, currency, and percentages go through these
 helpers so they follow the active locale.
@@ -256,15 +262,22 @@ Runs `scripts/validate-translations.mjs` (no dependencies). It checks:
    reported as "not started" **without** failing.
 
 Exits non-zero only when `en`/`ur` are incomplete or a JSON file
-is invalid. Current output (2026-11-22):
+is invalid. Current output (2026-11-25):
 
 ```
-fr: not started (0/41 files)
-de: not started (0/41 files)
-hi: not started (0/41 files)
-bn: not started (0/41 files)
-id: not started (0/41 files)
-it: not started (0/41 files)
+Translation validation
+Source locale: en — 54 files, 2036 keys
+Completeness:
+  en: 54/54 files, 2036/2036 keys (100%)
+  ur: 54/54 files, 2036/2036 keys (100%)
+  es: not started (0/54 files)
+  ar: not started (0/54 files)
+  fr: not started (0/54 files)
+  de: not started (0/54 files)
+  hi: not started (0/54 files)
+  bn: not started (0/54 files)
+  id: not started (0/54 files)
+  it: not started (0/54 files)
 
 ✓ en and ur are complete and in sync.
 ```
@@ -295,7 +308,7 @@ it: not started (0/41 files)
 | App                                   | Locale handling                                                                                                                               |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/` |
-| `apps/dashboard`                      | Partial: `/dashboard/ai` content translated via the dashboard adapter; shell still `lang="en"`, no `dir` handling                             |
+| `apps/dashboard`                      | Full: `getRequestLocale` per request (cookie → stored preference), `lang`/`dir` on `<html>`, sidebar side from direction, shell + per-page domain JSONs under `dashboard/`, locale-aware dates/times/relative times via `formatDate`/`formatRelativeDate` and the `useLocale()` hook |
 | `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                |
 
 The admin shell translation domains are registered in

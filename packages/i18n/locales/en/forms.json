@@ -1,11 +1,1 @@
-{
-  "required": "Required",
-  "optional": "Optional",
-  "placeholder": "Enter value",
-  "selectOption": "Select an option",
-  "invalidEmail": "Invalid email address",
-  "minLength": "Too short",
-  "maxLength": "Too long",
-  "loading": "Loading…",
-  "noOptions": "No options"
-}
+{}

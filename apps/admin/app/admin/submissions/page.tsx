@@ -5,9 +5,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { PlatformSubmissions } from "@/components/admin/platform-submissions"
 
-export const metadata: Metadata = {
-  title: "Submissions — SendCMS Admin",
-  description: "Every submission on the platform — the abuse and spam queue.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "submissions")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Abuse / spam queue (Phase 7). The server only authenticates and
@@ -24,7 +31,7 @@ export default async function AdminSubmissionsPage() {
       ? "PLATFORM_OWNER"
       : (session.user.adminRole ?? "PLATFORM_USER")
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "submissions")
 
   return (

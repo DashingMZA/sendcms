@@ -47,7 +47,10 @@ export function InstallSnippet({ code, language = "html", domain }: Props) {
           {copied ? t("copied") : t("copy")}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">
+      <pre
+        dir="ltr"
+        className="overflow-x-auto p-4 font-mono text-sm leading-relaxed"
+      >
         <code>{code}</code>
       </pre>
     </div>

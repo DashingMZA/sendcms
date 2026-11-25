@@ -26,6 +26,7 @@ flowchart TB
 ## Contents
 
 - [Provider](#provider)
+- [Locales (i18n)](#locales-i18n)
 - [Outbox and retries](#outbox-and-retries)
 - [Cron worker](#cron-worker)
 - [Standalone worker](#standalone-worker)
@@ -45,6 +46,33 @@ submission notifications), in priority order:
 
 No provider is needed to develop against the outbox: jobs queue and
 fail honestly, which is how the outage path is tested.
+
+## Locales (i18n)
+
+Platform emails are **not English-only**. The supported email locales
+are English (`en`) and Urdu (`ur`); the strings live in the shared
+`email` domain (`packages/i18n/locales/{en,ur}/email.json`, 37 keys),
+rendered synchronously by `getEmailTranslator` in
+`packages/email/src/email-i18n.ts`. A locale without an email
+dictionary renders English.
+
+How the locale is chosen, per email kind:
+
+| Email | Recipient locale |
+| ----- | ---------------- |
+| Verification / password reset | The user's stored `User.locale`, resolved by the auth factory at send time (`packages/auth/src/auth.ts`); no preference → English |
+| Submission notification | The form owner's stored locale, resolved at enqueue time (for the stored subject) and again at send time from the job's denormalized `ownerId` (for the body) |
+| Digest | The form owner's stored locale, resolved in `sendDueDigests` and stored on the job payload (`locale`); jobs enqueued before this shipped carry no locale and render English |
+| Reply to a submission | The form owner's stored locale, stored on the job payload at enqueue; the reply **body** is the owner's own words and is never translated, only the chrome (heading, footer, button) |
+| Test notification | The requesting owner's stored locale |
+
+Template chrome (headings, buttons, footers, subjects, the
+"Received" line) follows the recipient locale, and dates/times in
+the templates use the locale-aware `formatDate`/`formatTime`
+helpers. The `<html>` element carries `lang` and `dir` (`rtl` for
+Urdu). User-generated content — form field values, the digest
+summary/highlights, the reply body — is rendered as written, never
+translated.
 
 ## Outbox and retries
 

@@ -69,10 +69,8 @@
   "migrateExecute": "Execute migration",
   "migrateNoChanges": "No changes",
   "migrateNoPermission": "You do not have permission to migrate subscriptions.",
-  "migrateNoUsersSelected": "Select at least one user to preview the migration.",
   "migratePreview": "Preview migration",
   "migratePreviewEmpty": "No subscriptions match this selection.",
-  "migratePreviewEmptyDescription": "The selected users have no active subscription, or they are already on the target version.",
   "migratePreviewTitle": "Migration preview",
   "migratePriceFromTo": "{from} → {to}",
   "migrateReasonLabel": "Reason",
@@ -104,8 +102,6 @@
   "noSubscriptionsDescription": "Try a different search or clear the filters.",
   "noSubscriptionsEmptyDescription": "No subscriptions yet. Assign a plan version to a user to create one.",
   "noSubscriptionsTitle": "No subscriptions found",
-  "overrideAdmin": "Set by",
-  "overrideCreated": "Created",
   "overrideExpires": "Expires",
   "overrideMeter": "Meter",
   "overrideReason": "Reason",
@@ -115,10 +111,8 @@
   "overridesEmptyDescription": "Set an override to give this user a different limit than their plan.",
   "overridesEmptyTitle": "No overrides",
   "overridesTitle": "Entitlement overrides",
-  "packageTitle": "Package & subscription",
   "pageOf": "Page {page} of {totalPages}",
   "periodEndLabel": "Period end",
-  "periodLabel": "Period",
   "periodNone": "—",
   "periodStartLabel": "Period start",
   "planAll": "All plans",
@@ -152,6 +146,5 @@
   "toastMigrationDone": "Migration complete: {count} subscription(s) migrated.",
   "toastOverrideRemoved": "Override removed.",
   "toastOverrideSet": "Override set.",
-  "unlimited": "Unlimited",
-  "versionLabel": "Version"
+  "unlimited": "Unlimited"
 }

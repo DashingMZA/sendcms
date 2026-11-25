@@ -34,7 +34,11 @@ import {
   SelectValue,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDate } from "./plan-format"
 
 const STATUS_KEYS: Record<TicketStatus, string> = {
   OPEN: "statusOpen",
@@ -68,16 +72,6 @@ type Props = {
   actorRole: AdminRole | "PLATFORM_OWNER" | "PLATFORM_USER"
 }
 
-function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
 /**
  * The admin thread view: the full conversation, a reply form, a
  * status change (reason required; closing asks for confirmation
@@ -88,6 +82,7 @@ function formatDate(value: Date | string): string {
  */
 export function SupportThread({ initialData, staffUsers, actorRole }: Props) {
   const { t } = useTranslation("support")
+  const locale = useLocale()
   const { data } = useAdminTicket(initialData.id, initialData)
   const ticket = data ?? initialData
 
@@ -188,7 +183,7 @@ export function SupportThread({ initialData, staffUsers, actorRole }: Props) {
             {ticket.user?.name ?? ticket.user?.email ?? ticket.userId}
           </Link>
           {" · "}
-          {formatDate(ticket.createdAt)}
+          {formatDate(locale, ticket.createdAt)}
         </span>
         <span className="text-sm text-muted-foreground">
           {t("assignLabel")}:{" "}
@@ -215,7 +210,7 @@ export function SupportThread({ initialData, staffUsers, actorRole }: Props) {
                 {message.author?.name ?? message.author?.email ?? ""}
               </span>
               <span className="text-sm text-muted-foreground">
-                {formatDate(message.createdAt)}
+                {formatDate(locale, message.createdAt)}
               </span>
             </div>
             <p className="text-sm whitespace-pre-wrap">{message.body}</p>

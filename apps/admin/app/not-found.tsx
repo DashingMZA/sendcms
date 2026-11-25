@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { NotFoundPage } from "@sendcms/ui"
+import { auth } from "@/lib/auth"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { dashboardSignInURL } from "@/lib/callback-url"
 
@@ -13,7 +14,11 @@ export const metadata: Metadata = {
 // Admin 404: back to the admin overview, or to sign-in (the admin app
 // has no sign-in page of its own — sign-in lives on the dashboard app).
 export default async function NotFound() {
-  const locale = await getRequestLocale()
+  // I18N-203: pass the signed-in user's id when there is one, so a
+  // stored `ur` preference renders the 404 in Urdu; signed-out
+  // visitors resolve cookie-only as before.
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
   const tErrors = await getTranslator(locale, "errors")
   const tNav = await getTranslator(locale, "navigation")
   const tAuth = await getTranslator(locale, "auth")

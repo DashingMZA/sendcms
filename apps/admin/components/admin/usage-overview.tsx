@@ -104,12 +104,12 @@ export function UsageOverview() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="relative max-w-md">
-            <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={t("searchPlaceholder")}
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
-              className="pl-9"
+              className="ps-9"
             />
           </div>
           {users.length > 0 && (
@@ -121,7 +121,7 @@ export function UsageOverview() {
                     key={user.id}
                     type="button"
                     onClick={() => setSelectedUser(user)}
-                    className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent ${selected ? "bg-accent" : ""}`}
+                    className={`flex w-full items-center justify-between px-3 py-2 text-start hover:bg-accent ${selected ? "bg-accent" : ""}`}
                   >
                     <span>
                       <span className="block text-sm font-medium">

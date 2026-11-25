@@ -45,24 +45,17 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDateTime } from "./plan-format"
 
 type Props = {
   actorRole: PlatformRole | AdminRole
 }
 
 const STATUSES = ["NEW", "READ", "STARRED", "ARCHIVED", "SPAM"] as const
-
-function formatDateTime(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 /**
  * The platform submissions page (Phase 7, the abuse/SPAM queue): the
@@ -75,6 +68,7 @@ function formatDateTime(value: string | Date | null) {
  */
 export function PlatformSubmissions({ actorRole }: Props) {
   const { t } = useTranslation("submissions")
+  const locale = useLocale()
   const canViewSensitive = adminCan(actorRole, "VIEW_SENSITIVE_SUBMISSIONS")
   const canChangeStatus = adminCan(actorRole, "MANAGE_USERS")
 
@@ -380,7 +374,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(row.createdAt)}
+                        {formatDateTime(locale, row.createdAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
@@ -535,6 +529,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
     the View button only for them). */
 function SubmissionDetail({ id }: { id: string }) {
   const { t } = useTranslation("submissions")
+  const locale = useLocale()
   const { data, isLoading } = usePlatformSubmission(id)
 
   if (isLoading) return <Skeleton className="h-48 w-full" />
@@ -564,7 +559,7 @@ function SubmissionDetail({ id }: { id: string }) {
         </div>
         <div>
           <dt className="text-muted-foreground">{t("colDate")}</dt>
-          <dd>{formatDateTime(row.createdAt)}</dd>
+          <dd>{formatDateTime(locale, row.createdAt)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">{t("originDomain")}</dt>

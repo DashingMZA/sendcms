@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
+import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { notFound, redirect } from "next/navigation"
 import { getUserDetail } from "@sendcms/admin-users"
 import { getUserAiBillingMode } from "@sendcms/ai-settings"
@@ -9,9 +10,16 @@ import { ApiError } from "@sendcms/shared"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { UserDetail } from "@/components/admin/user-detail"
 
-export const metadata: Metadata = {
-  title: "User — SendCMS Admin",
-  description: "Inspect and manage a platform user.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "users")
+  return {
+    title: `${t("detailTitle")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Admin user detail (Phase 3). The server fetches the detail via the

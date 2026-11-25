@@ -1,5 +1,4 @@
 {
-  "backToSupport": "ٹکٹس پر واپس",
   "bodyLabel": "پیغام",
   "bodyPlaceholder": "مسئلہ تفصیل سے بیان کریں…",
   "clearSearch": "تلاش صاف کریں",
@@ -26,7 +25,6 @@
   "priorityLow": "کم",
   "priorityNormal": "عام",
   "priorityUrgent": "فوری",
-  "reopenedNote": "آپ کے جواب سے یہ ٹکٹ دوبارہ کھل گیا۔",
   "replyClosedNote": "یہ ٹکٹ بند ہے۔ اگر اب بھی مدد چاہیے تو نیا ٹکٹ کھولیں۔",
   "replyFailed": "جواب نہیں بھیجا جا سکا۔",
   "replyPlaceholder": "اپنا جواب لکھیں…",

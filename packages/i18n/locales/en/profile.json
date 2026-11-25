@@ -1,18 +1,1 @@
-{
-  "about": "About Yourself",
-  "accountManagement": "Account Management",
-  "bio": "Biographical Info",
-  "biographicalInfo": "Biographical Info",
-  "changePassword": "Account Management",
-  "contactInfo": "Contact Info",
-  "firstName": "First Name",
-  "lastName": "Last Name",
-  "loading": "Loading profile…",
-  "name": "Name",
-  "newPassword": "New Password",
-  "profilePicture": "Profile Picture",
-  "sessions": "Sessions",
-  "title": "Profile",
-  "updateProfile": "Update Profile",
-  "website": "Website"
-}
+{}

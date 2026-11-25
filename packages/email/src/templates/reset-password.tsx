@@ -1,11 +1,14 @@
 import { Button, Link, Text } from "react-email"
 import { EmailLayout } from "./layout"
+import { getEmailTranslator } from "../email-i18n"
 
 type Props = {
   userName: string
   url: string
   accentColor: string
   footerText: string
+  /** Recipient locale ("en" | "ur"); defaults to English. */
+  locale?: string
 }
 
 export function ResetPasswordEmail({
@@ -13,20 +16,21 @@ export function ResetPasswordEmail({
   url,
   accentColor,
   footerText,
+  locale,
 }: Props) {
+  const t = getEmailTranslator(locale ?? "en")
   return (
     <EmailLayout
-      preview="Reset your SendCMS password"
+      preview={t("resetPreview")}
       accentColor={accentColor}
       footerText={footerText}
+      locale={locale}
     >
       <Text style={{ fontSize: "16px", fontWeight: 600, margin: "0 0 12px" }}>
-        Hi {userName},
+        {t("greeting", { name: userName })}
       </Text>
       <Text style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 16px" }}>
-        We received a request to reset your SendCMS password. Click the button
-        below to choose a new one. The link expires in 1 hour. If you
-        didn&apos;t request this, you can safely ignore this email.
+        {t("resetIntro")}
       </Text>
       <Button
         href={url}
@@ -41,7 +45,7 @@ export function ResetPasswordEmail({
           textDecoration: "none",
         }}
       >
-        Reset password
+        {t("resetButton")}
       </Button>
       <Text
         style={{
@@ -51,7 +55,7 @@ export function ResetPasswordEmail({
           margin: "16px 0 4px",
         }}
       >
-        If the button doesn&apos;t work, paste this link into your browser:
+        {t("buttonFallback")}
       </Text>
       <Link href={url} style={{ fontSize: "13px", wordBreak: "break-all" }}>
         {url}

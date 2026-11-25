@@ -3,6 +3,7 @@
   "analytics": "Analytics",
   "apiKeys": "API Keys",
   "apiSdk": "API & SDK",
+  "backToDashboard": "Back to dashboard",
   "billing": "Billing",
   "darkMode": "Dark mode",
   "dismissAnnouncement": "Dismiss announcement",
@@ -22,5 +23,6 @@
   "overview": "Overview",
   "profile": "Profile",
   "signOut": "Sign out",
-  "support": "Support"
+  "support": "Support",
+  "toggleSidebar": "Toggle Sidebar"
 }

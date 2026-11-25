@@ -6,9 +6,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { AiSettingsPanel } from "@/components/admin/ai-settings-panel"
 
-export const metadata: Metadata = {
-  title: "AI settings — SendCMS Admin",
-  description: "Platform AI controls and the emergency switch.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "ai")
+  return {
+    title: `${t("settingsTitle")} — SendCMS Admin`,
+    description: t("settingsDescription"),
+  }
 }
 
 // AI settings (Phase 5). The emergency flag is read from the
@@ -27,7 +34,7 @@ export default async function AdminAiSettingsPage() {
 
   const { emergency } = readPlatformConfig()
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "ai")
 
   return (

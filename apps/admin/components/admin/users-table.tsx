@@ -26,19 +26,14 @@ import {
   TableRow,
 } from "@sendcms/ui"
 import { RiUserLine } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDate } from "./plan-format"
 import { UserRoleBadge, UserStatusBadge } from "./user-status-badge"
 
 const DEBOUNCE_MS = 300
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
 
 type Props = {
   initialData: AdminUsersListResponse
@@ -47,6 +42,7 @@ type Props = {
 
 export function UsersTable({ initialData, filters }: Props) {
   const { t } = useTranslation("users")
+  const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -276,7 +272,7 @@ export function UsersTable({ initialData, filters }: Props) {
                     <TableCell>
                       <p className="font-medium">{user.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {user.email}
+                        <bdi dir="ltr">{user.email}</bdi>
                       </p>
                     </TableCell>
                     <TableCell>
@@ -306,7 +302,7 @@ export function UsersTable({ initialData, filters }: Props) {
                     <TableCell>{user.counts.forms}</TableCell>
                     <TableCell>{user.counts.domains}</TableCell>
                     <TableCell>{user.counts.submissions}</TableCell>
-                    <TableCell>{formatDate(user.createdAt)}</TableCell>
+                    <TableCell>{formatDate(locale, user.createdAt)}</TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="sm">
                         <Link href={`/admin/users/${user.id}`}>
@@ -396,19 +392,19 @@ function UsersSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
 
   return (
     <div className="relative">
-      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
         value={value}
         onChange={handleChange}
-        className="h-9 w-64 pr-9 pl-9 text-sm"
+        className="h-9 w-64 ps-9 pe-9 text-sm"
       />
       {value && (
         <button
           type="button"
           onClick={handleClear}
-          className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearFilters")}
         >
           <X className="size-4" />

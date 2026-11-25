@@ -44,7 +44,10 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import { RiRepeatLine } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatDate, formatPrice } from "./plan-format"
 
 const DEBOUNCE_MS = 300
@@ -57,6 +60,7 @@ type Props = {
 
 export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -239,6 +243,7 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
                         v{subscription.planVersion.version}
                         {subscription.planVersion.priceAmount !== null &&
                           ` · ${formatPrice(
+                            locale,
                             subscription.planVersion.priceAmount,
                             subscription.planVersion.priceCurrency,
                             ""
@@ -259,7 +264,7 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
                     </TableCell>
                     <TableCell>
                       {subscription.currentPeriodStart
-                        ? `${formatDate(subscription.currentPeriodStart)} → ${formatDate(subscription.currentPeriodEnd)}`
+                        ? `${formatDate(locale, subscription.currentPeriodStart)} → ${formatDate(locale, subscription.currentPeriodEnd)}`
                         : t("periodNone")}
                     </TableCell>
                     <TableCell>
@@ -267,7 +272,9 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
                         ? t("cancelAtEndYes")
                         : t("cancelAtEndNo")}
                     </TableCell>
-                    <TableCell>{formatDate(subscription.createdAt)}</TableCell>
+                    <TableCell>
+                      {formatDate(locale, subscription.createdAt)}
+                    </TableCell>
                     <TableCell>
                       {canManage &&
                         (subscription.status === "ACTIVE" ||
@@ -373,19 +380,19 @@ function SubscriptionsSearchInput({
 
   return (
     <div className="relative">
-      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
         value={value}
         onChange={handleChange}
-        className="h-9 w-64 pr-9 pl-9 text-sm"
+        className="h-9 w-64 ps-9 pe-9 text-sm"
       />
       {value && (
         <button
           type="button"
           onClick={handleClear}
-          className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearFilters")}
         >
           <X className="size-4" />
@@ -425,6 +432,7 @@ export function AssignDialog({
   preselectedUser?: { id: string; name: string | null; email: string }
 }) {
   const { t } = useTranslation("subscriptions")
+  const locale = useLocale()
   const { t: tPlans } = useTranslation("plans")
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
@@ -518,13 +526,13 @@ export function AssignDialog({
             ) : (
               <>
                 <div className="relative">
-                  <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="assign-user-search"
                     placeholder={t("assignUserPlaceholder")}
                     value={search}
                     onChange={(e) => handleSearchChange(e.target.value)}
-                    className="pl-9"
+                    className="ps-9"
                   />
                 </div>
                 {users.length > 0 && (
@@ -534,7 +542,7 @@ export function AssignDialog({
                         key={user.id}
                         type="button"
                         onClick={() => setSelectedUser(user)}
-                        className="flex w-full flex-col px-3 py-2 text-left hover:bg-accent"
+                        className="flex w-full flex-col px-3 py-2 text-start hover:bg-accent"
                       >
                         <span className="text-sm font-medium">
                           {user.name ?? "—"}
@@ -569,6 +577,7 @@ export function AssignDialog({
                       {plan.name} v{plan.currentVersion!.version}
                       {plan.currentVersion!.priceAmount !== null &&
                         ` · ${formatPrice(
+                          locale,
                           plan.currentVersion!.priceAmount,
                           plan.currentVersion!.priceCurrency,
                           tPlans("priceFree")

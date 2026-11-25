@@ -30,7 +30,10 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatDate } from "./plan-format"
 import { StepUpDialog } from "./step-up-dialog"
 
@@ -47,6 +50,7 @@ type Props = {
  */
 export function McpKeysTable({ actorRole }: Props) {
   const { t } = useTranslation("mcp")
+  const locale = useLocale()
   const canViewMcp = adminCan(actorRole, "VIEW_MCP")
   const canManageMcp = adminCan(actorRole, "MANAGE_MCP")
 
@@ -158,8 +162,8 @@ export function McpKeysTable({ actorRole }: Props) {
                     <TableCell>
                       <Badge variant="secondary">{key.scope}</Badge>
                     </TableCell>
-                    <TableCell>{formatDate(key.lastUsedAt)}</TableCell>
-                    <TableCell>{formatDate(key.createdAt)}</TableCell>
+                    <TableCell>{formatDate(locale, key.lastUsedAt)}</TableCell>
+                    <TableCell>{formatDate(locale, key.createdAt)}</TableCell>
                     <TableCell>{key.callsLast30Days}</TableCell>
                     <TableCell>
                       {key.revokedAt ? (

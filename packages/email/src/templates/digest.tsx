@@ -1,8 +1,30 @@
 import { Button, Heading, Link, Section, Text } from "react-email"
+import { formatDate, formatPlural, formatTime } from "@sendcms/i18n"
 import { EmailLayout } from "./layout"
+import { getEmailTranslator } from "../email-i18n"
 import type { DigestProps } from "../notification-types"
 
 type Props = DigestProps
+
+const SHORT_DATE: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+}
+
+function digestHeading(
+  locale: string,
+  count: number,
+  formName: string
+): string {
+  const t = getEmailTranslator(locale)
+  return formatPlural(
+    locale,
+    count,
+    { one: t("digestHeadingOne"), other: t("digestHeadingOther") },
+    { formName }
+  )
+}
 
 /** Plain-text fallback for the digest (Resend/SMTP `text` part). */
 export function digestText({
@@ -12,22 +34,25 @@ export function digestText({
   highlights,
   items,
   inboxUrl,
+  locale,
 }: Omit<Props, "accentColor" | "footerText">): string {
+  const effectiveLocale = locale ?? "en"
+  const t = getEmailTranslator(effectiveLocale)
   const lines = [
-    `${count} new submission${count === 1 ? "" : "s"} on ${formName}`,
+    digestHeading(effectiveLocale, count, formName),
     "",
     summary,
     "",
     ...(highlights.length > 0
-      ? ["Highlights:", ...highlights.map((h) => `- ${h}`), ""]
+      ? [t("digestHighlights"), ...highlights.map((h) => `- ${h}`), ""]
       : []),
-    "New submissions:",
+    t("digestNewSubmissions"),
     ...items.map(
       (item) =>
-        `- ${item.senderName ?? "Unknown"} (${item.receivedAt.toISOString()}): ${item.snippet}`
+        `- ${item.senderName ?? t("notificationUnknownSender")} (${formatDate(effectiveLocale, item.receivedAt, SHORT_DATE)} ${formatTime(effectiveLocale, item.receivedAt)}): ${item.snippet}`
     ),
     "",
-    `View in your inbox: ${inboxUrl}`,
+    `${t("textViewInbox")} ${inboxUrl}`,
   ]
   return lines.join("\n")
 }
@@ -41,18 +66,23 @@ export function Digest({
   inboxUrl,
   accentColor,
   footerText,
+  locale,
 }: Props) {
+  const effectiveLocale = locale ?? "en"
+  const t = getEmailTranslator(effectiveLocale)
+  const heading = digestHeading(effectiveLocale, count, formName)
   return (
     <EmailLayout
-      preview={`${count} new submission${count === 1 ? "" : "s"} on ${formName}`}
+      preview={heading}
       accentColor={accentColor}
       footerText={footerText}
+      locale={locale}
     >
       <Heading
         as="h2"
         style={{ fontSize: "18px", fontWeight: 600, margin: "0 0 8px" }}
       >
-        {count} new submission{count === 1 ? "" : "s"} on {formName}
+        {heading}
       </Heading>
       <Text style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 16px" }}>
         {summary}
@@ -69,7 +99,7 @@ export function Digest({
           <Text
             style={{ fontSize: "14px", fontWeight: 600, margin: "0 0 8px" }}
           >
-            Highlights
+            {t("digestHighlights")}
           </Text>
           {highlights.map((highlight) => (
             <Text
@@ -94,8 +124,9 @@ export function Digest({
             key={`${item.receivedAt.toISOString()}-${item.senderName ?? "unknown"}`}
             style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 8px" }}
           >
-            <strong>{item.senderName ?? "Unknown"}</strong> ·{" "}
-            {item.receivedAt.toISOString()}
+            <strong>{item.senderName ?? t("notificationUnknownSender")}</strong>{" "}
+            · {formatDate(effectiveLocale, item.receivedAt, SHORT_DATE)}{" "}
+            {formatTime(effectiveLocale, item.receivedAt)}
             <br />
             {item.snippet}
           </Text>
@@ -114,7 +145,7 @@ export function Digest({
           textDecoration: "none",
         }}
       >
-        View in inbox
+        {t("notificationViewInbox")}
       </Button>
       <Text
         style={{
@@ -124,7 +155,7 @@ export function Digest({
           margin: "16px 0 4px",
         }}
       >
-        If the button doesn&apos;t work, paste this link into your browser:
+        {t("buttonFallback")}
       </Text>
       <Link
         href={inboxUrl}

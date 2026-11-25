@@ -7,9 +7,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { OverviewDashboard } from "@/components/admin/overview-dashboard"
 
-export const metadata: Metadata = {
-  title: "Overview — SendCMS Admin",
-  description: "Platform administration overview.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "overview")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Admin overview (Phase 9, spec §3). Real DB-backed stats for a date
@@ -34,7 +41,7 @@ export default async function AdminOverviewPage({
   const query = parsed.data
   const overview = await getAdminOverview(session, query)
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "overview")
 
   return (

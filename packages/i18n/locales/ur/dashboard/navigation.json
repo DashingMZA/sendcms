@@ -3,6 +3,7 @@
   "analytics": "تجزیات",
   "apiKeys": "API کلیدیں",
   "apiSdk": "API اور SDK",
+  "backToDashboard": "ڈیش بورڈ پر واپس جائیں",
   "billing": "بلنگ",
   "darkMode": "ڈارک موڈ",
   "dismissAnnouncement": "اعلان بند کریں",
@@ -22,5 +23,6 @@
   "overview": "جائزہ",
   "profile": "پروفائل",
   "signOut": "سائن آؤٹ",
-  "support": "سپورٹ"
+  "support": "سپورٹ",
+  "toggleSidebar": "سائیڈبار ٹوگل کریں"
 }

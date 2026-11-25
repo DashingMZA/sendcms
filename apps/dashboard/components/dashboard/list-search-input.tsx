@@ -64,19 +64,19 @@ export function ListSearchInput({
 
   return (
     <div className="relative">
-      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
         value={value}
         onChange={handleChange}
-        className="h-9 w-64 pr-9 pl-9 text-sm"
+        className="h-9 w-64 ps-9 pe-9 text-sm"
       />
       {value && (
         <button
           type="button"
           onClick={handleClear}
-          className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearSearch")}
         >
           <X className="size-4" />

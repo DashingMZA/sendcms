@@ -103,6 +103,19 @@ export function isSupportedLocale(code: string): code is LocaleCode {
   return SUPPORTED_LOCALES.some((locale) => locale.code === code)
 }
 
+/**
+ * Whether the locale has complete translation files and can actually
+ * be rendered (I18N-307). Only `en` and `ur` are selectable today;
+ * the other registered codes are coming-soon — storable nowhere, and
+ * never resolved from a cookie or the DB, so they can never produce
+ * an RTL shell with English content. `isSupportedLocale` still means
+ * "registered" (the file loader uses it); this is the renderable
+ * gate the adapters and the locale API validate against.
+ */
+export function isSelectableLocale(code: string): code is "en" | "ur" {
+  return SELECTABLE_LOCALES.some((locale) => locale.code === code)
+}
+
 export function getLocale(code: string): LocaleInfo | undefined {
   return SUPPORTED_LOCALES.find((locale) => locale.code === code)
 }

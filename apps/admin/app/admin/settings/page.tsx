@@ -5,9 +5,16 @@ import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { SystemOverview } from "@/components/admin/system-overview"
 
-export const metadata: Metadata = {
-  title: "Settings — SendCMS Admin",
-  description: "Platform settings and configuration.",
+// Page <title> follows the page locale (I18N-204): the title
+// is the same key the <h1> renders, so title == heading.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "settings")
+  return {
+    title: `${t("title")} — SendCMS Admin`,
+    description: t("description"),
+  }
 }
 
 // Platform settings (Phase 7 — replaces the Phase 2 planned empty
@@ -18,7 +25,7 @@ export default async function AdminSettingsPage() {
   const session = await auth()
   if (!session?.user) redirect(dashboardSignInURL(`${adminBaseURL()}/admin`))
 
-  const locale = await getRequestLocale()
+  const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "settings")
 
   return (

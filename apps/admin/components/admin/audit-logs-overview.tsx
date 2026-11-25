@@ -38,7 +38,11 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDateTime } from "./plan-format"
 import { downloadJson } from "@/lib/download-json"
 
 type Props = {
@@ -63,17 +67,6 @@ function toQueryString(filters: Record<string, string | number | undefined>) {
   }
   const query = params.toString()
   return query ? `?${query}` : ""
-}
-
-function formatDateTime(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
 }
 
 /**
@@ -101,6 +94,7 @@ export function AuditLogsOverview({ actorRole }: Props) {
 
 function AuditLogsInner({ actorRole }: Props) {
   const { t } = useTranslation("audit-logs")
+  const locale = useLocale()
   const canExport = adminCan(actorRole, "EXPORT_AUDIT_LOGS")
 
   // Draft filters (the inputs) vs applied filters (the query). The
@@ -329,7 +323,7 @@ function AuditLogsInner({ actorRole }: Props) {
                   {logs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(log.createdAt)}
+                        {formatDateTime(locale, log.createdAt)}
                       </TableCell>
                       <TableCell className="max-w-48 truncate text-sm">
                         {log.actor?.name ??
@@ -422,6 +416,7 @@ function AuditLogsInner({ actorRole }: Props) {
 /** One audit event, loaded only while the detail dialog is open. */
 function AuditLogDetail({ id }: { id: string }) {
   const { t } = useTranslation("audit-logs")
+  const locale = useLocale()
   const { data, isLoading } = useAuditLog(id)
 
   if (isLoading) return <Skeleton className="h-48 w-full" />
@@ -439,7 +434,7 @@ function AuditLogDetail({ id }: { id: string }) {
       <div className="grid gap-2 text-sm sm:grid-cols-2">
         <p>
           <span className="font-medium">{t("colTime")}: </span>
-          {formatDateTime(log.createdAt)}
+          {formatDateTime(locale, log.createdAt)}
         </p>
         <p>
           <span className="font-medium">{t("colActor")}: </span>

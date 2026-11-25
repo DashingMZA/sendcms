@@ -21,6 +21,7 @@ import {
   type TranslationMessages,
   type Translator,
 } from "./translate"
+import { isSupportedLocale } from "./locales"
 
 /** Shared domains that live at `locales/{locale}/{domain}.json`. */
 export const SHARED_DOMAINS = [
@@ -31,6 +32,7 @@ export const SHARED_DOMAINS = [
   "common",
   "confirmations",
   "empty-states",
+  "email",
   "errors",
   "forms",
   "language",
@@ -156,10 +158,50 @@ export function getTranslator(locale: string, domain: string): Translator {
 
 // --- Dynamic loading ----------------------------------------------------
 
+// A domain (or app) segment must be a single path segment: lowercase
+// letters, digits, and hyphens only. Anything else (notably `..`, `/`,
+// or `\`) is rejected before it can reach the dynamic import below,
+// so locale loading can only ever resolve files under `locales/`.
+const DOMAIN_SEGMENT = /^[a-z0-9-]+$/
+
+function assertLoadablePath(
+  locale: string,
+  app: string | undefined,
+  domain: string
+): void {
+  if (!isSupportedLocale(locale)) {
+    throw new RangeError(`unsupported locale: ${JSON.stringify(locale)}`)
+  }
+  if (app !== undefined && !DOMAIN_SEGMENT.test(app)) {
+    throw new RangeError(`invalid app segment: ${JSON.stringify(app)}`)
+  }
+  if (!DOMAIN_SEGMENT.test(domain)) {
+    throw new RangeError(`invalid domain segment: ${JSON.stringify(domain)}`)
+  }
+}
+
+/**
+ * Validate that a dynamically imported JSON module is a string-valued
+ * record. A JSON array, number, or record with non-string values is
+ * not a message map: accepting it would make every key render
+ * `[missing: key]`, so it is rejected loudly instead.
+ */
+export function isValidTranslationMessages(
+  value: unknown
+): value is TranslationMessages {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false
+  }
+  return Object.values(value).every((entry) => typeof entry === "string")
+}
+
 /** Normalize a dynamically imported JSON module to its message map. */
 function toMessages(mod: unknown): TranslationMessages {
   const candidate = (mod as { default?: unknown }).default ?? mod
-  return candidate as TranslationMessages
+  if (!isValidTranslationMessages(candidate)) {
+    throw new TypeError("translation module is not a string-valued record")
+  }
+  return candidate
 }
 
 /**
@@ -170,6 +212,7 @@ export async function loadLocaleDomain(
   locale: string,
   domain: string
 ): Promise<TranslationMessages> {
+  assertLoadablePath(locale, undefined, domain)
   const registered = getMessages(locale, domain)
   if (registered) return registered
   const mod = await import(`../locales/${locale}/${domain}.json`)
@@ -184,6 +227,7 @@ export async function loadLocaleAppDomain(
   app: string,
   domain: string
 ): Promise<TranslationMessages> {
+  assertLoadablePath(locale, app, domain)
   const registered = getAppMessages(locale, app, domain)
   if (registered) return registered
   const mod = await import(`../locales/${locale}/${app}/${domain}.json`)

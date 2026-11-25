@@ -20,29 +20,44 @@ import {
   type LocaleCode,
 } from "@/lib/i18n-client"
 import { useTranslation } from "@/components/admin/translation-provider"
-import { usePersistLocale } from "@/components/admin/use-persist-locale"
+import {
+  awaitPersistLocale,
+  usePersistLocale,
+} from "@/components/admin/use-persist-locale"
 
 /**
  * Language selector in the sidebar footer. Lists the locales whose
  * translation files are complete (English + Urdu in Phase 2); the
  * other registered locales appear once their files land. Switching
- * stores the choice in the browser cookie and best-effort in the
- * database, then reloads so the whole UI re-renders in the new
- * language. The choice sticks until the user changes it again.
+ * stores the choice in the browser cookie and in the database, then
+ * reloads so the whole UI re-renders in the new language. The choice
+ * sticks until the user changes it again.
  *
  * `side` is the sidebar's side (left in LTR, right in RTL) — the
  * collapsed-icon tooltip sits on the sidebar's outer side.
+ * `initialLocale` is the server-resolved locale (I18N-206 / I18N-309):
+ * the first paint names the active language instead of always
+ * showing "English" on Urdu pages. The mount effect below only
+ * corrects the label if the cookie disagrees with the server value.
  */
-export function LanguageSelector({ side }: { side: "left" | "right" }) {
+export function LanguageSelector({
+  side,
+  initialLocale = "en",
+}: {
+  side: "left" | "right"
+  initialLocale?: LocaleCode
+}) {
   const { t } = useTranslation("language")
   const persistLocale = usePersistLocale()
-  const [current, setCurrent] = useState<LocaleCode>("en")
+  const [current, setCurrent] = useState<LocaleCode>(initialLocale)
 
   // Read the cookie after mount (not during render) so server and
-  // client render the same first pass — no hydration mismatch.
+  // client render the same first pass — no hydration mismatch. The
+  // server already resolved the same cookie (or the stored
+  // preference), so this normally agrees with `initialLocale`.
   useEffect(() => {
     const saved = readLocaleCookie()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mount-only cookie read: the server renders "en" and the client corrects after hydration, so there is no hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mount-only cookie read: the server renders `initialLocale` and the client corrects after hydration only if the cookie disagrees, so there is no hydration mismatch.
     if (saved) setCurrent(saved as LocaleCode)
   }, [])
 
@@ -52,9 +67,14 @@ export function LanguageSelector({ side }: { side: "left" | "right" }) {
     if (locale === current) return
     setCurrent(locale)
     writeLocaleCookie(locale)
-    persistLocale.mutate(locale)
-    applyLocaleToDocument(locale)
-    window.location.reload()
+    // I18N-308: await the DB persist before reloading — a
+    // fire-and-forget fetch is not guaranteed to complete across a
+    // navigation, so the DB write could be lost while the cookie
+    // survived. The wait is capped at 2 s (see awaitPersistLocale).
+    void awaitPersistLocale(persistLocale, locale).then(() => {
+      applyLocaleToDocument(locale)
+      window.location.reload()
+    })
   }
 
   const currentName = getLocale(current)?.nativeName ?? current.toUpperCase()

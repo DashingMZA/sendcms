@@ -38,13 +38,22 @@ const mockRenderDigest = vi.hoisted(() =>
 const mockRenderReply = vi.hoisted(() =>
   vi.fn(async () => ({ html: "<p>reply</p>", text: "reply" }))
 )
-vi.mock("@sendcms/email", () => ({
-  notificationDeps: {
-    sendEmail: mockSendEmail,
-    renderNotification: mockRenderNotification,
-    renderDigest: mockRenderDigest,
-    renderReply: mockRenderReply,
-  },
+vi.mock("@sendcms/email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/email")>()
+  return {
+    ...actual,
+    notificationDeps: {
+      sendEmail: mockSendEmail,
+      renderNotification: mockRenderNotification,
+      renderDigest: mockRenderDigest,
+      renderReply: mockRenderReply,
+    },
+  }
+})
+// The service resolves the owner's locale for subjects/footers
+// (Wave 7, EML-010); the mock returns no preference → English.
+vi.mock("@sendcms/users", () => ({
+  getUserLocale: vi.fn(async () => null),
 }))
 
 function makeSubmission(overrides: Record<string, unknown> = {}) {

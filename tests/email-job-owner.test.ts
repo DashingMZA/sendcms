@@ -20,14 +20,18 @@ vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
   return { ...actual, db: mockDb }
 })
-vi.mock("@sendcms/email", () => ({
-  notificationDeps: {
-    sendEmail: vi.fn(),
-    renderNotification: vi.fn(),
-    renderDigest: vi.fn(),
-    renderReply: vi.fn(),
-  },
-}))
+vi.mock("@sendcms/email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sendcms/email")>()
+  return {
+    ...actual,
+    notificationDeps: {
+      sendEmail: vi.fn(),
+      renderNotification: vi.fn(),
+      renderDigest: vi.fn(),
+      renderReply: vi.fn(),
+    },
+  }
+})
 import {
   enqueueDigest,
   enqueueReply,

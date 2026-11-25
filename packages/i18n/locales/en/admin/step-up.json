@@ -6,7 +6,6 @@
   "passwordPlaceholder": "Your password",
   "title": "Confirm with your password",
   "tooManyAttempts": "Too many verification attempts. Please try again later.",
-  "verified": "Verified. You can continue.",
   "verify": "Verify and continue",
   "verifying": "Verifying…",
   "wrongPassword": "Incorrect password. Try again."

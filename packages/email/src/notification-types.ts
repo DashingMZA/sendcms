@@ -19,6 +19,9 @@ export type SubmissionNotificationProps = {
   inboxUrl: string
   accentColor: string
   footerText: string
+  /** Recipient locale ("en" | "ur"). Drives the template chrome
+      strings and the received-date formatting; defaults to English. */
+  locale?: string
 }
 
 export type NotificationEmailSender = (input: {
@@ -59,6 +62,9 @@ export type DigestProps = {
   inboxUrl: string
   accentColor: string
   footerText: string
+  /** Recipient locale ("en" | "ur"). Drives the template chrome
+      strings and the item dates; defaults to English. */
+  locale?: string
 }
 
 export type DigestRenderer = (
@@ -74,6 +80,10 @@ export type ReplyProps = {
   body: string
   accentColor: string
   footerText: string
+  /** Recipient locale ("en" | "ur"). Drives the template chrome
+      strings (the body itself is the owner's own words, never
+      translated); defaults to English. */
+  locale?: string
 }
 
 export type ReplyRenderer = (

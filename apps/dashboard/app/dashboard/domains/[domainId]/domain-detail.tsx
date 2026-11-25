@@ -30,7 +30,11 @@ import {
 
 import { Download } from "lucide-react"
 import type { DomainVerificationMethod } from "@sendcms/database"
-import { useTranslation } from "@/components/dashboard/translation-provider"
+import { formatDate } from "@sendcms/i18n"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
@@ -95,21 +99,13 @@ function verificationInstructions(
   }
 }
 
-function formatDate(value: string | Date | null) {
-  if (!value) return null
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
-
 export function DomainDetail({
   initialDomain,
 }: {
   initialDomain: DomainDetail
 }) {
   const { t } = useTranslation("domains")
+  const locale = useLocale()
   const router = useRouter()
   const domain = initialDomain
   const verification = domain.verifications.find((v) => v.status === "PENDING")
@@ -227,8 +223,20 @@ export function DomainDetail({
       )
     : null
 
-  const addedDate = formatDate(domain.createdAt)
-  const verifiedDate = formatDate(domain.verifiedAt)
+  const addedDate = domain.createdAt
+    ? formatDate(locale, domain.createdAt, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null
+  const verifiedDate = domain.verifiedAt
+    ? formatDate(locale, domain.verifiedAt, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null
 
   return (
     <div className="flex flex-col gap-6">

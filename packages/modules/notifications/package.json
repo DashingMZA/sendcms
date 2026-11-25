@@ -21,6 +21,7 @@
     "@sendcms/queue": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
+    "@sendcms/users": "workspace:*",
     "zod": "^4.6.5"
   },
   "peerDependencies": {

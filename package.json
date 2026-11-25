@@ -26,7 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:workspace-imports": "node scripts/check-workspace-imports.mjs",
-    "typecheck": "turbo run typecheck && tsc --noEmit && node scripts/check-workspace-imports.mjs"
+    "typecheck": "turbo run typecheck && tsc --noEmit && node scripts/check-workspace-imports.mjs",
+    "validate:i18n": "pnpm --filter @sendcms/i18n validate"
   },
   "dependencies": {
     "@react-email/render": "^2.3.1",

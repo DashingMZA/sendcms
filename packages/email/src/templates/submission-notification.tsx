@@ -1,8 +1,16 @@
 import { Button, Heading, Link, Section, Text } from "react-email"
+import { formatDate, formatTime } from "@sendcms/i18n"
 import { EmailLayout } from "./layout"
+import { getEmailTranslator } from "../email-i18n"
 import type { SubmissionNotificationProps } from "../notification-types"
 
 type Props = SubmissionNotificationProps
+
+const SHORT_DATE: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+}
 
 /** Plain-text fallback for the notification (Resend/SMTP `text` part). */
 export function submissionNotificationText({
@@ -14,18 +22,22 @@ export function submissionNotificationText({
   originDomain,
   receivedAt,
   inboxUrl,
+  locale,
 }: Omit<Props, "accentColor" | "footerText">): string {
+  const effectiveLocale = locale ?? "en"
+  const t = getEmailTranslator(effectiveLocale)
+  const received = `${formatDate(effectiveLocale, receivedAt, SHORT_DATE)} ${formatTime(effectiveLocale, receivedAt)}`
   const lines = [
-    `New submission on ${formName}`,
+    t("notificationHeading", { formName }),
     "",
-    `From: ${senderName ?? "Unknown"}${senderEmail ? ` <${senderEmail}>` : ""}`,
-    `Received: ${receivedAt.toISOString()}`,
-    `Origin: ${originDomain}`,
-    ...(pageUrl ? [`Page: ${pageUrl}`] : []),
+    `${t("textFrom")} ${senderName ?? t("notificationUnknownSender")}${senderEmail ? ` <${senderEmail}>` : ""}`,
+    `${t("textReceived")} ${received}`,
+    `${t("textOrigin")} ${originDomain}`,
+    ...(pageUrl ? [`${t("textPage")} ${pageUrl}`] : []),
     "",
     ...fields.map((field) => `${field.label}: ${field.value}`),
     "",
-    `View in your inbox: ${inboxUrl}`,
+    `${t("textViewInbox")} ${inboxUrl}`,
   ]
   return lines.join("\n")
 }
@@ -41,21 +53,26 @@ export function SubmissionNotification({
   inboxUrl,
   accentColor,
   footerText,
+  locale,
 }: Props) {
+  const effectiveLocale = locale ?? "en"
+  const t = getEmailTranslator(effectiveLocale)
+  const received = `${formatDate(effectiveLocale, receivedAt, SHORT_DATE)} ${formatTime(effectiveLocale, receivedAt)}`
   return (
     <EmailLayout
-      preview={`New submission on ${formName}`}
+      preview={t("notificationHeading", { formName })}
       accentColor={accentColor}
       footerText={footerText}
+      locale={locale}
     >
       <Heading
         as="h2"
         style={{ fontSize: "18px", fontWeight: 600, margin: "0 0 8px" }}
       >
-        New submission on {formName}
+        {t("notificationHeading", { formName })}
       </Heading>
       <Text style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 4px" }}>
-        From: {senderName ?? "Unknown"}
+        {t("textFrom")} {senderName ?? t("notificationUnknownSender")}
         {senderEmail ? ` <${senderEmail}>` : ""}
       </Text>
       <Text
@@ -66,7 +83,7 @@ export function SubmissionNotification({
           margin: "0 0 16px",
         }}
       >
-        Received {receivedAt.toISOString()} · {originDomain}
+        {t("notificationReceived", { date: received, domain: originDomain })}
         {pageUrl ? ` · ${pageUrl}` : ""}
       </Text>
       <Section
@@ -86,7 +103,9 @@ export function SubmissionNotification({
           </Text>
         ))}
         {fields.length === 0 && (
-          <Text style={{ fontSize: "14px", margin: 0 }}>No field values.</Text>
+          <Text style={{ fontSize: "14px", margin: 0 }}>
+            {t("notificationNoFields")}
+          </Text>
         )}
       </Section>
       <Button
@@ -102,7 +121,7 @@ export function SubmissionNotification({
           textDecoration: "none",
         }}
       >
-        View in inbox
+        {t("notificationViewInbox")}
       </Button>
       <Text
         style={{
@@ -112,7 +131,7 @@ export function SubmissionNotification({
           margin: "16px 0 4px",
         }}
       >
-        If the button doesn&apos;t work, paste this link into your browser:
+        {t("buttonFallback")}
       </Text>
       <Link
         href={inboxUrl}

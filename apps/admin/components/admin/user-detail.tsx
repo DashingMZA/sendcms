@@ -67,7 +67,11 @@ import {
   RiKeyLine,
   RiStickyNoteLine,
 } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
+import { formatDate, formatDateTime } from "./plan-format"
 import { StepUpDialog } from "./step-up-dialog"
 import { UserAiTab } from "./user-ai-tab"
 import { UserMcpTab } from "./user-mcp-tab"
@@ -75,26 +79,6 @@ import { UserPackageTab } from "./user-package-tab"
 import { UserRoleBadge, UserStatusBadge } from "./user-status-badge"
 import type { AiBillingMode } from "@sendcms/database"
 import type { UserMcpSettingsRow } from "@sendcms/mcp-admin"
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
-
-function formatDateTime(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 /** Download a JSON object as a file (admin user-data export). */
 function downloadJson(data: unknown, filename: string) {
@@ -151,6 +135,7 @@ export function UserDetail({
   mcpToolNames,
 }: Props) {
   const { t } = useTranslation("users")
+  const locale = useLocale()
   const [tab, setTab] = useState("profile")
   const [action, setAction] = useState<ActionKind | null>(null)
   const [reason, setReason] = useState("")
@@ -404,7 +389,9 @@ export function UserDetail({
           <UserStatusBadge status={profile.status} labels={statusLabels} />
           <UserRoleBadge role={profile.adminRole} labels={roleLabels} />
         </div>
-        <p className="text-muted-foreground">{profile.email}</p>
+        <p className="text-muted-foreground">
+          <bdi dir="ltr">{profile.email}</bdi>
+        </p>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -428,7 +415,9 @@ export function UserDetail({
               <CardContent>
                 <dl className="divide-y">
                   <Field label={t("name")}>{profile.name}</Field>
-                  <Field label={t("email")}>{profile.email}</Field>
+                  <Field label={t("email")}>
+                    <bdi dir="ltr">{profile.email}</bdi>
+                  </Field>
                   <Field label={t("emailVerified")}>
                     {profile.emailVerified ? t("verifiedYes") : t("verifiedNo")}
                   </Field>
@@ -459,20 +448,20 @@ export function UserDetail({
                     </span>
                   </Field>
                   <Field label={t("statusChangedAt")}>
-                    {formatDateTime(profile.statusChangedAt)}
+                    {formatDateTime(locale, profile.statusChangedAt)}
                   </Field>
                   <Field label={t("locale")}>
                     {profile.locale ?? t("localeNone")}
                   </Field>
                   <Field label={t("createdAt")}>
-                    {formatDateTime(profile.createdAt)}
+                    {formatDateTime(locale, profile.createdAt)}
                   </Field>
                   <Field label={t("updatedAt")}>
-                    {formatDateTime(profile.updatedAt)}
+                    {formatDateTime(locale, profile.updatedAt)}
                   </Field>
                   <Field label={t("deletionRequested")}>
                     {profile.deletionRequestedAt
-                      ? formatDateTime(profile.deletionRequestedAt)
+                      ? formatDateTime(locale, profile.deletionRequestedAt)
                       : t("deletionRequestedNone")}
                   </Field>
                 </dl>
@@ -626,7 +615,9 @@ export function UserDetail({
                           <TableCell>
                             {form.aiEnabled ? t("aiYes") : t("aiNo")}
                           </TableCell>
-                          <TableCell>{formatDate(form.createdAt)}</TableCell>
+                          <TableCell>
+                            {formatDate(locale, form.createdAt)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -673,7 +664,9 @@ export function UserDetail({
                           <TableCell>
                             <Badge variant="secondary">{domain.status}</Badge>
                           </TableCell>
-                          <TableCell>{formatDate(domain.createdAt)}</TableCell>
+                          <TableCell>
+                            {formatDate(locale, domain.createdAt)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -767,8 +760,12 @@ export function UserDetail({
                             <TableCell>
                               <Badge variant="secondary">{key.scope}</Badge>
                             </TableCell>
-                            <TableCell>{formatDate(key.lastUsedAt)}</TableCell>
-                            <TableCell>{formatDate(key.createdAt)}</TableCell>
+                            <TableCell>
+                              {formatDate(locale, key.lastUsedAt)}
+                            </TableCell>
+                            <TableCell>
+                              {formatDate(locale, key.createdAt)}
+                            </TableCell>
                             <TableCell>
                               {key.revokedAt ? (
                                 <Badge variant="outline">
@@ -841,7 +838,7 @@ export function UserDetail({
                               {event.user?.name ?? event.user?.email ?? "—"}
                             </TableCell>
                             <TableCell>
-                              {formatDateTime(event.createdAt)}
+                              {formatDateTime(locale, event.createdAt)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -878,7 +875,7 @@ export function UserDetail({
                         <p className="mt-2 text-xs text-muted-foreground">
                           {t("noteMeta", {
                             name: note.admin?.name ?? note.admin?.email ?? "—",
-                            date: formatDateTime(note.createdAt),
+                            date: formatDateTime(locale, note.createdAt),
                           })}
                         </p>
                       </li>
@@ -1053,6 +1050,7 @@ function UserSubmissionsTab({
   canReveal: boolean
 }) {
   const { t } = useTranslation("users")
+  const locale = useLocale()
   const [page, setPage] = useState(1)
   const [revealId, setRevealId] = useState<string | null>(null)
   const { data } = useAdminUserSubmissions(userId, page)
@@ -1107,7 +1105,9 @@ function UserSubmissionsTab({
                       <TableCell>
                         <Badge variant="secondary">{submission.status}</Badge>
                       </TableCell>
-                      <TableCell>{formatDate(submission.createdAt)}</TableCell>
+                      <TableCell>
+                        {formatDate(locale, submission.createdAt)}
+                      </TableCell>
                       <TableCell>{submission.originDomain}</TableCell>
                       {canReveal && (
                         <TableCell>
@@ -1175,6 +1175,7 @@ function SubmissionRevealDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation("users")
+  const locale = useLocale()
   const { t: tErrors } = useTranslation("errors")
   const { data, isPending, isError } = useAdminUserSubmission(
     userId,
@@ -1194,7 +1195,7 @@ function SubmissionRevealDialog({
           <DialogTitle>{t("revealTitle")}</DialogTitle>
           <DialogDescription>
             {data
-              ? `${data.form.name} · ${formatDateTime(data.createdAt)} · ${data.originDomain}`
+              ? `${data.form.name} · ${formatDateTime(locale, data.createdAt)} · ${data.originDomain}`
               : ""}
           </DialogDescription>
         </DialogHeader>

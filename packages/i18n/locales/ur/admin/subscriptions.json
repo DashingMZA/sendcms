@@ -69,10 +69,8 @@
   "migrateExecute": "منتقلی نافذ کریں",
   "migrateNoChanges": "کوئی تبدیلی نہیں",
   "migrateNoPermission": "آپ کو سبسکرپشنز منتقل کرنے کی اجازت نہیں ہے۔",
-  "migrateNoUsersSelected": "منتقلی کا پیش نظارہ دیکھنے کے لیے کم از کم ایک صارف منتخب کریں۔",
   "migratePreview": "منتقلی کا پیش نظارہ",
   "migratePreviewEmpty": "اس انتخاب سے کوئی سبسکرپشن مطابقت نہیں رکھتی۔",
-  "migratePreviewEmptyDescription": "منتخب صارفین کی کوئی فعال سبسکرپشن نہیں ہے، یا وہ پہلے سے ہدف ورژن پر ہیں۔",
   "migratePreviewTitle": "منتقلی کا پیش نظارہ",
   "migratePriceFromTo": "{from} → {to}",
   "migrateReasonLabel": "وجہ",
@@ -104,8 +102,6 @@
   "noSubscriptionsDescription": "کوئی اور تلاش آزمائیں یا فلٹرز صاف کریں۔",
   "noSubscriptionsEmptyDescription": "ابھی تک کوئی سبسکرپشن نہیں۔ ایک بنانے کے لیے کسی صارف کو پلان ورژن تفویض کریں۔",
   "noSubscriptionsTitle": "کوئی سبسکرپشن نہیں ملی",
-  "overrideAdmin": "کس نے سیٹ کیا",
-  "overrideCreated": "بنایا گیا",
   "overrideExpires": "ختم ہوتا ہے",
   "overrideMeter": "میٹر",
   "overrideReason": "وجہ",
@@ -115,10 +111,8 @@
   "overridesEmptyDescription": "اس صارف کو ان کے پلان سے مختلف حد دینے کے لیے اوور رائیڈ سیٹ کریں۔",
   "overridesEmptyTitle": "کوئی اوور رائیڈ نہیں",
   "overridesTitle": "استحقاق اوور رائیڈز",
-  "packageTitle": "پیکیج اور سبسکرپشن",
   "pageOf": "صفحہ {page} از {totalPages}",
   "periodEndLabel": "مدت کا اختتام",
-  "periodLabel": "مدت",
   "periodNone": "—",
   "periodStartLabel": "مدت کا آغاز",
   "planAll": "تمام پلانز",
@@ -152,6 +146,5 @@
   "toastMigrationDone": "منتقلی مکمل: {count} سبسکرپشن(ز) منتقل کر دی گئیں۔",
   "toastOverrideRemoved": "اوور رائیڈ ہٹا دیا گیا۔",
   "toastOverrideSet": "اوور رائیڈ سیٹ کر دیا گیا۔",
-  "unlimited": "لامحدود",
-  "versionLabel": "ورژن"
+  "unlimited": "لامحدود"
 }

@@ -2,6 +2,8 @@ import { db } from "@sendcms/database"
 
 import { ApiError } from "@sendcms/shared"
 
+import { SetLocaleSchema } from "./validators"
+
 export async function lookupUserByEmail(email: string) {
   const normalized = email.trim().toLowerCase()
   const user = await db.user.findUnique({ where: { email: normalized } })
@@ -45,10 +47,28 @@ export async function getUserLocale(userId: string): Promise<string | null> {
   return user.locale
 }
 
+/**
+ * Store a user's preferred UI locale (SRC-227). Validates the code
+ * inside the service as defense-in-depth — the route validates too,
+ * but any direct caller (server component, MCP tool) used to be able
+ * to store an arbitrary string — and returns 404 for an unknown user
+ * instead of letting Prisma's P2025 surface as a generic 500.
+ * Only locales with complete translation files are storable
+ * (I18N-307: coming-soon codes are rejected, not stored).
+ */
 export async function setUserLocale(userId: string, locale: string) {
+  const parsed = SetLocaleSchema.safeParse({ locale })
+  if (!parsed.success) {
+    throw new ApiError("Invalid locale", 422)
+  }
+  const existing = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  })
+  if (!existing) throw new ApiError("No user found", 404)
   const user = await db.user.update({
     where: { id: userId },
-    data: { locale },
+    data: { locale: parsed.data.locale },
     select: { id: true, locale: true },
   })
   return user

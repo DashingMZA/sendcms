@@ -4,7 +4,10 @@ import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { QueryProvider } from "@/components/dashboard/query-provider"
-import { TranslationProvider } from "@/components/dashboard/translation-provider"
+import {
+  LocaleProvider,
+  TranslationProvider,
+} from "@/components/dashboard/translation-provider"
 import {
   DASHBOARD_SHELL_DOMAINS,
   getDictionaries,
@@ -34,27 +37,32 @@ export default async function DashboardLayout({
   // (data-[side=left]:left-0 / data-[side=right]:right-0), so
   // dir="rtl" on <html> alone does NOT move it — the side must be
   // passed explicitly. Language switching reloads the page, so this
-  // server-computed direction is never stale.
-  const locale = await getRequestLocale()
+  // server-computed direction is never stale. The session user id is
+  // passed (DSH-001/DSH-201/DSH-401) so the stored DB preference
+  // resolves for the shell dictionaries and the sidebar side too.
+  const locale = await getRequestLocale(session.user.id)
   const side = getLocaleDirection(locale) === "rtl" ? "right" : "left"
   const dictionaries = await getDictionaries(locale, DASHBOARD_SHELL_DOMAINS)
 
   return (
     <QueryProvider>
-      <TranslationProvider dictionaries={dictionaries}>
-        <TooltipProvider>
-          <SidebarProvider>
-            <AppSidebar
-              user={session.user}
-              domainCount={domainCount}
-              formCount={formCount}
-              inboxCount={inboxCount}
-              side={side}
-            />
-            <SidebarInset>{children}</SidebarInset>
-          </SidebarProvider>
-        </TooltipProvider>
-      </TranslationProvider>
+      <LocaleProvider locale={locale}>
+        <TranslationProvider dictionaries={dictionaries}>
+          <TooltipProvider>
+            <SidebarProvider>
+              <AppSidebar
+                user={session.user}
+                domainCount={domainCount}
+                formCount={formCount}
+                inboxCount={inboxCount}
+                side={side}
+                initialLocale={locale}
+              />
+              <SidebarInset>{children}</SidebarInset>
+            </SidebarProvider>
+          </TooltipProvider>
+        </TranslationProvider>
+      </LocaleProvider>
     </QueryProvider>
   )
 }

@@ -404,6 +404,9 @@ importers:
       '@sendcms/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@sendcms/users':
+        specifier: workspace:*
+        version: link:../../packages/modules/users
       '@tanstack/react-query':
         specifier: ^5.108.0
         version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
@@ -964,6 +967,9 @@ importers:
       '@react-email/render':
         specifier: ^2.3.1
         version: 2.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       nodemailer:
         specifier: ^10.6.0
         version: 10.6.0
@@ -1443,6 +1449,9 @@ importers:
       '@sendcms/shared':
         specifier: workspace:*
         version: link:../../shared
+      '@sendcms/users':
+        specifier: workspace:*
+        version: link:../users
       zod:
         specifier: ^4.6.5
         version: 4.6.7
@@ -1575,6 +1584,12 @@ importers:
       '@sendcms/domains':
         specifier: workspace:*
         version: link:../domains
+      '@sendcms/email':
+        specifier: workspace:*
+        version: link:../../email
+      '@sendcms/i18n':
+        specifier: workspace:*
+        version: link:../../i18n
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../notifications

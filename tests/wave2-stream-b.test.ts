@@ -401,8 +401,22 @@ describe("SEC-006 dashboard proxy session failure", () => {
 describe("SEC-107 admin error boundary", () => {
   it("renders a generic message with no error text, stack, or paths", () => {
     const boundary = read("apps/admin/app/error.tsx")
-    expect(boundary).toContain("Something went wrong")
+    // Wave 7 (I18N-310): the generic message is translated, not
+    // hardcoded English — the rendered English text is unchanged.
+    expect(boundary).toContain('t("errorTitle")')
+    expect(boundary).toContain('t("errorDescription")')
+    expect(boundary).toContain('t("errorTryAgain")')
+    expect(boundary).toContain('t("errorGoToDashboard")')
+    expect(boundary).not.toContain("Something went wrong")
+    expect(boundary).not.toContain("This admin page could not be loaded")
     expect(boundary).toContain('href="/admin"')
+    const navEn = JSON.parse(
+      read("packages/i18n/locales/en/admin/navigation.json")
+    )
+    expect(navEn.errorTitle).toBe("Something went wrong")
+    expect(navEn.errorDescription).toBe(
+      "This admin page could not be loaded. Try again, or go back to the admin dashboard."
+    )
     // The component never renders the error: no message, no stack,
     // no interpolation of the error object at all. (The word "stack"
     // appears in the header comment that states this rule.)

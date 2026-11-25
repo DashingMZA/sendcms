@@ -1,6 +1,6 @@
 "use client"
 
-import { format } from "date-fns"
+import { formatDate } from "@sendcms/i18n"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import {
   ChartContainer,
@@ -10,6 +10,7 @@ import {
 } from "@sendcms/ui"
 
 import type { DayCount } from "@sendcms/analytics"
+import { useLocale } from "@/components/dashboard/translation-provider"
 
 /** The chart series label is passed in already translated by the
     calling page (overview / analytics) — the chart itself owns no
@@ -21,6 +22,7 @@ export function SubmissionActivityChart({
   data: DayCount[]
   seriesLabel: string
 }) {
+  const locale = useLocale()
   const chartConfig: ChartConfig = {
     count: {
       label: seriesLabel,
@@ -29,7 +31,10 @@ export function SubmissionActivityChart({
   }
   const formatted = data.map((d) => ({
     ...d,
-    label: format(new Date(`${d.date}T00:00:00Z`), "MMM d"),
+    label: formatDate(locale, new Date(`${d.date}T00:00:00Z`), {
+      month: "short",
+      day: "numeric",
+    }),
   }))
 
   return (

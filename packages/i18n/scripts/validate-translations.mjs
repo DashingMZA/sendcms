@@ -7,19 +7,33 @@
 //      keys fail the run).
 //   3. Translation completeness per locale; the 8 coming-soon locales are
 //      reported as "not started" WITHOUT failing.
+//   4. Code usage (I18N-001): every key used by `apps/admin` +
+//      `apps/dashboard` exists in its domain's `en` file. Parity (2)
+//      then guarantees `ur`. See `check-code-usage.mjs`.
+//   5. Placeholder parity (SRC-326): for every key present in both
+//      locales, the `{placeholder}` sets must match — a `ur` string
+//      that drops its `en` twin's `{name}` would otherwise pass
+//      validation and render literally.
 //
-// Exits non-zero ONLY when en or ur is incomplete or any JSON is invalid.
+// Exits non-zero ONLY when en or ur is incomplete, any JSON is invalid,
+// a code-used key is missing, or placeholders disagree.
 // Usage: node scripts/validate-translations.mjs [--check]
+//
+// Test seams (used by tests/i18n.test.ts only):
+//   SENDCMS_I18N_LOCALES_DIR overrides the locales directory, and
+//   SENDCMS_I18N_REPO_ROOT overrides the repo root for check 4.
 
 import { readdir, readFile } from "node:fs/promises"
+import { execFile } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 
-const localesDir = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "locales"
-)
+const execFileAsync = promisify(execFile)
+
+const localesDir =
+  process.env.SENDCMS_I18N_LOCALES_DIR ??
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "locales")
 
 const SOURCE_LOCALE = "en"
 const REQUIRED_LOCALES = ["en", "ur"]
@@ -137,6 +151,69 @@ console.log(
 )
 console.log("Completeness:")
 for (const line of report) console.log(line)
+
+// 4. Code usage: every key used in apps/admin + apps/dashboard must
+// exist in its domain's en file (see check-code-usage.mjs). Skipped
+// when the locales dir is overridden (fixture tests), because the
+// fixture has no apps tree.
+if (!process.env.SENDCMS_I18N_LOCALES_DIR) {
+  console.log("\nCode usage:")
+  try {
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        path.join(
+          path.dirname(fileURLToPath(import.meta.url)),
+          "check-code-usage.mjs"
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          ...(process.env.SENDCMS_I18N_REPO_ROOT
+            ? { SENDCMS_I18N_REPO_ROOT: process.env.SENDCMS_I18N_REPO_ROOT }
+            : {}),
+        },
+      }
+    )
+    for (const line of stdout.trim().split("\n")) {
+      console.log(`  ${line}`)
+    }
+  } catch (err) {
+    const output = (err.stdout ?? "") + (err.stderr ?? "")
+    for (const line of output.trim().split("\n")) {
+      if (line) console.log(`  ${line}`)
+    }
+    failures.push("code-usage check failed (see above)")
+  }
+}
+
+// 5. Placeholder parity: {name} sets must agree between en and ur.
+function placeholders(value) {
+  return new Set([...String(value).matchAll(/\{(\w+)\}/g)].map((m) => m[1]))
+}
+for (const rel of sourceFiles) {
+  const source = sourceMessages.get(rel)
+  if (!source) continue
+  let target
+  try {
+    target = await readMessages("ur", rel)
+  } catch {
+    continue // Already reported as a failure above.
+  }
+  for (const [key, enValue] of Object.entries(source)) {
+    if (!(key in target)) continue // Already reported as a failure above.
+    const enPlaceholders = placeholders(enValue)
+    const urPlaceholders = placeholders(target[key])
+    const missing = [...enPlaceholders].filter((p) => !urPlaceholders.has(p))
+    const extra = [...urPlaceholders].filter((p) => !enPlaceholders.has(p))
+    if (missing.length > 0 || extra.length > 0) {
+      failures.push(
+        `locales/ur/${rel}: key "${key}" placeholder mismatch (en: {${[...enPlaceholders].join(", ")}}; ur: {${[...urPlaceholders].join(", ")}})`
+      )
+    }
+  }
+}
 
 if (failures.length > 0) {
   console.log("\nFailures:")

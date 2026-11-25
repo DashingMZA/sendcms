@@ -30,16 +30,11 @@ import {
 
 import { RiKeyLine, RiRefreshLine } from "@remixicon/react"
 import { CopyField } from "../domains/copy-field"
-import { useTranslation } from "@/components/dashboard/translation-provider"
-
-function formatDate(value: string | Date | null) {
-  if (!value) return "—"
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
+import { formatDate } from "@sendcms/i18n"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/dashboard/translation-provider"
 
 export function ApiKeysManager({
   initialKeys,
@@ -205,6 +200,7 @@ function ApiKeyRow({
   onNewKey: (plaintext: string, keyName: string) => void
 }) {
   const { t } = useTranslation("api-keys")
+  const locale = useLocale()
   const revokeKey = useRevokeApiKey(apiKey.id)
   const rotateKey = useRotateApiKey(apiKey.id)
   const [error, setError] = useState<string | null>(null)
@@ -243,8 +239,24 @@ function ApiKeyRow({
           {apiKey.scope === "FULL" ? t("scopeFullBadge") : t("scopeReadBadge")}
         </Badge>
       </TableCell>
-      <TableCell>{formatDate(apiKey.lastUsedAt)}</TableCell>
-      <TableCell>{formatDate(apiKey.createdAt)}</TableCell>
+      <TableCell>
+        {apiKey.lastUsedAt
+          ? formatDate(locale, apiKey.lastUsedAt, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "—"}
+      </TableCell>
+      <TableCell>
+        {apiKey.createdAt
+          ? formatDate(locale, apiKey.createdAt, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "—"}
+      </TableCell>
       <TableCell>
         {revoked ? (
           <Badge variant="outline">{t("statusRevoked")}</Badge>

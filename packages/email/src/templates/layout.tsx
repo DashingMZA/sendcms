@@ -10,6 +10,7 @@ import {
   Text,
   Hr,
 } from "react-email"
+import { getEmailTranslator } from "../email-i18n"
 
 type Props = {
   preview: string
@@ -18,6 +19,10 @@ type Props = {
   footerText: string
   siteUrl?: string | null
   unsubscribeUrl?: string | null
+  /** Recipient locale ("en" | "ur"); drives `<html lang dir>` and the
+      layout's own strings (logo alt, Unsubscribe link). Defaults to
+      English. */
+  locale?: string
   children: React.ReactNode
 }
 
@@ -28,10 +33,13 @@ export function EmailLayout({
   footerText,
   siteUrl,
   unsubscribeUrl,
+  locale,
   children,
 }: Props) {
+  const t = getEmailTranslator(locale ?? "en")
+  const dir = (locale ?? "en").toLowerCase().startsWith("ur") ? "rtl" : "ltr"
   return (
-    <Html>
+    <Html lang={locale ?? "en"} dir={dir}>
       <Head />
       <Preview>{preview}</Preview>
       <Body
@@ -48,10 +56,10 @@ export function EmailLayout({
             <Section style={{ padding: "20px 24px 0" }}>
               {siteUrl ? (
                 <Link href={siteUrl}>
-                  <Img src={logoUrl} height={32} alt="Logo" />
+                  <Img src={logoUrl} height={32} alt={t("logoAlt")} />
                 </Link>
               ) : (
-                <Img src={logoUrl} height={32} alt="Logo" />
+                <Img src={logoUrl} height={32} alt={t("logoAlt")} />
               )}
             </Section>
           )}
@@ -82,7 +90,7 @@ export function EmailLayout({
                 <>
                   {" · "}
                   <Link href={unsubscribeUrl} style={{ color: "#9ca3af" }}>
-                    Unsubscribe
+                    {t("unsubscribe")}
                   </Link>
                 </>
               )}

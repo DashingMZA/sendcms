@@ -24,6 +24,21 @@ function trustedProxyEntries(): string[] {
   )
 }
 
+/** Recipient locale for auth mail (EML-010): resolved from the user
+    row at send time. Never throws — a missing row or preference falls
+    back to English in the mailer. */
+async function userLocale(userId: string): Promise<string | undefined> {
+  try {
+    const row = await db.user.findUnique({
+      where: { id: userId },
+      select: { locale: true },
+    })
+    return row?.locale ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Admin auth — Better Auth 1.7.x (stable), database sessions.
  *
@@ -223,7 +238,11 @@ export function createSendcmsAuth() {
       minPasswordLength: 8,
       resetPasswordTokenExpiresIn: 60 * 60, // 1 hour
       sendResetPassword: async ({ user, url }) => {
-        await sendPasswordResetEmail({ user, url })
+        await sendPasswordResetEmail({
+          user,
+          url,
+          locale: await userLocale(user.id),
+        })
       },
       onPasswordReset: async ({ user }) => {
         // Audit the reset (best-effort — logAudit never throws). The
@@ -248,6 +267,7 @@ export function createSendcmsAuth() {
         await sendVerificationEmail({
           user,
           url: verificationUrlOnDashboard(url),
+          locale: await userLocale(user.id),
         })
       },
     },

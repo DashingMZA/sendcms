@@ -4,6 +4,7 @@ import {
   DEFAULT_LOCALE,
   createTranslator,
   getLocaleDirection,
+  isSelectableLocale,
   isSupportedLocale,
   loadLocaleAppDomain,
   loadLocaleDomain,
@@ -12,6 +13,7 @@ import {
   type TranslationMessages,
   type Translator,
 } from "@sendcms/i18n"
+import { getUserLocale } from "@sendcms/users"
 
 /**
  * Server-side i18n adapter — the SINGLE place in the admin app that
@@ -34,6 +36,7 @@ export {
   DEFAULT_LOCALE,
   createTranslator,
   getLocaleDirection,
+  isSelectableLocale,
   isSupportedLocale,
 }
 export type { LocaleCode, LocaleInfo, TranslationMessages, Translator }
@@ -86,10 +89,23 @@ async function loadMessages(
   }
 }
 
-/** Resolve the request locale from the cookie; "en" when absent/invalid. */
-export async function getRequestLocale(): Promise<LocaleCode> {
+/**
+ * Resolve the request locale: the cookie first, then the user's stored
+ * preference in the database, then English (I18N-203 — mirrors the
+ * dashboard adapter's `getRequestLocale(userId?)` → `getUserLocale`
+ * shape; the admin adapter used to be cookie-only, so the persisted
+ * preference was write-only). Only locales with complete translation
+ * files resolve (I18N-307): a coming-soon code in the cookie or the DB
+ * falls through to English, including the shell direction.
+ */
+export async function getRequestLocale(userId?: string): Promise<LocaleCode> {
   const cookie = (await cookies()).get(LOCALE_COOKIE_NAME)?.value
-  return cookie && isSupportedLocale(cookie) ? cookie : DEFAULT_LOCALE
+  if (cookie && isSelectableLocale(cookie)) return cookie
+  if (userId) {
+    const stored = await getUserLocale(userId)
+    if (stored && isSelectableLocale(stored)) return stored
+  }
+  return DEFAULT_LOCALE
 }
 
 /**

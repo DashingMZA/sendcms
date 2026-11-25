@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback, Badge, Button, Separator } from "@sendcms/ui"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 
-import { formatDistanceToNow } from "date-fns"
+import { formatRelativeDate } from "@sendcms/i18n"
 import {
   RiInboxLine,
   RiLinksLine,
@@ -270,9 +270,7 @@ export default async function OverviewPage() {
                       </p>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(submission.createdAt), {
-                        addSuffix: true,
-                      })}
+                      {formatRelativeDate(locale, submission.createdAt)}
                     </span>
                   </Link>
                 ))

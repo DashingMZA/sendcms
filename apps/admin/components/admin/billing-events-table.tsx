@@ -35,7 +35,10 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatDateTime } from "./plan-format"
 
 type Props = {
@@ -54,6 +57,7 @@ type Filters = Omit<BillingEventsFilters, "page" | "perPage">
 // typing does not refetch on every keystroke.
 export function BillingEventsTable({ actorRole }: Props) {
   const { t } = useTranslation("billing")
+  const locale = useLocale()
   const canViewBilling = adminCan(actorRole, "VIEW_BILLING")
 
   const [draft, setDraft] = useState<Filters>({})
@@ -246,7 +250,7 @@ export function BillingEventsTable({ actorRole }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {formatDateTime(event.createdAt)}
+                        {formatDateTime(locale, event.createdAt)}
                       </TableCell>
                     </TableRow>
                   ))}

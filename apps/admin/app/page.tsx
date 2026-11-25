@@ -22,10 +22,11 @@ export const metadata: Metadata = {
 // button to the admin overview; other signed-in users get a button to
 // their dashboard.
 export default async function HomePage() {
-  const locale = await getRequestLocale()
+  // I18N-203: auth first so the stored preference can resolve below.
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
   const tLanding = await getTranslator(locale, "landing")
   const tAuth = await getTranslator(locale, "auth")
-  const session = await auth()
   const isAdmin =
     session?.user.platformRole === "PLATFORM_OWNER" ||
     session?.user.adminRole !== null

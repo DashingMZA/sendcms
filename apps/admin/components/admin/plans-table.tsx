@@ -42,7 +42,10 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import { RiPriceTag3Line } from "@remixicon/react"
-import { useTranslation } from "@/components/admin/translation-provider"
+import {
+  useLocale,
+  useTranslation,
+} from "@/components/admin/translation-provider"
 import { formatDate, formatPrice } from "./plan-format"
 import {
   PlanVersionForm,
@@ -59,6 +62,7 @@ type Props = {
 
 export function PlansTable({ initialData, filters, actorRole }: Props) {
   const { t } = useTranslation("plans")
+  const locale = useLocale()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -230,6 +234,7 @@ export function PlansTable({ initialData, filters, actorRole }: Props) {
                     <TableCell>
                       {plan.currentVersion
                         ? formatPrice(
+                            locale,
                             plan.currentVersion.priceAmount,
                             plan.currentVersion.priceCurrency,
                             t("priceFree")
@@ -238,7 +243,7 @@ export function PlansTable({ initialData, filters, actorRole }: Props) {
                     </TableCell>
                     <TableCell>{plan.versionCount}</TableCell>
                     <TableCell>{plan.subscriptionCount}</TableCell>
-                    <TableCell>{formatDate(plan.createdAt)}</TableCell>
+                    <TableCell>{formatDate(locale, plan.createdAt)}</TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="sm">
                         <Link href={`/admin/plans/${plan.id}`}>
@@ -338,19 +343,19 @@ function PlansSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
 
   return (
     <div className="relative">
-      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
         value={value}
         onChange={handleChange}
-        className="h-9 w-64 pr-9 pl-9 text-sm"
+        className="h-9 w-64 ps-9 pe-9 text-sm"
       />
       {value && (
         <button
           type="button"
           onClick={handleClear}
-          className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearFilters")}
         >
           <X className="size-4" />

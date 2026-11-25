@@ -44,6 +44,8 @@ import {
   enqueueDigest,
   enqueueSubmissionNotifications,
 } from "@sendcms/notifications"
+import { getEmailTranslator } from "@sendcms/email"
+import { formatPlural } from "@sendcms/i18n"
 import { isTurnstileConfigured, verifyTurnstileToken } from "./turnstile"
 import { HONEYPOT_FIELD, type SubmitBodyInput } from "./validators"
 
@@ -1086,7 +1088,7 @@ export async function sendDueDigests({
       digestEnabled: true,
       deletedAt: null,
     },
-    include: { owner: { select: { email: true } } },
+    include: { owner: { select: { email: true, locale: true } } },
     orderBy: { createdAt: "asc" },
     take: limit,
   })
@@ -1205,10 +1207,21 @@ export async function sendDueDigests({
     // is conditional on the enqueue actually creating the job — an
     // enqueue that reports 0 leaves the window (and the submissions)
     // for the next run.
+    // The digest subject, footer and item dates render in the owner's
+    // locale (EML-010); the locale rides on the payload so the send
+    // path renders the same locale. The summary/highlights are the
+    // model's (or plain builder's) words, never translated.
+    const locale = form.owner.locale ?? "en"
+    const t = getEmailTranslator(locale)
     const enqueued = await enqueueDigest({
       formId: form.id,
       to: form.owner.email,
-      subject: `${submissions.length} new submission${submissions.length === 1 ? "" : "s"} on ${form.name}`,
+      subject: formatPlural(
+        locale,
+        submissions.length,
+        { one: t("digestSubjectOne"), other: t("digestSubjectOther") },
+        { formName: form.name }
+      ),
       payload: {
         formName: form.name,
         count: submissions.length,
@@ -1224,8 +1237,8 @@ export async function sendDueDigests({
         }),
         inboxUrl: dashboardInboxUrl(form.id),
         accentColor: "#0891b2",
-        footerText:
-          "You're receiving this because you get digests for this form.",
+        footerText: t("digestFooter"),
+        locale,
       },
     })
     if (enqueued === 0) {
