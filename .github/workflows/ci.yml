@@ -8,6 +8,26 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # TST-013 (Phase 16, Wave 3): ephemeral Postgres 17 for the
+    # migration step below — CI applies every migration, so a
+    # migration that generates a valid client but fails to apply
+    # (bad SQL, conflicting DDL, missing extension) fails CI
+    # instead of reaching production untested. Credentials match
+    # the DATABASE_URL the build step already uses.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: sendcms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -23,6 +43,13 @@ jobs:
       # all import it, so generate before any of them (build does it too,
       # via its own script, but it runs last).
       - run: pnpm db:generate
+      # TST-013: apply all migrations against the service container
+      # above. Runs right after generate, before typecheck/lint/test,
+      # so a broken migration fails the run early. sslmode=disable:
+      # the container has no TLS configured (local-only, ephemeral).
+      - run: pnpm db:migrate:deploy
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/sendcms?sslmode=disable
       # The SDK bundle (public/forms/v1.js) is gitignored too, and the
       # SDK tests load the real built bundle — build it before testing.
       - run: pnpm sdk:build
