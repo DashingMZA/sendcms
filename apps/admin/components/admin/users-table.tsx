@@ -304,7 +304,7 @@ export function UsersTable({ initialData, filters }: Props) {
                     <TableCell>{formatDate(locale, user.createdAt)}</TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="sm">
-                        <Link href={`/admin/users/${user.id}`}>
+                        <Link href={`/admin/all-users/${user.id}`}>
                           {t("view")}
                         </Link>
                       </Button>

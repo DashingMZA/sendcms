@@ -235,7 +235,7 @@ function SecurityInner() {
                       <TableCell>
                         {row.user ? (
                           <Link
-                            href={`/admin/users/${row.user.id}`}
+                            href={`/admin/all-users/${row.user.id}`}
                             className="font-medium text-primary hover:underline"
                           >
                             {row.user.name ?? row.user.email}

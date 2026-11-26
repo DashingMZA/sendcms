@@ -1,0 +1,10 @@
+{
+  "description": "Plans and subscriptions side by side — which plan a customer is on, and what it costs. Plan changes stay on the Plans page; subscription changes stay on the Subscriptions page.",
+  "statPastDue": "Past due",
+  "statPlansPublished": "Plans published",
+  "statSubscriptionsActive": "Active subscriptions",
+  "statTrialing": "Trialing",
+  "tabPlans": "Plans",
+  "tabSubscriptions": "Subscriptions",
+  "title": "Plans & Subscriptions"
+}

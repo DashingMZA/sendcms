@@ -237,7 +237,7 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
                     </TableCell>
                     <TableCell>
                       <Link
-                        href={`/admin/users/${ticket.userId}`}
+                        href={`/admin/all-users/${ticket.userId}`}
                         className="underline-offset-4 hover:underline"
                       >
                         {ticket.user?.name ??

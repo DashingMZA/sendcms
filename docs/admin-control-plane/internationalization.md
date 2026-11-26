@@ -31,7 +31,7 @@ the other 8 land without restructuring, but today:
 | Fact                             | Value                                                                             |
 | -------------------------------- | --------------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                        |
-| Domain files per complete locale | 54 (19 shared + 21 admin + 14 dashboard)                                        |
+| Domain files per complete locale | 56 (19 shared + 23 admin + 14 dashboard)                                          |
 | Keys                             | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)       |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                     |
 | Arabic RTL                       | **Not built** — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -78,13 +78,13 @@ packages/i18n/
   scripts/
     validate-translations.mjs  # validation script (pnpm --filter @sendcms/i18n validate)
   locales/
-    en/               # 54 files
+    en/               # 56 files
       navigation.json
       admin/
         users.json billing.json support.json plans.json ...
       dashboard/
         account.json ai.json analytics.json api.json api-keys.json billing.json domains.json forms.json inbox.json landing.json navigation.json notifications.json overview.json support.json
-    ur/               # 54 files, same shape, real Urdu script
+    ur/               # 56 files, same shape, real Urdu script
     es/ ar/ fr/ ...   # do not exist yet
 ```
 
@@ -152,22 +152,22 @@ against `en`:
   reported, not crashed.
 - A load failure for one domain never fails the whole report.
 
-Current output (2026-11-25):
+Current output (2026-11-26):
 
 ```
 Translation validation
-Source locale: en — 54 files, 2036 keys
+Source locale: en — 56 files, 2096 keys
 Completeness:
-  en: 54/54 files, 2036/2036 keys (100%)
-  ur: 54/54 files, 2036/2036 keys (100%)
-  es: not started (0/54 files)
-  ar: not started (0/54 files)
-  fr: not started (0/54 files)
-  de: not started (0/54 files)
-  hi: not started (0/54 files)
-  bn: not started (0/54 files)
-  id: not started (0/54 files)
-  it: not started (0/54 files)
+  en: 56/56 files, 2096/2096 keys (100%)
+  ur: 56/56 files, 2096/2096 keys (100%)
+  es: not started (0/56 files)
+  ar: not started (0/56 files)
+  fr: not started (0/56 files)
+  de: not started (0/56 files)
+  hi: not started (0/56 files)
+  bn: not started (0/56 files)
+  id: not started (0/56 files)
+  it: not started (0/56 files)
 
 ✓ en and ur are complete and in sync.
 ```
@@ -247,11 +247,11 @@ Two RTL locales are registered: `ur` (complete) and `ar`
 
 ## How the apps use it
 
-| App                                   | Locale handling                                                                                                                                                              |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/`                                |
+| App                                   | Locale handling                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/`                                                                                                                                        |
 | `apps/dashboard`                      | Full: `getRequestLocale` per request (cookie → stored preference), `lang`/`dir` on `<html>`, sidebar side from direction, shell + per-page domain JSONs under `dashboard/`, locale-aware dates/times/relative times via `formatDate`/`formatRelativeDate` and the `useLocale()` hook |
-| `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                                               |
+| `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                                                                                                                                                       |
 
 The admin shell translation domains are registered in
 `apps/admin/lib/i18n.ts` (`SHELL_TRANSLATION_DOMAINS`); the
@@ -262,7 +262,7 @@ the registration is not loaded, even if the file exists.
 
 - **The other 8 locales.** `es`, `ar`, `fr`, `de`, `hi`, `bn`,
   `id`, `it` have no files. Adding one means translating the
-  54 domains (real translations, never machine-translated
+  56 domains (real translations, never machine-translated
   placeholders that break interpolation or change a
   provider/model name) and flipping its registry status to
   `complete`. See

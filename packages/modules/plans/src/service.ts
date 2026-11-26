@@ -1222,13 +1222,182 @@ export async function listSubscriptions(
   totalPages: number
 }> {
   requireAdmin(actor, "VIEW_USERS")
-  const { userId, planId, status, q, page, perPage, sort } = filters
+  const { userId, planId, status, endsBefore, q, page, perPage, sort } = filters
   const where: Prisma.SubscriptionWhereInput = {}
   if (userId) where.userId = userId
   if (planId) where.planId = planId
   if (status) where.status = status
+  if (endsBefore) where.currentPeriodEnd = { lte: new Date(endsBefore) }
   // ADM-032: match the subscriber's name or email (contains,
   // case-insensitive) — the same shape listPlans uses for its own q.
+  if (q) {
+    where.user = {
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    }
+  }
+  const [field = "createdAt", direction = "desc"] = sort.split(":")
+  const orderBy: Prisma.SubscriptionOrderByWithRelationInput = {
+    [field]: direction === "asc" ? "asc" : "desc",
+  }
+  const [total, rows] = await Promise.all([
+    db.subscription.count({ where }),
+    db.subscription.findMany({
+      where,
+      include: subscriptionInclude,
+      orderBy,
+      skip: (page - 1) * perPage,
+      take: perPage,
+    }),
+  ])
+  return {
+    subscriptions: rows.map((row) =>
+      toSubscriptionSummary(row as SubscriptionWithRelations)
+    ),
+    total,
+    page,
+    perPage,
+    totalPages: Math.ceil(total / perPage),
+  }
+}
+
+// ─── Trial stats + ended trials (Phase A, seven admin pages §3.4) ────
+
+// Trial state is DERIVED, never stored (Q4 — owner decision
+// 2026-11-26): there is no Trial model and no trial-end timestamp
+// column on Subscription.
+// The derivation, verified against packages/database/prisma/schema.prisma:
+// - trial state = Subscription.status = TRIALING
+//   (SubscriptionStatus: ACTIVE / TRIALING / PAST_DUE / CANCELED / EXPIRED);
+// - trial end = Subscription.currentPeriodEnd. Only
+//   activateSubscriptionFromCheckout creates TRIALING rows, and it stores
+//   the trial end there: the provider-reported trial end when present
+//   (BIL-049/BIL-096), else now + PlanVersion.trialDays. The first
+//   renewal flips TRIALING → ACTIVE via extendSubscriptionPeriod (which
+//   writes a RENEWED event); the expiry job flips a TRIALING row past
+//   its period end to EXPIRED (or CANCELED when cancelAtPeriodEnd),
+//   writing an EXPIRED/CANCELED event.
+// - trial length = PlanVersion.trialDays (Int @default(0)).
+
+export type TrialStats = {
+  activeTrials: number
+  expiringSoon: number
+  convertedLast30Days: number
+  expiredLast30Days: number
+}
+
+// The only trial-origin marker in SubscriptionEvent history: the CREATED
+// event reason activateSubscriptionFromCheckout writes for a trial
+// checkout — `Checkout completed via ${provider} — trial until ${iso}`.
+// No event field records "was TRIALING", and assignSubscription only
+// ever creates ACTIVE rows, so this fixed token is what separates a
+// trial's later RENEWED/EXPIRED/CANCELED events from ordinary paid
+// renewals and expirations. If a trial flag is ever added to
+// SubscriptionEvent, this is the one query to swap.
+const TRIAL_CREATED_REASON_MARKER = "trial until"
+
+// A superseded trial is a replacement, not an ending: when a new
+// checkout supersedes the old row, the old row gets a CANCELED event
+// whose reason starts with this prefix. It must not count as expired.
+const SUPERSEDED_REASON_PREFIX = "Superseded by checkout"
+
+// The subscription ids that started as trials (distinct — one CREATED
+// event per subscription, but deduped defensively).
+async function trialOriginSubscriptionIds(): Promise<string[]> {
+  const rows = await db.subscriptionEvent.findMany({
+    where: {
+      type: "CREATED",
+      reason: { contains: TRIAL_CREATED_REASON_MARKER },
+    },
+    select: { subscriptionId: true },
+  })
+  return [...new Set(rows.map((row) => row.subscriptionId))]
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+export async function getTrialStats(
+  actor: AdminSession,
+  now: Date = new Date()
+): Promise<TrialStats> {
+  requireAdmin(actor, "VIEW_USERS")
+  const in7Days = new Date(now.getTime() + SEVEN_DAYS_MS)
+  const thirtyDaysAgo = new Date(now.getTime() - THIRTY_DAYS_MS)
+  const [activeTrials, expiringSoon, trialIds, recentEvents] =
+    await Promise.all([
+      db.subscription.count({ where: { status: "TRIALING" } }),
+      // Expiring in ≤7 days uses currentPeriodEnd — the trial end.
+      // Includes rows already past their end whose expiry job has not
+      // run yet (they are the most urgent); a TRIALING row with a NULL
+      // currentPeriodEnd is not counted (Prisma `lte` excludes nulls),
+      // and checkout always sets an end.
+      db.subscription.count({
+        where: { status: "TRIALING", currentPeriodEnd: { lte: in7Days } },
+      }),
+      trialOriginSubscriptionIds(),
+      db.subscriptionEvent.findMany({
+        where: {
+          type: { in: ["RENEWED", "EXPIRED", "CANCELED"] },
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        select: { subscriptionId: true, type: true, reason: true },
+      }),
+    ])
+  const trialIdSet = new Set(trialIds)
+  const converted = new Set<string>()
+  const expired = new Set<string>()
+  for (const event of recentEvents) {
+    if (!trialIdSet.has(event.subscriptionId)) continue
+    if (event.type === "RENEWED") {
+      // The renewal is the conversion: extendSubscriptionPeriod flips
+      // TRIALING → ACTIVE and writes the RENEWED event.
+      converted.add(event.subscriptionId)
+    } else if (
+      event.type === "EXPIRED" ||
+      (event.type === "CANCELED" &&
+        !(event.reason ?? "").startsWith(SUPERSEDED_REASON_PREFIX))
+    ) {
+      expired.add(event.subscriptionId)
+    }
+  }
+  return {
+    activeTrials,
+    expiringSoon,
+    convertedLast30Days: converted.size,
+    expiredLast30Days: expired.size,
+  }
+}
+
+// Trials that ended: trial-origin subscriptions now EXPIRED or
+// CANCELED, newest first. Same response shape as listSubscriptions so
+// the trials table reuses its columns. Unlike the 30-day expired
+// stat, this list is unbounded (every ended trial), and a superseded
+// trial appears here as ended — its trial row did end when the new
+// checkout replaced it, and the replacement shows under Active when
+// it is itself a trial.
+export async function listEndedTrials(
+  actor: AdminSession,
+  filters: SubscriptionListQuery
+): Promise<{
+  subscriptions: SubscriptionSummary[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}> {
+  requireAdmin(actor, "VIEW_USERS")
+  const { planId, q, page, perPage, sort } = filters
+  const trialIds = await trialOriginSubscriptionIds()
+  const where: Prisma.SubscriptionWhereInput = {
+    id: { in: trialIds },
+    status: { in: ["EXPIRED", "CANCELED"] },
+  }
+  if (planId) where.planId = planId
+  // ADM-032: match the subscriber's name or email (contains,
+  // case-insensitive) — the same shape listSubscriptions uses.
   if (q) {
     where.user = {
       OR: [

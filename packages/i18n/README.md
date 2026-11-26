@@ -33,7 +33,7 @@ including the acceptance record — is in
 | Fact                             | Value                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                    |
-| Domain files per complete locale | 54 (19 shared + 21 admin + 14 dashboard)                                       |
+| Domain files per complete locale | 56 (19 shared + 23 admin + 14 dashboard)                                      |
 | Key parity                       | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)   |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                 |
 | Arabic RTL                       | Not built — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -109,11 +109,11 @@ packages/i18n/
     load.ts       # Registry + dynamic domain loading + path helpers
     index.ts      # Barrel
   locales/
-    en/           # Source locale (complete, 54 files)
+    en/           # Source locale (complete, 56 files)
       {domain}.json          # Shared domains
       admin/{domain}.json    # Admin-app domains
       dashboard/{domain}.json # Customer-dashboard domains
-    ur/           # Urdu, RTL (complete, 54 files)
+    ur/           # Urdu, RTL (complete, 56 files)
     es/ ar/ fr/ de/ hi/ bn/ id/ it/  # Coming soon (no directories yet)
   scripts/
     validate-translations.mjs
@@ -133,36 +133,37 @@ packages/i18n/
 ## Domains
 
 The domain lists live in `src/load.ts` (`SHARED_DOMAINS`,
-`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 19 + 21 + 14 = 54 files per
+`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 19 + 21 + 14 = 56 files per
 complete locale.
 
-| Shared domains (`locales/{locale}/{domain}.json`) |                 |                 |
-| ------------------------------------------------- | --------------- | --------------- |
-| `actions`                                         | `admins`        | `appearance`    |
-| `auth`                                            | `common`        | `confirmations` |
-| `email`                                           | `empty-states`  | `errors`        |
-| `forms`                                           | `language`      | `notifications` |
-| `pagination`                                      | `profile`       | `security`      |
-| `settings`                                        | `tables`        | `users`         |
-| `validation`                                      |                 |                 |
+| Shared domains (`locales/{locale}/{domain}.json`) |                |                 |
+| ------------------------------------------------- | -------------- | --------------- |
+| `actions`                                         | `admins`       | `appearance`    |
+| `auth`                                            | `common`       | `confirmations` |
+| `email`                                           | `empty-states` | `errors`        |
+| `forms`                                           | `language`     | `notifications` |
+| `pagination`                                      | `profile`      | `security`      |
+| `settings`                                        | `tables`       | `users`         |
+| `validation`                                      |                |                 |
 
-| Admin domains (`locales/{locale}/admin/{domain}.json`) |                 |                |
-| ------------------------------------------------------ | --------------- | -------------- |
-| `ai`                                                   | `announcements` | `audit-logs`   |
-| `billing`                                              | `dashboard`     | `features`     |
-| `health`                                               | `landing`       | `mcp`          |
-| `navigation`                                           | `overview`      | `plans`        |
-| `security`                                             | `settings`      | `step-up`      |
-| `submissions`                                          | `subscriptions` | `support`      |
-| `translations`                                         | `usage`         | `users`        |
+| Admin domains (`locales/{locale}/admin/{domain}.json`) |                 |                 |
+| ------------------------------------------------------ | --------------- | --------------- |
+| `ai`                                                   | `announcements` | `audit-logs`    |
+| `billing`                                              | `dashboard`     | `features`      |
+| `health`                                               | `landing`       | `mcp`           |
+| `navigation`                                           | `overview`      | `plans`         |
+| `plans-subscriptions`                                  | `security`      | `settings`      |
+| `step-up`                                              | `submissions`   | `subscriptions` |
+| `support`                                              | `translations`  | `trials`        |
+| `usage`                                                | `users`         |                 |
 
-| Dashboard domains (`locales/{locale}/dashboard/{domain}.json`) |           |           |
-| -------------------------------------------------------------- | --------- | --------- |
-| `account`                                                      | `ai`      | `analytics` |
-| `api`                                                          | `api-keys` | `billing` |
-| `domains`                                                      | `forms`   | `inbox`   |
+| Dashboard domains (`locales/{locale}/dashboard/{domain}.json`) |              |                 |
+| -------------------------------------------------------------- | ------------ | --------------- |
+| `account`                                                      | `ai`         | `analytics`     |
+| `api`                                                          | `api-keys`   | `billing`       |
+| `domains`                                                      | `forms`      | `inbox`         |
 | `landing`                                                      | `navigation` | `notifications` |
-| `overview`                                                     | `support` |           |
+| `overview`                                                     | `support`    |                 |
 
 ## The translator
 
@@ -188,14 +189,14 @@ visible in dev and never silently becomes an empty string.
 resolves the locale first: an unknown or unsupported locale falls
 back to English instead of throwing a `RangeError`.
 
-| Helper               | Does                                             |
-| -------------------- | ------------------------------------------------ |
-| `formatDate`         | `Intl.DateTimeFormat`                            |
-| `formatTime`         | `Intl.DateTimeFormat` (hour + minute)            |
-| `formatNumber`       | `Intl.NumberFormat`                              |
-| `formatCurrency`     | `Intl.NumberFormat` with `style: "currency"`     |
-| `formatPercent`      | `Intl.NumberFormat` with `style: "percent"`      |
-| `formatRelativeTime` | `Intl.RelativeTimeFormat` with `numeric: "auto"` |
+| Helper               | Does                                                                            |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `formatDate`         | `Intl.DateTimeFormat`                                                           |
+| `formatTime`         | `Intl.DateTimeFormat` (hour + minute)                                           |
+| `formatNumber`       | `Intl.NumberFormat`                                                             |
+| `formatCurrency`     | `Intl.NumberFormat` with `style: "currency"`                                    |
+| `formatPercent`      | `Intl.NumberFormat` with `style: "percent"`                                     |
+| `formatRelativeTime` | `Intl.RelativeTimeFormat` with `numeric: "auto"`                                |
 | `formatRelativeDate` | Relative distance to now ("2 days ago") in the locale, via `formatRelativeTime` |
 
 Dates, times, numbers, currency, and percentages go through these
@@ -262,22 +263,22 @@ Runs `scripts/validate-translations.mjs` (no dependencies). It checks:
    reported as "not started" **without** failing.
 
 Exits non-zero only when `en`/`ur` are incomplete or a JSON file
-is invalid. Current output (2026-11-25):
+is invalid. Current output (2026-11-26):
 
 ```
 Translation validation
-Source locale: en — 54 files, 2036 keys
+Source locale: en — 56 files, 2096 keys
 Completeness:
-  en: 54/54 files, 2036/2036 keys (100%)
-  ur: 54/54 files, 2036/2036 keys (100%)
-  es: not started (0/54 files)
-  ar: not started (0/54 files)
-  fr: not started (0/54 files)
-  de: not started (0/54 files)
-  hi: not started (0/54 files)
-  bn: not started (0/54 files)
-  id: not started (0/54 files)
-  it: not started (0/54 files)
+  en: 56/56 files, 2096/2096 keys (100%)
+  ur: 56/56 files, 2096/2096 keys (100%)
+  es: not started (0/56 files)
+  ar: not started (0/56 files)
+  fr: not started (0/56 files)
+  de: not started (0/56 files)
+  hi: not started (0/56 files)
+  bn: not started (0/56 files)
+  id: not started (0/56 files)
+  it: not started (0/56 files)
 
 ✓ en and ur are complete and in sync.
 ```
@@ -305,11 +306,11 @@ Completeness:
 
 ## How the apps use it
 
-| App                                   | Locale handling                                                                                                                               |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/` |
+| App                                   | Locale handling                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/admin`                          | Full: `getRequestLocale` per request, `dir` on `<html>`, sidebar side from direction, language selector + prompt, domain JSONs under `admin/`                                                                                                                                        |
 | `apps/dashboard`                      | Full: `getRequestLocale` per request (cookie → stored preference), `lang`/`dir` on `<html>`, sidebar side from direction, shell + per-page domain JSONs under `dashboard/`, locale-aware dates/times/relative times via `formatDate`/`formatRelativeDate` and the `useLocale()` hook |
-| `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                |
+| `apps/marketing` / `docs` / `updates` | Not translated — public pages are English-only; no i18n wiring                                                                                                                                                                                                                       |
 
 The admin shell translation domains are registered in
 `apps/admin/lib/i18n.ts` (`SHELL_TRANSLATION_DOMAINS`); the

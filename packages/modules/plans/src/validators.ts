@@ -115,6 +115,10 @@ export const SubscriptionListQuerySchema = AdminPaginationQuerySchema.extend({
   status: z
     .enum(["ACTIVE", "TRIALING", "PAST_DUE", "CANCELED", "EXPIRED"])
     .optional(),
+  // Trials (Phase A): bound on the period end — the "expiring soon"
+  // tab lists TRIALING rows whose trial (currentPeriodEnd) ends by
+  // this ISO datetime. Additive; the subscriptions list ignores it.
+  endsBefore: z.string().datetime().optional(),
   // ADM-032: free-text search over the subscriber's name/email
   // (contains, case-insensitive) — the subscriptions table's search
   // box promises this and previously filtered nothing.

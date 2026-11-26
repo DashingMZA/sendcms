@@ -33,6 +33,7 @@ import {
   RiSettings3Line,
   RiShieldLine,
   RiSunLine,
+  RiTimerLine,
   RiToolsLine,
   RiUserLine,
   RiWalletLine,
@@ -132,16 +133,26 @@ export function AppSidebar({
       label: t("platform"),
       items: [
         { label: t("overview"), href: "/admin", icon: RiDashboardLine },
-        { label: t("users"), href: "/admin/users", icon: RiUserLine },
+        { label: t("allUsers"), href: "/admin/all-users", icon: RiUserLine },
         {
           label: t("plans"),
           href: "/admin/plans",
           icon: RiPriceTag3Line,
         },
         {
+          label: t("plansAndSubscriptions"),
+          href: "/admin/plans-subscriptions",
+          icon: RiPriceTag3Line,
+        },
+        {
           label: t("subscriptions"),
           href: "/admin/subscriptions",
           icon: RiRepeatLine,
+        },
+        {
+          label: t("trials"),
+          href: "/admin/trials",
+          icon: RiTimerLine,
         },
         {
           label: t("usage"),

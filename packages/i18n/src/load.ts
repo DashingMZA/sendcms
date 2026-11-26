@@ -60,6 +60,7 @@ export const ADMIN_DOMAINS = [
   "navigation",
   "overview",
   "plans",
+  "plans-subscriptions",
   "security",
   "settings",
   "step-up",
@@ -67,6 +68,7 @@ export const ADMIN_DOMAINS = [
   "subscriptions",
   "support",
   "translations",
+  "trials",
   "usage",
   "users",
 ] as const

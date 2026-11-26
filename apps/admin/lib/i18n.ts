@@ -60,6 +60,7 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "mcp",
   "overview",
   "plans",
+  "plans-subscriptions",
   "security",
   "settings",
   "step-up",
@@ -67,6 +68,7 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "subscriptions",
   "support",
   "translations",
+  "trials",
   "usage",
   "users",
 ] as const

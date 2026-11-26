@@ -196,6 +196,7 @@ export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin/ai/providers": "MANAGE_AI",
   "/admin/ai/settings": "MANAGE_AI",
   "/admin/ai/usage": "VIEW_AI_USAGE",
+  "/admin/all-users": "VIEW_USERS",
   "/admin/announcements": "MANAGE_ANNOUNCEMENTS",
   "/admin/audit-logs": "VIEW_AUDIT_LOGS",
   "/admin/billing": "VIEW_BILLING",
@@ -204,6 +205,7 @@ export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin/mcp": "VIEW_MCP",
   "/admin/mcp/keys": "VIEW_MCP",
   "/admin/plans": "VIEW_PLAN_VERSIONS",
+  "/admin/plans-subscriptions": "VIEW_USERS",
   "/admin/security": "MANAGE_USERS",
   "/admin/settings": "VIEW_ADMIN_DASHBOARD",
   "/admin/submissions": "VIEW_CUSTOMER_DATA",
@@ -211,6 +213,6 @@ export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin/subscriptions/migrate": "MIGRATE_SUBSCRIPTIONS",
   "/admin/support": "VIEW_CUSTOMER_DATA",
   "/admin/translations": "MANAGE_TRANSLATIONS",
+  "/admin/trials": "VIEW_USERS",
   "/admin/usage": "MANAGE_USAGE",
-  "/admin/users": "VIEW_USERS",
 }

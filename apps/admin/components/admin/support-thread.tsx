@@ -171,7 +171,7 @@ export function SupportThread({ initialData, staffUsers, actorRole }: Props) {
         <span className="text-sm text-muted-foreground">
           {t("openedBy")}{" "}
           <Link
-            href={`/admin/users/${ticket.userId}`}
+            href={`/admin/all-users/${ticket.userId}`}
             className="underline-offset-4 hover:underline"
           >
             {ticket.user?.name ?? ticket.user?.email ?? ticket.userId}

@@ -240,7 +240,7 @@ export function UserDetail({
       <PageHeader
         title={profile.name}
         description={<bdi dir="ltr">{profile.email}</bdi>}
-        back={{ href: "/admin/users", label: t("backToUsers") }}
+        back={{ href: "/admin/all-users", label: t("backToUsers") }}
         action={
           <div className="flex items-center gap-2">
             <UserStatusBadge status={profile.status} labels={statusLabels} />

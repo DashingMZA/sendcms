@@ -21,7 +21,7 @@ function readJson(rel: string): Record<string, string> {
 
 const ADMIN_HREFS = [
   "/admin",
-  "/admin/users",
+  "/admin/all-users",
   "/admin/plans",
   "/admin/subscriptions",
   "/admin/usage",
@@ -46,7 +46,7 @@ const ADMIN_HREFS = [
 
 const ADMIN_ROUTES = [
   ...ADMIN_HREFS,
-  "/admin/users/some-user-id",
+  "/admin/all-users/some-user-id",
   "/admin/plans/some-plan-id",
   "/admin/support/some-ticket-id",
   "/admin/subscriptions/migrate",
@@ -60,7 +60,7 @@ describe("UX-002 / UX-305 — one active nav item per route", () => {
     // "/dashboard/api-keys" is NOT under "/dashboard/api".
     expect(isActiveNavHref("/dashboard/api", "/dashboard/api-keys")).toBe(false)
     expect(isActiveNavHref("/admin/ai", "/admin/ai/providers")).toBe(true)
-    expect(isActiveNavHref("/admin", "/admin/users")).toBe(false)
+    expect(isActiveNavHref("/admin", "/admin/all-users")).toBe(false)
     expect(isActiveNavHref("/admin", "/admin")).toBe(true)
   })
 
@@ -238,7 +238,7 @@ describe("UX-005 / UX-001 / UX-201 — shared admin PageHeader", () => {
   it("is used by every admin list page", () => {
     const pages = [
       "apps/admin/app/admin/page.tsx",
-      "apps/admin/app/admin/users/page.tsx",
+      "apps/admin/app/admin/all-users/page.tsx",
       "apps/admin/app/admin/plans/page.tsx",
       "apps/admin/app/admin/subscriptions/page.tsx",
       "apps/admin/app/admin/subscriptions/migrate/page.tsx",
@@ -283,7 +283,7 @@ describe("UX-005 / UX-001 / UX-201 — shared admin PageHeader", () => {
 describe("UX-008 — one back-link pattern (PageHeader back prop)", () => {
   it("passes back links from the detail/sub pages", () => {
     expect(read("apps/admin/components/admin/user-detail.tsx")).toContain(
-      'back={{ href: "/admin/users"'
+      'back={{ href: "/admin/all-users"'
     )
     expect(read("apps/admin/components/admin/plan-detail.tsx")).toContain(
       'back={{ href: "/admin/plans"'

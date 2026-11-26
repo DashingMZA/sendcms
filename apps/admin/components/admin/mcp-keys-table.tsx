@@ -260,7 +260,7 @@ export function McpKeysTable({ actorRole, initialFilters }: Props) {
                     <TableCell>
                       {key.user ? (
                         <Link
-                          href={`/admin/users/${key.userId}`}
+                          href={`/admin/all-users/${key.userId}`}
                           className="hover:underline"
                         >
                           {key.user.name ?? key.user.email}

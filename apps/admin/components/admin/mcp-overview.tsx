@@ -332,7 +332,7 @@ export function McpOverview({ actorRole }: Props) {
                     <TableRow key={user.userId}>
                       <TableCell className="font-medium">
                         <Link
-                          href={`/admin/users/${user.userId}`}
+                          href={`/admin/all-users/${user.userId}`}
                           className="hover:underline"
                         >
                           {user.name ?? user.email}

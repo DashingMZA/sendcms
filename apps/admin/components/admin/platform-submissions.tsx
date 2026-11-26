@@ -353,7 +353,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
                       <TableCell>
                         {row.form?.owner ? (
                           <Link
-                            href={`/admin/users/${row.form.owner.id}`}
+                            href={`/admin/all-users/${row.form.owner.id}`}
                             className="text-primary hover:underline"
                           >
                             {row.form.owner.name ??

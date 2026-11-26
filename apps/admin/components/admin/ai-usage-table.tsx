@@ -381,7 +381,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
                       <TableCell className="font-medium">
                         {row.user ? (
                           <Link
-                            href={`/admin/users/${row.userId}`}
+                            href={`/admin/all-users/${row.userId}`}
                             className="hover:underline"
                           >
                             {row.user.name ?? row.user.email}
