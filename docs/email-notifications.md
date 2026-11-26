@@ -14,7 +14,7 @@ flowchart TB
     Claim["Claim: PENDING → SENDING\n(atomic — one processor only)"]
     Send["Send via Resend → SMTP → none"]
     Sent["SENT"]
-    Retry["FAILED → retry\n1m / 5m / 15m / 1h / 4h\n(5 attempts, then terminal FAILED)"]
+    Retry["FAILED → retry\n1m / 5m / 15m / 1h / 4h\n(6 attempts, then terminal FAILED)"]
     Drain["Cron GET /api/cron/email-outbox\nor email worker (every 30 s)"]
 
     Submit --> Enqueue --> After --> Claim --> Send
@@ -84,11 +84,24 @@ translated.
   (the public submit route's `after()` hook) and retried by the cron
   worker. Each attempt flips PENDING → SENDING first, so two
   processors never send the same job twice.
-- Retry backoff: 1m, 5m, 15m, 1h, 4h. After 5 attempts the job stays
+- Retry backoff: 1m, 5m, 15m, 1h, 4h. After 6 attempts the job stays
   FAILED with `lastError` and no further retry — visible in the
-  Notifications delivery log (`/dashboard/notifications`).
+  Notifications delivery log (`/dashboard/notifications`). A failed
+  job can be retried from there: the delivery log's Requeue button
+  (FAILED tab) puts it back to PENDING with a fresh ladder. A job
+  still SENDING more than 10 minutes after its claim is treated as
+  stuck (its processor died mid-send) and is automatically reclaimed
+  by the next drain — or requeued manually from the SENDING tab once
+  it is past the lease.
 - `providerMessageId` records the Resend/SMTP message id for
-  delivery tracking.
+  delivery tracking. `SENT` means only "provider accepted": the
+  signed Resend webhook (`POST /api/webhooks/resend`,
+  `RESEND_WEBHOOK_SECRET`) records the real outcome on the job
+  (`deliveryStatus`), and a hard bounce or complaint suppresses the
+  recipient (EML-005). Notification and digest mail carries a signed
+  per-recipient unsubscribe URL + `List-Unsubscribe` header (EML-011);
+  `RESEND_FROM` is validated at send time and fails fast with a named
+  error when missing or on an unverified domain (EML-008).
 
 ## Cron worker
 
@@ -101,6 +114,15 @@ The root `vercel.json` schedules it **once daily** (`0 0 * * *`,
 midnight UTC) — the Hobby plan allows one cron per day (owner decision
 2026-11-20; reply emails can wait up to a day). To go faster later,
 change the schedule to `*/5 * * * *` when the plan allows it.
+
+> **Cron vs worker (EML-013):** the daily cron is the *fallback*
+> drain — it exists so a job is never stranded when no worker is
+> running. The *prompt* path is the standalone worker's attempts
+> (every 30 s) and the submit route's immediate `after()` drain.
+> With the worker fixed (templates render under tsx again), a job
+> enqueued after midnight is normally sent within one poll interval,
+> not at the next midnight; the cron only catches what the worker
+> missed.
 
 ```json
 {
@@ -139,6 +161,31 @@ together is safe: the PENDING → SENDING claim means a job is owned by
 exactly one processor. In dev, `pnpm dev` starts the worker alongside
 the six apps.
 
+## Delivery webhooks (EML-005)
+
+`SENT` means the provider accepted the mail — nothing more. Resend
+reports what happened after acceptance to
+`POST /api/webhooks/resend` (Svix-signed with `RESEND_WEBHOOK_SECRET`;
+register the endpoint in the Resend dashboard and subscribe to
+`email.delivered`, `email.delivery_delayed`, `email.bounced` and
+`email.complained`). The outcome is stored on the job
+(`deliveryStatus` / `deliveryUpdatedAt`, visible in the delivery
+log), and a hard bounce or a complaint suppresses the recipient, so
+no further job is ever enqueued to that address. A soft (transient)
+bounce is recorded as no delivery status and does not suppress.
+
+## Unsubscribe (EML-011)
+
+Notification and digest mail carries a signed per-recipient
+unsubscribe URL (footer link + `List-Unsubscribe` header).
+Clicking it records a suppression and disables that recipient's
+notification settings, so no further job is enqueued for them.
+`RESEND_FROM` is validated at send time (present, parses as an
+address, on a domain in `RESEND_VERIFIED_DOMAINS` when that list is
+configured) and fails fast with a named error instead of burning
+retries on a provider rejection (EML-008); admin health reports the
+sender status (`email.resendFrom`).
+
 ## Test email
 
 On a form's detail page (Notifications section), "Send a test
@@ -152,6 +199,6 @@ test sends are visible on the notifications page.
 
 | Situation                                          | What happens                                                                                                                                                                                                                                                                        |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No provider configured                             | The job stays PENDING with `lastError` set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 5 attempts it becomes FAILED. FAILED is terminal — the next cron run does not send it; fix the config, then requeue the job from the delivery log (Requeue button on the FAILED tab). |
+| No provider configured                             | The job stays PENDING with `lastError` set and a retry scheduled (1m, 5m, 15m, 1h, 4h). After 6 attempts it becomes FAILED. FAILED is terminal — the next cron run does not send it; fix the config, then requeue the job from the delivery log (Requeue button on the FAILED tab). |
 | Provider rejects (bad key, unverified From domain) | Same, with the provider's message in `lastError`.                                                                                                                                                                                                                                   |
 | Submission deleted before delivery                 | Job FAILED, "Submission or form no longer exists", no retry (unrecoverable).                                                                                                                                                                                                        |

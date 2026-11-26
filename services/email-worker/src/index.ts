@@ -11,6 +11,17 @@ import { createEmailWorker } from "./worker"
 
 const logger = createLogger("email-worker")
 
+// SRC-320: fail fast when DATABASE_URL is unset. Without it the
+// database singleton is built with `undefined` and pg falls back to
+// localhost:5432 (see ./env) — the worker would then poll forever
+// against a database that is not there, reporting `down` instead of
+// refusing to start. The check runs after ./env loads the workspace
+// .env files, and before the first poll.
+if (!process.env.DATABASE_URL) {
+  logger.error("DATABASE_URL is not set — the email worker cannot start.")
+  process.exit(1)
+}
+
 const worker = createEmailWorker()
 await worker.start()
 logger.info(

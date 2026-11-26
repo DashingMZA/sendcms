@@ -31,6 +31,9 @@ export type SendEmailInput = {
   subject: string
   html: string
   text?: string
+  // Extra headers for the provider send — e.g. List-Unsubscribe
+  // (EML-011). Passed through to Resend / SMTP verbatim.
+  headers?: Record<string, string>
 }
 
 export type SendEmailResult = {
@@ -48,7 +51,69 @@ function getResendFromAddress(): string {
   return process.env.RESEND_FROM ?? getPlatformFromAddress()
 }
 
+// EML-008: RESEND_FROM is validated, never silently fallen back to
+// `noreply@example.com`. When the Resend provider is selected, the
+// sender must be present, parse as an address, and — when the
+// operator configured a verified-domain list
+// (RESEND_VERIFIED_DOMAINS, comma-separated) — belong to one of those
+// domains. Without a configured list the domain cannot be checked
+// against Resend, so only presence + shape are enforced (and the
+// `example.com` placeholder is refused outright: Resend can never
+// have verified it). Returns the sender address on success, or the
+// named error to throw / surface in admin health.
+export function validateResendSender(
+  env: NodeJS.ProcessEnv = process.env
+): { ok: true; from: string; domain: string } | { ok: false; error: string } {
+  const raw = env.RESEND_FROM ?? ""
+  const from = raw.trim()
+  if (!from) {
+    return {
+      ok: false,
+      error:
+        "RESEND_FROM is not set: Resend cannot send without a verified sender address (set RESEND_FROM to an address on a domain verified in the Resend dashboard).",
+    }
+  }
+  // Accept a bare address or a "Name <address>" mailbox.
+  const bare = from.match(/<([^<>]+)>/)?.[1]?.trim() ?? from
+  const at = bare.lastIndexOf("@")
+  const domain = at > 0 ? bare.slice(at + 1).toLowerCase() : ""
+  if (
+    at <= 0 ||
+    !domain ||
+    domain.includes(" ") ||
+    !domain.includes(".") ||
+    bare.includes(" ")
+  ) {
+    return {
+      ok: false,
+      error: `RESEND_FROM is not a valid email address: "${from}". Set it to an address on a domain verified in the Resend dashboard.`,
+    }
+  }
+  if (domain === "example.com") {
+    return {
+      ok: false,
+      error:
+        'RESEND_FROM uses the placeholder domain "example.com", which Resend cannot have verified. Set RESEND_FROM to an address on a domain verified in the Resend dashboard.',
+    }
+  }
+  const verified = (env.RESEND_VERIFIED_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean)
+  if (verified.length > 0 && !verified.includes(domain)) {
+    return {
+      ok: false,
+      error: `RESEND_FROM domain "${domain}" is not in RESEND_VERIFIED_DOMAINS (${verified.join(", ")}). Use an address on a verified domain.`,
+    }
+  }
+  return { ok: true, from, domain }
+}
+
 async function sendViaResend(input: SendEmailInput): Promise<string> {
+  // EML-008: fail fast with the named RESEND_FROM error instead of
+  // sending (and retrying 5×) only for Resend to reject the sender.
+  const sender = validateResendSender()
+  if (!sender.ok) throw new Error(sender.error)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS)
   try {
@@ -64,6 +129,7 @@ async function sendViaResend(input: SendEmailInput): Promise<string> {
         subject: input.subject,
         html: input.html,
         ...(input.text ? { text: input.text } : {}),
+        ...(input.headers ? { headers: input.headers } : {}),
       }),
       signal: controller.signal,
     })
@@ -93,6 +159,7 @@ async function sendViaSmtp(input: SendEmailInput): Promise<string> {
     subject: input.subject,
     html: input.html,
     ...(input.text ? { text: input.text } : {}),
+    ...(input.headers ? { headers: input.headers } : {}),
   })
   return info.messageId ?? "smtp-sent"
 }

@@ -17,7 +17,13 @@ import {
   type Submission,
 } from "@sendcms/database"
 
-export const MAX_EMAIL_ATTEMPTS = 5
+/** Total attempts before a job goes terminal FAILED (Phase 16,
+    Wave 9, EML-033 — owner decision 2026-11-25, option (b)): five
+    retries after the first attempt, i.e. the job goes terminal only
+    after attempt 6. The fifth attempt's failure schedules the 4 h
+    rung of the ladder, so every rung in `nextAttemptDelayMs` is
+    reachable. Was 5 (attempt 5 always terminal, the 4 h rung dead). */
+export const MAX_EMAIL_ATTEMPTS = 6
 
 /** Stale-claim lease (Phase 16, EML-031/EML-094): a job still
     SENDING this many minutes after its claim is treated as stuck —
@@ -26,6 +32,13 @@ export const MAX_EMAIL_ATTEMPTS = 5
     that reclaims such jobs is Wave 9's (EML-031); this constant is
     the shared threshold so the manual requeue and the reaper agree. */
 export const STALE_CLAIM_LEASE_MINUTES = 10
+
+/** The instant before which a claim counts as stale. Exported for
+    the reaper's tests — production code uses the same cutoff in
+    `claimDueEmailJobs` / `claimEmailJob` so the two can never drift. */
+export function staleClaimCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - STALE_CLAIM_LEASE_MINUTES * 60_000)
+}
 
 /** Backoff between attempts: 1m, 5m, 15m, 1h, 4h. Pure — tested. */
 export function nextAttemptDelayMs(attempts: number): number {
@@ -42,7 +55,9 @@ export type NewEmailJob = {
   type: EmailJobType
   to: string
   subject: string
-  formId: string
+  // Null for jobs that belong to no form — auth mail (verification /
+  // password reset, EML-009) and test mail carry no formId.
+  formId: string | null
   // Denormalized owner (Phase 16, DB-034): the form's owner, set by
   // the caller from form.ownerId — the outbox listing filters on this
   // column instead of joining Form. Required, never optional: the
@@ -63,13 +78,30 @@ export async function enqueueEmailJobs(jobs: NewEmailJob[]): Promise<number> {
   return result.count
 }
 
-/** Due PENDING jobs (never attempted, or past their retry time),
-    oldest first. The limit is clamped to 1..100. */
+/** Due jobs, oldest first. The limit is clamped to 1..100.
+    Two arms (Phase 16, Wave 9, EML-031/EML-006/SRC-302):
+    - due PENDING jobs (never attempted, or past their retry time);
+    - SENDING jobs whose claim lease expired — their processor died
+      mid-send (SIGKILL, crash, deploy kill) and the job must be
+      retried, not stranded. `claimedAt` NULL covers rows claimed
+      before the column existed: they are treated as stale. */
 export async function claimDueEmailJobs(limit: number): Promise<EmailJob[]> {
+  const now = new Date()
   return db.emailJob.findMany({
     where: {
-      status: EmailJobStatus.PENDING,
-      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
+      OR: [
+        {
+          status: EmailJobStatus.PENDING,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+        },
+        {
+          status: EmailJobStatus.SENDING,
+          OR: [
+            { claimedAt: null },
+            { claimedAt: { lte: staleClaimCutoff(now) } },
+          ],
+        },
+      ],
     },
     orderBy: { createdAt: "asc" },
     take: Math.max(1, Math.min(limit, 100)),
@@ -77,16 +109,56 @@ export async function claimDueEmailJobs(limit: number): Promise<EmailJob[]> {
 }
 
 /** Atomic claim: only the processor that flips PENDING → SENDING owns
-    the job. Returns true when this caller claimed it. */
+    the job. Returns true when this caller claimed it.
+    Phase 16, Wave 9 (EML-032/EML-060): the claim re-validates
+    due-ness in the same atomic `updateMany` — a stale selection
+    cannot re-claim a job another processor already failed and
+    rescheduled (`nextAttemptAt` in the future). The same guard
+    covers the lease arm: a SENDING row is only re-claimable once
+    its lease expired. The claim stamps `claimedAt` (the lease
+    start) and increments `attempts`, so each claim counts as one
+    attempt — a poison job still reaches terminal after the ladder,
+    even when it is re-claimed after a crash. */
 export async function claimEmailJob(id: string): Promise<boolean> {
+  const now = new Date()
   const claimed = await db.emailJob.updateMany({
-    where: { id, status: EmailJobStatus.PENDING },
+    where: {
+      id,
+      OR: [
+        {
+          status: EmailJobStatus.PENDING,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+        },
+        {
+          status: EmailJobStatus.SENDING,
+          OR: [
+            { claimedAt: null },
+            { claimedAt: { lte: staleClaimCutoff(now) } },
+          ],
+        },
+      ],
+    },
     data: {
       status: EmailJobStatus.SENDING,
       attempts: { increment: 1 },
+      claimedAt: now,
     },
   })
   return claimed.count === 1
+}
+
+/** The post-claim attempt count, read from the row (Phase 16, Wave
+    9, EML-032): the retry delay and the terminal cutoff must be
+    computed from the value the claim actually wrote, never from the
+    caller's pre-claim snapshot — a concurrent claim (or a
+    re-claim of a stale SENDING row) would make the snapshot stale.
+    Returns null when the row is gone. */
+export async function readEmailJobAttempts(id: string): Promise<number | null> {
+  const row = await db.emailJob.findUnique({
+    where: { id },
+    select: { attempts: true },
+  })
+  return row?.attempts ?? null
 }
 
 /** The job with the form + submission the renderer needs. */
@@ -111,6 +183,9 @@ export async function markEmailJobSent(
       providerMessageId: messageId,
       lastError: null,
       nextAttemptAt: null,
+      // The claim is resolved — clear the lease so a later read
+      // never mistakes this row for a stuck claim.
+      claimedAt: null,
     },
   })
 }
@@ -138,6 +213,8 @@ export async function markEmailJobFailed(
   })
   if (!row) return
   const attempts = row.attempts
+  // EML-033 (owner decision (b)): attempt 5 stays retryable with
+  // the 4 h delay; only attempt 6 goes terminal FAILED.
   const retryable = !terminal && attempts < MAX_EMAIL_ATTEMPTS
   await db.emailJob.update({
     where: { id },
@@ -147,6 +224,59 @@ export async function markEmailJobFailed(
       nextAttemptAt: retryable
         ? new Date(Date.now() + nextAttemptDelayMs(attempts))
         : null,
+      // The claim is resolved either way — clear the lease.
+      claimedAt: null,
     },
+  })
+}
+
+// ─── Suppression (Phase 16, Wave 9, EML-005 / EML-011) ───────────────
+// A suppressed address receives no further mail. Suppression is
+// scoped: a row with formId null is global (every form + digests);
+// a row with a formId suppresses only that form's mail. The check
+// matches either scope, so a global unsubscribe also stops form mail
+// and a form unsubscribe never leaks into other forms' mail.
+
+export type SuppressionReasonValue = "BOUNCED" | "COMPLAINED" | "UNSUBSCRIBED"
+
+/** True when the address is suppressed globally or for this form. */
+export async function isEmailSuppressed(
+  email: string,
+  formId?: string | null
+): Promise<boolean> {
+  const row = await db.emailSuppression.findFirst({
+    where: {
+      email,
+      OR: [{ formId: null }, ...(formId ? [{ formId }] : [])],
+    },
+    select: { id: true },
+  })
+  return row !== null
+}
+
+/** Records a suppression. Idempotent: an existing row for the same
+    (email, formId) scope is left alone (the first reason wins —
+    a bounce that later unsubscribes stays a bounce). Postgres
+    treats NULLs as distinct in the @@unique([email, formId]), so
+    the upsert is a findFirst + create, never a bare unique-key
+    upsert. */
+export async function recordEmailSuppression({
+  email,
+  formId = null,
+  reason,
+  source,
+}: {
+  email: string
+  formId?: string | null
+  reason: SuppressionReasonValue
+  source?: string
+}): Promise<void> {
+  const existing = await db.emailSuppression.findFirst({
+    where: { email, formId },
+    select: { id: true },
+  })
+  if (existing) return
+  await db.emailSuppression.create({
+    data: { email, formId, reason, source: source ?? null },
   })
 }

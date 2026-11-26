@@ -9,6 +9,9 @@ const mockDb = vi.hoisted(() => ({
   submission: { findUnique: vi.fn() },
   notificationSettings: { findMany: vi.fn() },
   form: { findUnique: vi.fn() },
+  // Wave 9, Stream C (EML-005): the enqueue paths check the
+  // suppression list — the mock returns "not suppressed" by default.
+  emailSuppression: { findFirst: vi.fn(), create: vi.fn() },
   emailJob: {
     createMany: vi.fn(),
     findMany: vi.fn(),
@@ -58,6 +61,8 @@ beforeEach(() => {
   ])
   mockDb.form.findUnique.mockResolvedValue({ ownerId: "user-1" })
   mockDb.emailJob.createMany.mockResolvedValue({ count: 1 })
+  // Not suppressed by default (isEmailSuppressed returns row !== null).
+  mockDb.emailSuppression.findFirst.mockResolvedValue(null)
   mockDb.emailJob.findMany.mockResolvedValue([])
   mockDb.emailJob.count.mockResolvedValue(0)
   mockDb.emailJob.groupBy.mockResolvedValue([])

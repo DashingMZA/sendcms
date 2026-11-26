@@ -104,7 +104,7 @@ flowchart TB
     Claim["Claim atomically\nPENDING → SENDING (attempts +1)"]
     Send["Send via Resend → SMTP → none"]
     Sent["SENT"]
-    Fail["FAILED + backoff\n1m / 5m / 15m / 1h / 4h (5 attempts)"]
+    Fail["FAILED + backoff\n1m / 5m / 15m / 1h / 4h (6 attempts)"]
     Cron["Cron route (every 5 min, or daily on Hobby)\n+ email worker (every 30 s)"]
 
     Save --> Enqueue --> Claim --> Send
@@ -119,12 +119,17 @@ flowchart TB
 2. A due job is claimed atomically (`PENDING` → `SENDING`, attempts
    incremented), sent via Resend → SMTP → none, then marked `SENT`
    or, on failure, `FAILED` with a backoff (1m / 5m / 15m / 1h / 4h,
-   5 attempts). A job whose send fails with no provider configured
+   6 attempts). A job whose send fails with no provider configured
    stays `PENDING` — the send is retried, never lost.
 3. The cron route and the email worker both drain the same outbox
    (`processEmailOutbox({ limit })`); the worker polls every 30 s,
    the cron every 5 min. Either can run alone; running both is safe
-   (claiming is atomic).
+   (claiming is atomic). On the Hobby plan the cron runs only once
+   daily (`0 0 * * *`, owner decision 2026-11-20) — it is the
+   *fallback* drain, not the prompt path: with the worker running, a
+   job is normally sent within one poll interval, and the cron only
+   catches what the worker missed (EML-013). When the plan allows
+   it, the schedule goes back to `*/5 * * * *`.
 4. The same cron hit (and the worker) also runs the AI background
    jobs — spam re-scoring (`rescoreNewSubmissions`) and the inbox
    digest (`sendDueDigests`). Both are gated on the `ai-spam-rescore`
@@ -134,10 +139,14 @@ flowchart TB
    jobs return zero counts, check the flags first — a missing or
    disabled flag turns its job off by design (see
    [Deployment](../deployment.md#ai-background-jobs)).
-4. Auth mail (verification + password reset) does **not** go through
-   the outbox — it is sent directly, and with no provider configured
-   the dev server logs the link (`[auth-email] …`) while production
-   fails loudly.
+4. Auth mail (verification + password reset) is sent directly, and
+   with no provider configured the dev server logs the link
+   (`[auth-email] …`) while production fails loudly. When a
+   configured provider fails the send, the failure is logged at
+   error level (recipient + kind) and a durable, retryable outbox
+   job (type `EMAIL_VERIFICATION` / `PASSWORD_RESET`) is enqueued,
+   so the next drain retries it — the user is not left waiting on a
+   mail that silently never existed (EML-009).
 
 ## Database backup, migrations, and rollback
 

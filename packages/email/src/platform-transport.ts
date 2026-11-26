@@ -22,6 +22,11 @@ export function buildPlatformTransporter() {
     host,
     port,
     secure: port === 465,
+    // SRC-313: STARTTLS is required, never opportunistic — on port
+    // 587 a server (or MITM) that does not offer STARTTLS must fail
+    // the send instead of carrying SMTP_USER/SMTP_PASS in plaintext.
+    // Harmless on port 465, where `secure` already implies TLS.
+    requireTLS: true,
     auth: { user, pass },
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,

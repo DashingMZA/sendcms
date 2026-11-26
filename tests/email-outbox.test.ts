@@ -14,6 +14,7 @@ import {
 
 const ENV_KEYS = [
   "RESEND_API_KEY",
+  "RESEND_FROM",
   "SMTP_HOST",
   "SMTP_USER",
   "SMTP_PASS",
@@ -54,6 +55,9 @@ describe("sendPlatformEmail", () => {
 
   it("sends via Resend and returns its message id", async () => {
     process.env.RESEND_API_KEY = "re_test"
+    // EML-008: sendViaResend validates RESEND_FROM before sending —
+    // the stubbed-provider path needs a valid sender address too.
+    process.env.RESEND_FROM = "noreply@sendcms.test"
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ id: "resend-msg-1" }),
@@ -76,6 +80,7 @@ describe("sendPlatformEmail", () => {
 
   it("surfaces Resend's error message", async () => {
     process.env.RESEND_API_KEY = "re_bad"
+    process.env.RESEND_FROM = "noreply@sendcms.test"
     vi.stubGlobal("fetch", () =>
       Promise.resolve({
         ok: false,

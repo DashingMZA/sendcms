@@ -20,6 +20,7 @@
     "@sendcms/api-keys": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/billing": "workspace:*",
+    "@sendcms/cron": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
     "@sendcms/email": "workspace:*",

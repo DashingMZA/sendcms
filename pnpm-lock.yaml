@@ -242,6 +242,9 @@ importers:
       '@sendcms/config':
         specifier: workspace:*
         version: link:packages/config
+      '@sendcms/cron':
+        specifier: workspace:*
+        version: link:packages/modules/cron
       '@sendcms/database':
         specifier: workspace:*
         version: link:packages/database
@@ -483,6 +486,9 @@ importers:
       '@sendcms/billing':
         specifier: workspace:*
         version: link:../../packages/modules/billing
+      '@sendcms/cron':
+        specifier: workspace:*
+        version: link:../../packages/modules/cron
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -886,6 +892,9 @@ importers:
       '@sendcms/email':
         specifier: workspace:*
         version: link:../email
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:../modules/notifications
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../observability
@@ -1074,6 +1083,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../../permissions
@@ -1265,6 +1277,34 @@ importers:
       react:
         specifier: ^19.3.1
         version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/modules/cron:
+    dependencies:
+      '@sendcms/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@sendcms/plans':
+        specifier: workspace:*
+        version: link:../plans
+      '@sendcms/submissions':
+        specifier: workspace:*
+        version: link:../submissions
+    devDependencies:
+      '@sendcms/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1544,6 +1584,9 @@ importers:
       '@sendcms/database':
         specifier: workspace:*
         version: link:../../database
+      '@sendcms/email':
+        specifier: workspace:*
+        version: link:../../email
       '@sendcms/i18n':
         specifier: workspace:*
         version: link:../../i18n
@@ -1848,6 +1891,15 @@ importers:
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sendcms/plans':
+        specifier: workspace:*
+        version: link:../../packages/modules/plans
+      '@sendcms/platform-ops':
+        specifier: workspace:*
+        version: link:../../packages/modules/platform-ops
+      '@sendcms/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
       '@sendcms/submissions':
         specifier: workspace:*
         version: link:../../packages/modules/submissions

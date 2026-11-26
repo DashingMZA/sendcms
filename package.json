@@ -54,6 +54,7 @@
     "@sendcms/auth": "workspace:*",
     "@sendcms/billing": "workspace:*",
     "@sendcms/config": "workspace:*",
+    "@sendcms/cron": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/domains": "workspace:*",
     "@sendcms/email": "workspace:*",

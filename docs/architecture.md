@@ -155,7 +155,7 @@ In order, the submit pipeline checks:
    `NotificationSettings` row) + `processEmailOutbox()` attempts
    immediate delivery.
 5. `GET /api/cron/email-outbox` (Bearer `CRON_SECRET`) retries failed
-   jobs (backoff 1m / 5m / 15m / 1h / 4h, 5 attempts) — or the email
+   jobs (backoff 1m / 5m / 15m / 1h / 4h, 6 attempts) — or the email
    worker drains the same outbox every 30 s.
 6. Dashboard: the owner reads the submission in `/dashboard/inbox`.
 

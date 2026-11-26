@@ -38,7 +38,8 @@ point, health, and graceful shutdown.
   needs.
 - `markEmailJobSent(id, messageId)` / `markEmailJobFailed(id, { error,
 attempts, terminal })` — SENT, or PENDING with the 1m/5m/15m/1h/4h
-  backoff (`nextAttemptDelayMs`, `MAX_EMAIL_ATTEMPTS = 5`); only
+  backoff (`nextAttemptDelayMs`, `MAX_EMAIL_ATTEMPTS = 6` — five
+  retries, terminal only after attempt 6, so the 4 h rung fires); only
   terminal failures (out of attempts, or the submission/form is gone)
   become FAILED.
 

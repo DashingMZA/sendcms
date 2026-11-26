@@ -1,3 +1,9 @@
+// EML-001/030/061/090 (Phase 16, Wave 9): explicit React import —
+// the standalone worker runs these templates under tsx, whose
+// per-tsconfig `jsx: react-jsx` does not reach files outside the
+// worker tsconfig's `include` scope, so JSX would compile to
+// classic `React.createElement` calls with no React in scope.
+import React from "react"
 import { Button, Link, Text } from "react-email"
 import { EmailLayout } from "./layout"
 import { getEmailTranslator } from "../email-i18n"

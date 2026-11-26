@@ -166,11 +166,19 @@ describe("sendReplyToSubmission", () => {
         body: "Hi Ali, your order is on its way.",
       })
     )
-    // EML-007: no timeline event here — the reply is only QUEUED at
-    // this point. processOneJob writes EMAIL_SENT when the provider
-    // accepts it (and EMAIL_FAILED on terminal failure), so the
-    // timeline never claims a delivery that never happened.
-    expect(mockDb.submissionEvent.create).not.toHaveBeenCalled()
+    // EML-007 / SRC-217: no EMAIL_SENT here — the reply is only
+    // QUEUED at this point. processOneJob writes EMAIL_SENT when the
+    // provider accepts it (and EMAIL_FAILED on terminal failure), so
+    // the timeline never claims a delivery that never happened. The
+    // one event written at enqueue is EMAIL_QUEUED.
+    expect(mockDb.submissionEvent.create).toHaveBeenCalledTimes(1)
+    expect(mockDb.submissionEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        submissionId: "sub-1",
+        type: "EMAIL_QUEUED",
+        detail: { reply: true, queued: true },
+      }),
+    })
     // The model is never involved in the send.
     expect(mockAi.draftReply).not.toHaveBeenCalled()
   })

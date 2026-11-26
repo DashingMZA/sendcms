@@ -10,6 +10,7 @@
 export {
   resolveEmailProvider,
   sendPlatformEmail,
+  validateResendSender,
   type EmailProvider,
   type SendEmailInput,
   type SendEmailResult,
@@ -18,7 +19,27 @@ export {
   sendPasswordResetEmail,
   sendVerificationEmail,
   redactAuthEmailUrl,
+  type AuthEmailKind,
+  type AuthMailerOpts,
+  type FailedAuthEmailRecord,
 } from "./auth-mailer"
+export {
+  buildUnsubscribeUrl,
+  signUnsubscribeToken,
+  verifyUnsubscribeToken,
+} from "./unsubscribe"
+export {
+  parseResendWebhookEvent,
+  resendEventToDeliveryStatus,
+  verifyResendWebhookSignature,
+  type ResendWebhookEvent,
+  type ResendWebhookEventType,
+} from "./resend-webhook"
+export {
+  MAX_EMAIL_FIELD_CHARS,
+  MAX_EMAIL_FIELDS,
+  truncateFieldValue,
+} from "./truncate"
 export { notificationDeps } from "./notification-deps"
 export { getEmailTranslator } from "./email-i18n"
 export type {

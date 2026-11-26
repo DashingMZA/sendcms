@@ -15,6 +15,7 @@
   "dependencies": {
     "@sendcms/database": "workspace:*",
     "@sendcms/email": "workspace:*",
+    "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/security": "workspace:*",

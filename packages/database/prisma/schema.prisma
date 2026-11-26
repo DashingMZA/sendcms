@@ -88,6 +88,10 @@ enum SubmissionEventType {
   MARKED_SPAM
   EMAIL_SENT
   EMAIL_FAILED
+  // Phase 16, Wave 9 (SRC-217): written at enqueue time, when the
+  // reply is only queued — EMAIL_SENT is written later, from the
+  // outbox processor, once the provider accepts it.
+  EMAIL_QUEUED
 }
 
 enum EmailJobType {
@@ -114,6 +118,25 @@ enum EmailJobStatus {
   SENDING
   SENT
   FAILED
+}
+
+// Phase 16, Wave 9 (EML-005): provider-side delivery outcome for a
+// SENT job, from the signed Resend webhook. Null = no webhook event
+// received yet — SENT still means only "provider accepted".
+enum EmailDeliveryStatus {
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  DELIVERY_DELAYED
+}
+
+// Phase 16, Wave 9 (EML-005 / EML-011): why an address is
+// suppressed — a hard bounce / complaint from the Resend webhook, or
+// a recipient unsubscribe.
+enum SuppressionReason {
+  BOUNCED
+  COMPLAINED
+  UNSUBSCRIBED
 }
 
 enum AuditAction {
@@ -778,9 +801,22 @@ model EmailJob {
   status            EmailJobStatus @default(PENDING)
   attempts          Int            @default(0)
   nextAttemptAt     DateTime?
+  // Phase 16, Wave 9 (EML-031/EML-006/SRC-302): claim lease. Set
+  // when a processor claims the job (PENDING → SENDING) and cleared
+  // when the job is marked SENT/FAILED. A SENDING row whose lease
+  // expired (STALE_CLAIM_LEASE_MINUTES, 10 min) is treated as stuck
+  // — its processor died mid-send — and becomes claimable again.
+  // NULL on rows claimed before this column existed; those are
+  // treated as stale (their updatedAt predates the lease anyway).
+  claimedAt         DateTime?
   lastError         String?
   // Provider-side id (e.g. Resend message id) for delivery tracking.
   providerMessageId String?
+  // Phase 16, Wave 9 (EML-005): provider-side delivery outcome from
+  // the signed Resend webhook (delivered / bounced / complained /
+  // delivery_delayed). Null = no webhook event received yet.
+  deliveryStatus    EmailDeliveryStatus?
+  deliveryUpdatedAt DateTime?
   // Phase 12 (AI digest): the pre-rendered digest content for DIGEST
   // jobs (form name, count, model summary, highlights, submission
   // list). NULL for every other job type — those render from their
@@ -814,6 +850,9 @@ model EmailJob {
   submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
 
   @@index([status, nextAttemptAt, createdAt])
+  // Phase 16, Wave 9 (EML-031): the stale-claim reaper selects
+  // SENDING rows by claimedAt, so the lease lookup is indexed.
+  @@index([status, claimedAt])
   @@index([type, createdAt])
   @@index([submissionId])
   // Phase 16 (DB-034): [formId, createdAt] serves the per-form
@@ -825,6 +864,32 @@ model EmailJob {
   // optional status filter.
   @@index([ownerId, createdAt])
   @@index([ownerId, status, createdAt])
+  // Phase 16, Wave 9 (EML-005): the Resend webhook looks the job up
+  // by its provider message id.
+  @@index([providerMessageId])
+}
+
+// Phase 16, Wave 9 (EML-005 / EML-011): addresses that must receive
+// no further mail — hard-bounced / complained (Resend webhook) or
+// unsubscribed (signed unsubscribe link). `formId` is a scope key,
+// NOT a foreign key: a suppression outlives its form, and null means
+// global (every form + digests). The @@unique([email, formId]) serves
+// the email-only lookup too (its leading column), so no separate
+// @@index([email]) — the schema lint forbids prefix-redundant indexes.
+// Postgres treats NULLs as distinct in a unique index, so the service
+// upserts by findFirst, never by the unique constraint alone.
+model EmailSuppression {
+  id        String            @id @default(cuid())
+  email     String
+  formId    String?
+  reason    SuppressionReason
+  // Where the suppression came from: the Resend event id / message id
+  // for webhook suppressions, the unsubscribe token scope for opt-outs.
+  source    String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([email, formId])
 }
 
 model AuditLog {

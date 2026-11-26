@@ -397,6 +397,19 @@ export type AdminTicketsPage = {
   totalPages: number
 }
 
+/** New-ticket count for the admin shell (DSH-406 — owner decision
+    2026-11-25, option (b): admin-shell new-ticket counts, NOT
+    email/notification). "New" is status OPEN: a ticket the customer
+    opened that staff have not started on. Resolving or closing it
+    drops the count; a customer reply that reopens a RESOLVED ticket
+    brings it back. Reads need VIEW_CUSTOMER_DATA, like the queue
+    itself. One cheap count query — the shell calls this on every
+    admin page render. */
+export async function countNewTickets(actor: AdminSession): Promise<number> {
+  requireAdmin(actor, "VIEW_CUSTOMER_DATA")
+  return db.supportTicket.count({ where: { status: "OPEN" } })
+}
+
 /** Every user's tickets, newest first. Reads need
     VIEW_CUSTOMER_DATA. Search matches the subject, case-insensitive. */
 export async function listTickets(

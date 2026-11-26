@@ -5,6 +5,7 @@ import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 import { AppSidebar } from "@/components/admin/app-sidebar"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { getLocaleDirection, getRequestLocale } from "@/lib/i18n"
+import { countNewTickets } from "@sendcms/support"
 
 // NOTE: this layout lives at app/admin/layout.tsx (NOT in the (admin)
 // route group) because it must wrap /admin/*. A layout inside a route
@@ -33,10 +34,26 @@ export default async function AdminLayout({
   const locale = await getRequestLocale(session.user.id)
   const side = getLocaleDirection(locale) === "rtl" ? "right" : "left"
 
+  // DSH-406 (owner decision 2026-11-25, option (b)): staff see the
+  // new-ticket count in the admin shell, NOT by email/notification.
+  // Best-effort: a failed count must never break the shell, so it
+  // degrades to no badge instead of a failed page.
+  let newTicketCount = 0
+  try {
+    newTicketCount = await countNewTickets(session)
+  } catch {
+    newTicketCount = 0
+  }
+
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <AppSidebar user={session.user} side={side} initialLocale={locale} />
+        <AppSidebar
+          user={session.user}
+          side={side}
+          initialLocale={locale}
+          newTicketCount={newTicketCount}
+        />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

@@ -76,11 +76,20 @@ describe("enqueueEmailJobs", () => {
 })
 
 describe("claimDueEmailJobs", () => {
-  it("fetches due PENDING jobs, oldest first, clamped to 1..100", async () => {
+  it("fetches due PENDING jobs plus stale SENDING jobs, oldest first, clamped to 1..100", async () => {
     await claimDueEmailJobs(200)
-    expect(mockDb.emailJob.findMany).toHaveBeenCalledWith(
+    const where = mockDb.emailJob.findMany.mock.calls[0][0].where as {
+      OR: Array<Record<string, unknown>>
+    }
+    expect(
+      where.OR.some((arm) => (arm as { status?: string }).status === "PENDING")
+    ).toBe(true)
+    // EML-031: the stale-claim arm — SENDING rows past the lease.
+    expect(
+      where.OR.some((arm) => (arm as { status?: string }).status === "SENDING")
+    ).toBe(true)
+    expect(mockDb.emailJob.findMany.mock.calls[0][0]).toEqual(
       expect.objectContaining({
-        where: expect.objectContaining({ status: "PENDING" }),
         orderBy: { createdAt: "asc" },
         take: 100,
       })
@@ -93,16 +102,29 @@ describe("claimDueEmailJobs", () => {
 })
 
 describe("claimEmailJob", () => {
-  it("flips PENDING → SENDING atomically and reports the claim", async () => {
+  it("flips PENDING → SENDING atomically, re-validating due-ness, and stamps the lease", async () => {
     const claimed = await claimEmailJob("job-1")
     expect(claimed).toBe(true)
-    expect(mockDb.emailJob.updateMany).toHaveBeenCalledWith({
-      where: { id: "job-1", status: "PENDING" },
-      data: {
-        status: "SENDING",
-        attempts: { increment: 1 },
-      },
-    })
+    const arg = mockDb.emailJob.updateMany.mock.calls[0][0] as {
+      where: { id: string; OR: Array<Record<string, unknown>> }
+      data: { status: string; attempts: { increment: number }; claimedAt: Date }
+    }
+    expect(arg.where.id).toBe("job-1")
+    // EML-032/EML-060: the claim re-validates due-ness (PENDING arm)
+    // and the lease (SENDING arm) in the same atomic updateMany.
+    expect(
+      arg.where.OR.some(
+        (arm) => (arm as { status?: string }).status === "PENDING"
+      )
+    ).toBe(true)
+    expect(
+      arg.where.OR.some(
+        (arm) => (arm as { status?: string }).status === "SENDING"
+      )
+    ).toBe(true)
+    expect(arg.data.status).toBe("SENDING")
+    expect(arg.data.attempts).toEqual({ increment: 1 })
+    expect(arg.data.claimedAt).toBeInstanceOf(Date)
   })
 
   it("returns false when another processor claimed the job", async () => {
@@ -125,7 +147,7 @@ describe("loadEmailJob", () => {
 })
 
 describe("markEmailJobSent", () => {
-  it("marks the job SENT with the provider message id", async () => {
+  it("marks the job SENT with the provider message id and clears the lease", async () => {
     await markEmailJobSent("job-1", "msg-1")
     expect(mockDb.emailJob.update).toHaveBeenCalledWith({
       where: { id: "job-1" },
@@ -134,6 +156,7 @@ describe("markEmailJobSent", () => {
         providerMessageId: "msg-1",
         lastError: null,
         nextAttemptAt: null,
+        claimedAt: null,
       },
     })
   })

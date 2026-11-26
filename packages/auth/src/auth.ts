@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma"
 import { headers } from "next/headers"
 import { db } from "@sendcms/database"
 import { sendPasswordResetEmail, sendVerificationEmail } from "@sendcms/email"
+import { enqueueAuthEmailJob } from "@sendcms/notifications"
 import { createLogger } from "@sendcms/observability"
 import { logAudit, parseTrustedProxyList } from "@sendcms/security"
 import { getConfiguredOAuthProviders } from "./providers"
@@ -242,6 +243,12 @@ export function createSendcmsAuth() {
           user,
           url,
           locale: await userLocale(user.id),
+          // EML-009: a provider failure leaves a durable, retryable
+          // outbox job instead of vanishing — the mailer rethrows,
+          // so Better Auth still reports the failure to the caller.
+          onSendFailure: async (record) => {
+            await enqueueAuthEmailJob({ ...record, userId: user.id })
+          },
         })
       },
       onPasswordReset: async ({ user }) => {
@@ -268,6 +275,10 @@ export function createSendcmsAuth() {
           user,
           url: verificationUrlOnDashboard(url),
           locale: await userLocale(user.id),
+          // EML-009: see sendResetPassword above.
+          onSendFailure: async (record) => {
+            await enqueueAuthEmailJob({ ...record, userId: user.id })
+          },
         })
       },
     },

@@ -1,5 +1,12 @@
 import type { AdminSession } from "@sendcms/auth"
-import { Prisma, RateLimitScope, db, pingDatabase } from "@sendcms/database"
+import {
+  EmailJobStatus,
+  Prisma,
+  RateLimitScope,
+  db,
+  pingDatabase,
+} from "@sendcms/database"
+import { resolveEmailProvider, validateResendSender } from "@sendcms/email"
 import { readPlatformConfig } from "@sendcms/plans"
 import { CSP_REPORT_ONLY, readRateLimitConfig } from "@sendcms/security"
 import { requireAdmin } from "./require-admin"
@@ -41,6 +48,22 @@ export type PlatformHealth = {
   }
   ai: { callsToday: number; providersEnabled: number }
   mcp: { callsLast24h: number; errorRate24h: number; globalEnabled: boolean }
+  // EML-008: sender status — the provider in use, and whether the
+  // Resend sender is configured + valid. `valid` is false with the
+  // named error when RESEND_FROM is missing/malformed/on an
+  // unverified domain, so a broken sender is visible here instead
+  // of surfacing as 5 wasted retries per job. `webhookConfigured`
+  // is whether delivery webhooks (EML-005) can arrive at all.
+  email: {
+    provider: "resend" | "smtp" | "none"
+    resendFrom: {
+      configured: boolean
+      valid: boolean
+      domain: string | null
+      error: string | null
+    }
+    webhookConfigured: boolean
+  }
   // The Phase 4 platform emergency flag (config/config.json) — the
   // restart-gated kill-switch that also zeroes AI.
   emergency: boolean
@@ -203,6 +226,19 @@ export async function getPlatformHealth(
       domains: domainCount,
       submissionsToday,
     },
+    email: {
+      provider: resolveEmailProvider(),
+      resendFrom: (() => {
+        const checked = validateResendSender()
+        return {
+          configured: Boolean(process.env.RESEND_FROM),
+          valid: checked.ok,
+          domain: checked.ok ? checked.domain : null,
+          error: checked.ok ? null : checked.error,
+        }
+      })(),
+      webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET),
+    },
     outbox: {
       pending: pendingJobs,
       oldestPendingAgeMinutes:
@@ -273,6 +309,7 @@ export type SystemSummary = {
     databaseUrl: boolean
     betterAuthSecret: boolean
     resendApiKey: boolean
+    resendFrom: boolean
     cronSecret: boolean
     aiByokMasterKey: boolean
   }
@@ -297,9 +334,114 @@ export async function getSystemSummary(
       databaseUrl: Boolean(process.env.DATABASE_URL),
       betterAuthSecret: Boolean(process.env.BETTER_AUTH_SECRET),
       resendApiKey: Boolean(process.env.RESEND_API_KEY),
+      resendFrom: Boolean(process.env.RESEND_FROM),
       cronSecret: Boolean(process.env.CRON_SECRET),
       aiByokMasterKey: Boolean(process.env.AI_BYOK_MASTER_KEY),
     },
     emergency: readPlatformConfig().emergency,
   }
+}
+
+export type EmailQueueDepth = {
+  /** All PENDING jobs (due or waiting on backoff). */
+  pending: number
+  /** PENDING jobs whose next attempt is unset or already reached —
+      the actionable depth. */
+  pendingDue: number
+  /** Jobs claimed by a processor and not yet resolved. */
+  sending: number
+  /** Jobs that exhausted their retries. */
+  failed: number
+  /** Age in minutes of the oldest SENDING row (the stuck-claim
+      signal — the claim is the last write a SENDING row gets), null
+      when nothing is SENDING. */
+  stuckSendingAgeMinutes: number | null
+}
+
+/** Queue depth for the standalone email worker's health endpoint
+    (EML-035). Unlike `getPlatformHealth` this takes no admin session:
+    it is an in-process read for a trusted internal process (the
+    worker), never exposed as a route — the worker reports the numbers
+    on its own `/health`. Read-only. */
+export async function getEmailQueueDepth(
+  now: Date = new Date()
+): Promise<EmailQueueDepth> {
+  const [pending, pendingDue, sending, failed, oldestSending] =
+    await Promise.all([
+      db.emailJob.count({ where: { status: EmailJobStatus.PENDING } }),
+      db.emailJob.count({
+        where: {
+          status: EmailJobStatus.PENDING,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+        },
+      }),
+      db.emailJob.count({ where: { status: EmailJobStatus.SENDING } }),
+      db.emailJob.count({ where: { status: EmailJobStatus.FAILED } }),
+      db.emailJob.findFirst({
+        where: { status: EmailJobStatus.SENDING },
+        orderBy: { updatedAt: "asc" },
+        select: { updatedAt: true },
+      }),
+    ])
+  return {
+    pending,
+    pendingDue,
+    sending,
+    failed,
+    stuckSendingAgeMinutes:
+      oldestSending === null
+        ? null
+        : Math.round(
+            (now.getTime() - oldestSending.updatedAt.getTime()) / 60000
+          ),
+  }
+}
+
+export type RecentFailedEmailJob = {
+  id: string
+  type: string
+  to: string
+  attempts: number
+  lastError: string | null
+  nextAttemptAt: string | null
+  updatedAt: string
+}
+
+/** Jobs that failed since `since`, most recent first (EML-014 /
+    EML-040): the per-job detail the worker logs when a poll reports
+    failures — the outbox processor returns counts only, so the worker
+    re-reads the rows it just failed. A job that failed twice inside
+    the window appears once (latest write wins). Read-only. */
+export async function getRecentFailedEmailJobs(
+  since: Date,
+  limit = 25
+): Promise<RecentFailedEmailJob[]> {
+  const rows = await db.emailJob.findMany({
+    where: {
+      updatedAt: { gte: since },
+      lastError: { not: null },
+      status: { in: [EmailJobStatus.PENDING, EmailJobStatus.FAILED] },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: Math.max(1, Math.min(limit, 100)),
+    select: {
+      id: true,
+      type: true,
+      to: true,
+      attempts: true,
+      lastError: true,
+      nextAttemptAt: true,
+      updatedAt: true,
+    },
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    to: row.to,
+    attempts: row.attempts,
+    lastError: row.lastError,
+    nextAttemptAt:
+      row.nextAttemptAt === null ? null : row.nextAttemptAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }))
 }

@@ -1,0 +1,27 @@
+{
+  "dependencies": {
+    "@sendcms/database": "workspace:*",
+    "@sendcms/notifications": "workspace:*",
+    "@sendcms/observability": "workspace:*",
+    "@sendcms/plans": "workspace:*",
+    "@sendcms/submissions": "workspace:*"
+  },
+  "description": "Scheduled jobs for SendCMS (daily email-outbox cron: outbox drain, AI re-score, digests, subscription expiry, missed-notification reconciliation).",
+  "devDependencies": {
+    "@sendcms/config": "workspace:*",
+    "@types/node": "^26.6.6",
+    "typescript": "6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "name": "@sendcms/cron",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "version": "0.1.0"
+}

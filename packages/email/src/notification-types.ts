@@ -22,6 +22,9 @@ export type SubmissionNotificationProps = {
   /** Recipient locale ("en" | "ur"). Drives the template chrome
       strings and the received-date formatting; defaults to English. */
   locale?: string
+  /** EML-011: signed per-recipient unsubscribe URL, rendered in the
+      layout footer when present. */
+  unsubscribeUrl?: string | null
 }
 
 export type NotificationEmailSender = (input: {
@@ -29,6 +32,9 @@ export type NotificationEmailSender = (input: {
   subject: string
   html: string
   text?: string
+  // EML-011: extra headers for the provider send, e.g.
+  // List-Unsubscribe. Passed through verbatim.
+  headers?: Record<string, string>
 }) => Promise<{ messageId: string; provider: string }>
 
 export type NotificationRenderer = (
@@ -71,6 +77,9 @@ export type DigestProps = {
       more" instead of silently dropping the rest. */
   truncated?: boolean
   totalCount?: number
+  /** EML-011: signed per-recipient unsubscribe URL, rendered in the
+      layout footer when present. */
+  unsubscribeUrl?: string | null
 }
 
 export type DigestRenderer = (

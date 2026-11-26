@@ -757,7 +757,7 @@ describe("revokeUserApiKeys / revokeUserSessions", () => {
 })
 
 describe("requireEmailVerification / triggerPasswordReset", () => {
-  it("sends the verification email, then flips the flag, then audits", async () => {
+  it("flips the flag first, then sends the verification email, then audits (DB-052)", async () => {
     const sender = makeSender()
     mockDb.user.update.mockResolvedValue({ id: userId, emailVerified: false })
     const updated = await requireEmailVerification(ownerActor(), userId, sender)
@@ -773,6 +773,12 @@ describe("requireEmailVerification / triggerPasswordReset", () => {
         data: { emailVerified: false },
       })
     )
+    // DB-052: the flip happens before the send, so the update call
+    // precedes the send call — a send failure can never leave mail
+    // sent against a still-verified flag.
+    expect(mockDb.user.update.mock.invocationCallOrder[0]).toBeLessThan(
+      sender.sendVerificationEmail.mock.invocationCallOrder[0]
+    )
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({
@@ -782,13 +788,46 @@ describe("requireEmailVerification / triggerPasswordReset", () => {
     )
   })
 
-  it("changes nothing when the send fails", async () => {
+  it("leaves a recoverable, recorded state when the send fails after the flip (DB-052)", async () => {
     const sender = makeSender()
+    mockDb.user.update.mockResolvedValue({ id: userId, emailVerified: false })
     sender.sendVerificationEmail.mockRejectedValue(new Error("SMTP down"))
     await expect(
       requireEmailVerification(ownerActor(), userId, sender)
     ).rejects.toThrowError("SMTP down")
-    expect(mockDb.user.update).not.toHaveBeenCalled()
+    // The flag was already flipped, so the failure is recorded
+    // durably (audit marker) instead of vanishing — the admin can
+    // re-send, and the account never reads as verified while
+    // holding an unverified mail.
+    expect(mockDb.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userId },
+        data: { emailVerified: false },
+      })
+    )
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          event: "email-verification-required-send-failed",
+        }),
+      })
+    )
+    expect(mockLogAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          event: "email-verification-required",
+        }),
+      })
+    )
+  })
+
+  it("sends no mail when the flag flip itself fails (DB-052)", async () => {
+    const sender = makeSender()
+    mockDb.user.update.mockRejectedValueOnce(new Error("DB blip"))
+    await expect(
+      requireEmailVerification(ownerActor(), userId, sender)
+    ).rejects.toThrowError("DB blip")
+    expect(sender.sendVerificationEmail).not.toHaveBeenCalled()
     expect(mockLogAudit).not.toHaveBeenCalled()
   })
 

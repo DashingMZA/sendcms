@@ -1,7 +1,14 @@
+// EML-001/030/061/090 (Phase 16, Wave 9): explicit React import —
+// the standalone worker runs these templates under tsx, whose
+// per-tsconfig `jsx: react-jsx` does not reach files outside the
+// worker tsconfig's `include` scope, so JSX would compile to
+// classic `React.createElement` calls with no React in scope.
+import React from "react"
 import { Button, Heading, Link, Section, Text } from "react-email"
 import { formatDate, formatTime } from "@sendcms/i18n"
 import { EmailLayout } from "./layout"
 import { getEmailTranslator } from "../email-i18n"
+import { MAX_EMAIL_FIELDS, truncateFieldValue } from "../truncate"
 import type { SubmissionNotificationProps } from "../notification-types"
 
 type Props = SubmissionNotificationProps
@@ -23,10 +30,14 @@ export function submissionNotificationText({
   receivedAt,
   inboxUrl,
   locale,
+  unsubscribeUrl,
 }: Omit<Props, "accentColor" | "footerText">): string {
   const effectiveLocale = locale ?? "en"
   const t = getEmailTranslator(effectiveLocale)
   const received = `${formatDate(effectiveLocale, receivedAt, SHORT_DATE)} ${formatTime(effectiveLocale, receivedAt)}`
+  // EML-012: over-long values are truncated at render time (the
+  // inbox link below is the escape hatch to the full submission).
+  const shownFields = fields.slice(0, MAX_EMAIL_FIELDS)
   const lines = [
     t("notificationHeading", { formName }),
     "",
@@ -35,7 +46,12 @@ export function submissionNotificationText({
     `${t("textOrigin")} ${originDomain}`,
     ...(pageUrl ? [`${t("textPage")} ${pageUrl}`] : []),
     "",
-    ...fields.map((field) => `${field.label}: ${field.value}`),
+    ...shownFields.map(
+      (field) => `${field.label}: ${truncateFieldValue(field.value)}`
+    ),
+    ...(fields.length > MAX_EMAIL_FIELDS
+      ? [`… +${fields.length - MAX_EMAIL_FIELDS} more`]
+      : []),
     "",
     `${t("textViewInbox")} ${inboxUrl}`,
   ]
@@ -54,16 +70,22 @@ export function SubmissionNotification({
   accentColor,
   footerText,
   locale,
+  unsubscribeUrl,
 }: Props) {
   const effectiveLocale = locale ?? "en"
   const t = getEmailTranslator(effectiveLocale)
   const received = `${formatDate(effectiveLocale, receivedAt, SHORT_DATE)} ${formatTime(effectiveLocale, receivedAt)}`
+  // EML-012: render at most MAX_EMAIL_FIELDS, each truncated — the
+  // "View inbox" button below is the escape hatch to the full
+  // submission.
+  const shownFields = fields.slice(0, MAX_EMAIL_FIELDS)
   return (
     <EmailLayout
       preview={t("notificationHeading", { formName })}
       accentColor={accentColor}
       footerText={footerText}
       locale={locale}
+      unsubscribeUrl={unsubscribeUrl}
     >
       <Heading
         as="h2"
@@ -94,14 +116,19 @@ export function SubmissionNotification({
           margin: "0 0 16px",
         }}
       >
-        {fields.map((field) => (
+        {shownFields.map((field) => (
           <Text
             key={field.label}
             style={{ fontSize: "14px", lineHeight: "1.6", margin: "0 0 8px" }}
           >
-            <strong>{field.label}:</strong> {field.value}
+            <strong>{field.label}:</strong> {truncateFieldValue(field.value)}
           </Text>
         ))}
+        {fields.length > MAX_EMAIL_FIELDS && (
+          <Text style={{ fontSize: "14px", margin: 0 }}>
+            … +{fields.length - MAX_EMAIL_FIELDS} more
+          </Text>
+        )}
         {fields.length === 0 && (
           <Text style={{ fontSize: "14px", margin: 0 }}>
             {t("notificationNoFields")}

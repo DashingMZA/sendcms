@@ -5,6 +5,7 @@ import { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 import { getTargetUserOrThrow } from "@sendcms/permissions/target-user"
 import { logAudit, requireStepUp } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
+import { createLogger } from "@sendcms/observability"
 import type { AdminUserListQuery } from "./validators"
 
 // Admin user management (Phase 3) — the admin app's backend for
@@ -17,6 +18,8 @@ import type { AdminUserListQuery } from "./validators"
 
 // ─── Authorization ────────────────────────────────────────────────────
 
+const logger = createLogger("admin-users")
+
 // The admin gate lives in `@sendcms/permissions` (Phase 16, Wave 2 —
 // SRC-215 / SRC-411): one implementation for every module, re-exported
 // here so existing import paths keep working. `getTargetUserOrThrow`
@@ -28,8 +31,14 @@ export { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 // The service never imports Better Auth (or any mailer) itself: the
 // route layer injects a sender built from the auth instance, so the
 // verification / reset email is REALLY sent — never just a flag flip.
-// If the send throws, the service propagates the error and nothing is
-// half-applied (requireEmailVerification sends BEFORE flipping the flag).
+// DB-052 (Phase 16, Wave 9): requireEmailVerification flips the flag
+// FIRST, then sends. The old order (send first) left the opposite
+// half-apply: mail sent, flag unchanged, no record, when the update
+// threw after a successful send. On a send failure now, the flag
+// stays flipped (the account genuinely must re-verify) and the
+// failure is recorded durably in the audit log + the server log, so
+// the state is recoverable — the admin re-sends from the user detail
+// page instead of the user sitting verified-with-a-verify-mail.
 export type AdminEmailSender = {
   // ADM-001: the verification send takes the target's identity, not
   // just the address — the sender mints the token for that user
@@ -764,18 +773,43 @@ export async function requireEmailVerification(
 ) {
   requireAdmin(actor, "MANAGE_USERS")
   const target = await getTargetUserOrThrow(userId)
-  // Send FIRST: if the mail fails, nothing changes and the admin sees
-  // the error instead of a silently unverified user with no email.
-  await sender.sendVerificationEmail({
-    email: target.email,
-    name: target.name,
-    userId: target.id,
-  })
+  // DB-052: flip the flag FIRST, then send. If the send fails, the
+  // flag stays flipped and the failure is recorded durably (audit
+  // marker below) + loudly (server log) — the state is recoverable:
+  // the admin can re-send, and the account never reads as verified
+  // while holding an unverified-mail.
   const updated = await db.user.update({
     where: { id: userId },
     data: { emailVerified: false },
     select: { id: true, emailVerified: true },
   })
+  try {
+    await sender.sendVerificationEmail({
+      email: target.email,
+      name: target.name,
+      userId: target.id,
+    })
+  } catch (err) {
+    // Loud + durable: the mail failed AFTER the flag flipped, so
+    // this is the record that makes the state recoverable. The error
+    // still propagates — the admin must see the send failed.
+    logger.error("verification email failed after emailVerified flip", {
+      error: err,
+      userId,
+      targetEmail: target.email,
+    })
+    await logAudit({
+      userId: actor.user.id,
+      action: AuditAction.UPDATE,
+      resourceType: AuditResource.USER,
+      resourceId: userId,
+      detail: {
+        event: "email-verification-required-send-failed",
+        error: err instanceof Error ? err.message : "unknown error",
+      },
+    })
+    throw err
+  }
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,

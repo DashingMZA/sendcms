@@ -17,6 +17,9 @@
   "dependencies": {
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
+    "@sendcms/plans": "workspace:*",
+    "@sendcms/platform-ops": "workspace:*",
+    "@sendcms/queue": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "dotenv": "^18.0.10",
     "tsx": "^4.23.15"

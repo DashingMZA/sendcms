@@ -656,9 +656,30 @@ export async function sendReplyToSubmission(
     body,
     formName: submission.form.name,
   })
-  // EML-007: no timeline event here — the reply is only QUEUED at
-  // this point. processOneJob writes EMAIL_SENT when the provider
-  // accepts it (and EMAIL_FAILED on terminal failure), so the
-  // timeline never claims a delivery that never happened.
+  // SRC-217: the reply is only QUEUED at this point — record an
+  // EMAIL_QUEUED timeline event (with the actor: the owner who sent
+  // it), never EMAIL_SENT. processOneJob writes EMAIL_SENT when the
+  // provider accepts the job (and EMAIL_FAILED on terminal failure),
+  // so the timeline never claims a delivery that never happened.
+  // Best-effort: the job is already durably queued, and a timeline
+  // write must never fail the send — it is logged instead.
+  if (enqueued > 0) {
+    try {
+      await db.submissionEvent.create({
+        data: {
+          type: SubmissionEventType.EMAIL_QUEUED,
+          detail: { reply: true, queued: true },
+          submissionId: submission.id,
+          actorId: userId,
+        },
+      })
+    } catch (err) {
+      logger.error("reply queued event failed after successful enqueue", {
+        error: err,
+        userId,
+        submissionId: submission.id,
+      })
+    }
+  }
   return { enqueued }
 }

@@ -9,6 +9,9 @@ const mockDb = vi.hoisted(() => ({
   submission: { findUnique: vi.fn() },
   submissionEvent: { create: vi.fn() },
   notificationSettings: { findMany: vi.fn() },
+  // Wave 9, Stream C (EML-005): the enqueue/send paths check the
+  // suppression list — the mock returns "not suppressed" by default.
+  emailSuppression: { findFirst: vi.fn(), create: vi.fn() },
   emailJob: {
     createMany: vi.fn(),
     findMany: vi.fn(),
@@ -104,6 +107,8 @@ beforeEach(() => {
   mockDb.emailJob.updateMany.mockResolvedValue({ count: 1 })
   mockDb.emailJob.update.mockResolvedValue({})
   mockDb.submissionEvent.create.mockResolvedValue({})
+  mockDb.emailSuppression.findFirst.mockResolvedValue(null)
+  mockDb.emailSuppression.create.mockResolvedValue({})
   mockSendEmail.mockResolvedValue({
     messageId: "msg-1",
     provider: "resend",
@@ -153,14 +158,14 @@ describe("enqueueSubmissionNotifications", () => {
 describe("processEmailOutbox", () => {
   it("does nothing when no jobs are due", async () => {
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 0, sent: 0, failed: 0 })
+    expect(result).toEqual({ processed: 0, sent: 0, failed: 0, skipped: 0 })
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
   it("marks a delivered job SENT with the provider message id", async () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0, skipped: 0 })
     expect(mockDb.emailJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -179,7 +184,7 @@ describe("processEmailOutbox", () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     mockSendEmail.mockRejectedValue(new Error("provider down"))
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string; nextAttemptAt: Date | null; lastError: string }
     }
@@ -189,7 +194,14 @@ describe("processEmailOutbox", () => {
   })
 
   it("marks a job FAILED when its attempts are exhausted", async () => {
-    mockDb.emailJob.findMany.mockResolvedValue([makeJob({ attempts: 4 })])
+    // EML-033: terminal only after attempt 6 — the snapshot holds
+    // attempts 5 and the post-claim row holds 6.
+    mockDb.emailJob.findMany.mockResolvedValue([makeJob({ attempts: 5 })])
+    mockDb.emailJob.findUnique.mockResolvedValue({
+      ...makeJob({ attempts: 6 }),
+      form: { id: "form-1", name: "Contact us" },
+      submission: makeSubmission(),
+    })
     mockSendEmail.mockRejectedValue(new Error("provider down"))
     const result = await processEmailOutbox()
     expect(result.failed).toBe(1)
@@ -208,7 +220,7 @@ describe("processEmailOutbox", () => {
       submission: null,
     })
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
     }
@@ -219,7 +231,9 @@ describe("processEmailOutbox", () => {
     mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
     mockDb.emailJob.updateMany.mockResolvedValue({ count: 0 })
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 0 })
+    // EML-038: a skipped job is not processed — it is counted
+    // separately, so processed == sent + failed still holds.
+    expect(result).toEqual({ processed: 0, sent: 0, failed: 0, skipped: 1 })
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
@@ -246,7 +260,7 @@ describe("processEmailOutbox", () => {
     })
     mockDb.emailJob.findMany.mockResolvedValue([digestJob])
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0, skipped: 0 })
     expect(mockRenderDigest).toHaveBeenCalledWith(
       expect.objectContaining({ formName: "Contact us", count: 2 })
     )
@@ -263,7 +277,7 @@ describe("processEmailOutbox", () => {
     })
     mockDb.emailJob.findMany.mockResolvedValue([digestJob])
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
     expect(mockRenderDigest).not.toHaveBeenCalled()
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
@@ -285,7 +299,7 @@ describe("processEmailOutbox", () => {
     })
     mockDb.emailJob.findMany.mockResolvedValue([replyJob])
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 })
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0, skipped: 0 })
     expect(mockRenderReply).toHaveBeenCalledWith(
       expect.objectContaining({
         formName: "Contact us",
@@ -313,7 +327,7 @@ describe("processEmailOutbox", () => {
     })
     mockDb.emailJob.findMany.mockResolvedValue([replyJob])
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
     expect(mockRenderReply).not.toHaveBeenCalled()
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
@@ -344,11 +358,36 @@ describe("processEmailOutbox", () => {
     mockDb.emailJob.findMany.mockResolvedValue([replyJob])
     mockSendEmail.mockRejectedValue(new Error("provider down"))
     const result = await processEmailOutbox()
-    expect(result).toEqual({ processed: 1, sent: 0, failed: 1 })
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
     const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
       data: { status: string }
     }
     expect(updateArg.data.status).toBe("PENDING")
     expect(mockDb.submissionEvent.create).not.toHaveBeenCalled()
+  })
+
+  it("fails a hung job after the per-job timeout and retries it on the next drain (EML-037)", async () => {
+    mockDb.emailJob.findMany.mockResolvedValue([makeJob()])
+    // The send never settles — without the timeout this drain would
+    // hang forever and stall every later poll.
+    mockSendEmail.mockImplementation(() => new Promise(() => {}))
+    const started = Date.now()
+    const result = await processEmailOutbox({ jobTimeoutMs: 50 })
+    expect(Date.now() - started).toBeLessThan(5000)
+    expect(result).toEqual({ processed: 1, sent: 0, failed: 1, skipped: 0 })
+    const updateArg = mockDb.emailJob.update.mock.calls[0][0] as {
+      data: { status: string; nextAttemptAt: Date | null; lastError: string }
+    }
+    expect(updateArg.data.status).toBe("PENDING")
+    expect(updateArg.data.nextAttemptAt).toBeInstanceOf(Date)
+    expect(updateArg.data.lastError).toContain("timed out")
+    // The job is retriable: once the send works again, the next
+    // drain delivers it.
+    mockSendEmail.mockResolvedValue({
+      messageId: "msg-1",
+      provider: "resend",
+    })
+    const retried = await processEmailOutbox()
+    expect(retried).toEqual({ processed: 1, sent: 1, failed: 0, skipped: 0 })
   })
 })

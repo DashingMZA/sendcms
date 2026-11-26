@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server"
-import { processEmailOutbox } from "@sendcms/notifications"
+import { runEmailOutboxCron } from "@sendcms/cron"
 import { isValidBearerToken } from "@sendcms/security"
-import { rescoreNewSubmissions, sendDueDigests } from "@sendcms/submissions"
 import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 
 // Email outbox worker (Phase 9). Hit on a schedule by the platform
@@ -11,28 +10,22 @@ import { ApiError, handleApiError, ok } from "@sendcms/api-client"
 // the scheduler sends `Authorization: Bearer <CRON_SECRET>`. Without
 // CRON_SECRET set, the route refuses to run.
 //
-// Phase 12, Step 2: the same hit also runs the AI spam re-scoring, so
-// serverless deployments (no long-lived worker) still re-score. It is
-// a no-op when no provider is configured or no form has AI on.
+// One hit runs five jobs (Wave 9): the outbox drain, the AI spam
+// re-scoring (Phase 12, Step 2), the AI digests (Phase 12, Step 3),
+// subscription expiry (SRC-201), and missed-notification
+// reconciliation (DB-032 / EML-043) — all in `@sendcms/cron`, each
+// step isolated so one throwing step never cancels the others
+// (EML-063). The response carries per-step counts + error fields.
 //
-// Phase 12, Step 3: the same hit also sends due AI digests.
+// EML-062: `maxDuration = 60` (the Hobby max) with small per-step
+// limits (outbox 25, as in the submit `after()` hook) — the 10 s
+// default could not fit the workload.
+export const maxDuration = 60
+
 export async function GET(req: NextRequest) {
   try {
     requireCronSecret(req)
-    // The three jobs are independent — run them concurrently
-    // (SRC-115): serially, one hit ran three limit-100 jobs back to
-    // back and grew toward serverless timeouts as the queues grew.
-    const [result, rescore, digest] = await Promise.all([
-      processEmailOutbox({ limit: 100 }),
-      rescoreNewSubmissions({ limit: 100 }),
-      sendDueDigests({ limit: 100 }),
-    ])
-    return ok({
-      ...result,
-      rescored: rescore.checked,
-      markedSpam: rescore.markedSpam,
-      digests: digest.sent,
-    })
+    return ok(await runEmailOutboxCron())
   } catch (err) {
     return handleApiError(err)
   }

@@ -53,6 +53,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -68,6 +69,9 @@ type NavItem = {
   // DOC-053: external docs link — opens in a new tab, never matched
   // as the active route.
   external?: boolean
+  /** Count badge shown on the item (DSH-406: new-ticket count on
+      Support). Rendered only when greater than 0. */
+  badge?: number
 }
 
 type NavGroup = {
@@ -90,9 +94,19 @@ type Props = {
    * page and only corrected after hydration.
    */
   initialLocale?: LocaleCode
+  /** DSH-406 (owner decision 2026-11-25, option (b)): the number of
+      new (OPEN) support tickets, shown as a badge on the Support nav
+      item — staff learn of new tickets in the shell, NOT by
+      email/notification. 0 (or absent) renders no badge. */
+  newTicketCount?: number
 }
 
-export function AppSidebar({ user, side, initialLocale }: Props) {
+export function AppSidebar({
+  user,
+  side,
+  initialLocale,
+  newTicketCount = 0,
+}: Props) {
   const { t } = useTranslation("navigation")
   const { t: tDashboard } = useTranslation("dashboard")
   const { t: tCommon } = useTranslation("common")
@@ -183,6 +197,7 @@ export function AppSidebar({ user, side, initialLocale }: Props) {
           label: t("support"),
           href: "/admin/support",
           icon: RiCustomerServiceLine,
+          badge: newTicketCount,
         },
       ],
     },
@@ -282,6 +297,9 @@ export function AppSidebar({ user, side, initialLocale }: Props) {
                           <Link href={item.href}>
                             <item.icon aria-hidden="true" />
                             <span className="truncate">{item.label}</span>
+                            {item.badge !== undefined && item.badge > 0 && (
+                              <SidebarMenuBadge>{item.badge}</SidebarMenuBadge>
+                            )}
                           </Link>
                         )}
                       </SidebarMenuButton>

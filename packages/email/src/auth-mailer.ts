@@ -1,5 +1,5 @@
 import { render } from "@react-email/render"
-import { sendPlatformEmail } from "./provider"
+import { resolveEmailProvider, sendPlatformEmail } from "./provider"
 import { VerifyEmail } from "./templates/verify-email"
 import { ResetPasswordEmail } from "./templates/reset-password"
 import { getEmailTranslator } from "./email-i18n"
@@ -39,32 +39,53 @@ type AuthEmailUser = {
   email: string
 }
 
+export type AuthEmailKind = "verification" | "password reset"
+
+/** What a failed auth send hands to the durable-record callback
+    (EML-009): everything the outbox needs to retry it later. */
+export type FailedAuthEmailRecord = {
+  kind: AuthEmailKind
+  to: string
+  subject: string
+  html: string
+  url: string
+}
+
+export type AuthMailerOpts = {
+  /** EML-009: called when a configured provider fails to send, so
+      the failure leaves a durable, retryable record (the outbox)
+      instead of vanishing. Best-effort — a callback failure is
+      logged, never swallowed, and the original send error still
+      propagates. */
+  onSendFailure?: (record: FailedAuthEmailRecord) => Promise<void>
+}
+
 async function deliverOrLog({
   kind,
   to,
   subject,
   html,
   url,
+  onSendFailure,
 }: {
-  kind: "verification" | "password reset"
+  kind: AuthEmailKind
   to: string
   subject: string
   html: string
   url: string
+  onSendFailure?: AuthMailerOpts["onSendFailure"]
 }): Promise<void> {
-  // Phase 8: one shared provider (Resend → platform SMTP). Without
-  // any provider the contract is unchanged: dev logs the link,
-  // production fails loudly.
-  try {
-    await sendPlatformEmail({ to, subject, html })
-    return
-  } catch (err) {
+  // SRC-312: only "no provider configured" falls back to the dev
+  // log — a real provider failure is never swallowed, in any
+  // environment. The branch keys on the resolved provider, never on
+  // NODE_ENV alone (a staging deploy with NODE_ENV unset used to log
+  // live verification links to stdout instead of failing).
+  if (resolveEmailProvider() === "none") {
     if (process.env.NODE_ENV === "production") {
       // Loud failure: without a mailer, verification/reset can never complete.
       throw new Error(
         `Cannot send ${kind} email: no email provider is configured ` +
-          `(set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS). ` +
-          `Cause: ${err instanceof Error ? err.message : "unknown"}`
+          `(set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS).`
       )
     }
     // Dev fallback: the link is only visible in the server log, never to the
@@ -77,6 +98,34 @@ async function deliverOrLog({
         logFullEmailLink() ? url : redactAuthEmailUrl(url)
       }`
     )
+    return
+  }
+  try {
+    await sendPlatformEmail({ to, subject, html })
+    return
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : "unknown"
+    // EML-009: the failure is visible — recipient + kind at error
+    // level — and leaves a durable, retryable record when the caller
+    // supplied one. The error still propagates with its real cause
+    // (SRC-312): Better Auth must not report the email as sent.
+    console.error(
+      `[auth-email] Failed to send ${kind} email to ${to}: ${cause}`
+    )
+    if (onSendFailure) {
+      try {
+        await onSendFailure({ kind, to, subject, html, url })
+      } catch (recordErr) {
+        console.error(
+          `[auth-email] Failed to record the failed ${kind} email to ${to} for retry: ${
+            recordErr instanceof Error ? recordErr.message : "unknown"
+          }`
+        )
+      }
+    }
+    throw new Error(`Cannot send ${kind} email to ${to}: ${cause}`, {
+      cause: err,
+    })
   }
 }
 
@@ -87,10 +136,12 @@ export async function sendVerificationEmail({
   user,
   url,
   locale,
+  onSendFailure,
 }: {
   user: AuthEmailUser
   url: string
   locale?: string
+  onSendFailure?: AuthMailerOpts["onSendFailure"]
 }): Promise<void> {
   const t = getEmailTranslator(locale ?? "en")
   const html = await render(
@@ -108,6 +159,7 @@ export async function sendVerificationEmail({
     subject: t("authVerifySubject"),
     html,
     url,
+    onSendFailure,
   })
 }
 
@@ -116,10 +168,12 @@ export async function sendPasswordResetEmail({
   user,
   url,
   locale,
+  onSendFailure,
 }: {
   user: AuthEmailUser
   url: string
   locale?: string
+  onSendFailure?: AuthMailerOpts["onSendFailure"]
 }): Promise<void> {
   const t = getEmailTranslator(locale ?? "en")
   const html = await render(
@@ -137,5 +191,6 @@ export async function sendPasswordResetEmail({
     subject: t("resetSubject"),
     html,
     url,
+    onSendFailure,
   })
 }

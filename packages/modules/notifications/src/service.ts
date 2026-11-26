@@ -1,6 +1,7 @@
 import {
   AuditAction,
   AuditResource,
+  EmailDeliveryStatus,
   EmailJobStatus,
   EmailJobType,
   Prisma,
@@ -10,13 +11,23 @@ import {
   type EmailJob,
   type Submission,
 } from "@sendcms/database"
-import { ApiError, getSubmissionSender } from "@sendcms/shared"
+import {
+  ApiError,
+  awaitWithTimeout,
+  getSubmissionSender,
+} from "@sendcms/shared"
 import { getDigestIntervalHours, getNextDigestAt } from "@sendcms/ai"
 import { logAudit } from "@sendcms/security"
 import {
+  buildUnsubscribeUrl,
   getEmailTranslator,
   notificationDeps,
+  parseResendWebhookEvent,
+  resendEventToDeliveryStatus,
+  verifyResendWebhookSignature,
   type DigestProps,
+  type FailedAuthEmailRecord,
+  type ResendWebhookEvent,
   type SubmissionNotificationField,
   type SubmissionNotificationProps,
 } from "@sendcms/email"
@@ -28,9 +39,12 @@ import {
   claimDueEmailJobs,
   claimEmailJob,
   enqueueEmailJobs,
+  isEmailSuppressed,
   loadEmailJob,
   markEmailJobFailed,
   markEmailJobSent,
+  readEmailJobAttempts,
+  recordEmailSuppression,
   type EmailJobWithRelations,
 } from "@sendcms/queue"
 
@@ -60,6 +74,29 @@ export type {
 } from "@sendcms/email"
 
 export const EMAIL_JOB_PAGE_SIZE = 20
+
+/** Per-job send timeout (Phase 16, Wave 9, EML-037): one hung render
+    or send must not stall the drain forever. `processEmailOutbox`
+    races each job against this budget; on expiry the job is marked
+    failed (retriable — the claim already counted the attempt, so the
+    backoff rung is correct) and the drain moves on. The poll-level
+    watchdog (worker `pollTimeoutMs`) is the second line of defence.
+    If the hung send later completes, its `markEmailJobSent` still
+    lands and corrects the state to SENT. */
+export const EMAIL_JOB_TIMEOUT_MS = 30_000
+
+/** A failure that must never be retried (Phase 16, Wave 9, EML-039):
+    the submission/form is gone, or a stored payload is malformed.
+    Terminal classification matches on this TYPE, never on the error
+    message wording — renaming the message must not turn a terminal
+    failure into futile retries (or vice versa). The message stays
+    human-readable and is still recorded in `lastError`. */
+export class TerminalJobError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "TerminalJobError"
+  }
+}
 
 const logger = createLogger("notifications")
 
@@ -94,6 +131,24 @@ function dashboardUrl(): string {
     process.env.NEXT_PUBLIC_APP_URL ??
     "http://localhost:3002"
   )
+}
+
+/** EML-011: the signed per-recipient unsubscribe URL for one mail
+    (+ its form scope), or null when no signing secret is configured
+    — callers then omit the link instead of emitting an
+    unverifiable one. */
+function unsubscribeUrlFor(to: string, formId: string | null): string | null {
+  return buildUnsubscribeUrl(to, formId)
+}
+
+/** EML-011: the List-Unsubscribe header for one mail, or undefined
+    when no signed URL can be built. */
+function unsubscribeHeaders(
+  to: string,
+  formId: string | null
+): Record<string, string> | undefined {
+  const url = unsubscribeUrlFor(to, formId)
+  return url ? { "List-Unsubscribe": `<${url}>` } : undefined
 }
 
 function formatFieldValue(value: unknown): string {
@@ -138,6 +193,16 @@ export async function enqueueSubmissionNotifications(
   })
   if (recipients.length === 0) return 0
 
+  // EML-005 / EML-011: a suppressed address (hard bounce, complaint,
+  // unsubscribe) gets no further job for this form.
+  const liveRecipients: { email: string }[] = []
+  for (const recipient of recipients) {
+    if (!(await isEmailSuppressed(recipient.email, formId))) {
+      liveRecipients.push(recipient)
+    }
+  }
+  if (liveRecipients.length === 0) return 0
+
   const sender = getSubmissionSender(submission.data)
   // The subject is stored on the job at enqueue time, so it is
   // rendered in the owner's locale here — the send path re-renders
@@ -149,7 +214,7 @@ export async function enqueueSubmissionNotifications(
     (await ownerLocale(submission.form.ownerId)) ?? "en"
   )
   return enqueueEmailJobs(
-    recipients.map((recipient) => ({
+    liveRecipients.map((recipient) => ({
       type: EmailJobType.SUBMISSION_NOTIFICATION,
       to: recipient.email,
       subject,
@@ -195,6 +260,9 @@ export async function enqueueDigest({
   // before the create — the outbox listing filters on this column
   // instead of joining Form.
   const ownerId = await resolveFormOwnerId(formId)
+  // EML-011: a digest recipient who unsubscribed (or hard-bounced)
+  // gets no further digest for this form.
+  if (await isEmailSuppressed(to, formId)) return 0
   return enqueueEmailJobs([
     {
       type: EmailJobType.DIGEST,
@@ -231,6 +299,8 @@ export async function enqueueReply({
   // instead of joining Form. The reply chrome follows the owner's
   // locale; the body itself is the owner's own words, never translated.
   const ownerId = await resolveFormOwnerId(formId)
+  // EML-005 / EML-011: never enqueue a reply to a suppressed address.
+  if (await isEmailSuppressed(to, formId)) return 0
   const locale = (await ownerLocale(ownerId)) ?? "en"
   const t = getEmailTranslator(locale)
   return enqueueEmailJobs([
@@ -250,6 +320,170 @@ export async function enqueueReply({
       } as unknown as Prisma.InputJsonValue,
     },
   ])
+}
+
+/** Creates one PENDING auth job (verification / password reset) for
+    a user — the durable, retryable record EML-009 requires. The
+    rendered HTML + the link ride on the payload, so the send path
+    needs no user row and never re-renders (the link's token is
+    already minted). The job is due immediately (`nextAttemptAt`
+    null), so the next drain retries it. The ownerId is the user the
+    mail is for — EmailJob.ownerId is a User FK, and the auth user
+    IS a User. */
+export async function enqueueAuthEmailJob(
+  record: FailedAuthEmailRecord & { userId: string }
+): Promise<number> {
+  const type =
+    record.kind === "verification"
+      ? EmailJobType.EMAIL_VERIFICATION
+      : EmailJobType.PASSWORD_RESET
+  return enqueueEmailJobs([
+    {
+      type,
+      to: record.to,
+      subject: record.subject,
+      // Auth mail belongs to no form — null, never an empty string
+      // (the delivery-log audit treats a set formId as a form link).
+      formId: null,
+      ownerId: record.userId,
+      payload: {
+        html: record.html,
+        url: record.url,
+      } as unknown as Prisma.InputJsonValue,
+    },
+  ])
+}
+
+/** The payload an auth job (EMAIL_VERIFICATION / PASSWORD_RESET)
+    carries. Written by enqueueAuthEmailJob, read by the send path —
+    a malformed one fails the job terminally, it never sends a
+    half-rendered auth mail. */
+export function parseAuthEmailPayload(payload: unknown): {
+  html: string
+  url: string
+} | null {
+  if (typeof payload !== "object" || payload === null) return null
+  const p = payload as Record<string, unknown>
+  if (typeof p.html !== "string" || typeof p.url !== "string") return null
+  return { html: p.html, url: p.url }
+}
+
+/** Records one verified Resend delivery event (EML-005). The job is
+    found by the provider message id the webhook carries
+    (`data.email_id` — the same value the send API returned and the
+    outbox stored). A hard bounce or a complaint also suppresses the
+    recipient, so no further job is ever enqueued to that address; a
+    soft (transient) bounce never reaches this function — the parser
+    maps it to no delivery status. Returns whether a job matched.
+    Unknown event types are acknowledged, never failed: Resend may
+    add types later, and a webhook retry storm helps nobody. */
+export async function handleResendDeliveryEvent(
+  event: ResendWebhookEvent
+): Promise<{ matched: boolean; suppressed: boolean }> {
+  const status = resendEventToDeliveryStatus(event)
+  const recipient = event.data.to[0] ?? ""
+  if (status === null) return { matched: false, suppressed: false }
+  const job = await db.emailJob.findFirst({
+    where: { providerMessageId: event.data.email_id },
+    select: { id: true, formId: true },
+  })
+  if (job) {
+    await db.emailJob.update({
+      where: { id: job.id },
+      data: {
+        deliveryStatus: status as EmailDeliveryStatus,
+        deliveryUpdatedAt: new Date(),
+      },
+    })
+  }
+  let suppressed = false
+  if (status === "BOUNCED" || status === "COMPLAINED") {
+    if (recipient) {
+      await recordEmailSuppression({
+        email: recipient,
+        formId: job?.formId ?? null,
+        reason: status,
+        source: event.data.email_id,
+      })
+      suppressed = true
+    }
+  }
+  return { matched: job !== null, suppressed }
+}
+
+/** Verifies a raw Resend webhook request and handles it
+    (EML-005) — the route's whole job in one call. Returns the
+    outcome the route turns into its HTTP response. */
+export async function handleResendWebhookRequest({
+  payload,
+  svixId,
+  svixTimestamp,
+  svixSignature,
+  secret,
+}: {
+  payload: string
+  svixId: string | null
+  svixTimestamp: string | null
+  svixSignature: string | null
+  secret: string | undefined
+}): Promise<
+  | { ok: true; matched: boolean; suppressed: boolean }
+  | { ok: false; status: number; error: string }
+> {
+  if (!secret) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Resend webhook is not configured (RESEND_WEBHOOK_SECRET).",
+    }
+  }
+  if (
+    !verifyResendWebhookSignature({
+      payload,
+      svixId,
+      svixTimestamp,
+      svixSignature,
+      secret,
+    })
+  ) {
+    return { ok: false, status: 401, error: "Invalid webhook signature." }
+  }
+  const event = parseResendWebhookEvent(payload)
+  if (!event) {
+    return { ok: false, status: 400, error: "Invalid webhook payload." }
+  }
+  const result = await handleResendDeliveryEvent(event)
+  return { ok: true, ...result }
+}
+
+/** Honours one signed unsubscribe (EML-011): records the
+    suppression (global when formId is null, that form only
+    otherwise) and disables the recipient's notification-settings
+    rows in scope, so the next submission never enqueues a job for
+    them. Returns how many settings rows were disabled. */
+export async function unsubscribeRecipient({
+  email,
+  formId,
+}: {
+  email: string
+  formId: string | null
+}): Promise<{ disabledSettings: number }> {
+  await recordEmailSuppression({
+    email,
+    formId,
+    reason: "UNSUBSCRIBED",
+    source: "unsubscribe-link",
+  })
+  const disabled = await db.notificationSettings.updateMany({
+    where: {
+      email,
+      enabled: true,
+      ...(formId ? { formId } : {}),
+    },
+    data: { enabled: false },
+  })
+  logger.info("recipient unsubscribed", { email, formId })
+  return { disabledSettings: disabled.count }
 }
 
 /** The payload a SUBMISSION_REPLY job carries. Written by the inbox
@@ -332,7 +566,9 @@ export function parseDigestPayload(payload: unknown): DigestProps | null {
 
 async function renderNotification(
   submission: SubmissionWithForm,
-  locale = "en"
+  locale = "en",
+  to?: string,
+  formId?: string | null
 ): Promise<{ subject: string; html: string; text: string }> {
   const sender = getSubmissionSender(submission.data)
   const t = getEmailTranslator(locale)
@@ -353,6 +589,10 @@ async function renderNotification(
     accentColor: "#0891b2",
     footerText: t("notificationFooter"),
     locale,
+    // EML-011: the signed per-recipient unsubscribe URL, rendered in
+    // the layout footer + carried as a List-Unsubscribe header.
+    unsubscribeUrl:
+      to !== undefined ? unsubscribeUrlFor(to, formId ?? null) : null,
   }
   const { html, text } = await notificationDeps.renderNotification(props)
   return { subject, html, text }
@@ -386,22 +626,69 @@ async function processOneJob(
   // Claim: only the processor that flips PENDING → SENDING owns it.
   if (!(await claimEmailJob(job.id))) return "skipped"
 
-  const attempts = job.attempts + 1
+  // EML-032: the retry delay and the terminal cutoff are computed
+  // from the POST-CLAIM attempt count, read back from the row —
+  // never from the pre-claim snapshot. A stale snapshot (or a
+  // re-claim of a stale SENDING row, whose attempts already include
+  // the dead claim) would schedule a shorter delay than the job
+  // earned. Falls back to snapshot + 1 only if the row vanished
+  // between the claim and the read (the marks below then no-op).
+  const attempts = (await readEmailJobAttempts(job.id)) ?? job.attempts + 1
   try {
+    // ── Wave 9, Stream C — minimal hooks in Stream A's file ──
+    // EML-005 / EML-011: a recipient suppressed after enqueue (hard
+    // bounce, complaint, unsubscribe) never gets a send — the job
+    // fails terminally instead of burning retries on a dead address.
+    if (
+      job.type === EmailJobType.SUBMISSION_NOTIFICATION ||
+      job.type === EmailJobType.DIGEST ||
+      job.type === EmailJobType.SUBMISSION_REPLY
+    ) {
+      if (await isEmailSuppressed(job.to, job.formId)) {
+        throw new TerminalJobError(
+          "Recipient is suppressed (bounced, complained, or unsubscribed)."
+        )
+      }
+    }
+    // EML-009: auth jobs carry their rendered HTML on the payload —
+    // send it directly, no submission to load, no re-render (the
+    // link's token is already minted).
+    if (
+      job.type === EmailJobType.EMAIL_VERIFICATION ||
+      job.type === EmailJobType.PASSWORD_RESET
+    ) {
+      const auth = parseAuthEmailPayload(job.payload)
+      if (!auth) {
+        throw new TerminalJobError(
+          "Auth email payload is missing or malformed."
+        )
+      }
+      const { messageId } = await notificationDeps.sendEmail({
+        to: job.to,
+        subject: job.subject,
+        html: auth.html,
+      })
+      await markEmailJobSent(job.id, messageId)
+      return "sent"
+    }
+    // ── end Stream C hooks ──
     // DIGEST jobs carry their pre-rendered content on the payload —
     // no submission to load, and the model is never re-run at send
     // time.
     if (job.type === EmailJobType.DIGEST) {
       const props = parseDigestPayload(job.payload)
       if (!props) {
-        throw new Error("Digest payload is missing or malformed.")
+        throw new TerminalJobError("Digest payload is missing or malformed.")
       }
+      // EML-011: the signed unsubscribe URL + List-Unsubscribe header.
+      props.unsubscribeUrl = unsubscribeUrlFor(job.to, job.formId)
       const { html, text } = await notificationDeps.renderDigest(props)
       const { messageId } = await notificationDeps.sendEmail({
         to: job.to,
         subject: job.subject,
         html,
         text,
+        headers: unsubscribeHeaders(job.to, job.formId),
       })
       await markEmailJobSent(job.id, messageId)
       return "sent"
@@ -411,7 +698,7 @@ async function processOneJob(
     if (job.type === EmailJobType.SUBMISSION_REPLY) {
       const props = parseReplyPayload(job.payload)
       if (!props) {
-        throw new Error("Reply payload is missing or malformed.")
+        throw new TerminalJobError("Reply payload is missing or malformed.")
       }
       const { html, text } = await notificationDeps.renderReply(props)
       const { messageId } = await notificationDeps.sendEmail({
@@ -428,7 +715,7 @@ async function processOneJob(
     }
     const full: EmailJobWithRelations | null = await loadEmailJob(job.id)
     if (!full?.submission || !full.form) {
-      throw new Error("Submission or form no longer exists.")
+      throw new TerminalJobError("Submission or form no longer exists.")
     }
     // The body renders in the owner's locale at send time (resolved
     // from the denormalized ownerId), matching the subject stored at
@@ -438,26 +725,27 @@ async function processOneJob(
         ...full.submission,
         form: full.form,
       },
-      (job.ownerId ? await ownerLocale(job.ownerId) : null) ?? "en"
+      (job.ownerId ? await ownerLocale(job.ownerId) : null) ?? "en",
+      full.to,
+      full.formId
     )
     const { messageId } = await notificationDeps.sendEmail({
       to: full.to,
       subject: full.subject || subject,
       html,
       text,
+      headers: unsubscribeHeaders(full.to, full.formId),
     })
     await markEmailJobSent(job.id, messageId)
     return "sent"
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error"
     // Retriable failures stay PENDING with a backoff — the next drain
-    // picks them up again. Only terminal failures (out of attempts, or
-    // the submission is gone) become FAILED.
+    // picks them up again. Only terminal failures (out of attempts,
+    // or a TerminalJobError) become FAILED. EML-039: the terminal
+    // classification is the error TYPE, not the message wording.
     const terminal =
-      message === "Submission or form no longer exists." ||
-      message === "Digest payload is missing or malformed." ||
-      message === "Reply payload is missing or malformed." ||
-      attempts >= MAX_EMAIL_ATTEMPTS
+      err instanceof TerminalJobError || attempts >= MAX_EMAIL_ATTEMPTS
     // SRC-329 (Phase 16, Wave 3): the queue re-reads the attempt
     // count from the row for its own cutoff/backoff — this snapshot
     // is only used for the caller's terminal decision below.
@@ -478,25 +766,55 @@ async function processOneJob(
   }
 }
 
-/** Sends due PENDING jobs (never attempted, or past their retry time).
-    Returns the outcome counts. Safe to call from the cron route, the
-    standalone worker, and the submit route's `after()` hook. */
+/** Sends due PENDING jobs (never attempted, or past their retry time)
+    — plus SENDING jobs whose claim lease expired (EML-031). Returns
+    the outcome counts. Safe to call from the cron route, the
+    standalone worker, and the submit route's `after()` hook.
+    EML-038: `processed` counts jobs this caller actually attempted
+    (`sent + failed`); jobs skipped because another processor claimed
+    them are reported separately as `skipped`, so the counts always
+    reconcile: `processed == sent + failed` and
+    `selected == processed + skipped`. */
 export async function processEmailOutbox({
   limit = 25,
-}: { limit?: number } = {}): Promise<{
+  jobTimeoutMs = EMAIL_JOB_TIMEOUT_MS,
+}: { limit?: number; jobTimeoutMs?: number } = {}): Promise<{
   processed: number
   sent: number
   failed: number
+  skipped: number
 }> {
   const due = await claimDueEmailJobs(limit)
   let sent = 0
   let failed = 0
+  let skipped = 0
   for (const job of due) {
-    const outcome = await processOneJob(job)
+    // EML-037: race each job against the per-job timeout. A hung
+    // render/send must fail that job (retriable) and let the drain
+    // move on — never stall the whole poll. `processOneJob` catches
+    // its own errors, so the attempt promise never rejects after the
+    // timeout wins except for a claim throw; the no-op catch below
+    // keeps that from surfacing as an unhandled rejection.
+    const attempt = processOneJob(job)
+    attempt.catch(() => {})
+    const outcome = await awaitWithTimeout(attempt, jobTimeoutMs)
+    if (outcome === undefined) {
+      // Timed out: the claim already counted this attempt, so
+      // marking it failed schedules the correct backoff rung and
+      // clears the lease. If the hung send later completes, its
+      // markEmailJobSent still lands and corrects the state.
+      await markEmailJobFailed(job.id, {
+        error: `Email job timed out after ${jobTimeoutMs} ms`,
+        terminal: false,
+      })
+      failed++
+      continue
+    }
     if (outcome === "sent") sent++
     if (outcome === "failed") failed++
+    if (outcome === "skipped") skipped++
   }
-  return { processed: due.length, sent, failed }
+  return { processed: sent + failed, sent, failed, skipped }
 }
 
 export type EmailJobListItem = EmailJob & {
@@ -567,10 +885,12 @@ export async function listEmailJobsForUser(
   return {
     items: items.map((item) => {
       // EML-094: a SENDING row carries its claim age so a stuck job
-      // is visible, not just present.
+      // is visible, not just present. EML-031: the age is measured
+      // from the claim lease start (`claimedAt`), falling back to
+      // `updatedAt` for rows claimed before the column existed.
       const claimAgeMinutes =
         item.status === EmailJobStatus.SENDING
-          ? ageMinutesSince(item.updatedAt)
+          ? ageMinutesSince(item.claimedAt ?? item.updatedAt)
           : null
       return {
         ...item,
@@ -620,7 +940,8 @@ export async function requeueEmailJob(
   if (job.status === EmailJobStatus.FAILED) {
     // FAILED is terminal — requeue restarts the ladder.
   } else if (job.status === EmailJobStatus.SENDING) {
-    const claimAgeMinutes = ageMinutesSince(job.updatedAt)
+    // EML-031: the lease is measured from the claim start.
+    const claimAgeMinutes = ageMinutesSince(job.claimedAt ?? job.updatedAt)
     if (claimAgeMinutes < STALE_CLAIM_LEASE_MINUTES) {
       throw new ApiError(
         `This email is still being sent (claimed ${claimAgeMinutes} minute${claimAgeMinutes === 1 ? "" : "s"} ago). Wait until it is stuck past the ${STALE_CLAIM_LEASE_MINUTES}-minute lease, then retry.`,
