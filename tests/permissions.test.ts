@@ -56,6 +56,7 @@ describe("platformCan", () => {
     // /admin/subscriptions.
     expect(PLATFORM_ROUTE_CAPABILITY).toEqual({
       "/admin": "VIEW_ADMIN_DASHBOARD",
+      "/admin/activity": "VIEW_AUDIT_LOGS",
       "/admin/ai": "VIEW_AI_USAGE",
       "/admin/ai/models": "VIEW_AI_USAGE",
       "/admin/ai/providers": "MANAGE_AI",
@@ -69,6 +70,7 @@ describe("platformCan", () => {
       "/admin/health": "VIEW_ADMIN_DASHBOARD",
       "/admin/mcp": "VIEW_MCP",
       "/admin/mcp/keys": "VIEW_MCP",
+      "/admin/payments": "VIEW_BILLING",
       "/admin/plans": "VIEW_PLAN_VERSIONS",
       "/admin/plans-subscriptions": "VIEW_USERS",
       "/admin/security": "MANAGE_USERS",

@@ -4,6 +4,7 @@
 // translations); this file re-exports them so callers import one
 // module, the same shape as the mcp-admin / plans modules.
 export * from "./abuse"
+export * from "./activity"
 export * from "./announcements"
 export * from "./audit"
 export * from "./deletion"

@@ -205,6 +205,47 @@ export const AuditLogsQuerySchema = PlatformOpsPaginationQuerySchema.extend({
 
 export type AuditLogsQuery = z.infer<typeof AuditLogsQuerySchema>
 
+// ─── Activity feed ──────────────────────────────────────────────────
+
+// Unified chronological feed (Phase B, plan §3.1): cursor pagination
+// on createdAt — the four sources cannot share one OFFSET page.
+// `cursor` is "<ISO timestamp>|<row id>" of the last row returned;
+// the service re-applies it per source with a (createdAt, id) bound,
+// so rows sharing a millisecond are never skipped or repeated.
+// `from`/`to` are validated as parseable dates here (a bad date is a
+// 422 from the route), so the thin activity route needs no second
+// date check. `tab` is the feed's source tab (All / Users / Billing /
+// AI / Support); the service maps each row to exactly one tab.
+export const ActivityFeedQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    tab: z.enum(["all", "users", "billing", "ai", "support"]).default("all"),
+    actorId: z.string().trim().min(1).optional(),
+    resourceType: z.string().trim().min(1).optional(),
+    outcome: z.string().trim().min(1).optional(),
+    // ISO date strings, inclusive bounds.
+    from: z.string().trim().min(1).optional(),
+    to: z.string().trim().min(1).optional(),
+    // Free text on the resource id (audit resourceId, subscription
+    // id, provider event id, submission id).
+    q: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((v, ctx) => {
+    for (const key of ["from", "to"] as const) {
+      const value = v[key]
+      if (value !== undefined && Number.isNaN(new Date(value).getTime())) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${key} must be a valid date.`,
+          path: [key],
+        })
+      }
+    }
+  })
+
+export type ActivityFeedQuery = z.infer<typeof ActivityFeedQuerySchema>
+
 // ─── Abuse / spam queue ───────────────────────────────────────────────
 
 export const PlatformSubmissionsQuerySchema =

@@ -19,6 +19,7 @@ import {
   RiFileTextLine,
   RiFlagLine,
   RiGlobeLine,
+  RiHistoryLine,
   RiInboxLine,
   RiKeyLine,
   RiLineChartLine,
@@ -165,6 +166,11 @@ export function AppSidebar({
           icon: RiWalletLine,
         },
         {
+          label: t("payments"),
+          href: "/admin/payments",
+          icon: RiWalletLine,
+        },
+        {
           label: t("submissions"),
           href: "/admin/submissions",
           icon: RiInboxLine,
@@ -220,6 +226,11 @@ export function AppSidebar({
           label: t("announcements"),
           href: "/admin/announcements",
           icon: RiMegaphoneLine,
+        },
+        {
+          label: t("activity"),
+          href: "/admin/activity",
+          icon: RiHistoryLine,
         },
         {
           label: t("auditLogs"),

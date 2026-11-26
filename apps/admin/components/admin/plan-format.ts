@@ -34,6 +34,24 @@ export function formatPrice(
   return formatCurrency(locale, priceAmount / 100, currency)
 }
 
+/**
+ * Format a minor-units payment amount as major units, or
+ * `unknownLabel` when the amount is unknown (unmatched provider
+ * event — the amount is never guessed). A null currency with a known
+ * amount renders the plain number (formatCurrency falls back the
+ * same way for a bad code).
+ */
+export function formatAmountMinor(
+  locale: string,
+  amountMinor: number | null,
+  currency: string | null,
+  unknownLabel: string
+): string {
+  if (amountMinor === null) return unknownLabel
+  if (currency === null) return formatNumber(locale, amountMinor / 100)
+  return formatCurrency(locale, amountMinor / 100, currency)
+}
+
 /** Format a nullable limit: null renders as the unlimited label. */
 export function formatLimit(
   locale: string,

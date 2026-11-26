@@ -12,7 +12,15 @@ import type {
   BillingProviderConfigRow,
   EnabledBillingProvider,
 } from "./service"
-import type { CheckoutSessionInput, SetProviderConfigInput } from "./validators"
+// Type-only import from ./payments: the queries file is imported by
+// client components, so it must never pull the payments service (and
+// through it @sendcms/database) into the browser bundle.
+import type { PaymentDetail, PaymentRefundResult } from "./payments"
+import type {
+  CheckoutSessionInput,
+  RefundPaymentInput,
+  SetProviderConfigInput,
+} from "./validators"
 
 // React Query hooks for the admin billing pages and the dashboard
 // checkout page. Same pattern as @sendcms/mcp-admin/queries: the
@@ -224,5 +232,38 @@ export function useCreateCheckoutSession() {
       ),
   })
 }
+
+// ─── Admin payments (Seven Admin Pages, Phase B, plan §3.5) ───────────
+// Type-only import from ./payments: the queries file is imported by
+// client components, so it must never pull the payments service (and
+// through it @sendcms/database) into the browser bundle.
+export function usePaymentDetail(id: string | null) {
+  return useQuery<PaymentDetail>({
+    queryKey: ["billing", "payments", id],
+    queryFn: () => apiFetch<PaymentDetail>(`/api/v1/admin/payments/${id}`),
+    enabled: id !== null,
+  })
+}
+
+// Admin refund (MANAGE_BILLING + step-up, enforced server-side).
+// On success the payments queries refetch; the page also refreshes
+// its server-fetched list (router.refresh at the call site).
+export function useRefundPayment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RefundPaymentInput }) =>
+      apiFetch<PaymentRefundResult>(`/api/v1/admin/payments/${id}/refund`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["billing", "payments"] })
+    },
+  })
+}
+
+// Client components import the payment row/page types from here
+// (never from the module barrel, whose runtime side is server-only).
+export type { PaymentRow, PaymentsPage } from "./payments"
 
 export type { BillingProvider }

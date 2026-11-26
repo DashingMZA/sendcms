@@ -46,6 +46,7 @@ export const LOCALE_COOKIE_NAME = "sendcms-locale"
 
 /** Domains the admin shell loads for every page (nav, prompt, common). */
 export const SHELL_TRANSLATION_DOMAINS = [
+  "activity",
   "ai",
   "announcements",
   "audit-logs",
@@ -59,6 +60,7 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "dashboard",
   "mcp",
   "overview",
+  "payments",
   "plans",
   "plans-subscriptions",
   "security",

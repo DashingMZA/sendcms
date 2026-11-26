@@ -14,6 +14,11 @@ import type {
   SystemSummary,
 } from "./service"
 import type { AuditLogRow } from "./audit"
+import type {
+  ActivityFeedResponse,
+  ActivityFeedRow,
+  ActivityTab,
+} from "./activity"
 import type { DeletionRequestRow } from "./deletion"
 import type { TranslationLocaleCompletion } from "./translations"
 import type {
@@ -45,6 +50,12 @@ export const PLATFORM_OPS_KEYS = {
   auditLogs: (filters: Record<string, string | number | undefined>) =>
     ["platform-audit-logs", filters] as const,
   auditLog: (id: string) => ["platform-audit-log", id] as const,
+  activityFeed: (filters: Record<string, string | number | undefined>) =>
+    ["platform-activity-feed", filters] as const,
+  activityFeedPage: (
+    filters: Record<string, string | number | undefined>,
+    cursor: string
+  ) => ["platform-activity-feed-page", filters, cursor] as const,
   health: ["platform-health"] as const,
   system: ["platform-system"] as const,
   overview: (query: OverviewQuery) => ["platform-overview", query] as const,
@@ -298,6 +309,50 @@ export function useAuditLog(id: string) {
     enabled: Boolean(id),
   })
 }
+
+// ─── Activity feed ────────────────────────────────────────────────
+
+// The unified feed (Phase B, plan §3.1): one React Query entry per
+// filter set, served by GET /api/v1/admin/activity. The page is
+// cursor-paginated — `useActivityFeedPage` fetches one further page
+// for a cursor, disabled until the caller refetches it (the "Load
+// more" button), so the first page never refetches on mount.
+export type ActivityFeedFilters = {
+  tab?: ActivityTab
+  actorId?: string
+  resourceType?: string
+  outcome?: string
+  from?: string
+  to?: string
+  q?: string
+  limit?: number
+}
+
+export function useActivityFeed(filters: ActivityFeedFilters) {
+  return useQuery({
+    queryKey: PLATFORM_OPS_KEYS.activityFeed(filters),
+    queryFn: () =>
+      apiFetch<ActivityFeedResponse>(
+        `/api/v1/admin/activity${toQueryString(filters)}`
+      ),
+  })
+}
+
+export function useActivityFeedPage(
+  filters: ActivityFeedFilters,
+  cursor: string | null
+) {
+  return useQuery({
+    queryKey: PLATFORM_OPS_KEYS.activityFeedPage(filters, cursor ?? ""),
+    queryFn: () =>
+      apiFetch<ActivityFeedResponse>(
+        `/api/v1/admin/activity${toQueryString({ ...filters, cursor: cursor ?? undefined })}`
+      ),
+    enabled: false,
+  })
+}
+
+export type { ActivityFeedResponse, ActivityFeedRow }
 
 // ─── Health + system + overview ───────────────────────────────────────
 

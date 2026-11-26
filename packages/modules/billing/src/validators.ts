@@ -122,3 +122,51 @@ export const reconcileCheckoutSchema = z.object({
 })
 
 export type ReconcileCheckoutInput = z.infer<typeof reconcileCheckoutSchema>
+
+// Payments list (Seven Admin Pages, Phase B, plan §3.5) — the money
+// view. `tab` is the list's own status split (All / Succeeded /
+// Failed / Refunded); `q` searches the customer by email, name, or
+// user id. Same pagination shape as the billing-events list.
+const paymentTabSchema = z.enum(["all", "succeeded", "failed", "refunded"])
+
+export const PaymentsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  perPage: z.coerce.number().int().min(1).max(100).default(20),
+  provider: providerSchema.optional(),
+  userId: z.string().trim().min(1).max(50).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  tab: paymentTabSchema.default("all"),
+  from: z.string().trim().min(1).optional(),
+  to: z.string().trim().min(1).optional(),
+})
+
+export type PaymentsQuery = z.infer<typeof PaymentsQuerySchema>
+
+// Admin refund body (Seven Admin Pages, Phase B, plan §3.5, Q11).
+// A full refund cancels the matching subscription (and flips a
+// linked one-time purchase to REFUNDED); a partial refund keeps the
+// subscription and needs the refunded amount in minor units. The
+// refund itself must already have been issued at the provider —
+// this records its SendCMS-side effects (see refundPayment).
+export const RefundPaymentSchema = z
+  .object({
+    fullRefund: z.boolean().default(true),
+    amountMinor: z.number().int().positive().nullable().optional(),
+    reason: requiredString("A reason is required")
+      .trim()
+      .min(1, "A reason is required"),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      !data.fullRefund &&
+      (data.amountMinor === null || data.amountMinor === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "amountMinor is required for a partial refund",
+        path: ["amountMinor"],
+      })
+    }
+  })
+
+export type RefundPaymentInput = z.infer<typeof RefundPaymentSchema>
