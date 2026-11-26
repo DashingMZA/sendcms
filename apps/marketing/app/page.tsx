@@ -96,6 +96,9 @@ export default function HomePage() {
           </Link>
           <div className="flex items-center gap-3">
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href="/features">Features</Link>
+            </Button>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <Link href="/pricing">Pricing</Link>
             </Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
@@ -420,10 +423,31 @@ export default function HomePage() {
             </Link>{" "}
             ·{" "}
             <Link
+              href="/features"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Features
+            </Link>{" "}
+            ·{" "}
+            <Link
               href="/contact"
               className="underline underline-offset-4 hover:text-foreground"
             >
               Contact us
+            </Link>{" "}
+            ·{" "}
+            <Link
+              href="/privacy"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Privacy
+            </Link>{" "}
+            ·{" "}
+            <Link
+              href="/terms"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Terms
             </Link>{" "}
             ·{" "}
             <Link
