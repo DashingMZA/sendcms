@@ -22,6 +22,11 @@ import {
 import {
   Badge,
   Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -33,11 +38,15 @@ import {
   Textarea,
 } from "@sendcms/ui"
 import {
+  RiArrowLeftLine,
+  RiDeleteBinLine,
+  RiExternalLinkLine,
+  RiStarLine,
+} from "@remixicon/react"
+import {
   useLocale,
   useTranslation,
 } from "@/components/dashboard/translation-provider"
-
-import { ArrowLeft, ExternalLink, Star, Trash2 } from "lucide-react"
 
 /** Translation key (inbox domain) for each submission event type.
     An event type with no key here renders its raw type value. */
@@ -130,7 +139,7 @@ export function SubmissionDetail({
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
           <Link href="/dashboard/inbox">
-            <ArrowLeft className="size-4" /> {t("backToInbox")}
+            <RiArrowLeftLine className="size-4" /> {t("backToInbox")}
           </Link>
         </Button>
         <h2 className="text-lg font-semibold">
@@ -168,8 +177,8 @@ export function SubmissionDetail({
             onClick={() => runAction(isStarred ? "unstar" : "star")}
             disabled={updateStatus.isPending || isArchived || isSpam}
           >
-            <Star
-              className={`size-3.5 ${isStarred ? "fill-amber-400 text-amber-400" : ""}`}
+            <RiStarLine
+              className={`size-3.5 ${isStarred ? "fill-warning text-warning" : ""}`}
             />
             {isStarred ? t("unstar") : t("star")}
           </Button>
@@ -196,133 +205,145 @@ export function SubmissionDetail({
             size="sm"
             onClick={() => setConfirmDelete(true)}
           >
-            <Trash2 className="size-3.5" /> {t("delete")}
+            <RiDeleteBinLine className="size-3.5" /> {t("delete")}
           </Button>
         </span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border p-4 sm:p-6">
-          <h3 className="mb-4 text-base font-semibold">
-            {t("submissionSection")}
-          </h3>
-          <dl className="flex flex-col gap-3">
-            {dataEntries.map(([key, value]) => (
-              <div key={key} className="grid gap-1">
-                <dt className="text-sm font-medium text-muted-foreground">
-                  {key}
-                </dt>
-                <dd className="text-sm break-words whitespace-pre-wrap">
-                  {formatValue(value)}
-                </dd>
-              </div>
-            ))}
-            {dataEntries.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t("noFieldValues")}
-              </p>
-            )}
-          </dl>
-        </section>
-
-        <div className="flex flex-col gap-6">
-          <section className="rounded-lg border p-4 sm:p-6">
-            <h3 className="mb-4 text-base font-semibold">
-              {t("detailsSection")}
-            </h3>
-            <dl className="flex flex-col gap-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("detailsForm")}</dt>
-                <dd>
-                  <Link
-                    href={`/dashboard/forms/${submission.form.id}`}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {submission.form.name}
-                  </Link>
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">
-                  {t("detailsReceived")}
-                </dt>
-                <dd
-                  title={`${formatDate(locale, submission.createdAt)} ${formatTime(locale, submission.createdAt)}`}
-                >
-                  {formatRelativeDate(locale, submission.createdAt)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("detailsOrigin")}</dt>
-                <dd>{submission.originDomain}</dd>
-              </div>
-              {submission.pageUrl && (
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">{t("detailsPage")}</dt>
-                  <dd className="truncate">
-                    <a
-                      href={submission.pageUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline"
-                    >
-                      <span className="max-w-64 truncate">
-                        {submission.pageUrl}
-                      </span>
-                      <ExternalLink className="size-3.5 shrink-0" />
-                    </a>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("submissionSection")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="flex flex-col gap-3">
+              {dataEntries.map(([key, value]) => (
+                <div key={key} className="grid gap-1">
+                  <dt className="text-sm font-medium text-muted-foreground">
+                    {key}
+                  </dt>
+                  <dd className="text-sm break-words whitespace-pre-wrap">
+                    {formatValue(value)}
                   </dd>
                 </div>
-              )}
-              {submission.ipAddress && (
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">
-                    {t("detailsIpAddress")}
-                  </dt>
-                  <dd className="font-mono text-xs">{submission.ipAddress}</dd>
-                </div>
-              )}
-              {submission.userAgent && (
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">
-                    {t("detailsBrowser")}
-                  </dt>
-                  <dd
-                    className="max-w-64 truncate text-xs"
-                    title={submission.userAgent}
-                  >
-                    {submission.userAgent}
-                  </dd>
-                </div>
+              ))}
+              {dataEntries.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t("noFieldValues")}
+                </p>
               )}
             </dl>
-          </section>
+          </CardContent>
+        </Card>
 
-          <section className="rounded-lg border p-4 sm:p-6">
-            <h3 className="mb-4 text-base font-semibold">
-              {t("historySection")}
-            </h3>
-            {submission.events.length === 0 && (
-              <p className="text-sm text-muted-foreground">{t("noEvents")}</p>
-            )}
-            <ul className="flex flex-col gap-3">
-              {submission.events.map((event) => (
-                <li key={event.id} className="flex items-start gap-2 text-sm">
-                  <Badge variant="outline" className="shrink-0">
-                    {EVENT_LABEL_KEYS[event.type]
-                      ? t(EVENT_LABEL_KEYS[event.type])
-                      : event.type}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    {formatRelativeDate(locale, event.createdAt)}
-                    {event.actor
-                      ? ` · ${event.actor.name ?? event.actor.email}`
-                      : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("detailsSection")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="flex flex-col gap-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("detailsForm")}</dt>
+                  <dd>
+                    <Link
+                      href={`/dashboard/forms/${submission.form.id}`}
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      {submission.form.name}
+                    </Link>
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">
+                    {t("detailsReceived")}
+                  </dt>
+                  <dd
+                    title={`${formatDate(locale, submission.createdAt)} ${formatTime(locale, submission.createdAt)}`}
+                  >
+                    {formatRelativeDate(locale, submission.createdAt)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">
+                    {t("detailsOrigin")}
+                  </dt>
+                  <dd>{submission.originDomain}</dd>
+                </div>
+                {submission.pageUrl && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">
+                      {t("detailsPage")}
+                    </dt>
+                    <dd className="truncate">
+                      <a
+                        href={submission.pageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline"
+                      >
+                        <span className="max-w-64 truncate">
+                          {submission.pageUrl}
+                        </span>
+                        <RiExternalLinkLine className="size-3.5 shrink-0" />
+                      </a>
+                    </dd>
+                  </div>
+                )}
+                {submission.ipAddress && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">
+                      {t("detailsIpAddress")}
+                    </dt>
+                    <dd className="font-mono text-xs">
+                      {submission.ipAddress}
+                    </dd>
+                  </div>
+                )}
+                {submission.userAgent && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">
+                      {t("detailsBrowser")}
+                    </dt>
+                    <dd
+                      className="max-w-64 truncate text-xs"
+                      title={submission.userAgent}
+                    >
+                      {submission.userAgent}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("historySection")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {submission.events.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t("noEvents")}</p>
+              )}
+              <ul className="flex flex-col gap-3">
+                {submission.events.map((event) => (
+                  <li key={event.id} className="flex items-start gap-2 text-sm">
+                    <Badge variant="outline" className="shrink-0">
+                      {EVENT_LABEL_KEYS[event.type]
+                        ? t(EVENT_LABEL_KEYS[event.type])
+                        : event.type}
+                    </Badge>
+                    <span className="text-muted-foreground">
+                      {formatRelativeDate(locale, event.createdAt)}
+                      {event.actor
+                        ? ` · ${event.actor.name ?? event.actor.email}`
+                        : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
 
           <ReplySection submission={submission} />
         </div>
@@ -399,59 +420,63 @@ function ReplySection({ submission }: { submission: InboxSubmissionDetail }) {
   }
 
   return (
-    <section className="rounded-lg border p-4 sm:p-6">
-      <h3 className="mb-2 text-base font-semibold">{t("replySection")}</h3>
-      <p className="text-sm text-muted-foreground">
-        {t("replyDescription", { email: sender.email })}
-      </p>
-      <div className="mt-3 flex flex-col gap-1.5">
-        <div>
-          <Button
-            variant="outline"
-            onClick={onDraft}
-            disabled={!aiEnabled || draft.isPending || send.isPending}
-          >
-            {draft.isPending ? t("drafting") : t("suggestWithAi")}
-          </Button>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("replySection")}</CardTitle>
+        <CardDescription>
+          {t("replyDescription", { email: sender.email })}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <div>
+            <Button
+              variant="outline"
+              onClick={onDraft}
+              disabled={!aiEnabled || draft.isPending || send.isPending}
+            >
+              {draft.isPending ? t("drafting") : t("suggestWithAi")}
+            </Button>
+          </div>
+          {!aiEnabled && (
+            <p className="text-sm text-muted-foreground">
+              {t("suggestAiDisabled")}
+            </p>
+          )}
         </div>
-        {!aiEnabled && (
-          <p className="text-sm text-muted-foreground">
-            {t("suggestAiDisabled")}
+        <div className="flex flex-col gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="reply-subject">{t("subjectLabel")}</Label>
+            <Input
+              id="reply-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="reply-body">{t("bodyLabel")}</Label>
+            <Textarea
+              id="reply-body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={6}
+            />
+          </div>
+          <div>
+            <Button
+              onClick={onSend}
+              disabled={!subject.trim() || !body.trim() || send.isPending}
+            >
+              {send.isPending ? t("sending") : t("sendReply")}
+            </Button>
+          </div>
+        </div>
+        {sent && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t("replyQueuedNote")}
           </p>
         )}
-      </div>
-      <div className="mt-4 flex flex-col gap-3">
-        <div className="grid gap-1.5">
-          <Label htmlFor="reply-subject">{t("subjectLabel")}</Label>
-          <Input
-            id="reply-subject"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="reply-body">{t("bodyLabel")}</Label>
-          <Textarea
-            id="reply-body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={6}
-          />
-        </div>
-        <div>
-          <Button
-            onClick={onSend}
-            disabled={!subject.trim() || !body.trim() || send.isPending}
-          >
-            {send.isPending ? t("sending") : t("sendReply")}
-          </Button>
-        </div>
-      </div>
-      {sent && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          {t("replyQueuedNote")}
-        </p>
-      )}
-    </section>
+      </CardContent>
+    </Card>
   )
 }

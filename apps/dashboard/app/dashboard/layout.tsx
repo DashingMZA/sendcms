@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 
@@ -44,12 +45,18 @@ export default async function DashboardLayout({
   const side = getLocaleDirection(locale) === "rtl" ? "right" : "left"
   const dictionaries = await getDictionaries(locale, DASHBOARD_SHELL_DOMAINS)
 
+  // UX-006: the sidebar's open/collapsed state survives reloads — the
+  // client persists it in the `sidebar_state` cookie and the server
+  // reads it here so the first paint already matches.
+  const sidebarState = (await cookies()).get("sidebar_state")?.value
+  const sidebarDefaultOpen = sidebarState !== "false"
+
   return (
     <QueryProvider>
       <LocaleProvider locale={locale}>
         <TranslationProvider dictionaries={dictionaries}>
           <TooltipProvider>
-            <SidebarProvider>
+            <SidebarProvider defaultOpen={sidebarDefaultOpen}>
               <AppSidebar
                 user={session.user}
                 domainCount={domainCount}

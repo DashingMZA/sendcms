@@ -5,6 +5,7 @@ import { getAdminOverview } from "@sendcms/platform-ops"
 import { OverviewQuerySchema } from "@sendcms/platform-ops/validators"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { OverviewDashboard } from "@/components/admin/overview-dashboard"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -45,12 +46,11 @@ export default async function AdminOverviewPage({
   const t = await getTranslator(locale, "overview")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("description")}</p>
-      </div>
-      <OverviewDashboard initialData={overview} query={query} />
-    </main>
+    <div>
+      <PageHeader title={t("title")} description={t("description")} />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <OverviewDashboard initialData={overview} query={query} />
+      </main>
+    </div>
   )
 }

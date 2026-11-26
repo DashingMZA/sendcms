@@ -1,8 +1,8 @@
 "use client"
 
+import { RiCloseLine, RiSearchLine } from "@remixicon/react"
 import { useRef, useState } from "react"
 import { toast } from "sonner"
-import { Search, X } from "lucide-react"
 import {
   adminCan,
   type AdminRole,
@@ -342,7 +342,7 @@ export function MigrationWizard({ actorRole }: Props) {
           ) : (
             <div className="flex flex-col gap-3">
               <div className="relative max-w-md">
-                <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder={t("migrateUserSearchPlaceholder")}
                   value={search}
@@ -388,7 +388,7 @@ export function MigrationWizard({ actorRole }: Props) {
                         onClick={() => toggleUser(user)}
                         aria-label="Remove"
                       >
-                        <X className="size-3" aria-hidden="true" />
+                        <RiCloseLine className="size-3" aria-hidden="true" />
                       </button>
                     </Badge>
                   ))}

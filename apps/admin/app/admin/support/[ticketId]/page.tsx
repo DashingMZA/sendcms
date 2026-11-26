@@ -6,6 +6,7 @@ import { getTicket, listStaffUsers } from "@sendcms/support"
 import { ApiError } from "@sendcms/shared"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { SupportThread } from "@/components/admin/support-thread"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -56,16 +57,19 @@ export default async function AdminSupportThreadPage({
   const t = await getTranslator(locale, "support")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{ticket.subject}</h1>
-        <p className="text-muted-foreground">{t("queueDescription")}</p>
-      </div>
-      <SupportThread
-        initialData={ticket}
-        staffUsers={staffUsers}
-        actorRole={actorRole}
+    <div>
+      <PageHeader
+        title={ticket.subject}
+        description={t("queueDescription")}
+        back={{ href: "/admin/support", label: t("backToQueue") }}
       />
-    </main>
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <SupportThread
+          initialData={ticket}
+          staffUsers={staffUsers}
+          actorRole={actorRole}
+        />
+      </main>
+    </div>
   )
 }

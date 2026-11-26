@@ -4,7 +4,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@sendcms/ui"
 
-import { Copy, Check } from "lucide-react"
+import { RiCheckLine, RiFileCopyLine } from "@remixicon/react"
 import { useTranslation } from "@/components/dashboard/translation-provider"
 
 // One labelled value with its own copy button — DNS records have two
@@ -44,9 +44,9 @@ export function CopyField({
           onClick={copy}
         >
           {copied ? (
-            <Check className="text-success size-3.5" />
+            <RiCheckLine className="size-3.5 text-success" />
           ) : (
-            <Copy className="size-3.5" />
+            <RiFileCopyLine className="size-3.5" />
           )}
           {copied ? t("copied") : t("copy")}
         </Button>

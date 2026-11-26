@@ -1,6 +1,14 @@
 import { format } from "date-fns"
 import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@sendcms/ui"
 import { listFormsForUser } from "@sendcms/forms"
 import {
   listDigestStatesForUser,
@@ -49,46 +57,48 @@ export default async function NotificationsPage({ searchParams }: Props) {
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <div className="flex flex-col gap-6 p-4 sm:p-6">
+      <PageContent>
         {/* EML-093/096: the digest summary — read-only here (the
             toggle + frequency live on each form's detail page), one
             consistent shape with that page's digest section. */}
-        <section className="rounded-lg border p-4 sm:p-6">
-          <h2 className="text-base font-semibold">{t("digestSectionTitle")}</h2>
-          <p className="mb-4 text-sm text-muted-foreground">
-            {t("digestSectionDescription")}
-          </p>
-          {digestStates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t("digestNoForms")}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {digestStates.map((state) => (
-                <li
-                  key={state.formId}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3 text-sm"
-                >
-                  <span className="font-medium">{state.formName}</span>
-                  <span className="text-muted-foreground">
-                    {state.digestEnabled ? t("digestOn") : t("digestOff")}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {t("digestLast")}{" "}
-                    {state.lastDigestAt
-                      ? format(new Date(state.lastDigestAt), "PPpp")
-                      : t("digestNever")}
-                    {" · "}
-                    {t("digestNext")}{" "}
-                    {state.nextDigestAt
-                      ? format(new Date(state.nextDigestAt), "PPpp")
-                      : t("digestNextPending")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("digestSectionTitle")}</CardTitle>
+            <CardDescription>{t("digestSectionDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {digestStates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t("digestNoForms")}
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {digestStates.map((state) => (
+                  <li
+                    key={state.formId}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3 text-sm"
+                  >
+                    <span className="font-medium">{state.formName}</span>
+                    <span className="text-muted-foreground">
+                      {state.digestEnabled ? t("digestOn") : t("digestOff")}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {t("digestLast")}{" "}
+                      {state.lastDigestAt
+                        ? format(new Date(state.lastDigestAt), "PPpp")
+                        : t("digestNever")}
+                      {" · "}
+                      {t("digestNext")}{" "}
+                      {state.nextDigestAt
+                        ? format(new Date(state.nextDigestAt), "PPpp")
+                        : t("digestNextPending")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
         <TranslationProvider dictionaries={dictionaries}>
           <EmailJobsTable
             initialData={list}
@@ -96,7 +106,7 @@ export default async function NotificationsPage({ searchParams }: Props) {
             forms={forms.map((form) => ({ id: form.id, name: form.name }))}
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { countryFromHeaders } from "@sendcms/billing"
 import {
   DASHBOARD_BILLING_DOMAINS,
@@ -37,7 +38,7 @@ export default async function CheckoutPage({
         description={t("checkoutDescription")}
       />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <CheckoutManager
             locale={locale}
@@ -46,7 +47,7 @@ export default async function CheckoutPage({
             cancelled={params.cancelled === "1"}
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

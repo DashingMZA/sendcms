@@ -4,6 +4,7 @@ import { getSubmissionForUser } from "@sendcms/inbox"
 import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { SubmissionDetail } from "../submission-detail"
 import {
   DASHBOARD_INBOX_DOMAINS,
@@ -39,11 +40,11 @@ export default async function SubmissionDetailPage({ params }: Params) {
           origin: submission.originDomain,
         })}
       />
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <SubmissionDetail initialData={submission} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

@@ -2,6 +2,9 @@ import { requireDashboardSession } from "@/lib/require-session"
 import { listApiKeysForUser } from "@sendcms/api-keys"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
+
+import { Button } from "@sendcms/ui"
 
 import {
   DASHBOARD_API_KEYS_DOMAINS,
@@ -22,13 +25,24 @@ export default async function ApiKeysPage() {
 
   return (
     <div>
-      <PageHeader title={t("title")} description={t("description")} />
+      <PageHeader
+        title={t("title")}
+        description={t("description")}
+        action={
+          // UX-110: the page's single primary action — the create
+          // form's submit, wired by form="create-api-key-form" (the
+          // form itself lives in ApiKeysManager below).
+          <Button type="submit" form="create-api-key-form">
+            {t("createKey")}
+          </Button>
+        }
+      />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <ApiKeysManager initialKeys={keys} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

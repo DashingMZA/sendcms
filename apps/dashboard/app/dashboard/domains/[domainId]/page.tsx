@@ -4,6 +4,7 @@ import { getDomainForUser } from "@sendcms/domains"
 import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_DOMAINS_DOMAINS,
   getDictionaries,
@@ -37,11 +38,11 @@ export default async function DomainDetailPage({
     <div>
       <PageHeader title={domain.domain} description={t("detailDescription")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <DomainDetail initialDomain={domain} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

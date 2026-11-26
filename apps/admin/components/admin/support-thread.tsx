@@ -158,17 +158,11 @@ export function SupportThread({ initialData, staffUsers, actorRole }: Props) {
     }
   }
 
+  // UX-008: the back link lives in the shared PageHeader (rendered by
+  // the thread page), not here — one back-link pattern on every
+  // detail/sub page.
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <Link
-          href="/admin/support"
-          className="text-sm underline-offset-4 hover:underline"
-        >
-          ← {t("backToQueue")}
-        </Link>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={STATUS_BADGE_VARIANT[ticket.status]}>
           {t(STATUS_KEYS[ticket.status])}

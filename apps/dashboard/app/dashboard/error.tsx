@@ -3,9 +3,12 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@sendcms/ui"
+import { createLogger } from "@sendcms/observability"
 
-import { AlertTriangle } from "lucide-react"
+import { RiAlertLine } from "@remixicon/react"
 import { useTranslation } from "@/components/dashboard/translation-provider"
+
+const logger = createLogger("dashboard-error")
 
 export default function DashboardError({
   error,
@@ -18,13 +21,12 @@ export default function DashboardError({
   const { t } = useTranslation("navigation")
 
   useEffect(() => {
-    // Log error to monitoring service
-    console.error("Dashboard error:", error)
+    logger.error("Dashboard error:", { error })
   }, [error])
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
-      <AlertTriangle
+      <RiAlertLine
         className="mb-4 size-12 text-destructive"
         aria-hidden="true"
       />

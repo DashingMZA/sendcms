@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { listDomainsForUser } from "@sendcms/domains"
 import { listFormsForUser } from "@sendcms/forms"
 import { listSubmissionsForUser } from "@sendcms/inbox"
@@ -54,7 +55,7 @@ export default async function InboxPage({ searchParams }: Props) {
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <InboxTable
             initialData={list}
@@ -63,7 +64,7 @@ export default async function InboxPage({ searchParams }: Props) {
             domains={domains.map((domain) => ({ domain: domain.domain }))}
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

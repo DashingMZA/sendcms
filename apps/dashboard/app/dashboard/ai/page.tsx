@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_AI_DOMAINS,
   getDictionaries,
@@ -33,14 +34,14 @@ export default async function AiPage() {
     <div>
       <PageHeader title={t("title")} description={t("description")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <AiManager
             initialKeys={initialKeys}
             initialBillingMode={initialBillingMode}
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

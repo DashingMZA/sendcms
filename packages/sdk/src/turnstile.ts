@@ -23,6 +23,13 @@ declare global {
   }
 }
 
+// Turnstile trust decision (SRC-328(b)): the script is loaded
+// without SRI on purpose. Cloudflare serves api.js dynamically —
+// the bytes change per request, so no stable hash exists to pin
+// (this is the standard Turnstile integration, not an oversight).
+// The trust boundary is the token, not the script: the token is
+// verified server-side against Cloudflare, so a tampered script
+// cannot forge a passing verification.
 const TURNSTILE_SCRIPT_URL =
   "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onloadTurnstileCallback"
 

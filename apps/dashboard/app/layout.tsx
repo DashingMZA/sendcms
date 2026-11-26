@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
@@ -15,6 +15,24 @@ export const metadata: Metadata = {
   // PRF-034). Defence in depth alongside robots.ts and the
   // `X-Robots-Tag` header in next.config.mjs.
   robots: { index: false, follow: false },
+  // PRF-040: the PWA manifest (Stream C owns the asset) and the
+  // Apple touch icon, so the dashboard installs cleanly.
+  manifest: "/manifest.webmanifest",
+  icons: { apple: "/apple-touch-icon.png" },
+}
+
+// PRF-040: the browser-chrome theme colour, light and dark.
+export const viewport: Viewport = {
+  themeColor: [
+    {
+      media: "(prefers-color-scheme: light)",
+      color: "oklch(0.6373 0.1362 162.517)",
+    },
+    {
+      media: "(prefers-color-scheme: dark)",
+      color: "oklch(0.7678 0.1655 162.189)",
+    },
+  ],
 }
 
 const fontSans = Geist({

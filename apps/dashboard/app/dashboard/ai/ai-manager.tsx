@@ -19,93 +19,31 @@ import type { AiProviderName } from "@sendcms/ai"
 import type { AiBillingMode } from "@sendcms/database"
 import { ApiClientError } from "@sendcms/shared"
 import {
-  Badge,
   Button,
+  Callout,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Input,
-  Label,
   Skeleton,
 } from "@sendcms/ui"
-import { formatDate } from "@sendcms/i18n"
+import { useTranslation } from "@/components/dashboard/translation-provider"
 import {
-  useLocale,
-  useTranslation,
-} from "@/components/dashboard/translation-provider"
-
-// ─── Browser-only keys (localStorage) ──────────────────────────────────
-// A browser-only key lives ONLY in this browser: localStorage under
-// one key per provider. It is sent per request for capability calls
-// (browserKey) and never reaches the server for storage, so
-// background jobs (spam re-scoring, digests) cannot use it. The
-// plaintext is read from localStorage only inside an event handler,
-// never kept in React state, and never displayed.
-const BROWSER_KEY_PREFIX = "sendcms:ai:browser-key:"
-
-type BrowserKeyMeta = { model: string | null; savedAt: string }
-
-function browserKeyStorageKey(provider: AiProviderName): string {
-  return `${BROWSER_KEY_PREFIX}${provider}`
-}
-
-function readBrowserKeyMeta(provider: AiProviderName): BrowserKeyMeta | null {
-  try {
-    const raw = localStorage.getItem(browserKeyStorageKey(provider))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as {
-      apiKey?: unknown
-      model?: unknown
-      savedAt?: unknown
-    }
-    if (typeof parsed.apiKey !== "string") return null
-    return {
-      model: typeof parsed.model === "string" ? parsed.model : null,
-      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : "",
-    }
-  } catch {
-    return null
-  }
-}
-
-function readBrowserKeyValue(provider: AiProviderName): string | null {
-  try {
-    const raw = localStorage.getItem(browserKeyStorageKey(provider))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { apiKey?: unknown }
-    return typeof parsed.apiKey === "string" ? parsed.apiKey : null
-  } catch {
-    return null
-  }
-}
-
-function writeBrowserKey(
-  provider: AiProviderName,
-  apiKey: string,
-  model: string
-): void {
-  localStorage.setItem(
-    browserKeyStorageKey(provider),
-    JSON.stringify({
-      apiKey,
-      model: model.trim() || null,
-      savedAt: new Date().toISOString(),
-    })
-  )
-}
-
-function removeBrowserKey(provider: AiProviderName): void {
-  localStorage.removeItem(browserKeyStorageKey(provider))
-}
+  readBrowserKeyMeta,
+  readBrowserKeyValue,
+  removeBrowserKey,
+  writeBrowserKey,
+  type BrowserKeyMeta,
+} from "./ai-browser-keys"
+import { ProviderKeyCard } from "./ai-provider-key-card"
+import { StoragePopup, type PendingStorageAction } from "./ai-storage-popup"
 
 const ALL_MODES: AiBillingMode[] = ["BYOK", "PLATFORM", "DISABLED"]
 
@@ -117,13 +55,6 @@ const PROVIDER_DISPLAY_NAMES: Record<AiProviderName, string> = {
   openrouter: "OpenRouter",
 }
 
-type PendingStorageAction = {
-  provider: AiProviderName
-  apiKey: string
-  model: string
-  action: "save" | "test"
-}
-
 /**
  * The customer's AI page (Phase 5 — BYOK): one key per provider, a
  * Test button with every saved key, and the billing-mode selector.
@@ -131,6 +62,10 @@ type PendingStorageAction = {
  * (this browser, never the server) or "Both (browser + server)"
  * (encrypted in the database, works from any device). A saved key's
  * value is never displayed — only its fingerprint's last 4 chars.
+ *
+ * (Wave 10, SRC-118: browser-key storage lives in ai-browser-keys.ts,
+ * the per-provider card in ai-provider-key-card.tsx, and the storage
+ * popup in ai-storage-popup.tsx — this file is the shell.)
  */
 export function AiManager({
   initialKeys,
@@ -366,11 +301,7 @@ export function AiManager({
               )
             })
           )}
-          {mode === "BYOK" && (
-            <p className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
-              {t("platformPausedNotice")}
-            </p>
-          )}
+          {mode === "BYOK" && <Callout>{t("platformPausedNotice")}</Callout>}
         </CardContent>
       </Card>
 
@@ -433,9 +364,7 @@ export function AiManager({
               </div>
               <p className="text-xs text-muted-foreground">{t("costNote")}</p>
               {mode === "BYOK" && !hasAnyKey && (
-                <p className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
-                  {t("byokNoKeyWarning")}
-                </p>
+                <Callout>{t("byokNoKeyWarning")}</Callout>
               )}
             </>
           ) : null}
@@ -443,12 +372,9 @@ export function AiManager({
       </Card>
 
       {storageUnavailable && (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm"
-        >
+        <Callout variant="destructive" role="alert">
           {t("storageUnavailableNotice")}
-        </div>
+        </Callout>
       )}
 
       <Card>
@@ -473,6 +399,7 @@ export function AiManager({
                 <ProviderKeyCard
                   key={provider}
                   provider={provider}
+                  displayName={PROVIDER_DISPLAY_NAMES[provider]}
                   serverKey={serverKey ?? null}
                   browserKey={browserKey}
                   testResult={testResults[provider] ?? null}
@@ -519,6 +446,7 @@ export function AiManager({
 
       <StoragePopup
         pending={pending}
+        displayName={pending ? PROVIDER_DISPLAY_NAMES[pending.provider] : ""}
         onClose={() => setPending(null)}
         onBrowserOnly={saveToBrowser}
         onBoth={saveToServer}
@@ -547,334 +475,6 @@ export function AiManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-/**
- * The storage popup (the owner's design): when a user saves or tests
- * a key, they pick where it lives — "Browser only" (this browser,
- * never the server) or "Both (browser + server)" (encrypted in the
- * database, works from any device they sign in on).
- */
-function StoragePopup({
-  pending,
-  onClose,
-  onBrowserOnly,
-  onBoth,
-}: {
-  pending: PendingStorageAction | null
-  onClose: () => void
-  onBrowserOnly: (action: PendingStorageAction) => void
-  onBoth: (
-    action: PendingStorageAction,
-    termsAcknowledged: boolean
-  ) => Promise<void>
-}) {
-  const { t } = useTranslation("ai")
-  const [busy, setBusy] = useState(false)
-  // AIM-025: saving a key on the server sends submission content to
-  // the provider under its data-processing terms — the user must
-  // acknowledge that before "Both" is enabled.
-  const [termsAcknowledged, setTermsAcknowledged] = useState(false)
-
-  if (!pending) return null
-  // Narrowed once here: function declarations are hoisted, so TS
-  // would not narrow `pending` inside chooseBoth on its own.
-  const action = pending
-
-  async function chooseBoth() {
-    setBusy(true)
-    try {
-      await onBoth(action, termsAcknowledged)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {t("storageTitle")} — {PROVIDER_DISPLAY_NAMES[pending.provider]}
-          </DialogTitle>
-          <DialogDescription>{t("storageDescription")}</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => onBrowserOnly(pending)}
-            className="rounded-lg border p-4 text-start hover:bg-accent"
-          >
-            <span className="block text-sm font-semibold">
-              {t("browserOnly")}
-            </span>
-            <span className="block text-sm text-muted-foreground">
-              {t("browserOnlyDescription")}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={chooseBoth}
-            disabled={busy || !termsAcknowledged}
-            className="rounded-lg border p-4 text-start hover:bg-accent disabled:opacity-50"
-          >
-            <span className="block text-sm font-semibold">{t("both")}</span>
-            <span className="block text-sm text-muted-foreground">
-              {t("bothDescription")}
-            </span>
-          </button>
-          <div className="flex items-start gap-2 rounded-lg border p-3">
-            <Checkbox
-              id="ai-terms-acknowledgement"
-              checked={termsAcknowledged}
-              onCheckedChange={(checked) =>
-                setTermsAcknowledged(checked === true)
-              }
-            />
-            <Label
-              htmlFor="ai-terms-acknowledgement"
-              className="text-sm font-normal"
-            >
-              {t("termsAcknowledgement")}
-            </Label>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t("cancel")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ProviderKeyCard({
-  provider,
-  serverKey,
-  browserKey,
-  testResult,
-  onSaveOrTest,
-  onTestServer,
-  onToggleEnabled,
-  onDeleteServer,
-  onDeleteBrowser,
-  onTestBrowser,
-}: {
-  provider: AiProviderName
-  serverKey: UserAiKeyMeta | null
-  browserKey: BrowserKeyMeta | null
-  testResult: AiKeyTestResult | null
-  onSaveOrTest: (apiKey: string, model: string, action: "save" | "test") => void
-  onTestServer: () => void
-  onToggleEnabled: (enabled: boolean) => void
-  onDeleteServer: () => void
-  onDeleteBrowser: () => void
-  onTestBrowser: () => void
-}) {
-  const { t } = useTranslation("ai")
-  const locale = useLocale()
-  const [showForm, setShowForm] = useState(false)
-  const [apiKey, setApiKey] = useState("")
-  const [model, setModel] = useState(serverKey?.model ?? "")
-
-  const valid = apiKey.trim().length >= 8
-
-  function submit(action: "save" | "test") {
-    if (!valid) return
-    onSaveOrTest(apiKey.trim(), model.trim(), action)
-    setApiKey("")
-    setShowForm(false)
-  }
-
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">
-          {PROVIDER_DISPLAY_NAMES[provider]}
-        </h3>
-        <div className="flex gap-2">
-          {serverKey && <Badge variant="secondary">{t("savedOnServer")}</Badge>}
-          {browserKey && (
-            <Badge variant="secondary">{t("savedInBrowser")}</Badge>
-          )}
-          {!serverKey && !browserKey && (
-            <Badge variant="secondary">{t("notSaved")}</Badge>
-          )}
-        </div>
-      </div>
-
-      {serverKey && (
-        <div className="flex flex-col gap-2 text-sm">
-          <p className="text-muted-foreground">
-            {t("modelLabel")}: {serverKey.model ?? t("modelPlaceholder")} ·{" "}
-            {t("keyFingerprint")}: …{serverKey.fingerprintLast4}
-          </p>
-          <p className="text-muted-foreground">
-            {t("lastTested")}:{" "}
-            {serverKey.lastTestedAt
-              ? formatDate(locale, serverKey.lastTestedAt, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : t("neverTested")}{" "}
-            ·{" "}
-            {serverKey.lastTestStatus === "OK"
-              ? t("testOk")
-              : serverKey.lastTestStatus === "FAILED"
-                ? t("testFailed")
-                : t("neverTested")}
-          </p>
-          {/* AIM-003: a key the server auto-disabled after repeated
-              provider rejections says so plainly, with the fix — the
-              user re-enables it after checking the key. */}
-          {!serverKey.isEnabled && serverKey.authFailureCount >= 3 && (
-            <p role="alert" className="text-sm text-destructive">
-              {t("keyAutoDisabled")}
-            </p>
-          )}
-          {testResult && (
-            <p
-              className={
-                testResult.ok
-                  ? "text-sm font-medium"
-                  : "text-sm font-medium text-destructive"
-              }
-            >
-              {testResult.ok
-                ? `${t("testOk")} — ${testResult.model} (${testResult.latencyMs} ms)`
-                : `${t("testFailed")}: ${testResult.error ?? ""}`}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={onTestServer}>
-              {t("testKey")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onToggleEnabled(!serverKey.isEnabled)}
-            >
-              {serverKey.isEnabled ? t("disableKey") : t("enableKey")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDeleteServer}>
-              {t("deleteKey")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setModel(serverKey.model ?? "")
-                setShowForm(true)
-              }}
-            >
-              {t("replaceKey")}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {browserKey && (
-        <div className="flex flex-col gap-2 text-sm">
-          <p className="text-muted-foreground">
-            {t("browserOnlyBadge")} · {t("modelLabel")}:{" "}
-            {browserKey.model ?? t("modelPlaceholder")}
-          </p>
-          {testResult && (
-            <p
-              className={
-                testResult.ok
-                  ? "text-sm font-medium"
-                  : "text-sm font-medium text-destructive"
-              }
-            >
-              {testResult.ok
-                ? `${t("testOk")} — ${testResult.model} (${testResult.latencyMs} ms)`
-                : `${t("testFailed")}: ${testResult.error ?? ""}`}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={onTestBrowser}>
-              {t("testKey")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDeleteBrowser}>
-              {t("deleteKey")}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {showForm || (!serverKey && !browserKey) ? (
-        <div className="flex flex-col gap-3 border-t pt-3">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`ai-key-${provider}`}>{t("saveKey")}</Label>
-            <Input
-              id={`ai-key-${provider}`}
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={t("keyPlaceholder")}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`ai-model-${provider}`}>{t("modelLabel")}</Label>
-            <Input
-              id={`ai-model-${provider}`}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={t("modelPlaceholder")}
-            />
-            <p className="text-xs text-muted-foreground">{t("modelHint")}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={!valid} onClick={() => submit("save")}>
-              {t("saveKey")}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!valid}
-              onClick={() => submit("test")}
-            >
-              {t("testKey")}
-            </Button>
-            {showForm && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowForm(false)
-                  setApiKey("")
-                }}
-              >
-                {t("cancel")}
-              </Button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setModel(serverKey?.model ?? browserKey?.model ?? "")
-              setShowForm(true)
-            }}
-          >
-            {t("replaceKey")}
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

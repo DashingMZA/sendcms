@@ -9,8 +9,10 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-      aria-label="Toggle theme"
-      title="Toggle theme"
+      // The keyboard shortcut for this button (SRC-322): chorded on
+      // purpose, so a bare keypress never flips the theme.
+      aria-label="Toggle theme (Ctrl+Shift+D)"
+      title="Toggle theme (Ctrl+Shift+D)"
       className="fixed right-6 bottom-6 z-[100] flex size-11 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-colors hover:bg-muted"
     >
       <Sun className="size-5 dark:hidden" aria-hidden="true" />

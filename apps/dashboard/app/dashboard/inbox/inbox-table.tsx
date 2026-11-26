@@ -19,6 +19,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  EmptyState,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -43,7 +44,12 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@sendcms/ui"
+
+import { RiDeleteBinLine, RiInboxLine, RiMoreLine } from "@remixicon/react"
 
 import { InboxSearchInput } from "./inbox-search-input"
 import {
@@ -54,8 +60,6 @@ import {
   useLocale,
   useTranslation,
 } from "@/components/dashboard/translation-provider"
-
-import { MoreHorizontal, Trash2 } from "lucide-react"
 
 const TABS: { key: InboxTabInput; labelKey: string }[] = [
   { key: "all", labelKey: "tabAll" },
@@ -236,24 +240,26 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-1">
-        {TABS.map(({ key, labelKey }) => (
-          <Button
-            key={key}
-            variant={tab === key ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setParam("tab", key === "all" ? null : key)}
-          >
-            {t(labelKey)}
-            <Badge
-              variant={tab === key ? "secondary" : "outline"}
-              className="ml-1"
-            >
-              {list.counts[key]}
-            </Badge>
-          </Button>
-        ))}
-      </div>
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          setParam("tab", value === "all" ? null : value)
+        }
+      >
+        <TabsList className="h-auto flex-wrap justify-start">
+          {TABS.map(({ key, labelKey }) => (
+            <TabsTrigger key={key} value={key}>
+              {t(labelKey)}
+              <Badge
+                variant={tab === key ? "secondary" : "outline"}
+                className="ml-1"
+              >
+                {list.counts[key]}
+              </Badge>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="flex flex-wrap items-end gap-3">
         <InboxSearchInput defaultValue={params.search ?? ""} />
@@ -361,7 +367,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
             onClick={bulkDelete}
             disabled={deleteSubmission.isPending}
           >
-            <Trash2 className="size-3.5" /> {t("delete")}
+            <RiDeleteBinLine className="size-3.5" /> {t("delete")}
           </Button>
           <Button
             variant="ghost"
@@ -389,8 +395,12 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
               </TableHead>
               <TableHead>{t("colSender")}</TableHead>
               <TableHead>{t("colMessage")}</TableHead>
-              <TableHead>{t("colForm")}</TableHead>
-              <TableHead>{t("colOrigin")}</TableHead>
+              <TableHead className="hidden md:table-cell">
+                {t("colForm")}
+              </TableHead>
+              <TableHead className="hidden md:table-cell">
+                {t("colOrigin")}
+              </TableHead>
               <TableHead>{t("colReceived")}</TableHead>
               <TableHead>{t("colStatus")}</TableHead>
               <TableHead className="w-10" />
@@ -399,13 +409,16 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
           <TableBody>
             {list.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-12 text-center">
-                  <p className="font-medium">{t("emptyTitle")}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {hasFilters || tab !== "all"
-                      ? t("emptyFiltered")
-                      : t("emptyDescription")}
-                  </p>
+                <TableCell colSpan={8}>
+                  <EmptyState
+                    icon={RiInboxLine}
+                    title={t("emptyTitle")}
+                    description={
+                      hasFilters || tab !== "all"
+                        ? t("emptyFiltered")
+                        : t("emptyDescription")
+                    }
+                  />
                 </TableCell>
               </TableRow>
             )}
@@ -440,8 +453,10 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                 <TableCell className="max-w-64 truncate">
                   {previewSubmissionText(item.data)}
                 </TableCell>
-                <TableCell>{item.formName}</TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
+                  {item.formName}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
                   <bdi dir="ltr">{item.originDomain}</bdi>
                 </TableCell>
                 <TableCell>
@@ -457,7 +472,7 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="size-8 p-0">
-                        <MoreHorizontal className="size-4" />
+                        <RiMoreLine className="size-4" />
                         <span className="sr-only">{t("actions")}</span>
                       </Button>
                     </DropdownMenuTrigger>

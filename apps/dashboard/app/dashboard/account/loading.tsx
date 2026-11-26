@@ -1,13 +1,17 @@
+import { PageHeaderSkeleton } from "@/components/dashboard/page-header-skeleton"
+import { PageContent } from "@/components/dashboard/page-content"
 import { Skeleton } from "@sendcms/ui"
 
 export default function AccountLoading() {
   return (
-    <div className="flex max-w-xl flex-col gap-6 p-6">
-      <div className="flex flex-col gap-2">
-        <Skeleton className="h-7 w-32" />
-        <Skeleton className="h-4 w-64" />
-      </div>
-      <Skeleton className="h-64 w-full" />
+    <div>
+      <PageHeaderSkeleton />
+
+      <PageContent className="max-w-md">
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+      </PageContent>
     </div>
   )
 }

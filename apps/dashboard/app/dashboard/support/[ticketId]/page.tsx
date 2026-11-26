@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { getMyTicket } from "@sendcms/support"
 import { ApiError } from "@sendcms/shared"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_SUPPORT_DOMAINS,
   getDictionaries,
@@ -40,11 +41,11 @@ export default async function TicketPage({
     <div>
       <PageHeader title={ticket.subject} description={t("threadDescription")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <TicketThread ticket={ticket} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

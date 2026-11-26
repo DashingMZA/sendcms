@@ -1,10 +1,12 @@
 import { auth } from "@/lib/auth"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
 
 import { AppSidebar } from "@/components/admin/app-sidebar"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
 import { getLocaleDirection, getRequestLocale } from "@/lib/i18n"
+import { listDeletionRequests } from "@sendcms/platform-ops"
 import { countNewTickets } from "@sendcms/support"
 
 // NOTE: this layout lives at app/admin/layout.tsx (NOT in the (admin)
@@ -45,14 +47,38 @@ export default async function AdminLayout({
     newTicketCount = 0
   }
 
+  // Wave 10, UX-013: the pending-deletion-request count for the
+  // Security nav badge — same best-effort shape. Only the total is
+  // needed, so one row is fetched. Actors without MANAGE_USERS
+  // (e.g. SUPPORT) cannot review deletions; the count degrades to
+  // no badge for them instead of breaking the shell.
+  let pendingDeletionCount = 0
+  try {
+    const { total } = await listDeletionRequests(session, {
+      status: "REQUESTED",
+      page: 1,
+      perPage: 1,
+    })
+    pendingDeletionCount = total
+  } catch {
+    pendingDeletionCount = 0
+  }
+
+  // UX-006: the sidebar writes its collapse state to the
+  // `sidebar_state` cookie on every toggle — read it here so the
+  // choice survives a full page load instead of resetting to
+  // expanded. Absent (or anything but "false") means expanded.
+  const sidebarState = (await cookies()).get("sidebar_state")?.value
+
   return (
     <TooltipProvider>
-      <SidebarProvider>
+      <SidebarProvider defaultOpen={sidebarState !== "false"}>
         <AppSidebar
           user={session.user}
           side={side}
           initialLocale={locale}
           newTicketCount={newTicketCount}
+          pendingDeletionCount={pendingDeletionCount}
         />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>

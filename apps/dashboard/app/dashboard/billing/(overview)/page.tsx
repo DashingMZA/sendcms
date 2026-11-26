@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_BILLING_DOMAINS,
   getDictionaries,
@@ -9,7 +10,7 @@ import {
 } from "@/lib/i18n"
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { getMySubscription, verifyCheckoutReturn } from "@sendcms/billing"
-import { BillingOverview } from "./billing-overview"
+import { BillingOverview } from "../billing-overview"
 
 // The customer's billing page (Phase 8): the current subscription
 // and a link to change plans. SRC-110: the server fetches the
@@ -80,7 +81,7 @@ export default async function BillingPage({
     <div>
       <PageHeader title={t("title")} description={t("description")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <BillingOverview
             locale={locale}
@@ -89,7 +90,7 @@ export default async function BillingPage({
             initialSubscription={subscription}
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

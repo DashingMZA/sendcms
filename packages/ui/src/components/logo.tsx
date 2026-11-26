@@ -21,9 +21,22 @@ type Props = {
   variant?: "auto" | "light" | "dark"
 }
 
+// The shipped brand logo is 208x50 in every app's config.json —
+// the fallback when a brand's configured dimensions are not usable
+// numbers (SRC-328(d)): Number("abc") is NaN, and NaN widths make
+// next/image throw, so garbage config must degrade to the default
+// size instead of erroring the page.
+const DEFAULT_LOGO_WIDTH = 208
+const DEFAULT_LOGO_HEIGHT = 50
+
+function toFiniteDimension(value: string | number, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 export function Logo({ brand, className, variant = "auto" }: Props) {
-  const width = Number(brand.logo_width)
-  const height = Number(brand.logo_height)
+  const width = toFiniteDimension(brand.logo_width, DEFAULT_LOGO_WIDTH)
+  const height = toFiniteDimension(brand.logo_height, DEFAULT_LOGO_HEIGHT)
 
   // Request the image at 2x its display size — sharper on high-DPI screens
   // without relying on the (smaller) automatic srcSet breakpoints.
@@ -37,7 +50,7 @@ export function Logo({ brand, className, variant = "auto" }: Props) {
           alt={brand.logo_text}
           {...sourceSize}
           className={cn(
-            "inline-block h-auto max-w-[160px]",
+            "inline-block h-auto max-w-40",
             variant === "auto" && "dark:hidden"
           )}
           priority
@@ -49,7 +62,7 @@ export function Logo({ brand, className, variant = "auto" }: Props) {
           alt={brand.logo_text}
           {...sourceSize}
           className={cn(
-            "inline-block h-auto max-w-[160px]",
+            "inline-block h-auto max-w-40",
             variant === "auto" ? "hidden dark:block" : "block"
           )}
           priority

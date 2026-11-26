@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { Search, X } from "lucide-react"
 import {
   adminCan,
   type AdminRole,
@@ -41,7 +40,7 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { RiPriceTag3Line } from "@remixicon/react"
+import { RiCloseLine, RiPriceTag3Line, RiSearchLine } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -343,7 +342,7 @@ function PlansSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
 
   return (
     <div className="relative">
-      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
@@ -358,7 +357,7 @@ function PlansSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
           className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearFilters")}
         >
-          <X className="size-4" />
+          <RiCloseLine className="size-4" />
         </button>
       )}
     </div>
@@ -417,7 +416,7 @@ function CreatePlanDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[42rem]">
         <DialogHeader>
           <DialogTitle>{t("createTitle")}</DialogTitle>
           <DialogDescription>{t("createDescription")}</DialogDescription>

@@ -3,9 +3,10 @@ import { requireDashboardSession } from "@/lib/require-session"
 import { listFormsForUser } from "@sendcms/forms"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { InstallSnippet } from "@/components/dashboard/install-snippet"
 import { CopyField } from "../domains/copy-field"
-import { Separator } from "@sendcms/ui"
+import { SectionHeading, Separator } from "@sendcms/ui"
 
 import {
   buildFormExample,
@@ -38,11 +39,9 @@ export default async function ApiPage() {
       <PageHeader title={t("title")} description={t("description")} />
 
       <TranslationProvider dictionaries={dictionaries}>
-        <div className="flex max-w-3xl flex-col gap-8 p-8">
+        <PageContent className="max-w-3xl">
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("userIdTitle")}
-            </h2>
+            <SectionHeading>{t("userIdTitle")}</SectionHeading>
             <Separator />
             <CopyField
               label="userId"
@@ -53,9 +52,7 @@ export default async function ApiPage() {
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("sdkTitle")}
-            </h2>
+            <SectionHeading>{t("sdkTitle")}</SectionHeading>
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("sdkIntro")}{" "}
@@ -112,9 +109,7 @@ export default async function ApiPage() {
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("restTitle")}
-            </h2>
+            <SectionHeading>{t("restTitle")}</SectionHeading>
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("restIntroA")}{" "}
@@ -189,9 +184,7 @@ export default async function ApiPage() {
           </section>
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("mcpTitle")}
-            </h2>
+            <SectionHeading>{t("mcpTitle")}</SectionHeading>
             <Separator />
             <p className="text-sm text-muted-foreground">
               {t("mcpIntroPrefix")}{" "}
@@ -211,7 +204,7 @@ export default async function ApiPage() {
               {t("mcpIntroSuffix")}
             </p>
           </section>
-        </div>
+        </PageContent>
       </TranslationProvider>
     </div>
   )

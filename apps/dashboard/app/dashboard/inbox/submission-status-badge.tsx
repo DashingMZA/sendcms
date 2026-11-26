@@ -27,8 +27,7 @@ const STATUS_BADGE: Record<
   READ: { variant: "secondary" },
   STARRED: {
     variant: "outline",
-    className:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400",
+    className: "border-warning/40 bg-warning/10 text-warning-foreground",
   },
   ARCHIVED: { variant: "outline" },
   SPAM: { variant: "destructive" },

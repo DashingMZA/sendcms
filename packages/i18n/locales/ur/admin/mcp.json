@@ -32,7 +32,7 @@
   "keyActive": "فعال",
   "keyRevoked": "منسوخ شدہ",
   "keysDescription": "ہر API کلید، اس کا مالک، اور پچھلے 30 دنوں کی کالز۔",
-  "keysTitle": "API کلیدیں",
+  "keysTitle": "MCP کلیدیں",
   "killSwitchConfirmDisable": "MCP بند کریں",
   "killSwitchConfirmEnable": "MCP چالو کریں",
   "killSwitchDescription": "عالمی MCP سوئچ۔ جب یہ آف ہو تو ہر MCP کال مسترد کر دی جاتی ہے — tools/list اور tools/call دونوں۔",

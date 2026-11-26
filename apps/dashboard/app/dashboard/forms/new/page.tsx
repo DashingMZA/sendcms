@@ -1,5 +1,6 @@
 import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_FORMS_DOMAINS,
   getDictionaries,
@@ -23,11 +24,11 @@ export default async function NewFormPage() {
     <div>
       <PageHeader title={t("newTitle")} description={t("newDescription")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <NewFormForm />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

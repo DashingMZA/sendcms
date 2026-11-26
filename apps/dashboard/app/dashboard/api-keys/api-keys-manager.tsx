@@ -13,6 +13,16 @@ import { ApiClientError } from "@sendcms/shared"
 import {
   Badge,
   Button,
+  Callout,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  EmptyState,
   Input,
   Label,
   Select,
@@ -28,7 +38,7 @@ import {
   TableRow,
 } from "@sendcms/ui"
 
-import { RiKeyLine, RiRefreshLine } from "@remixicon/react"
+import { RiKeyLine, RiMoreLine, RiRefreshLine } from "@remixicon/react"
 import { CopyField } from "../domains/copy-field"
 import { formatDate } from "@sendcms/i18n"
 import {
@@ -54,6 +64,10 @@ export function ApiKeysManager({
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
+    // UX-110: the submit button lives in the PageHeader action slot
+    // (form="create-api-key-form") — a double click while a create is
+    // in flight must not create two keys.
+    if (createKey.isPending) return
     setError(null)
     setNewKey(null)
     try {
@@ -67,10 +81,9 @@ export function ApiKeysManager({
   }
 
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex max-w-3xl flex-col gap-6">
       {newKey && (
-        <section className="flex flex-col gap-3 rounded-lg border border-amber-500/50 bg-amber-500/5 p-4">
-          <h2 className="text-sm font-semibold">{t("newKeyTitle")}</h2>
+        <Callout title={t("newKeyTitle")}>
           <CopyField
             label={newKeyName ?? t("apiKeyLabel")}
             value={newKey}
@@ -89,77 +102,74 @@ export function ApiKeysManager({
               {t("savedIt")}
             </Button>
           </div>
-        </section>
+        </Callout>
       )}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-          {t("createTitle")}
-        </h2>
-        <form onSubmit={onCreate} className="max-w-lg space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="key-name">{t("nameLabel")}</Label>
-            <Input
-              id="key-name"
-              type="text"
-              autoComplete="off"
-              placeholder="Claude Desktop"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              maxLength={100}
-            />
-            <p className="text-xs text-muted-foreground">{t("nameHint")}</p>
-          </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("createTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            id="create-api-key-form"
+            onSubmit={onCreate}
+            className="max-w-lg space-y-6"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="key-name">{t("nameLabel")}</Label>
+              <Input
+                id="key-name"
+                type="text"
+                autoComplete="off"
+                placeholder="Claude Desktop"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                maxLength={100}
+              />
+              <p className="text-xs text-muted-foreground">{t("nameHint")}</p>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="key-scope">{t("scopeLabel")}</Label>
-            <Select
-              value={scope}
-              onValueChange={(v) => setScope(v as "READ" | "FULL")}
-            >
-              <SelectTrigger id="key-scope">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="FULL">{t("scopeFull")}</SelectItem>
-                <SelectItem value="READ">{t("scopeRead")}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">{t("scopeHint")}</p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="key-scope">{t("scopeLabel")}</Label>
+              <Select
+                value={scope}
+                onValueChange={(v) => setScope(v as "READ" | "FULL")}
+              >
+                <SelectTrigger id="key-scope">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FULL">{t("scopeFull")}</SelectItem>
+                  <SelectItem value="READ">{t("scopeRead")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t("scopeHint")}</p>
+            </div>
 
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
 
-          <Button type="submit" disabled={createKey.isPending}>
-            {createKey.isPending ? t("creating") : t("createKey")}
-          </Button>
-        </form>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-          {t("keysTitle")}
-        </h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("keysTitle")}</CardTitle>
+        </CardHeader>
         {keys.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-            <RiKeyLine
-              className="mb-4 size-10 text-muted-foreground"
-              aria-hidden="true"
+          <CardContent>
+            <EmptyState
+              icon={RiKeyLine}
+              title={t("emptyTitle")}
+              description={t("emptyDescription")}
             />
-            <h3 className="mb-1 text-lg font-semibold text-balance">
-              {t("emptyTitle")}
-            </h3>
-            <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-              {t("emptyDescription")}
-            </p>
-          </div>
+          </CardContent>
         ) : (
-          <div className="rounded-lg border">
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -169,7 +179,7 @@ export function ApiKeysManager({
                   <TableHead>{t("colLastUsed")}</TableHead>
                   <TableHead>{t("colCreated")}</TableHead>
                   <TableHead>{t("colStatus")}</TableHead>
-                  <TableHead className="w-32" />
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -185,9 +195,9 @@ export function ApiKeysManager({
                 ))}
               </TableBody>
             </Table>
-          </div>
+          </CardContent>
         )}
-      </section>
+      </Card>
     </div>
   )
 }
@@ -266,25 +276,30 @@ function ApiKeyRow({
       </TableCell>
       <TableCell>
         {!revoked && (
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onRotate}
-              disabled={rotateKey.isPending}
-            >
-              <RiRefreshLine className="size-3.5" aria-hidden="true" />
-              {t("rotate")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onRevoke}
-              disabled={revokeKey.isPending}
-            >
-              {t("revoke")}
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="size-8 p-0">
+                <RiMoreLine className="size-4" />
+                <span className="sr-only">{t("actions")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={onRotate}
+                disabled={rotateKey.isPending}
+              >
+                <RiRefreshLine className="size-3.5" aria-hidden="true" />
+                {t("rotate")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={onRevoke}
+                disabled={revokeKey.isPending}
+              >
+                {t("revoke")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {error && (
           <p role="alert" className="text-xs text-destructive">

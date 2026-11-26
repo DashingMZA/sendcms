@@ -4,14 +4,23 @@ import { getDashboardOverview } from "@sendcms/analytics"
 import { listFormsForUser } from "@sendcms/forms"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner"
-import { StatCard } from "@/components/dashboard/stat-card"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
 import {
   SUBMISSION_STATUS_LABEL_KEYS,
   SubmissionStatusBadge,
 } from "../inbox/submission-status-badge"
-import { Avatar, AvatarFallback, Badge, Button, Separator } from "@sendcms/ui"
+import {
+  Avatar,
+  AvatarFallback,
+  Badge,
+  Button,
+  EmptyState,
+  SectionHeading,
+  Separator,
+  StatCard,
+} from "@sendcms/ui"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 
 import { formatRelativeDate } from "@sendcms/i18n"
@@ -39,9 +48,9 @@ export default async function OverviewPage() {
       <AnnouncementBanner />
       <PageHeader title={t("title")} description={t("description")} />
 
-      <div className="flex flex-col gap-8 p-8">
+      <PageContent>
         {/* Stat cards */}
-        <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t("statDomains")}
             value={overview.domainCount}
@@ -83,12 +92,10 @@ export default async function OverviewPage() {
         </div>
 
         {/* Activity chart + status breakdown */}
-        <div className="flex flex-wrap gap-8 border-b pb-8">
+        <div className="flex flex-wrap gap-6 border-b pb-8">
           <div className="flex w-full max-w-[750px] flex-col gap-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                {t("activityTitle")}
-              </h2>
+              <SectionHeading>{t("activityTitle")}</SectionHeading>
               <span className="text-xs text-muted-foreground">
                 {t("activityRange")}
               </span>
@@ -101,9 +108,7 @@ export default async function OverviewPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("statusTitle")}
-            </h2>
+            <SectionHeading>{t("statusTitle")}</SectionHeading>
             <Separator />
             <div className="flex flex-1 flex-col justify-center gap-2 py-2">
               {overview.submissionCount === 0 ? (
@@ -151,12 +156,10 @@ export default async function OverviewPage() {
         </div>
 
         {/* Forms list + Recent submissions */}
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                {t("formsTitle")}
-              </h2>
+              <SectionHeading>{t("formsTitle")}</SectionHeading>
               <Button asChild variant="ghost" size="sm">
                 <Link
                   href="/dashboard/forms"
@@ -169,15 +172,17 @@ export default async function OverviewPage() {
             <Separator />
             <div className="flex flex-col">
               {forms.length === 0 ? (
-                <p className="py-4 text-sm text-muted-foreground">
-                  {t("noFormsYet")}{" "}
-                  <Link
-                    href="/dashboard/forms/new"
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {t("createFirstForm")}
-                  </Link>
-                </p>
+                <EmptyState
+                  icon={RiFileListLine}
+                  title={t("noFormsYet")}
+                  cta={
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href="/dashboard/forms/new">
+                        {t("createFirstForm")}
+                      </Link>
+                    </Button>
+                  }
+                />
               ) : (
                 forms.map((form) => (
                   <Link
@@ -221,9 +226,7 @@ export default async function OverviewPage() {
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                {t("recentTitle")}
-              </h2>
+              <SectionHeading>{t("recentTitle")}</SectionHeading>
               <Button asChild variant="ghost" size="sm">
                 <Link
                   href="/dashboard/inbox"
@@ -236,9 +239,7 @@ export default async function OverviewPage() {
             <Separator />
             <div className="flex flex-col">
               {overview.recentSubmissions.length === 0 ? (
-                <p className="py-4 text-sm text-muted-foreground">
-                  {t("noSubmissions")}
-                </p>
+                <EmptyState icon={RiInboxLine} title={t("noSubmissions")} />
               ) : (
                 overview.recentSubmissions.map((submission) => (
                   <Link
@@ -278,7 +279,7 @@ export default async function OverviewPage() {
             </div>
           </div>
         </div>
-      </div>
+      </PageContent>
     </div>
   )
 }

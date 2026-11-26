@@ -8,6 +8,7 @@ import { useTheme } from "next-themes"
 import config from "@/config/config.json"
 import { docsUrl } from "@/lib/app-links"
 import { Logo } from "@sendcms/ui"
+import { resolveActiveHref } from "@/lib/nav-active"
 import { useTranslation } from "@/components/dashboard/translation-provider"
 import { LanguageSelector } from "@/components/dashboard/language-selector"
 import type { LocaleCode } from "@/lib/i18n-client"
@@ -35,6 +36,7 @@ import {
   Avatar,
   AvatarFallback,
   AvatarImage,
+  Badge,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -161,6 +163,12 @@ export function AppSidebar({
   ]
 
   const pathname = usePathname()
+  // UX-305: one active item — the longest href matching on a segment
+  // boundary (so /dashboard/api-keys does not also light /dashboard/api).
+  const activeHref = resolveActiveHref(
+    pathname,
+    navGroups.flatMap((group) => group.items.map((item) => item.href))
+  )
   const { resolvedTheme, setTheme } = useTheme()
   const themeLabel = resolvedTheme === "dark" ? t("darkMode") : t("lightMode")
   // Collapsed-icon tooltips sit on the sidebar's OUTER side: right
@@ -179,14 +187,23 @@ export function AppSidebar({
       <SidebarHeader className="mb-0">
         <SidebarMenu>
           <SidebarMenuItem>
+            {/* UX-014: in icon mode the wordmark hides and a compact
+                "S" tile takes its place. */}
             <SidebarMenuButton
               size="lg"
-              className="flex items-center p-0 hover:bg-transparent"
+              className="flex items-center p-0 group-data-[collapsible=icon]:hidden hover:bg-transparent"
             >
               <Link href="/dashboard" className="max-h-[42px] ps-0">
                 <Logo brand={config.site} />
               </Link>
             </SidebarMenuButton>
+            <Link
+              href="/dashboard"
+              aria-label={t("overview")}
+              className="mx-auto hidden size-8 items-center justify-center rounded-lg bg-primary text-base font-bold text-primary-foreground group-data-[collapsible=icon]:flex"
+            >
+              S
+            </Link>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -222,10 +239,7 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu className="gap-1">
                 {group.items.map((item) => {
-                  const active =
-                    item.href === "/dashboard"
-                      ? pathname === "/dashboard"
-                      : pathname.startsWith(item.href)
+                  const active = item.href === activeHref
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
@@ -237,9 +251,12 @@ export function AppSidebar({
                           <item.icon aria-hidden="true" />
                           <span className="truncate">{item.label}</span>
                           {item.badge !== undefined && (
-                            <span className="ms-auto me-1 text-xs font-bold group-data-[collapsible=icon]:hidden">
+                            <Badge
+                              variant="secondary"
+                              className="ms-auto me-1 group-data-[collapsible=icon]:hidden"
+                            >
                               {item.badge}
-                            </span>
+                            </Badge>
                           )}
                         </Link>
                       </SidebarMenuButton>

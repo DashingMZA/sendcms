@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { AiProviders } from "@/components/admin/ai-providers"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -33,14 +34,14 @@ export default async function AdminAiProvidersPage() {
   const t = await getTranslator(locale, "ai")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("providersTitle")}
-        </h1>
-        <p className="text-muted-foreground">{t("providersDescription")}</p>
-      </div>
-      <AiProviders actorRole={actorRole} />
-    </main>
+    <div>
+      <PageHeader
+        title={t("providersTitle")}
+        description={t("providersDescription")}
+      />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <AiProviders actorRole={actorRole} />
+      </main>
+    </div>
   )
 }

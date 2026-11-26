@@ -1,8 +1,11 @@
+import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { listMyTickets } from "@sendcms/support"
 import { MyTicketsQuerySchema } from "@sendcms/support/validators"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
+import { Button } from "@sendcms/ui"
 import {
   DASHBOARD_SUPPORT_DOMAINS,
   getDictionaries,
@@ -10,7 +13,7 @@ import {
   getTranslator,
 } from "@/lib/i18n"
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
-import { SupportList } from "./support-list"
+import { SupportList } from "../support-list"
 
 // The customer's support tickets (Phase 8). The server fetches the
 // caller's own tickets and passes them as initialData; the client
@@ -39,13 +42,23 @@ export default async function SupportPage({
 
   return (
     <div>
-      <PageHeader title={t("title")} description={t("description")} />
+      <PageHeader
+        title={t("title")}
+        description={t("description")}
+        action={
+          // UX-110: the page's single primary action — moved out of
+          // the SupportList toolbar.
+          <Button asChild>
+            <Link href="/dashboard/support/new">{t("newTicket")}</Link>
+          </Button>
+        }
+      />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <SupportList initialData={initialData} filters={filters} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

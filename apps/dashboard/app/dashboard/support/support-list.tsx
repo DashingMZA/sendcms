@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   CardContent,
+  EmptyState,
   Select,
   SelectContent,
   SelectItem,
@@ -22,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
+import { RiCustomerServiceLine } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -147,23 +149,16 @@ export function SupportList({ initialData, filters }: Props) {
             ))}
           </SelectContent>
         </Select>
-        <Button asChild className="ms-auto">
-          <Link href="/dashboard/support/new">{t("newTicket")}</Link>
-        </Button>
       </div>
 
       {page.tickets.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="mb-1 text-sm font-medium">{t("emptyTickets")}</p>
-            <p className="mb-4 text-sm text-muted-foreground">
-              {t("emptyTicketsDescription")}
-            </p>
-            <Button asChild>
-              <Link href="/dashboard/support/new">{t("newTicket")}</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        // UX-104/110: the shared empty state, with NO cta — "New
+        // ticket" already sits in the PageHeader action slot.
+        <EmptyState
+          icon={RiCustomerServiceLine}
+          title={t("emptyTickets")}
+          description={t("emptyTicketsDescription")}
+        />
       ) : (
         <Card>
           <CardContent className="p-0">

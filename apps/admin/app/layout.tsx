@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
@@ -27,6 +27,21 @@ export const metadata: Metadata = {
   // PRF-034). Defence in depth alongside robots.ts and the
   // `X-Robots-Tag` header in next.config.mjs.
   robots: { index: false, follow: false },
+}
+
+// Brand theme color (PRF-040): the light/dark pair tracks --primary,
+// so the browser chrome matches the app in both themes.
+export const viewport: Viewport = {
+  themeColor: [
+    {
+      media: "(prefers-color-scheme: light)",
+      color: "oklch(0.6373 0.1362 162.517)",
+    },
+    {
+      media: "(prefers-color-scheme: dark)",
+      color: "oklch(0.7678 0.1655 162.189)",
+    },
+  ],
 }
 
 const fontSans = Geist({
@@ -78,6 +93,8 @@ export default async function RootLayout({
     >
       {/* Favicon */}
       <link rel="icon" type="image/png" href={config.site.favicon} />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      <link rel="manifest" href="/manifest.webmanifest" />
 
       <body suppressHydrationWarning>
         <a

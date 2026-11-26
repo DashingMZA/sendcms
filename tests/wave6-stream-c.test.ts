@@ -428,7 +428,9 @@ describe("AIM-013 / SRC-110 — AI + billing server fetch", () => {
 
   it("the billing page passes the server-fetched subscription as initialData", () => {
     const src = readFileSync(
-      "apps/dashboard/app/dashboard/billing/page.tsx",
+      // Wave 10 (SRC-111): the page lives in the (overview) group so
+      // the billing loading.tsx does not also wrap checkout/.
+      "apps/dashboard/app/dashboard/billing/(overview)/page.tsx",
       "utf8"
     )
     expect(src).toContain("getMySubscription(session.user.id)")

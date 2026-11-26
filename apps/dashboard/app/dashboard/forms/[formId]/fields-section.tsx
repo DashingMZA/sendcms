@@ -15,6 +15,8 @@ import { ApiClientError } from "@sendcms/shared"
 import {
   Badge,
   Button,
+  Card,
+  CardContent,
   Checkbox,
   Input,
   Label,
@@ -137,135 +139,140 @@ function FieldForm({
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex flex-col gap-4 rounded-lg border p-4"
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor={field ? `key-${field.id}` : "key"}>
-            {t("fieldKeyLabel")}
-          </Label>
-          <Input
-            id={field ? `key-${field.id}` : "key"}
-            autoComplete="off"
-            placeholder="email"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!!field}
-            required
-          />
-          <p className="text-xs text-muted-foreground">{t("fieldKeyHint")}</p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={field ? `label-${field.id}` : "label"}>
-            {t("fieldLabelLabel")}
-          </Label>
-          <Input
-            id={field ? `label-${field.id}` : "label"}
-            autoComplete="off"
-            placeholder={t("fieldLabelPlaceholder")}
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={field ? `type-${field.id}` : "type"}>
-            {t("fieldTypeLabel")}
-          </Label>
-          <Select
-            value={type}
-            onValueChange={(v) => setType(v as FormFieldType)}
-          >
-            <SelectTrigger id={field ? `type-${field.id}` : "type"}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FIELD_TYPES.map((ft) => (
-                <SelectItem key={ft} value={ft}>
-                  {TYPE_LABEL[ft]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={field ? `placeholder-${field.id}` : "placeholder"}>
-            {t("placeholderLabel")}
-          </Label>
-          <Input
-            id={field ? `placeholder-${field.id}` : "placeholder"}
-            autoComplete="off"
-            value={placeholder}
-            onChange={(e) => setPlaceholder(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={field ? `min-${field.id}` : "min"}>
-            {t("minLengthLabel")}
-          </Label>
-          <Input
-            id={field ? `min-${field.id}` : "min"}
-            type="number"
-            min={0}
-            max={10000}
-            value={minLength}
-            onChange={(e) => setMinLength(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={field ? `max-${field.id}` : "max"}>
-            {t("maxLengthLabel")}
-          </Label>
-          <Input
-            id={field ? `max-${field.id}` : "max"}
-            type="number"
-            min={0}
-            max={10000}
-            value={maxLength}
-            onChange={(e) => setMaxLength(e.target.value)}
-          />
-        </div>
-      </div>
-      {OPTION_TYPES.includes(type) && (
-        <div className="space-y-2">
-          <Label htmlFor={field ? `options-${field.id}` : "options"}>
-            {t("optionsLabel")}
-          </Label>
-          <Textarea
-            id={field ? `options-${field.id}` : "options"}
-            rows={3}
-            placeholder={t("optionsPlaceholder")}
-            value={optionsText}
-            onChange={(e) => setOptionsText(e.target.value)}
-          />
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id={field ? `required-${field.id}` : "required"}
-          checked={required}
-          onCheckedChange={(v) => setRequired(v === true)}
-        />
-        <Label htmlFor={field ? `required-${field.id}` : "required"}>
-          {t("requiredLabel")}
-        </Label>
-      </div>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? t("saving") : field ? t("saveField") : t("addField")}
-        </Button>
-        <Button type="button" variant="outline" onClick={onDone}>
-          {t("cancel")}
-        </Button>
-      </div>
-    </form>
+    <Card size="sm">
+      <CardContent>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={field ? `key-${field.id}` : "key"}>
+                {t("fieldKeyLabel")}
+              </Label>
+              <Input
+                id={field ? `key-${field.id}` : "key"}
+                autoComplete="off"
+                placeholder="email"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!!field}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("fieldKeyHint")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={field ? `label-${field.id}` : "label"}>
+                {t("fieldLabelLabel")}
+              </Label>
+              <Input
+                id={field ? `label-${field.id}` : "label"}
+                autoComplete="off"
+                placeholder={t("fieldLabelPlaceholder")}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={field ? `type-${field.id}` : "type"}>
+                {t("fieldTypeLabel")}
+              </Label>
+              <Select
+                value={type}
+                onValueChange={(v) => setType(v as FormFieldType)}
+              >
+                <SelectTrigger id={field ? `type-${field.id}` : "type"}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FIELD_TYPES.map((ft) => (
+                    <SelectItem key={ft} value={ft}>
+                      {TYPE_LABEL[ft]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label
+                htmlFor={field ? `placeholder-${field.id}` : "placeholder"}
+              >
+                {t("placeholderLabel")}
+              </Label>
+              <Input
+                id={field ? `placeholder-${field.id}` : "placeholder"}
+                autoComplete="off"
+                value={placeholder}
+                onChange={(e) => setPlaceholder(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={field ? `min-${field.id}` : "min"}>
+                {t("minLengthLabel")}
+              </Label>
+              <Input
+                id={field ? `min-${field.id}` : "min"}
+                type="number"
+                min={0}
+                max={10000}
+                value={minLength}
+                onChange={(e) => setMinLength(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={field ? `max-${field.id}` : "max"}>
+                {t("maxLengthLabel")}
+              </Label>
+              <Input
+                id={field ? `max-${field.id}` : "max"}
+                type="number"
+                min={0}
+                max={10000}
+                value={maxLength}
+                onChange={(e) => setMaxLength(e.target.value)}
+              />
+            </div>
+          </div>
+          {OPTION_TYPES.includes(type) && (
+            <div className="space-y-2">
+              <Label htmlFor={field ? `options-${field.id}` : "options"}>
+                {t("optionsLabel")}
+              </Label>
+              <Textarea
+                id={field ? `options-${field.id}` : "options"}
+                rows={3}
+                placeholder={t("optionsPlaceholder")}
+                value={optionsText}
+                onChange={(e) => setOptionsText(e.target.value)}
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={field ? `required-${field.id}` : "required"}
+              checked={required}
+              onCheckedChange={(v) => setRequired(v === true)}
+            />
+            <Label htmlFor={field ? `required-${field.id}` : "required"}>
+              {t("requiredLabel")}
+            </Label>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" disabled={pending}>
+              {pending ? t("saving") : field ? t("saveField") : t("addField")}
+            </Button>
+            <Button type="button" variant="outline" onClick={onDone}>
+              {t("cancel")}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -487,78 +494,84 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
   }
 
   return (
-    <div className="rounded-lg border p-4">
-      <p className="font-medium">{t("aiBuildTitle")}</p>
-      <p className="text-sm text-muted-foreground">{t("aiBuildDescription")}</p>
-      <div className="mt-3 flex flex-col gap-2">
-        <Textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder={t("aiPromptPlaceholder")}
-          rows={2}
-        />
+    <Card size="sm">
+      <CardContent className="flex flex-col gap-3">
         <div>
-          <Button
-            variant="outline"
-            onClick={onSuggest}
-            disabled={!prompt.trim() || suggest.isPending}
-          >
-            {suggest.isPending ? t("suggesting") : t("suggestFields")}
-          </Button>
+          <p className="font-medium">{t("aiBuildTitle")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("aiBuildDescription")}
+          </p>
         </div>
-      </div>
-      {error && (
-        <p role="alert" className="mt-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {added > 0 && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          {added === 1
-            ? t("addedFieldOne", { count: added })
-            : t("addedFieldsOther", { count: added })}
-        </p>
-      )}
-      {suggestions.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
-          {suggestions.map((field: AiFieldSuggestion) => (
-            <label
-              key={field.name}
-              className="flex items-start gap-2 rounded border px-3 py-2"
-            >
-              <Checkbox
-                checked={selected.has(field.name)}
-                onCheckedChange={() => toggle(field.name)}
-              />
-              <span>
-                <span className="font-medium">{field.label}</span>{" "}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                  {field.name}
-                </code>{" "}
-                <Badge variant="secondary">{TYPE_LABEL[field.type]}</Badge>{" "}
-                {field.required && <Badge>{t("requiredLabel")}</Badge>}
-                {field.options && (
-                  <span className="text-xs text-muted-foreground">
-                    {field.options.join(", ")}
-                  </span>
-                )}
-              </span>
-            </label>
-          ))}
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={t("aiPromptPlaceholder")}
+            rows={2}
+          />
           <div>
             <Button
-              onClick={onAddSelected}
-              disabled={selected.size === 0 || addField.isPending}
+              variant="outline"
+              onClick={onSuggest}
+              disabled={!prompt.trim() || suggest.isPending}
             >
-              {addField.isPending
-                ? t("adding")
-                : selected.size === 1
-                  ? t("addSelectedField", { count: selected.size })
-                  : t("addSelectedFields", { count: selected.size })}
+              {suggest.isPending ? t("suggesting") : t("suggestFields")}
             </Button>
           </div>
         </div>
-      )}
-    </div>
+        {error && (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        {added > 0 && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            {added === 1
+              ? t("addedFieldOne", { count: added })
+              : t("addedFieldsOther", { count: added })}
+          </p>
+        )}
+        {suggestions.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {suggestions.map((field: AiFieldSuggestion) => (
+              <label
+                key={field.name}
+                className="flex items-start gap-2 rounded border px-3 py-2"
+              >
+                <Checkbox
+                  checked={selected.has(field.name)}
+                  onCheckedChange={() => toggle(field.name)}
+                />
+                <span>
+                  <span className="font-medium">{field.label}</span>{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    {field.name}
+                  </code>{" "}
+                  <Badge variant="secondary">{TYPE_LABEL[field.type]}</Badge>{" "}
+                  {field.required && <Badge>{t("requiredLabel")}</Badge>}
+                  {field.options && (
+                    <span className="text-xs text-muted-foreground">
+                      {field.options.join(", ")}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ))}
+            <div>
+              <Button
+                onClick={onAddSelected}
+                disabled={selected.size === 0 || addField.isPending}
+              >
+                {addField.isPending
+                  ? t("adding")
+                  : selected.size === 1
+                    ? t("addSelectedField", { count: selected.size })
+                    : t("addSelectedFields", { count: selected.size })}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

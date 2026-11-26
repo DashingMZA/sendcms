@@ -4,6 +4,7 @@ import { Button } from "@sendcms/ui"
 import { auth } from "@/lib/auth"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 
 // Page <title> follows the page locale (I18N-204): the title
 // is the same key the <h1> renders, so title == heading.
@@ -29,19 +30,19 @@ export default async function UnauthorizedPage() {
   const tErrors = await getTranslator(locale, "errors")
   const tAuth = await getTranslator(locale, "auth")
   return (
-    <main
-      id="main-content"
-      className="flex flex-col items-center justify-center px-4 py-16 text-center"
-    >
-      <h1 className="mb-3 text-2xl font-bold tracking-tight">
-        {tErrors("forbidden")}
-      </h1>
-      <p className="mb-8 max-w-md leading-relaxed text-muted-foreground">
-        {tErrors("unauthorized")}
-      </p>
-      <Button asChild>
-        <Link href={dashboardSignInURL()}>{tAuth("signIn")}</Link>
-      </Button>
-    </main>
+    <div>
+      <PageHeader
+        title={tErrors("forbidden")}
+        description={tErrors("unauthorized")}
+      />
+      <main
+        id="main-content"
+        className="flex flex-col items-center justify-center px-4 py-16 text-center"
+      >
+        <Button asChild>
+          <Link href={dashboardSignInURL()}>{tAuth("signIn")}</Link>
+        </Button>
+      </main>
+    </div>
   )
 }

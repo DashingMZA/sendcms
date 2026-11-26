@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { HealthOverview } from "@/components/admin/health-overview"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -28,12 +29,11 @@ export default async function AdminHealthPage() {
   const t = await getTranslator(locale, "health")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("description")}</p>
-      </div>
-      <HealthOverview />
-    </main>
+    <div>
+      <PageHeader title={t("title")} description={t("description")} />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <HealthOverview />
+      </main>
+    </div>
   )
 }

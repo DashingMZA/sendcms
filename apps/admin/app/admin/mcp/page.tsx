@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { McpOverview } from "@/components/admin/mcp-overview"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -33,14 +34,14 @@ export default async function AdminMcpPage() {
   const t = await getTranslator(locale, "mcp")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("overviewTitle")}
-        </h1>
-        <p className="text-muted-foreground">{t("overviewDescription")}</p>
-      </div>
-      <McpOverview actorRole={actorRole} />
-    </main>
+    <div>
+      <PageHeader
+        title={t("overviewTitle")}
+        description={t("overviewDescription")}
+      />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <McpOverview actorRole={actorRole} />
+      </main>
+    </div>
   )
 }

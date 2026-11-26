@@ -4,7 +4,10 @@
 // tests can use them directly.
 
 export function buildSdkScriptTag(appUrl: string, userId: string): string {
-  return `<script src="${appUrl}/forms/v1.js" data-user-id="${userId}"></script>`
+  // Both values land inside HTML attributes — escape them (SRC-328(c)):
+  // a `"` in appUrl (platform env) or userId would otherwise break
+  // out of the attribute.
+  return `<script src="${escapeAttr(appUrl)}/forms/v1.js" data-user-id="${escapeAttr(userId)}"></script>`
 }
 
 /** The shape buildEmbedSnippet needs from a form — structural, so
@@ -29,6 +32,16 @@ function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
 }
 
+// Text content (labels, legends, option text): `<` and `>` must be
+// escaped too, or a field label can break out of its element
+// (SRC-328(c) follow-up, Wave 10 consolidation).
+function escapeText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
 /** Builds the copy-paste embed snippet for a form: the SDK script tag
     plus a <form> with this form's fields. The SDK auto-enhances the
     form — no JavaScript of your own is needed. When the form has
@@ -46,7 +59,7 @@ export function buildEmbedSnippet(
       ? ` data-turnstile-site-key="${escapeAttr(turnstileSiteKey)}"`
       : ""
   const lines: string[] = [
-    `<script src="${appUrl}/forms/v1.js" data-user-id="${form.ownerId}" data-form-id="${form.id}"${turnstileAttr}></script>`,
+    `<script src="${escapeAttr(appUrl)}/forms/v1.js" data-user-id="${escapeAttr(form.ownerId)}" data-form-id="${escapeAttr(form.id)}"${turnstileAttr}></script>`,
     `<form data-cms-form>`,
   ]
   for (const field of form.fields) {
@@ -59,22 +72,22 @@ export function buildEmbedSnippet(
           (o): o is string => typeof o === "string"
         )
       : []
-    const label = escapeAttr(field.label)
+    const label = escapeText(field.label)
     switch (field.type) {
       case "TEXTAREA":
         lines.push(
           `  <label>${label}`,
-          `    <textarea name="${field.name}"${placeholder}${required}></textarea>`,
+          `    <textarea name="${escapeAttr(field.name)}"${placeholder}${required}></textarea>`,
           `  </label>`
         )
         break
       case "SELECT":
         lines.push(
           `  <label>${label}`,
-          `    <select name="${field.name}"${required}>`,
+          `    <select name="${escapeAttr(field.name)}"${required}>`,
           ...options.map(
             (o) =>
-              `      <option value="${escapeAttr(o)}">${escapeAttr(o)}</option>`
+              `      <option value="${escapeAttr(o)}">${escapeText(o)}</option>`
           ),
           `    </select>`,
           `  </label>`
@@ -86,7 +99,7 @@ export function buildEmbedSnippet(
         lines.push(`  <fieldset>`, `    <legend>${label}</legend>`)
         for (const o of options) {
           lines.push(
-            `    <label><input type="${inputType}" name="${field.name}" value="${escapeAttr(o)}"${required}> ${escapeAttr(o)}</label>`
+            `    <label><input type="${inputType}" name="${escapeAttr(field.name)}" value="${escapeAttr(o)}"${required}> ${escapeText(o)}</label>`
           )
         }
         lines.push(`  </fieldset>`)
@@ -107,7 +120,7 @@ export function buildEmbedSnippet(
                     : "text"
         lines.push(
           `  <label>${label}`,
-          `    <input type="${inputType}" name="${field.name}"${placeholder}${required}>`,
+          `    <input type="${inputType}" name="${escapeAttr(field.name)}"${placeholder}${required}>`,
           `  </label>`
         )
       }

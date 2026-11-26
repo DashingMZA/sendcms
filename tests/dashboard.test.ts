@@ -54,6 +54,26 @@ describe("SDK snippet builders", () => {
     )
   })
 
+  it("escapes quotes and ampersands in the script tag values (SRC-328(c))", () => {
+    // The finding's case: a `"` in appUrl must not break out of the
+    // src attribute.
+    const snippet = buildSdkScriptTag(
+      'https://x.example/" onload="alert(1)',
+      'user"1'
+    )
+    expect(snippet).not.toContain('" onload="')
+    expect(snippet).toContain(
+      'src="https://x.example/&quot; onload=&quot;alert(1)/forms/v1.js"'
+    )
+    expect(snippet).toContain('data-user-id="user&quot;1"')
+    expect(buildSdkScriptTag("https://x.example/?a=1&b=2", "u&1")).toContain(
+      'src="https://x.example/?a=1&amp;b=2/forms/v1.js"'
+    )
+    expect(buildSdkScriptTag("https://x.example/?a=1&b=2", "u&1")).toContain(
+      'data-user-id="u&amp;1"'
+    )
+  })
+
   it("builds a form example with the data-cms-form marker", () => {
     const snippet = buildFormExample(appUrl, userId)
     expect(snippet).toContain("data-cms-form")

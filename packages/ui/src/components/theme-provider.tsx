@@ -34,6 +34,22 @@ function isTypingTarget(target: EventTarget | null) {
   )
 }
 
+// The theme shortcut is deliberately chorded (Ctrl/Cmd+Shift+D):
+// a bare keypress flipped the theme while the user was only typing
+// or navigating (SRC-322). The chord is documented on the theme
+// toggle buttons (title/aria-label).
+export function isThemeToggleHotkey(event: {
+  key?: string
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+}): boolean {
+  if (!(event.metaKey || event.ctrlKey)) return false
+  if (!event.shiftKey || event.altKey) return false
+  return event.key?.toLowerCase() === "d"
+}
+
 function ThemeHotkey() {
   const { resolvedTheme, setTheme } = useTheme()
 
@@ -43,11 +59,7 @@ function ThemeHotkey() {
         return
       }
 
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return
-      }
-
-      if (event.key?.toLowerCase() !== "d") {
+      if (!isThemeToggleHotkey(event)) {
         return
       }
 

@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Input } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
 
-import { Search, X } from "lucide-react"
+import { RiCloseLine, RiSearchLine } from "@remixicon/react"
 
 const DEBOUNCE_MS = 300
 
@@ -64,7 +64,7 @@ export function ListSearchInput({
 
   return (
     <div className="relative">
-      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
@@ -79,7 +79,7 @@ export function ListSearchInput({
           className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearSearch")}
         >
-          <X className="size-4" />
+          <RiCloseLine className="size-4" />
         </button>
       )}
     </div>

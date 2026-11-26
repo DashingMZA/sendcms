@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { BillingEventsTable } from "@/components/admin/billing-events-table"
 import { BillingOverview } from "@/components/admin/billing-overview"
 
@@ -36,13 +37,12 @@ export default async function AdminBillingPage() {
   const t = await getTranslator(locale, "billing")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("description")}</p>
-      </div>
-      <BillingOverview actorRole={actorRole} />
-      <BillingEventsTable actorRole={actorRole} />
-    </main>
+    <div>
+      <PageHeader title={t("title")} description={t("description")} />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <BillingOverview actorRole={actorRole} />
+        <BillingEventsTable actorRole={actorRole} />
+      </main>
+    </div>
   )
 }

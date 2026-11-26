@@ -3,13 +3,13 @@ import { requireDashboardSession } from "@/lib/require-session"
 import { getSubmissionAnalytics } from "@sendcms/analytics"
 
 import { PageHeader } from "@/components/dashboard/page-header"
-import { StatCard } from "@/components/dashboard/stat-card"
+import { PageContent } from "@/components/dashboard/page-content"
 import { SubmissionActivityChart } from "@/components/dashboard/submission-activity-chart"
 import {
   SUBMISSION_STATUS_LABEL_KEYS,
   SubmissionStatusBadge,
 } from "../inbox/submission-status-badge"
-import { Separator } from "@sendcms/ui"
+import { EmptyState, SectionHeading, Separator, StatCard } from "@sendcms/ui"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 
 import type { SubmissionStatus } from "@sendcms/database"
@@ -45,8 +45,8 @@ export default async function AnalyticsPage({
         description={t("descriptionDays", { days })}
       />
 
-      <div className="flex flex-col gap-8 p-8">
-        <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
+      <PageContent>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t("statTotalDays", { days })}
             value={analytics.total}
@@ -72,9 +72,7 @@ export default async function AnalyticsPage({
 
         <div className="flex w-full max-w-[750px] flex-col gap-3 border-b pb-8">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("chartTitle")}
-            </h2>
+            <SectionHeading>{t("chartTitle")}</SectionHeading>
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>{t("rangeLabel")}</span>
               {[7, 30, 90].map((range) => (
@@ -103,16 +101,15 @@ export default async function AnalyticsPage({
           </p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("byFormTitle")}
-            </h2>
+            <SectionHeading>{t("byFormTitle")}</SectionHeading>
             <Separator />
             {analytics.byForm.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">
-                {t("noSubmissionsDays", { days })}
-              </p>
+              <EmptyState
+                icon={RiInboxLine}
+                title={t("noSubmissionsDays", { days })}
+              />
             ) : (
               <div className="flex flex-col">
                 {analytics.byForm.map((row) => (
@@ -136,14 +133,13 @@ export default async function AnalyticsPage({
           </div>
 
           <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-              {t("byDomainTitle")}
-            </h2>
+            <SectionHeading>{t("byDomainTitle")}</SectionHeading>
             <Separator />
             {analytics.byDomain.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">
-                {t("noSubmissionsDays", { days })}
-              </p>
+              <EmptyState
+                icon={RiInboxLine}
+                title={t("noSubmissionsDays", { days })}
+              />
             ) : (
               <div className="flex flex-col">
                 {analytics.byDomain.map((row) => (
@@ -167,14 +163,13 @@ export default async function AnalyticsPage({
         </div>
 
         <div className="flex flex-col gap-4">
-          <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-            {t("byStatusTitle")}
-          </h2>
+          <SectionHeading>{t("byStatusTitle")}</SectionHeading>
           <Separator />
           {analytics.byStatus.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">
-              {t("noSubmissionsDays", { days })}
-            </p>
+            <EmptyState
+              icon={RiInboxLine}
+              title={t("noSubmissionsDays", { days })}
+            />
           ) : (
             <div className="flex flex-wrap gap-2">
               {analytics.byStatus.map((row) => (
@@ -197,7 +192,7 @@ export default async function AnalyticsPage({
             </div>
           )}
         </div>
-      </div>
+      </PageContent>
     </div>
   )
 }

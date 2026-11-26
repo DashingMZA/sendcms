@@ -3,7 +3,6 @@
 import { useCallback, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Search, X } from "lucide-react"
 import {
   useAdminUsers,
   type AdminUserListQuery,
@@ -25,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { RiUserLine } from "@remixicon/react"
+import { RiCloseLine, RiSearchLine, RiUserLine } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -392,7 +391,7 @@ function UsersSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
 
   return (
     <div className="relative">
-      <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder={t("searchPlaceholder")}
@@ -407,7 +406,7 @@ function UsersSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
           className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
           aria-label={t("clearFilters")}
         >
-          <X className="size-4" />
+          <RiCloseLine className="size-4" />
         </button>
       )}
     </div>

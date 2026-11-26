@@ -81,6 +81,30 @@ function ChartContainer({
   )
 }
 
+// A chart color is developer-supplied config, but it is interpolated
+// into a <style> block — an unchecked value can break out of its
+// declaration (SRC-328(e)). Only plain color values are accepted:
+// hex, var(--token), functional colors with safe characters, and
+// named colors. Anything else is dropped (no declaration emitted).
+const SAFE_CHART_COLOR_PATTERN =
+  /^(?:#[0-9a-fA-F]{3,4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|var\(--[A-Za-z0-9_-]+\)|(?:rgb|rgba|hsl|hsla|oklch|oklab)\([\d\s.,%/-]+\)|[a-zA-Z]+)$/
+
+// The --color-<key> custom property name is built from the config key
+// too, so a hostile key must not smuggle in a second declaration.
+const SAFE_CHART_KEY_PATTERN = /^[A-Za-z0-9_-]+$/
+
+// `CSS.escape` is a browser-only global — during SSR `CSS` is
+// undefined, and calling it throws a ReferenceError that breaks the
+// whole page render (admin overview SSR, Wave 10). Fall back to a
+// minimal backslash escape, which is valid inside the quoted
+// attribute selector either way.
+function escapeCssIdentifier(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value)
+  }
+  return value.replace(/[^A-Za-z0-9_-]/g, (ch) => `\\${ch}`)
+}
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme ?? config.color
@@ -96,13 +120,15 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart="${escapeCssIdentifier(id)}"] {
 ${colorConfig
   .map(([key, itemConfig]) => {
+    if (!SAFE_CHART_KEY_PATTERN.test(key)) return null
     const color =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
+    if (!color || !SAFE_CHART_COLOR_PATTERN.test(color)) return null
+    return `  --color-${key}: ${color};`
   })
   .join("\n")}
 }
@@ -222,7 +248,7 @@ function ChartTooltipContent({
                       !hideIndicator && (
                         <div
                           className={cn(
-                            "shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)",
+                            "shrink-0 rounded-sm border-(--color-border) bg-(--color-bg)",
                             {
                               "h-2.5 w-2.5": indicator === "dot",
                               "w-1": indicator === "line",
@@ -313,7 +339,7 @@ function ChartLegendContent({
                 <itemConfig.icon />
               ) : (
                 <div
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
+                  className="h-2 w-2 shrink-0 rounded-sm"
                   style={{
                     backgroundColor: item.color,
                   }}

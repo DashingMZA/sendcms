@@ -4,6 +4,7 @@ import { listFormsPageForUser } from "@sendcms/forms"
 import { FormListQuerySchema } from "@sendcms/forms/validators"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { Button } from "@sendcms/ui"
 
 import { RiAddLine } from "@remixicon/react"
@@ -54,11 +55,11 @@ export default async function FormsPage({ searchParams }: Props) {
         }
       />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <FormsTable initialData={forms} params={params} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

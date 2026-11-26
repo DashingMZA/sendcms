@@ -4,6 +4,7 @@ import { getFormForUser } from "@sendcms/forms"
 import { ApiError } from "@sendcms/api-client"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_FORMS_DOMAINS,
   getDictionaries,
@@ -34,7 +35,7 @@ export default async function FormDetailPage({ params }: Params) {
     <div>
       <PageHeader title={form.name} description={t("detailDescription")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <FormDetail
             initialForm={form}
@@ -44,7 +45,7 @@ export default async function FormDetailPage({ params }: Params) {
             }
           />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

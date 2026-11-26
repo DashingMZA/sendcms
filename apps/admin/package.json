@@ -22,6 +22,7 @@
     "@sendcms/i18n": "workspace:*",
     "@sendcms/mcp": "workspace:*",
     "@sendcms/mcp-admin": "workspace:*",
+    "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",

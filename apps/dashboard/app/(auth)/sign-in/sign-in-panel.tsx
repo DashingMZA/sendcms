@@ -36,13 +36,15 @@ export function SignInPanel() {
       onMouseLeave={() => setMouse((m) => ({ ...m, active: false }))}
       className="relative hidden flex-col justify-between overflow-hidden bg-foreground p-12 text-background lg:flex dark:bg-sidebar dark:text-foreground"
     >
-      {/* Glowing orbs */}
+      {/* Glowing orbs — derived from the brand token so they track the
+          theme (UX-204): color-mix keeps the primary hue and lets the
+          dark theme's lighter primary show through. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-24 -right-24 size-[480px] rounded-full blur-3xl"
         style={{
           background:
-            "radial-gradient(circle, oklch(0.7 0.15 162 / 0.35), transparent 65%)",
+            "radial-gradient(circle, color-mix(in oklch, var(--primary) 35%, transparent), transparent 65%)",
           animation: "orb-float-1 14s ease-in-out infinite",
         }}
       />
@@ -51,7 +53,7 @@ export function SignInPanel() {
         className="pointer-events-none absolute -bottom-28 -left-20 size-[420px] rounded-full blur-3xl"
         style={{
           background:
-            "radial-gradient(circle, oklch(0.65 0.13 175 / 0.28), transparent 65%)",
+            "radial-gradient(circle, color-mix(in oklch, var(--primary) 28%, transparent), transparent 65%)",
           animation: "orb-float-2 18s ease-in-out infinite",
         }}
       />
@@ -60,7 +62,7 @@ export function SignInPanel() {
         className="pointer-events-none absolute top-1/2 left-1/3 size-[280px] -translate-y-1/2 rounded-full blur-3xl"
         style={{
           background:
-            "radial-gradient(circle, oklch(0.72 0.14 155 / 0.18), transparent 65%)",
+            "radial-gradient(circle, color-mix(in oklch, var(--primary) 18%, transparent), transparent 65%)",
           animation: "orb-float-3 22s ease-in-out infinite",
         }}
       />
@@ -71,7 +73,7 @@ export function SignInPanel() {
         className="pointer-events-none absolute inset-0 opacity-[0.08]"
         style={{
           backgroundImage:
-            "linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)",
+            "linear-gradient(var(--primary-foreground) 1px, transparent 1px), linear-gradient(90deg, var(--primary-foreground) 1px, transparent 1px)",
           backgroundSize: "48px 48px",
           animation: "grid-drift 12s linear infinite",
         }}
@@ -83,13 +85,13 @@ export function SignInPanel() {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
-            "linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)",
+            "linear-gradient(var(--primary-foreground) 1px, transparent 1px), linear-gradient(90deg, var(--primary-foreground) 1px, transparent 1px)",
           backgroundSize: "48px 48px",
           animation: "grid-drift 12s linear infinite",
           opacity: mouse.active ? 0.4 : 0,
           transition: "opacity 500ms ease",
-          WebkitMaskImage: `radial-gradient(circle 180px at ${mouse.x}% ${mouse.y}%, black 0%, transparent 100%)`,
-          maskImage: `radial-gradient(circle 180px at ${mouse.x}% ${mouse.y}%, black 0%, transparent 100%)`,
+          WebkitMaskImage: `radial-gradient(circle 180px at ${mouse.x}% ${mouse.y}%, var(--primary-foreground) 0%, transparent 100%)`,
+          maskImage: `radial-gradient(circle 180px at ${mouse.x}% ${mouse.y}%, var(--primary-foreground) 0%, transparent 100%)`,
         }}
       />
 
@@ -98,7 +100,7 @@ export function SignInPanel() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
-          background: `radial-gradient(circle 220px at ${mouse.x}% ${mouse.y}%, oklch(0.7 0.15 162 / 0.18), transparent)`,
+          background: `radial-gradient(circle 220px at ${mouse.x}% ${mouse.y}%, color-mix(in oklch, var(--primary) 18%, transparent), transparent)`,
           opacity: mouse.active ? 1 : 0,
           transition: "opacity 500ms ease",
         }}

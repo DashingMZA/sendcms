@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@sendcms/ui"
 
-import { Download } from "lucide-react"
+import { RiDownloadLine } from "@remixicon/react"
 import type { DomainVerificationMethod } from "@sendcms/database"
 import { formatDate } from "@sendcms/i18n"
 import {
@@ -243,7 +243,7 @@ export function DomainDetail({
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <CardTitle className="text-step-1">{domain.domain}</CardTitle>
+            <CardTitle>{domain.domain}</CardTitle>
             <DomainStatusBadge status={domain.status} />
           </div>
           <CardDescription>
@@ -296,7 +296,7 @@ export function DomainDetail({
                 />
                 <div>
                   <Button variant="outline" onClick={downloadVerificationFile}>
-                    <Download className="size-4" aria-hidden="true" />
+                    <RiDownloadLine className="size-4" aria-hidden="true" />
                     {t("downloadFile")}
                   </Button>
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -324,7 +324,7 @@ export function DomainDetail({
               </p>
             )}
             {check && check.verified && (
-              <p className="text-success text-sm">{t("verifiedMessage")}</p>
+              <p className="text-sm text-success">{t("verifiedMessage")}</p>
             )}
             {error && (
               <p role="alert" className="text-sm text-destructive">

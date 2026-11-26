@@ -5,6 +5,7 @@ import { listTickets } from "@sendcms/support"
 import { AdminTicketsQuerySchema } from "@sendcms/support/validators"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { SupportQueue } from "@/components/admin/support-queue"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -43,16 +44,15 @@ export default async function AdminSupportPage({
   const t = await getTranslator(locale, "support")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("queueTitle")}</h1>
-        <p className="text-muted-foreground">{t("queueDescription")}</p>
-      </div>
-      <SupportQueue
-        initialData={initialData}
-        filters={filters}
-        actorRole={actorRole}
-      />
-    </main>
+    <div>
+      <PageHeader title={t("queueTitle")} description={t("queueDescription")} />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <SupportQueue
+          initialData={initialData}
+          filters={filters}
+          actorRole={actorRole}
+        />
+      </main>
+    </div>
   )
 }

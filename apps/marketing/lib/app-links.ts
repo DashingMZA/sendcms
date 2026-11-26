@@ -22,6 +22,13 @@ export function updatesUrl(): string {
   ).replace(/\/$/, "")
 }
 
+export function docsUrl(): string {
+  return (process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3003").replace(
+    /\/$/,
+    ""
+  )
+}
+
 // Resolve a link from the marketing content (which is written
 // app-agnostic, e.g. "/sign-in") to the app that actually serves it.
 // Same-page anchors and absolute URLs pass through untouched.
@@ -30,5 +37,6 @@ export function resolveLink(link: string): string {
   if (link.startsWith("/sign-in") || link.startsWith("/dashboard"))
     return `${dashboardUrl()}${link}`
   if (link.startsWith("/changelog")) return `${updatesUrl()}${link}`
+  if (link.startsWith("/docs")) return `${docsUrl()}${link}`
   return link
 }

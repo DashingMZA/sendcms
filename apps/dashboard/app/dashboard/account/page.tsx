@@ -4,6 +4,7 @@ import { getUserAuthMethods } from "@sendcms/users"
 import { getConfiguredOAuthProviders } from "@sendcms/auth"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   Avatar,
   AvatarFallback,
@@ -56,7 +57,7 @@ export default async function AccountPage() {
     <div>
       <PageHeader title={t("title")} description={t("description")} />
       <TranslationProvider dictionaries={dictionaries}>
-        <div className="flex max-w-md flex-col gap-6 p-6">
+        <PageContent className="max-w-md">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{t("profileTitle")}</CardTitle>
@@ -151,7 +152,7 @@ export default async function AccountPage() {
           <Separator />
 
           <SignOutButton />
-        </div>
+        </PageContent>
       </TranslationProvider>
     </div>
   )

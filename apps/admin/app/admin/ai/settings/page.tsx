@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { readPlatformConfig } from "@sendcms/plans"
 import { getRequestLocale, getTranslator } from "@/lib/i18n"
 import { adminBaseURL, dashboardSignInURL } from "@/lib/callback-url"
+import { PageHeader } from "@/components/admin/page-header"
 import { AiSettingsPanel } from "@/components/admin/ai-settings-panel"
 
 // Page <title> follows the page locale (I18N-204): the title
@@ -38,14 +39,14 @@ export default async function AdminAiSettingsPage() {
   const t = await getTranslator(locale, "ai")
 
   return (
-    <main id="main-content" className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("settingsTitle")}
-        </h1>
-        <p className="text-muted-foreground">{t("settingsDescription")}</p>
-      </div>
-      <AiSettingsPanel actorRole={actorRole} emergency={emergency} />
-    </main>
+    <div>
+      <PageHeader
+        title={t("settingsTitle")}
+        description={t("settingsDescription")}
+      />
+      <main id="main-content" className="flex flex-col gap-6 p-6">
+        <AiSettingsPanel actorRole={actorRole} emergency={emergency} />
+      </main>
+    </div>
   )
 }

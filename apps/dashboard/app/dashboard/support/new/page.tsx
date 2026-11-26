@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import {
   DASHBOARD_SUPPORT_DOMAINS,
   getDictionaries,
@@ -27,11 +28,11 @@ export default async function NewTicketPage() {
         description={t("newTicketDescription")}
       />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <NewTicketForm />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

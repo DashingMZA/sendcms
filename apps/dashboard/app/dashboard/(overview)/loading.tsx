@@ -6,33 +6,25 @@
 // Scoped to the group, it wraps only the overview page; the detail
 // segments ([domainId], [formId], [submissionId], [ticketId]) have no
 // loading boundary above them, so their notFound() yields a real 404.
+import { PageHeaderSkeleton } from "@/components/dashboard/page-header-skeleton"
+import { PageContent } from "@/components/dashboard/page-content"
 import { Separator, Skeleton } from "@sendcms/ui"
 
 export default function DashboardLoading() {
   return (
     <div>
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <Skeleton className="size-7 shrink-0 rounded-md" />
-        <div className="flex flex-col gap-1.5">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-3 w-48" />
-        </div>
-      </header>
+      <PageHeaderSkeleton />
 
-      <div className="flex flex-col gap-8 p-8">
+      <PageContent>
         {/* Stat cards */}
-        <div className="grid gap-8 border-b pb-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex flex-col gap-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-14" />
-              <Skeleton className="h-3 w-20" />
-            </div>
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
           ))}
         </div>
 
         {/* Charts row */}
-        <div className="flex flex-wrap gap-8 border-b pb-8">
+        <div className="flex flex-wrap gap-6 border-b pb-8">
           <div className="flex w-full max-w-[750px] flex-col gap-3">
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-32" />
@@ -41,22 +33,25 @@ export default function DashboardLoading() {
             <Separator />
             <Skeleton className="h-48 w-full" />
           </div>
-          <div className="flex min-w-[280px] flex-1 flex-col gap-3">
+          <div className="flex flex-1 flex-col gap-4">
             <Skeleton className="h-4 w-32" />
             <Separator />
-            <div className="flex flex-1 items-center gap-6 py-2">
-              <Skeleton className="size-36 shrink-0 rounded-full" />
-              <div className="flex flex-1 flex-col gap-2.5">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-4 w-full" />
-                ))}
-              </div>
+            {/* DSH-005: the loaded status breakdown is three text rows
+                (badge + count), not a donut chart — no circle here. */}
+            <div className="flex flex-col gap-2.5 py-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="ms-auto h-4 w-8" />
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
         {/* Stats + Recent submissions */}
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-20" />
@@ -94,7 +89,7 @@ export default function DashboardLoading() {
             </div>
           </div>
         </div>
-      </div>
+      </PageContent>
     </div>
   )
 }

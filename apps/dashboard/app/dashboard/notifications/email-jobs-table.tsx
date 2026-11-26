@@ -15,6 +15,7 @@ import { ApiClientError } from "@sendcms/shared"
 import {
   Badge,
   Button,
+  EmptyState,
   Label,
   Select,
   SelectContent,
@@ -27,7 +28,12 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@sendcms/ui"
+
+import { RiNotificationLine } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -131,32 +137,35 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-1">
-        {TABS.map(({ key, labelKey }) => {
-          const count =
-            key === "all"
-              ? list.counts.all
-              : list.counts[
-                  key.toLowerCase() as "pending" | "sending" | "sent" | "failed"
-                ]
-          return (
-            <Button
-              key={key}
-              variant={tab === key ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setParam("status", key === "all" ? null : key)}
-            >
-              {t(labelKey)}
-              <Badge
-                variant={tab === key ? "secondary" : "outline"}
-                className="ml-1"
-              >
-                {count}
-              </Badge>
-            </Button>
-          )
-        })}
-      </div>
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          setParam("status", value === "all" ? null : value)
+        }
+      >
+        <TabsList className="h-auto flex-wrap justify-start">
+          {TABS.map(({ key, labelKey }) => {
+            const count =
+              key === "all"
+                ? list.counts.all
+                : list.counts[
+                    key.toLowerCase() as
+                      "pending" | "sending" | "sent" | "failed"
+                  ]
+            return (
+              <TabsTrigger key={key} value={key}>
+                {t(labelKey)}
+                <Badge
+                  variant={tab === key ? "secondary" : "outline"}
+                  className="ml-1"
+                >
+                  {count}
+                </Badge>
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+      </Tabs>
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
@@ -192,19 +201,26 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
               <TableHead>{t("colStatus")}</TableHead>
               <TableHead>{t("colAttempts")}</TableHead>
               <TableHead>{t("colCreated")}</TableHead>
-              <TableHead>{t("colClaimAge")}</TableHead>
-              <TableHead>{t("colLastError")}</TableHead>
+              <TableHead className="hidden md:table-cell">
+                {t("colClaimAge")}
+              </TableHead>
+              <TableHead className="hidden md:table-cell">
+                {t("colLastError")}
+              </TableHead>
               <TableHead>{t("colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="py-12 text-center">
-                  <p className="font-medium">{t("emptyTitle")}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {tab !== "all" ? t("emptyFiltered") : t("emptyDescription")}
-                  </p>
+                <TableCell colSpan={9}>
+                  <EmptyState
+                    icon={RiNotificationLine}
+                    title={t("emptyTitle")}
+                    description={
+                      tab !== "all" ? t("emptyFiltered") : t("emptyDescription")
+                    }
+                  />
                 </TableCell>
               </TableRow>
             )}
@@ -229,7 +245,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                   <TableCell>
                     {formatRelativeDate(locale, job.createdAt)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     {/* EML-094: claim age is shown for SENDING rows
                         (time since the claim, from `updatedAt`); every
                         other status has no claim to age. */}
@@ -237,7 +253,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                       ? formatRelativeDate(locale, job.updatedAt)
                       : "—"}
                   </TableCell>
-                  <TableCell className="max-w-64 truncate text-sm text-muted-foreground">
+                  <TableCell className="hidden max-w-64 truncate text-sm text-muted-foreground md:table-cell">
                     {job.lastError ?? "—"}
                     {job.providerMessageId && (
                       <span className="block font-mono text-xs">
@@ -251,7 +267,7 @@ export function EmailJobsTable({ initialData, params, forms }: Props) {
                         here. `canRequeue` is computed server-side. */}
                     {job.canRequeue && (
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         disabled={requeueingId === job.id}
                         onClick={() => onRequeue(job.id)}

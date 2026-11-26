@@ -1,7 +1,7 @@
 "use client"
 
+import { RiSearchLine } from "@remixicon/react"
 import { useRef, useState } from "react"
-import { Search } from "lucide-react"
 import { useAdminUsers } from "@sendcms/admin-users/queries"
 import {
   useEntitlementOverrides,
@@ -104,7 +104,7 @@ export function UsageOverview() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="relative max-w-md">
-            <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={t("searchPlaceholder")}
               value={search}

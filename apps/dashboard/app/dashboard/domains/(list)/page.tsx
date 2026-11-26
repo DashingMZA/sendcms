@@ -4,6 +4,7 @@ import { listDomainsPageForUser } from "@sendcms/domains"
 import { DomainListQuerySchema } from "@sendcms/domains/validators"
 
 import { PageHeader } from "@/components/dashboard/page-header"
+import { PageContent } from "@/components/dashboard/page-content"
 import { Button } from "@sendcms/ui"
 
 import { RiAddLine } from "@remixicon/react"
@@ -54,11 +55,11 @@ export default async function DomainsPage({ searchParams }: Props) {
         }
       />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         <TranslationProvider dictionaries={dictionaries}>
           <DomainsTable initialData={domains} params={params} />
         </TranslationProvider>
-      </div>
+      </PageContent>
     </div>
   )
 }

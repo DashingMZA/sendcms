@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { Button } from "@sendcms/ui"
+import { PageContent } from "@/components/dashboard/page-content"
+import { Button, Callout } from "@sendcms/ui"
 
 import {
   DASHBOARD_DOMAINS_DOMAINS,
@@ -24,27 +25,26 @@ export default async function NewDomainPage() {
     <div>
       <PageHeader title={t("newTitle")} description={t("newDescription")} />
 
-      <div className="p-4 sm:p-6">
+      <PageContent>
         {emailVerified ? (
           <TranslationProvider dictionaries={dictionaries}>
             <AddDomainForm />
           </TranslationProvider>
         ) : (
-          <div className="flex max-w-lg flex-col gap-4 rounded-lg border border-dashed p-6">
-            <h3 className="text-lg font-semibold">
-              {t("emailVerificationRequired")}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {t("emailVerificationDescription")}
-            </p>
-            <div>
-              <Button asChild size="sm">
-                <Link href="/dashboard/account">{t("goToAccount")}</Link>
-              </Button>
-            </div>
+          // UX-113: a blocking notice is not an empty state — it gets
+          // the shared warning callout, not the dashed empty box.
+          <div className="max-w-lg">
+            <Callout title={t("emailVerificationRequired")}>
+              <p>{t("emailVerificationDescription")}</p>
+              <div>
+                <Button asChild size="sm">
+                  <Link href="/dashboard/account">{t("goToAccount")}</Link>
+                </Button>
+              </div>
+            </Callout>
           </div>
         )}
-      </div>
+      </PageContent>
     </div>
   )
 }

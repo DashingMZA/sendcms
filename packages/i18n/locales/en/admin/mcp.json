@@ -32,7 +32,7 @@
   "keyActive": "Active",
   "keyRevoked": "Revoked",
   "keysDescription": "Every API key, its owner, and its calls in the last 30 days.",
-  "keysTitle": "API keys",
+  "keysTitle": "MCP keys",
   "killSwitchConfirmDisable": "Disable MCP",
   "killSwitchConfirmEnable": "Enable MCP",
   "killSwitchDescription": "The global MCP switch. When off, every MCP call is refused — tools/list and tools/call alike.",

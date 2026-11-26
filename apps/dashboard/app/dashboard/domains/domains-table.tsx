@@ -12,6 +12,7 @@ import { DomainStatusBadge } from "./domain-status-badge"
 import { ListSearchInput } from "@/components/dashboard/list-search-input"
 import {
   Button,
+  EmptyState,
   Label,
   Select,
   SelectContent,
@@ -26,7 +27,7 @@ import {
   TableRow,
 } from "@sendcms/ui"
 
-import { RiAddLine, RiGlobalLine } from "@remixicon/react"
+import { RiAddLine, RiGlobalLine, RiSearchLine } from "@remixicon/react"
 import { formatDate } from "@sendcms/i18n"
 import {
   useLocale,
@@ -115,24 +116,19 @@ export function DomainsTable({
 
   if (list.total === 0 && !params.search) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20 text-center">
-        <RiGlobalLine
-          className="mb-4 size-10 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <h3 className="mb-1 text-lg font-semibold text-balance">
-          {t("emptyTitle")}
-        </h3>
-        <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-          {t("emptyDescription")}
-        </p>
-        <Button asChild size="sm">
-          <Link href="/dashboard/domains/new">
-            <RiAddLine className="size-4" aria-hidden="true" />
-            {t("addDomain")}
-          </Link>
-        </Button>
-      </div>
+      <EmptyState
+        icon={RiGlobalLine}
+        title={t("emptyTitle")}
+        description={t("emptyDescription")}
+        cta={
+          <Button asChild size="sm">
+            <Link href="/dashboard/domains/new">
+              <RiAddLine className="size-4" aria-hidden="true" />
+              {t("addDomain")}
+            </Link>
+          </Button>
+        }
+      />
     )
   }
 
@@ -172,15 +168,20 @@ export function DomainsTable({
           <TableBody>
             {list.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center">
-                  <p className="mb-2 font-medium">{t("noResults")}</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setParam("search", null)}
-                  >
-                    {t("clearSearch")}
-                  </Button>
+                <TableCell colSpan={7}>
+                  <EmptyState
+                    icon={RiSearchLine}
+                    title={t("noResults")}
+                    cta={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setParam("search", null)}
+                      >
+                        {t("clearSearch")}
+                      </Button>
+                    }
+                  />
                 </TableCell>
               </TableRow>
             )}

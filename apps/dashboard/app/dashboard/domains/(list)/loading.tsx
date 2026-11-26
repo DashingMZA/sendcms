@@ -4,19 +4,19 @@
 // a 200 shell before the [domainId] page could call notFound() — a
 // missing or foreign domain rendered the 404 UI with HTTP 200 (DSH-104).
 // Scoped to the group, it wraps only the list page.
+import { PageHeaderSkeleton } from "@/components/dashboard/page-header-skeleton"
+import { PageContent } from "@/components/dashboard/page-content"
 import { Skeleton } from "@sendcms/ui"
 
 export default function DomainsLoading() {
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-7 w-32" />
-          <Skeleton className="h-4 w-56" />
-        </div>
-        <Skeleton className="h-9 w-24" />
-      </div>
-      <Skeleton className="h-64 w-full" />
+    <div>
+      <PageHeaderSkeleton action />
+
+      <PageContent>
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-96 w-full rounded-xl" />
+      </PageContent>
     </div>
   )
 }

@@ -398,6 +398,9 @@ importers:
       '@sendcms/mcp-admin':
         specifier: workspace:*
         version: link:../../packages/modules/mcp-admin
+      '@sendcms/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@sendcms/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions

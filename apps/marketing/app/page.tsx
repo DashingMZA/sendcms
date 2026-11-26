@@ -5,7 +5,7 @@ import config from "@/config/config.json"
 import pkg from "@/package.json"
 import { cn } from "@sendcms/shared"
 import { getListPage, markdownify } from "@sendcms/content"
-import { apiUrl, resolveLink } from "@/lib/app-links"
+import { apiUrl, docsUrl, resolveLink } from "@/lib/app-links"
 import {
   Badge,
   Button,
@@ -95,6 +95,12 @@ export default function HomePage() {
             <Logo brand={config.site} />
           </Link>
           <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href="/pricing">Pricing</Link>
+            </Button>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href={docsUrl()}>Docs</Link>
+            </Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <Link href="/contact">Contact us</Link>
             </Button>
@@ -418,6 +424,13 @@ export default function HomePage() {
               className="underline underline-offset-4 hover:text-foreground"
             >
               Contact us
+            </Link>{" "}
+            ·{" "}
+            <Link
+              href={docsUrl()}
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Docs
             </Link>
           </p>
         </div>
