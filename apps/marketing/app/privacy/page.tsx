@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import config from "@/config/config.json"
-import { Callout, Logo } from "@sendcms/ui"
+import { Logo } from "@sendcms/ui"
 import { getListPage } from "@sendcms/content"
 
 export const metadata: Metadata = {
@@ -15,16 +15,11 @@ type PrivacySection = {
   body: string[]
 }
 
-// DRAFT — this policy is under owner and legal review (see the HTML
-// comment at the top of content/privacy.md). The `status` line below
-// renders as a visible draft notice; remove it (and the comment in the
-// content file) once the policy is approved.
 export default function PrivacyPage() {
   const { frontmatter } = getListPage("privacy.md")
-  const { title, lastUpdated, status, sections } = frontmatter as {
+  const { title, lastUpdated, sections } = frontmatter as {
     title: string
     lastUpdated: string
-    status: string
     sections: PrivacySection[]
   }
 
@@ -46,9 +41,6 @@ export default function PrivacyPage() {
           {title}
         </h1>
         <p className="mb-4 text-step--1 text-muted-foreground">{lastUpdated}</p>
-        <Callout variant="warning" title="Draft" className="mb-12">
-          {status}
-        </Callout>
 
         <div className="space-y-10">
           {sections.map((section) => (

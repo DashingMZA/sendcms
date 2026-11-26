@@ -40,7 +40,7 @@ features:
     - icon: Code2
       title: One script tag
       description:
-        The 7 KB SDK enhances any form in place — loading, success, and
+        The 10 KB SDK enhances any form in place — loading, success, and
         error states included. Or post straight to the REST API, no
         JavaScript needed.
     - icon: ShieldCheck

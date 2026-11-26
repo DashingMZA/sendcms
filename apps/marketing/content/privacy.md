@@ -1,7 +1,6 @@
 ---
 title: "Privacy Policy"
 lastUpdated: "Last updated: November 26, 2026"
-status: "Draft — this policy is under owner and legal review. It describes the product as shipped today; it is not legal advice."
 sections:
   - title: "1. What SendCMS is"
     body:
@@ -43,11 +42,3 @@ sections:
     body:
       - "Questions about this policy, or about your data in SendCMS, can be sent through the contact form on this site."
 ---
-
-<!-- DRAFT — Privacy Policy, under owner and legal review (November 26, 2026).
-     This copy was drafted from the shipped product (auth, cookies, email
-     delivery, and account erasure as implemented in the code). It is NOT
-     legal advice and must be reviewed before it is treated as final.
-     Open questions for the owner are listed in the build report that
-     delivered this page. Remove this comment and the draft notice on the
-     page once the policy is approved. -->
