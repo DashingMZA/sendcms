@@ -182,6 +182,10 @@ enum AuditResource {
   // Admin Control Plane (Phase 8) — billing providers + support tickets.
   BILLING_PROVIDER
   SUPPORT_TICKET
+  // Seven admin pages, Phase D — Coupons (plan §3.7, Q6/Q7/Q10):
+  // platform-only discount codes; coupon create/disable/delete and
+  // redemption-failure rows use this resource.
+  COUPON
 }
 
 // ─── Platform operations (Admin Control Plane, Phase 7) ─────────────────────
@@ -267,6 +271,25 @@ enum SubscriptionEventType {
   CANCEL_SCHEDULED
   PAYMENT_FAILED
   REFUNDED
+}
+
+// ─── Coupons (Seven admin pages, Phase D — plan §3.7, Q6/Q7/Q10) ────────────
+// Platform-only discount codes (Q7: no provider-native sync in v1).
+// PERCENT discounts are a percentage of the checkout price; FIXED
+// discounts are a minor-units amount in the coupon's currency.
+enum CouponDiscountType {
+  PERCENT
+  FIXED
+}
+
+// EXPIRED is derived (validUntil passed, or a redemption cap reached)
+// and stored so the admin list can filter on it; validation treats a
+// coupon as expired the same way, so no background derivation job is
+// needed in v1 (see the listCoupons comment in @sendcms/coupons).
+enum CouponStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
 }
 
 // What a UsageLedger row counts. One meter per resource family; the
@@ -442,6 +465,11 @@ model User {
   // Seven admin pages, Phase C — Jobs (plan §3.6, Q8): manual cron
   // runs triggered by this staff member (triggeredById, SetNull).
   cronRunsTriggered      CronRun[] @relation("CronRunTriggeredBy")
+  // Seven admin pages, Phase D — Coupons (plan §3.7): codes created
+  // by this staff member (createdById, SetNull) and redemptions by
+  // this customer (Cascade — a redemption belongs to its user).
+  couponsCreated         Coupon[] @relation("CouponsCreatedBy")
+  couponRedemptions      CouponRedemption[]
 
   @@index([status])
   @@index([adminRole])
@@ -1240,6 +1268,10 @@ model Subscription {
   // subscription row that carries their entitlement window.
   oneTimePurchases OneTimePurchase[]
 
+  // Seven admin pages, Phase D — Coupons (plan §3.7): redemptions
+  // that granted this subscription (SetNull — history survives).
+  couponRedemptions CouponRedemption[]
+
   @@index([userId, status])
   @@index([planId])
   @@index([planVersionId])
@@ -1874,13 +1906,107 @@ model CheckoutAttempt {
   priceAmount        Int?
   priceCurrency      String                @default("USD")
   status             CheckoutAttemptStatus @default(CREATED)
+  // Seven admin pages, Phase D — Coupons (plan §3.7): the code the
+  // customer applied at checkout (null = no coupon) and the amount
+  // it discounted, in minor units. The grant path (Stream C)
+  // recovers the applied coupon from the attempt, so the redemption
+  // is written even when the grant runs after the checkout call.
+  couponCode         String?
+  discountAmountMinor Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Seven admin pages, Phase D — Coupons (plan §3.7): redemptions
+  // recorded against this attempt (SetNull — history survives).
+  couponRedemptions CouponRedemption[]
+
   @@index([userId, createdAt])
   @@index([planVersionId, createdAt])
   @@index([provider, providerCheckoutId])
+}
+
+// ─── Coupons (Seven admin pages, Phase D — plan §3.7, Q6/Q7/Q10) ────────────
+// Platform-only discount codes (Q7: no provider-native sync in v1 —
+// the platform applies the discount to the amount it charges and
+// records; the provider checkout is created for the discounted
+// amount where the provider supports it). Semantics (Q6): both
+// PERCENT and FIXED; optional per-code + per-user caps (null =
+// unlimited); optional expiry; optional plan scoping (empty
+// appliesToPlanIds = all plans); optional billing-interval scoping
+// (null = any); firstPurchaseOnly flag; NO stacking in v1 (one code
+// per checkout). Delete is soft only (status → DISABLED) —
+// redemption history is never deleted.
+model Coupon {
+  id           String             @id @default(cuid())
+  // Normalised upper-case, no spaces — enforced in the service
+  // (code.trim().toUpperCase(), whitespace rejected), not by the DB.
+  code         String             @unique
+  name         String?
+  description  String?
+  discountType CouponDiscountType
+  // Percent 1–100, or minor units for FIXED (validated in Zod).
+  discountValue Int
+  // FIXED only; ignored for PERCENT (which uses the price currency).
+  currency     String             @default("USD")
+  // Null = unlimited.
+  maxRedemptions       Int?
+  // Derived cache, rebuildable from CouponRedemption — kept so the
+  // admin list and the cap check do not count the redemption table
+  // on every read. Never set directly outside recordRedemption in
+  // @sendcms/coupons, which increments it atomically with the
+  // redemption insert (conditional updateMany, Wave 1 pattern).
+  redemptionCount      Int                @default(0)
+  // Null = unlimited.
+  maxRedemptionsPerUser Int?
+  validFrom            DateTime?
+  validUntil           DateTime?
+  // Empty = all plans; otherwise the Plan ids this code applies to.
+  appliesToPlanIds     String[]
+  appliesToBillingInterval BillingInterval?
+  firstPurchaseOnly    Boolean            @default(false)
+  // EXPIRED is derived (validUntil passed, or a cap reached) and
+  // stored for filtering; see the enum comment above.
+  status               CouponStatus       @default(ACTIVE)
+  createdById          String?
+  createdBy            User?              @relation("CouponsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions CouponRedemption[]
+
+  @@index([code])
+  @@index([status, createdAt])
+  // Phase 16 (DB-012): every FK gets an index — the creator lookup.
+  @@index([createdById])
+}
+
+// One applied discount. Append-only: a correction is a new row,
+// never an edit — so createdAt only, no updatedAt (same precedent
+// as SubscriptionEvent / AuditLog / TicketMessage).
+model CouponRedemption {
+  id                 String       @id @default(cuid())
+  couponId           String
+  coupon             Coupon       @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId     String?
+  subscription       Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  checkoutAttemptId  String?
+  checkoutAttempt    CheckoutAttempt? @relation(fields: [checkoutAttemptId], references: [id], onDelete: SetNull)
+  // Minor units actually discounted.
+  discountAmount     Int
+  currency           String       @default("USD")
+
+  createdAt DateTime @default(now())
+
+  @@index([couponId, createdAt])
+  @@index([userId, couponId])
+  // Phase 16 (DB-012): every FK gets an index — the subscription /
+  // checkout-attempt lookups.
+  @@index([subscriptionId])
+  @@index([checkoutAttemptId])
 }
 
 // A support thread. Created by a signed-in user from /dashboard/support

@@ -33,7 +33,7 @@ including the acceptance record — is in
 | Fact                             | Value                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                    |
-| Domain files per complete locale | 59 (19 shared + 26 admin + 14 dashboard)                                      |
+| Domain files per complete locale | 60 (19 shared + 27 admin + 14 dashboard)                                      |
 | Key parity                       | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)   |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                 |
 | Arabic RTL                       | Not built — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -109,11 +109,11 @@ packages/i18n/
     load.ts       # Registry + dynamic domain loading + path helpers
     index.ts      # Barrel
   locales/
-    en/           # Source locale (complete, 59 files)
+    en/           # Source locale (complete, 60 files)
       {domain}.json          # Shared domains
       admin/{domain}.json    # Admin-app domains
       dashboard/{domain}.json # Customer-dashboard domains
-    ur/           # Urdu, RTL (complete, 59 files)
+    ur/           # Urdu, RTL (complete, 60 files)
     es/ ar/ fr/ de/ hi/ bn/ id/ it/  # Coming soon (no directories yet)
   scripts/
     validate-translations.mjs
@@ -133,7 +133,7 @@ packages/i18n/
 ## Domains
 
 The domain lists live in `src/load.ts` (`SHARED_DOMAINS`,
-`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 19 + 26 + 14 = 59 files per
+`ADMIN_DOMAINS`, `DASHBOARD_DOMAINS`). 19 + 27 + 14 = 60 files per
 complete locale.
 
 | Shared domains (`locales/{locale}/{domain}.json`) |                |                 |
@@ -146,16 +146,17 @@ complete locale.
 | `settings`                                        | `tables`       | `users`         |
 | `validation`                                      |                |                 |
 
-| Admin domains (`locales/{locale}/admin/{domain}.json`) |                       |                |
-| ------------------------------------------------------ | --------------------- | -------------- |
-| `ai`                                                   | `announcements`       | `audit-logs`   |
-| `billing`                                              | `dashboard`           | `features`     |
-| `health`                                               | `jobs`                | `landing`      |
-| `mcp`                                                  | `navigation`          | `overview`     |
-| `plans`                                                | `plans-subscriptions` | `security`     |
-| `settings`                                             | `step-up`             | `submissions`  |
-| `subscriptions`                                        | `support`             | `translations` |
-| `trials`                                               | `usage`               | `users`        |
+| Admin domains (`locales/{locale}/admin/{domain}.json`) |                       |                 |
+| ------------------------------------------------------ | --------------------- | --------------- |
+| `activity`                                             | `ai`                  | `announcements` |
+| `audit-logs`                                           | `billing`             | `coupons`       |
+| `dashboard`                                            | `features`            | `health`        |
+| `jobs`                                                 | `landing`             | `mcp`           |
+| `navigation`                                           | `overview`            | `payments`      |
+| `plans`                                                | `plans-subscriptions` | `security`      |
+| `settings`                                             | `step-up`             | `submissions`   |
+| `subscriptions`                                        | `support`             | `translations`  |
+| `trials`                                               | `usage`               | `users`         |
 
 | Dashboard domains (`locales/{locale}/dashboard/{domain}.json`) |              |                 |
 | -------------------------------------------------------------- | ------------ | --------------- |
@@ -263,22 +264,22 @@ Runs `scripts/validate-translations.mjs` (no dependencies). It checks:
    reported as "not started" **without** failing.
 
 Exits non-zero only when `en`/`ur` are incomplete or a JSON file
-is invalid. Current output (2026-11-26):
+is invalid. Current output (2026-11-27):
 
 ```
 Translation validation
-Source locale: en — 59 files, 2353 keys
+Source locale: en — 60 files, 2475 keys
 Completeness:
-  en: 59/59 files, 2353/2353 keys (100%)
-  ur: 59/59 files, 2353/2353 keys (100%)
-  es: not started (0/59 files)
-  ar: not started (0/59 files)
-  fr: not started (0/59 files)
-  de: not started (0/59 files)
-  hi: not started (0/59 files)
-  bn: not started (0/59 files)
-  id: not started (0/59 files)
-  it: not started (0/59 files)
+  en: 60/60 files, 2475/2475 keys (100%)
+  ur: 60/60 files, 2475/2475 keys (100%)
+  es: not started (0/60 files)
+  ar: not started (0/60 files)
+  fr: not started (0/60 files)
+  de: not started (0/60 files)
+  hi: not started (0/60 files)
+  bn: not started (0/60 files)
+  id: not started (0/60 files)
+  it: not started (0/60 files)
 
 ✓ en and ur are complete and in sync.
 ```

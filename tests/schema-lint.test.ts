@@ -155,6 +155,7 @@ const NO_UPDATED_AT_ALLOWLIST: Record<string, string> = {
   SubmissionEvent: "append-only log row",
   AuditLog: "append-only log row",
   SubscriptionEvent: "append-only log row",
+  CouponRedemption: "append-only log row",
   UsageLedger: "append-only metering ledger",
   AiUsageRecord: "append-only usage row",
   McpUsageRecord: "append-only usage row",

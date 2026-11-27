@@ -18,6 +18,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Input,
   Label,
   Select,
   SelectContent,
@@ -70,6 +71,27 @@ export function CheckoutManager({
   const [country, setCountry] = useState<string>(detectedCountry ?? "")
   const [selectedProvider, setSelectedProvider] =
     useState<BillingProvider | null>(null)
+  // Phase D (Coupons): one coupon-code input + Apply. Apply only
+  // validates client-side for empty input — the code itself is
+  // validated server-side when the checkout is created, and an
+  // invalid code surfaces the server's 422 message in the existing
+  // error UI below. Editing the input clears the applied code, so
+  // a mistyped code is corrected by typing + Apply again.
+  const [couponCode, setCouponCode] = useState("")
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(
+    null
+  )
+  const [couponEmpty, setCouponEmpty] = useState(false)
+
+  function applyCoupon() {
+    const code = couponCode.trim()
+    if (!code) {
+      setCouponEmpty(true)
+      return
+    }
+    setCouponEmpty(false)
+    setAppliedCouponCode(code)
+  }
 
   const { data: plans, isLoading: plansLoading } = usePublishedPlans()
   const { data: countries } = usePublicCountries()
@@ -123,6 +145,10 @@ export function CheckoutManager({
         planVersionId: selectedPlanVersionId,
         provider: selectedProvider,
         countryCode: country || undefined,
+        // Phase D: the applied coupon code, if any — the route
+        // already forwards the whole body to createCheckoutSession,
+        // which validates it server-side. No new route.
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
       })
       window.location.href = result.checkoutUrl
     } catch {
@@ -214,6 +240,38 @@ export function CheckoutManager({
                     : t("countriesHint")}
                 </p>
               </div>
+              {!isFree && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="checkout-coupon">{t("couponLabel")}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="checkout-coupon"
+                      value={couponCode}
+                      onChange={(e) => {
+                        setCouponCode(e.target.value)
+                        setAppliedCouponCode(null)
+                        setCouponEmpty(false)
+                      }}
+                      placeholder={t("couponPlaceholder")}
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={applyCoupon}
+                    >
+                      {t("couponApply")}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {appliedCouponCode
+                      ? t("couponApplied")
+                      : couponEmpty
+                        ? t("couponEmpty")
+                        : t("couponHint")}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

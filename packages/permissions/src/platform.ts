@@ -217,6 +217,7 @@ export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin/announcements": "MANAGE_ANNOUNCEMENTS",
   "/admin/audit-logs": "VIEW_AUDIT_LOGS",
   "/admin/billing": "VIEW_BILLING",
+  "/admin/coupons": "VIEW_BILLING",
   "/admin/features": "MANAGE_FEATURE_FLAGS",
   "/admin/health": "VIEW_ADMIN_DASHBOARD",
   "/admin/jobs": "VIEW_JOBS",

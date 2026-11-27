@@ -19,6 +19,7 @@
     "@sendcms/api-client": "workspace:*",
     "@sendcms/auth": "workspace:*",
     "@sendcms/billing": "workspace:*",
+    "@sendcms/coupons": "workspace:*",
     "@sendcms/cron": "workspace:*",
     "@sendcms/i18n": "workspace:*",
     "@sendcms/mcp": "workspace:*",

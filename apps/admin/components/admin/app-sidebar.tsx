@@ -167,6 +167,11 @@ export function AppSidebar({
           icon: RiWalletLine,
         },
         {
+          label: t("coupons"),
+          href: "/admin/coupons",
+          icon: RiPriceTag3Line,
+        },
+        {
           label: t("payments"),
           href: "/admin/payments",
           icon: RiWalletLine,

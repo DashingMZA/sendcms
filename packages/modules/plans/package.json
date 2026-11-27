@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@sendcms/auth": "workspace:*",
+    "@sendcms/coupons": "workspace:*",
     "@sendcms/database": "workspace:*",
     "@sendcms/observability": "workspace:*",
     "@sendcms/permissions": "workspace:*",

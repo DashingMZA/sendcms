@@ -308,9 +308,9 @@ describe("i18n doc counts (DOC-005)", () => {
       ),
       "utf8"
     )
-    expect(readme).toContain(`${files} (19 shared + 26 admin + 14 dashboard)`)
+    expect(readme).toContain(`${files} (19 shared + 27 admin + 14 dashboard)`)
     expect(readme).toContain(`Source locale: en — ${files} files`)
-    expect(doc).toContain(`${files} (19 shared + 26 admin + 14 dashboard)`)
+    expect(doc).toContain(`${files} (19 shared + 27 admin + 14 dashboard)`)
     expect(doc).toContain(`Source locale: en — ${files} files`)
   })
 })

@@ -49,4 +49,5 @@ export const AUDIT_RESOURCES = [
   "DELETION_REQUEST",
   "BILLING_PROVIDER",
   "SUPPORT_TICKET",
+  "COUPON",
 ] as const

@@ -184,14 +184,14 @@ describe("jobs i18n domain", () => {
     expect(read("apps/admin/lib/i18n.ts")).toContain('"jobs",')
   })
 
-  it("keeps the i18n doc counts at the validator's numbers (59 files, 2353 keys)", () => {
+  it("keeps the i18n doc counts at the validator's numbers (60 files, 2475 keys)", () => {
     for (const rel of [
       "packages/i18n/README.md",
       "docs/admin-control-plane/internationalization.md",
     ]) {
       const doc = read(rel)
-      expect(doc).toContain("59 (19 shared + 26 admin + 14 dashboard)")
-      expect(doc).toContain("Source locale: en — 59 files, 2353 keys")
+      expect(doc).toContain("60 (19 shared + 27 admin + 14 dashboard)")
+      expect(doc).toContain("Source locale: en — 60 files, 2475 keys")
     }
   })
 

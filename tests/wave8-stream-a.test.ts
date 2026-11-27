@@ -54,6 +54,11 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn(),
     updateMany: vi.fn(async () => ({ count: 0 })),
   },
+  // Phase D (Coupons): the grant-time redemption lookup reads the
+  // checkout attempt inside the transaction; default "no attempt".
+  checkoutAttempt: {
+    findFirst: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
+  },
   usageLedger: {
     create: vi.fn(),
     findUnique: vi.fn(),

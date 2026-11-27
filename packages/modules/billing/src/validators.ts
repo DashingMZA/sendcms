@@ -85,6 +85,12 @@ export const checkoutSessionSchema = z.object({
   // the same objects instead of creating duplicates. Omitted → the
   // service generates one and returns it.
   attemptId: z.string().uuid("attemptId must be a UUID").optional(),
+  // Seven Admin Pages, Phase D (Coupons): optional platform coupon
+  // code. Validated server-side in createCheckoutSession (never
+  // trusted as a discount on its own); one code per checkout, no
+  // stacking (Q6). Max 50 chars — codes are normalised upper-case
+  // by the coupons service.
+  couponCode: z.string().trim().min(1).max(50).optional(),
 })
 
 export type SetProviderConfigInput = z.infer<typeof setProviderConfigSchema>

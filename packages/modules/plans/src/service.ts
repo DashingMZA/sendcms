@@ -17,6 +17,7 @@ import type {
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
 import { requireAdmin } from "@sendcms/permissions"
+import { getCouponByCode, recordRedemption } from "@sendcms/coupons"
 import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import {
@@ -1770,6 +1771,125 @@ export type ActivateSubscriptionFromCheckoutInput = {
   trialEnd?: Date | null
 }
 
+// ─── Coupons: grant-time redemption (Seven Admin Pages, Phase D) ────────
+
+// Recover the coupon applied to this checkout and record its
+// redemption — called from inside activateSubscriptionFromCheckout's
+// transaction, AFTER the subscription / one-time-purchase rows are
+// written and BEFORE the transaction returns, so the redemption is
+// atomic with the grant: a redemption row is NEVER written when the
+// grant itself fails (the transaction rollback guarantees it), and
+// recordRedemption throwing ApiError 409 (cap reached) aborts the
+// whole transaction (no grant without a redemption — never a silent
+// swallow). The discounted amount recorded is the attempt's stored
+// discountAmountMinor — the amount actually charged — not a
+// recomputed discount.
+//
+// RECOVERY PATH (chosen — no input threading): the grant looks the
+// attempt up itself, so every caller (webhook checkout-completed /
+// freemius-checkout, reconcile Stripe/PayPal) is covered with no
+// per-caller changes. The lookup tries the grant's checkout
+// identifiers first — the provider checkout id
+// (input.checkoutId: Stripe session id, PayPal order id, Polar
+// checkout id) or the provider subscription id (PayPal reconcile
+// and Polar recurring webhooks carry no checkout id) — against
+// CheckoutAttempt.providerCheckoutId. Neither identifier resolves
+// every provider: a Polar recurring webhook carries only the
+// subscription id, which is NOT the checkout id the attempt stored.
+// So the fallback is the most recent CREATED/COMPLETED attempt for
+// this provider + user + plan version — the checkout that produced
+// this grant. Coupon fields are written on the attempt BEFORE the
+// provider call, so a CREATED row already carries them (a webhook
+// racing the COMPLETED stamp still finds the coupon).
+//
+// The coupon id comes from validateCouponForCheckout — the
+// contract's only code-keyed lookup. It re-runs the business rules,
+// so a code that expired (or hit its cap) between checkout and
+// grant refuses the grant here instead of granting without a
+// redemption (fail-safe: a paid grant that cannot redeem stays
+// unprovisioned and visible via the unprocessed-events / reconcile
+// path, never silently granted). Consolidation ask: a read-only
+// getCouponByCode (no rule re-validation) or a couponId column on
+// CheckoutAttempt would remove that re-validation window.
+type CouponCheckoutAttempt = Awaited<
+  ReturnType<Prisma.TransactionClient["checkoutAttempt"]["findFirst"]>
+>
+
+// The checkout attempt that carried this grant's coupon, if any.
+// First an exact match on the provider checkout id (or the
+// provider subscription id, which Polar recurring webhooks carry
+// instead of the checkout id), then a fallback to the most recent
+// CREATED/COMPLETED attempt for (provider, user, plan version).
+// Read inside the grant transaction, so the one-time purchase
+// price and the redemption below see the same attempt.
+async function findCouponCheckoutAttempt(
+  tx: Prisma.TransactionClient,
+  args: {
+    provider: BillingProvider
+    userId: string
+    planVersionId: string
+    checkoutId: string | null
+    providerSubscriptionId: string
+  }
+): Promise<CouponCheckoutAttempt> {
+  const identifiers = [args.checkoutId, args.providerSubscriptionId].filter(
+    (id): id is string => typeof id === "string" && id.length > 0
+  )
+  let attempt: CouponCheckoutAttempt = null
+  if (identifiers.length > 0) {
+    attempt = await tx.checkoutAttempt.findFirst({
+      where: {
+        provider: args.provider,
+        providerCheckoutId: { in: identifiers },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+  }
+  attempt ??= await tx.checkoutAttempt.findFirst({
+    where: {
+      provider: args.provider,
+      userId: args.userId,
+      planVersionId: args.planVersionId,
+      status: { in: ["CREATED", "COMPLETED"] },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  return attempt
+}
+
+async function recordCouponRedemptionIfAny(
+  tx: Prisma.TransactionClient,
+  args: {
+    userId: string
+    subscriptionId: string
+    couponAttempt: CouponCheckoutAttempt
+  }
+): Promise<void> {
+  const attempt = args.couponAttempt
+  // No coupon on the attempt (or no attempt at all — e.g. an admin
+  // assignment, or a checkout from before coupons): nothing to
+  // redeem, and the grant proceeds exactly as before.
+  if (!attempt?.couponCode || attempt.discountAmountMinor == null) return
+  // No re-validation here: the discount was validated and locked
+  // in at checkout time, and the attempt stores the agreed
+  // discount. A code expiring (or hitting its cap) between
+  // checkout and grant must not refuse a paid grant — that would
+  // take money without delivering the subscription. The lookup
+  // below only resolves the code to its id; a code deleted after
+  // checkout (lookup null) skips the redemption and the grant
+  // still proceeds.
+  const coupon = await getCouponByCode(tx, attempt.couponCode)
+  if (!coupon) return
+  await recordRedemption(tx, {
+    couponId: coupon.id,
+    userId: args.userId,
+    subscriptionId: args.subscriptionId,
+    checkoutAttemptId: attempt.id,
+    discountAmountMinor: attempt.discountAmountMinor,
+    currency: attempt.priceCurrency,
+  })
+}
+
 // Activate (or re-activate) a subscription from a verified checkout
 // webhook. Same one-active-per-user transaction as
 // assignSubscription: the previous ACTIVE/TRIALING/PAST_DUE
@@ -1779,6 +1899,11 @@ export type ActivateSubscriptionFromCheckoutInput = {
 // same provider subscription id returns the existing row instead of
 // creating a second subscription (advisory lock + the unique
 // (provider, providerSubscriptionId) index, DB-002/DB-024).
+//
+// Phase D (Coupons): when the checkout carried a coupon, its
+// redemption is recorded inside this same transaction
+// (recordCouponRedemptionIfAny) — atomic with the grant, never for
+// a failed payment, and a 409 (cap reached) aborts the grant.
 //
 // BIL-003 / BIL-042: a one-time purchase creates a OneTimePurchase
 // row (the separate purchase record) AND a subscription whose
@@ -1928,6 +2053,17 @@ export async function activateSubscriptionFromCheckout(
               }`,
         },
       })
+      // Phase D (Coupons): the checkout attempt carries the agreed
+      // discounted price — the one-time purchase records what was
+      // actually charged, not the full version price. Looked up
+      // once here and reused by the redemption below.
+      const couponAttempt = await findCouponCheckoutAttempt(tx, {
+        provider: input.provider,
+        userId: input.userId,
+        planVersionId: version.id,
+        checkoutId: input.checkoutId ?? null,
+        providerSubscriptionId: input.providerSubscriptionId,
+      })
       // BIL-003: the separate purchase record for a one-time buy.
       // Idempotent per (provider, providerReference): a redelivery
       // that got past the subscription duplicate guard still writes
@@ -1943,7 +2079,7 @@ export async function activateSubscriptionFromCheckout(
               provider: input.provider,
               providerReference,
               checkoutId: input.checkoutId ?? null,
-              priceAmount: version.priceAmount,
+              priceAmount: couponAttempt?.priceAmount ?? version.priceAmount,
               priceCurrency: version.priceCurrency,
               accessStart: now,
               accessEnd: nextEnd,
@@ -1963,6 +2099,17 @@ export async function activateSubscriptionFromCheckout(
           }
         }
       }
+      // Phase D (Coupons): the redemption is recorded in this SAME
+      // transaction, after the grant rows above — never for a failed
+      // payment (the grant only runs on a verified paid checkout,
+      // and a rollback here unwinds grant + redemption together).
+      // Skipped when the checkout carried no coupon. A 409 from
+      // recordRedemption (cap reached) aborts the transaction.
+      await recordCouponRedemptionIfAny(tx, {
+        userId: input.userId,
+        subscriptionId: next.id,
+        couponAttempt,
+      })
       return tx.subscription.findUniqueOrThrow({
         where: { id: next.id },
         include: subscriptionInclude,

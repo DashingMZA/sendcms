@@ -31,7 +31,7 @@ the other 8 land without restructuring, but today:
 | Fact                             | Value                                                                             |
 | -------------------------------- | --------------------------------------------------------------------------------- |
 | Complete locales                 | `en`, `ur`                                                                        |
-| Domain files per complete locale | 59 (19 shared + 26 admin + 14 dashboard)                                          |
+| Domain files per complete locale | 60 (19 shared + 27 admin + 14 dashboard)                                          |
 | Keys                             | 100% in sync between `en` and `ur` (`pnpm --filter @sendcms/i18n validate`)       |
 | Coming-soon locales              | `es`, `ar`, `fr`, `de`, `hi`, `bn`, `id`, `it` — 0 files each                     |
 | Arabic RTL                       | **Not built** — `ar` has no files, so no RTL rendering of Arabic exists to verify |
@@ -78,13 +78,13 @@ packages/i18n/
   scripts/
     validate-translations.mjs  # validation script (pnpm --filter @sendcms/i18n validate)
   locales/
-    en/               # 59 files
+    en/               # 60 files
       navigation.json
       admin/
         users.json billing.json support.json plans.json ...
       dashboard/
         account.json ai.json analytics.json api.json api-keys.json billing.json domains.json forms.json inbox.json landing.json navigation.json notifications.json overview.json support.json
-    ur/               # 59 files, same shape, real Urdu script
+    ur/               # 60 files, same shape, real Urdu script
     es/ ar/ fr/ ...   # do not exist yet
 ```
 
@@ -152,22 +152,22 @@ against `en`:
   reported, not crashed.
 - A load failure for one domain never fails the whole report.
 
-Current output (2026-11-26):
+Current output (2026-11-27):
 
 ```
 Translation validation
-Source locale: en — 59 files, 2353 keys
+Source locale: en — 60 files, 2475 keys
 Completeness:
-  en: 59/59 files, 2353/2353 keys (100%)
-  ur: 59/59 files, 2353/2353 keys (100%)
-  es: not started (0/59 files)
-  ar: not started (0/59 files)
-  fr: not started (0/59 files)
-  de: not started (0/59 files)
-  hi: not started (0/59 files)
-  bn: not started (0/59 files)
-  id: not started (0/59 files)
-  it: not started (0/59 files)
+  en: 60/60 files, 2475/2475 keys (100%)
+  ur: 60/60 files, 2475/2475 keys (100%)
+  es: not started (0/60 files)
+  ar: not started (0/60 files)
+  fr: not started (0/60 files)
+  de: not started (0/60 files)
+  hi: not started (0/60 files)
+  bn: not started (0/60 files)
+  id: not started (0/60 files)
+  it: not started (0/60 files)
 
 ✓ en and ur are complete and in sync.
 ```
@@ -262,7 +262,7 @@ the registration is not loaded, even if the file exists.
 
 - **The other 8 locales.** `es`, `ar`, `fr`, `de`, `hi`, `bn`,
   `id`, `it` have no files. Adding one means translating the
-  59 domains (real translations, never machine-translated
+  60 domains (real translations, never machine-translated
   placeholders that break interpolation or change a
   provider/model name) and flipping its registry status to
   `complete`. See

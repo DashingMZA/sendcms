@@ -665,6 +665,10 @@ const { store, mockDb } = vi.hoisted(() => {
       ),
     },
     checkoutAttempt: {
+      // Phase D (Coupons): the grant-time redemption lookup reads the
+      // attempt inside the transaction; default "no attempt" — none
+      // of these tests seeds a coupon attempt.
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         if (store.attempts.has(data.attemptId as string)) throw p2002()
         const row: StoredAttempt = {

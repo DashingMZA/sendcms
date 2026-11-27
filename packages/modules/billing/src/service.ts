@@ -12,6 +12,10 @@ import { logAudit } from "@sendcms/security"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
 import {
+  validateCouponForCheckout,
+  type CouponValidation,
+} from "@sendcms/coupons"
+import {
   activateSubscriptionFromCheckout,
   applyRefund,
   cancelSubscriptionFromProvider,
@@ -617,6 +621,70 @@ export async function createCheckoutSession(
   const effectiveCountry = detected ?? claimed
   await requireProviderAvailable(input.provider, effectiveCountry)
 
+  // ─── Phase D (Coupons, Q6/Q7) ──────────────────────────────────
+  // Optional platform coupon, validated AFTER the plan version and
+  // provider are known and BEFORE the attempt is recorded — a failed
+  // validation aborts the checkout with the coupons service's 422
+  // (propagated unchanged, customer-safe message) and no attempt
+  // is ever marked COMPLETED with a discount it never earned.
+  // Amounts are minor units everywhere, never floats.
+  //
+  // Per-provider behaviour (Q7: platform-only codes in v1 — no
+  // provider-native coupon APIs are called):
+  // - STRIPE / PAYPAL / POLAR: the provider session is created for
+  //   the DISCOUNTED price. The price-carrying catalog object is
+  //   minted fresh for this checkout (cached Stripe Price /
+  //   PayPal billing plan / Polar product are cleared from the
+  //   version passed down — they carry the FULL price) and the
+  //   fresh ids are deliberately NOT persisted back onto the plan
+  //   version (see the catalog block below): a discounted Price
+  //   must never become the version's cached full-price object.
+  //   PayPal's cached *product* is reused — a product carries no
+  //   price; only its billing plan does.
+  // - FREEMIUS: refused outright. The Freemius plan price is fixed
+  //   in the Freemius dashboard and cross-checked against the
+  //   version before sale (checkFreemiusPlanPrice), so a discounted
+  //   checkout could never be honoured at the provider — refusing
+  //   here is the fail-safe instead of charging full price while
+  //   recording a discount.
+  // - GUMROAD: already refused by requireProviderAvailable (no
+  //   payment-creation API).
+  //
+  // A 100% discount (final amount 0) is NOT a free-plan bypass: it
+  // refuses with 422 instead of creating a $0 provider session or
+  // granting without payment.
+  let coupon: CouponValidation | null = null
+  let chargedAmount = version.priceAmount
+  const rawCouponCode = input.couponCode?.trim() || null
+  if (rawCouponCode) {
+    if (input.provider === "FREEMIUS") {
+      throw new ApiError(
+        "Coupon codes are not supported for Freemius checkout — choose another payment method.",
+        422
+      )
+    }
+    coupon = await validateCouponForCheckout({
+      code: rawCouponCode,
+      userId: actor.user.id,
+      planVersionId: version.id,
+      priceAmountMinor: version.priceAmount,
+      currency: version.priceCurrency,
+    })
+    if (coupon.discountAmountMinor <= 0) {
+      // A "valid" code that discounts nothing changes nothing —
+      // treat the checkout as coupon-free instead of recording a
+      // zero-discount coupon on the attempt.
+      coupon = null
+    } else if (coupon.finalAmountMinor <= 0) {
+      throw new ApiError(
+        "This coupon covers the full price — contact support to apply it.",
+        422
+      )
+    } else {
+      chargedAmount = coupon.finalAmountMinor
+    }
+  }
+
   const dashboardUrl = (
     process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
   ).replace(/\/+$/, "")
@@ -640,20 +708,30 @@ export async function createCheckoutSession(
     id: version.id,
     planId: version.planId,
     planName: version.plan.name,
-    priceAmount: version.priceAmount,
+    // Phase D: the DISCOUNTED amount is what gets charged — the
+    // provider session is priced from this, not the version's full
+    // price. The price-carrying catalog ids are cleared when a
+    // coupon applies (see the coupon block above): Stripe reuses a
+    // cached Price and PayPal a cached billing plan, both of which
+    // carry the full price, and Polar's product carries its price —
+    // a discounted checkout must mint fresh ones.
+    priceAmount: chargedAmount,
     priceCurrency: version.priceCurrency,
     billingInterval: version.billingInterval,
     trialDays: version.trialDays,
-    stripePriceId: version.stripePriceId ?? undefined,
+    stripePriceId: coupon ? undefined : (version.stripePriceId ?? undefined),
     paypalProductId: version.paypalProductId ?? undefined,
-    paypalPlanId: version.paypalPlanId ?? undefined,
-    polarProductId: version.polarProductId ?? undefined,
+    paypalPlanId: coupon ? undefined : (version.paypalPlanId ?? undefined),
+    polarProductId: coupon ? undefined : (version.polarProductId ?? undefined),
   }
   // BIL-027 / BIL-011 / BIL-056: the price is validated against
   // the provider's rules BEFORE any provider call — zero-decimal
   // currencies (JPY etc.) in whole units, below-minimum prices,
   // and invalid currency codes refuse with a named 422 instead of
-  // a provider 400 or a silently wrong amount.
+  // a provider 400 or a silently wrong amount. Validated on the
+  // DISCOUNTED price when a coupon applies: a discount that drops
+  // the charge below the provider minimum refuses here, it is not
+  // silently rounded up or charged at the minimum.
   const priceError = validatePriceForCheckout(checkoutVersion)
   if (priceError) throw new ApiError(priceError, 422)
   const attemptId = input.attemptId ?? randomUUID()
@@ -697,14 +775,20 @@ export async function createCheckoutSession(
   // BIL-028: the attempt is recorded BEFORE the provider call, so
   // a checkout that dies at the provider still has a support
   // record (and the attempt id is the BIL-014 idempotency key).
-  // Best-effort: a failed write never blocks checkout.
+  // Best-effort: a failed write never blocks checkout. Phase D:
+  // priceAmount is the DISCOUNTED amount actually charged, plus
+  // the normalised coupon code and discount (Stream A's columns).
   await recordCheckoutAttempt({
     attemptId,
     userId: actor.user.id,
     planVersionId: version.id,
     provider: input.provider,
-    priceAmount: version.priceAmount,
+    priceAmount: chargedAmount,
     priceCurrency: version.priceCurrency,
+    couponCode: coupon
+      ? (coupon.coupon.code ?? rawCouponCode?.toUpperCase() ?? null)
+      : null,
+    discountAmountMinor: coupon?.discountAmountMinor ?? null,
   })
   let result
   try {
@@ -735,7 +819,11 @@ export async function createCheckoutSession(
   // where the version has none yet — a concurrent checkout that
   // created its own object first wins, and the next checkout
   // reuses it. Best-effort: a failed write never breaks checkout.
-  if (result.catalog) {
+  // Phase D: NEVER persist when a coupon applied — the catalog
+  // ids minted here price the DISCOUNTED amount, and persisting
+  // one would make every later full-price checkout charge the
+  // discounted price (or reuse a one-off discounted plan).
+  if (result.catalog && !coupon) {
     const catalog = result.catalog
     try {
       if (catalog.stripePriceId) {
@@ -790,14 +878,48 @@ async function recordCheckoutAttempt(input: {
   provider: BillingProvider
   priceAmount: number
   priceCurrency: string
+  // Phase D (Coupons): the normalised code + the discount in minor
+  // units, from the validated coupon. Null = no coupon on this
+  // checkout. Stream A's nullable CheckoutAttempt columns.
+  couponCode?: string | null
+  discountAmountMinor?: number | null
 }): Promise<void> {
   try {
-    await db.checkoutAttempt.create({ data: { ...input, status: "CREATED" } })
+    await db.checkoutAttempt.create({
+      data: {
+        ...input,
+        status: "CREATED",
+      },
+    })
   } catch (err) {
     if (
       err instanceof Prisma.PrismaClientKnownRequestError &&
       err.code === "P2002"
     ) {
+      // The row already exists (same attempt id retried — the
+      // client reuses it on double-submit, BIL-014). A retry that
+      // ADDS a coupon backfills the coupon fields onto the existing
+      // row instead of dropping the code; a retry without one
+      // leaves the row untouched. Best-effort throughout.
+      if (input.couponCode != null || input.discountAmountMinor != null) {
+        try {
+          await db.checkoutAttempt.update({
+            where: { attemptId: input.attemptId },
+            data: {
+              couponCode: input.couponCode ?? null,
+              discountAmountMinor: input.discountAmountMinor ?? null,
+            },
+          })
+        } catch (updateErr) {
+          log.warn("Billing: failed to backfill coupon on retry attempt", {
+            attemptId: input.attemptId,
+            error:
+              updateErr instanceof Error
+                ? updateErr.message
+                : String(updateErr),
+          })
+        }
+      }
       return
     }
     log.warn("Billing: failed to record checkout attempt", {

@@ -21,7 +21,7 @@ function read(rel: string): string {
 // ─── SRC-105: every admin API handler is route-gated ──────────────────────
 
 // "METHOD path" → the capability requireAdminApi must assert before
-// the service runs. This is the whole 90-route / 102-handler map,
+// the service runs. This is the whole 93-route / 108-handler map,
 // derived from the wired routes (see the Stream B working paper).
 const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
   "GET activity": "VIEW_AUDIT_LOGS",
@@ -46,6 +46,12 @@ const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
   "PATCH billing/providers/[provider]": "MANAGE_BILLING",
   "GET billing/providers": "VIEW_BILLING",
   "POST billing/providers": "MANAGE_BILLING",
+  "GET coupons": "VIEW_BILLING",
+  "POST coupons": "MANAGE_BILLING",
+  "GET coupons/[id]": "VIEW_BILLING",
+  "PATCH coupons/[id]": "MANAGE_BILLING",
+  "DELETE coupons/[id]": "MANAGE_BILLING",
+  "GET coupons/[id]/redemptions": "VIEW_BILLING",
   "POST deletion-requests/[id]/erase": "MANAGE_USERS",
   "POST deletion-requests/[id]/review": "MANAGE_USERS",
   "GET deletion-requests": "MANAGE_USERS",
@@ -129,14 +135,14 @@ const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
 }
 
 describe("SRC-105 admin route capabilities", () => {
-  it("pins all 102 handlers across the 90 admin routes", () => {
-    expect(Object.keys(ADMIN_ROUTE_CAPABILITIES)).toHaveLength(102)
+  it("pins all 108 handlers across the 93 admin routes", () => {
+    expect(Object.keys(ADMIN_ROUTE_CAPABILITIES)).toHaveLength(108)
     const files = new Set(
       Object.keys(ADMIN_ROUTE_CAPABILITIES).map((k) =>
         k.slice(k.indexOf(" ") + 1)
       )
     )
-    expect(files.size).toBe(90)
+    expect(files.size).toBe(93)
     for (const [key, cap] of Object.entries(ADMIN_ROUTE_CAPABILITIES)) {
       const [method, route] = [
         key.slice(0, key.indexOf(" ")),
