@@ -136,6 +136,10 @@ export type PlatformSubmissionDetail = PlatformSubmissionRow & {
     createdAt: Date
     actor: { name: string | null; email: string } | null
   }[]
+  /** DB-046: total event count (the `events` page is capped). */
+  eventCount: number
+  /** DB-046: true when older events exist beyond the returned page. */
+  hasMoreEvents: boolean
 }
 
 /** One submission WITH its `data`. Needs VIEW_SENSITIVE_SUBMISSIONS,
@@ -147,23 +151,29 @@ export async function getPlatformSubmission(
   opts: AuditOpts = {}
 ): Promise<PlatformSubmissionDetail> {
   requireAdmin(actor, "VIEW_SENSITIVE_SUBMISSIONS")
-  const row = await db.submission.findUnique({
-    where: { id: submissionId },
-    include: {
-      form: {
-        select: {
-          id: true,
-          name: true,
-          ownerId: true,
-          owner: { select: { id: true, name: true, email: true } },
+  const [row, eventCount] = await Promise.all([
+    db.submission.findUnique({
+      where: { id: submissionId },
+      include: {
+        form: {
+          select: {
+            id: true,
+            name: true,
+            ownerId: true,
+            owner: { select: { id: true, name: true, email: true } },
+          },
+        },
+        events: {
+          // DB-046: newest 50 only — the full event history used to
+          // load on every sensitive-submission read.
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: { actor: { select: { name: true, email: true } } },
         },
       },
-      events: {
-        orderBy: { createdAt: "desc" },
-        include: { actor: { select: { name: true, email: true } } },
-      },
-    },
-  })
+    }),
+    db.submissionEvent.count({ where: { submissionId } }),
+  ])
   if (!row) throw new ApiError("Submission not found.", 404)
   await logAudit({
     userId: actor.user.id,
@@ -177,7 +187,11 @@ export async function getPlatformSubmission(
     },
     correlationId: opts.correlationId,
   })
-  return row
+  return {
+    ...row,
+    eventCount,
+    hasMoreEvents: eventCount > row.events.length,
+  }
 }
 
 export type SpamStats = {

@@ -304,7 +304,10 @@ describe("SRC-112 billing provider parsing", () => {
       const src = readFileSync(f, "utf8")
       return (
         src.includes('from "@sendcms/database"') &&
-        !f.endsWith("apps/api/app/api/health/route.ts")
+        // PRF-002 (Wave 11): the DB ping lives on the deep health
+        // route now; both health routes may import the database.
+        !f.endsWith("apps/api/app/api/health/route.ts") &&
+        !f.endsWith("apps/api/app/api/health/deep/route.ts")
       )
     })
     expect(offenders).toEqual([])

@@ -34,7 +34,7 @@ export function UserDomainsTab({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("domainsTitle")}</CardTitle>
+        <CardTitle as="h2">{t("domainsTitle")}</CardTitle>
       </CardHeader>
       <CardContent>
         {domains.length === 0 ? (

@@ -227,7 +227,7 @@ export function OverviewDashboard({
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle>{t("users")}</CardTitle>
+            <CardTitle as="h2">{t("users")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -255,7 +255,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("submissions")}</CardTitle>
+            <CardTitle as="h2">{t("submissions")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -268,7 +268,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("forms")}</CardTitle>
+            <CardTitle as="h2">{t("forms")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -279,7 +279,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("domains")}</CardTitle>
+            <CardTitle as="h2">{t("domains")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -292,7 +292,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("subscriptions")}</CardTitle>
+            <CardTitle as="h2">{t("subscriptions")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -303,7 +303,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("aiCalls")}</CardTitle>
+            <CardTitle as="h2">{t("aiCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -314,7 +314,7 @@ export function OverviewDashboard({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("mcpCalls")}</CardTitle>
+            <CardTitle as="h2">{t("mcpCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Stat
@@ -328,7 +328,7 @@ export function OverviewDashboard({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t("perDayTitle")}</CardTitle>
+            <CardTitle as="h2">{t("perDayTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             {overview.submissions.perDay.length === 0 ? (
@@ -390,7 +390,7 @@ export function OverviewDashboard({
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("statusTitle")}</CardTitle>
+            <CardTitle as="h2">{t("statusTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             <ChartContainer config={byStatusConfig} className="h-48 w-full">
@@ -424,7 +424,7 @@ export function OverviewDashboard({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("byPlanTitle")}</CardTitle>
+          <CardTitle as="h2">{t("byPlanTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           {overview.subscriptions.byPlan.length === 0 ? (

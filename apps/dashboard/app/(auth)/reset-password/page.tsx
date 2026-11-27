@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -11,6 +12,13 @@ import { ResetPasswordForm } from "./reset-password-form"
  * path. (An earlier /reset-password/[token] route never received the
  * redirect and was removed.)
  */
+// PRF-037: each auth page has a distinct tab title (the layout
+// template appends "— SendCMS Dashboard").
+export const metadata: Metadata = {
+  title: "Reset password",
+  description: "Choose a new password for your SendCMS dashboard account.",
+}
+
 export default async function ResetPasswordPage({
   searchParams,
 }: {

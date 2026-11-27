@@ -269,7 +269,11 @@ export async function listSubmissionsForUser(
   // (SRC-231). `from > to` stays defined (empty result, as today).
   assertValidDateFilter(filters.from, "from")
   assertValidDateFilter(filters.to, "to")
-  const page = Math.max(1, filters.page ?? 1)
+  // DB-048: clamp the page for direct service callers (the route's
+  // Zod schema caps it too) — page 100000 used to yield a ~2M-row
+  // offset scan on this raw-SQL list. Beyond 1000 the deepest page
+  // is served instead of a deeper scan.
+  const page = Math.min(1000, Math.max(1, filters.page ?? 1))
   const offset = (page - 1) * INBOX_PAGE_SIZE
 
   const [rows, totalRows, countRows] = await Promise.all([
@@ -328,24 +332,39 @@ export type InboxSubmissionDetail = Prisma.SubmissionGetPayload<{
   }
 }>
 
+// DB-046: at most this many history events on a submission detail
+// read, newest first. A long-lived submission's event history used
+// to load in full on every detail read.
+export const SUBMISSION_EVENTS_MAX = 50
+
 export async function getSubmissionForUser(
   userId: string,
   submissionId: string
-): Promise<InboxSubmissionDetail> {
-  const submission = await db.submission.findFirst({
-    where: { id: submissionId, form: { ownerId: userId } },
-    include: {
-      form: { select: { id: true, name: true, aiEnabled: true } },
-      events: {
-        orderBy: { createdAt: "desc" },
-        include: { actor: { select: { name: true, email: true } } },
+): Promise<
+  InboxSubmissionDetail & { eventCount: number; hasMoreEvents: boolean }
+> {
+  const [submission, eventCount] = await Promise.all([
+    db.submission.findFirst({
+      where: { id: submissionId, form: { ownerId: userId } },
+      include: {
+        form: { select: { id: true, name: true, aiEnabled: true } },
+        events: {
+          orderBy: { createdAt: "desc" },
+          take: SUBMISSION_EVENTS_MAX,
+          include: { actor: { select: { name: true, email: true } } },
+        },
       },
-    },
-  })
+    }),
+    db.submissionEvent.count({ where: { submissionId } }),
+  ])
   if (!submission) {
     throw new ApiError("Submission not found.", 404)
   }
-  return submission
+  return {
+    ...submission,
+    eventCount,
+    hasMoreEvents: eventCount > submission.events.length,
+  }
 }
 
 async function applyStatusAction(

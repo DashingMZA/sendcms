@@ -4,12 +4,42 @@ import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
 import { ThemeProvider } from "@sendcms/ui"
-import { Toaster } from "@sendcms/ui"
+import { getBaseUrl } from "@/lib/utils"
+import { SiteSchema } from "@/components/site-schema"
+
+const baseUrl = getBaseUrl()
 
 export const metadata: Metadata = {
+  // PRF-031/032 (Wave 11, Stream C): metadataBase makes every relative
+  // metadata URL (canonicals, og:url, og:image) resolve to an absolute
+  // URL. The layout sets the shared Open Graph / Twitter defaults;
+  // each page adds its own canonical + og:url via pageOpenGraph() in
+  // @/lib/utils — a page openGraph REPLACES the layout's wholesale,
+  // so pages must repeat the shared fields (siteName/locale/images).
+  // (Layout-level `url` or `canonical` would be wrong on every page
+  // but the homepage.)
+  // No `twitter:site`/`twitter:creator`: SendCMS has no X handle
+  // anywhere in the repo — do not invent one.
+  metadataBase: new URL(baseUrl),
   title: "SendCMS - A Contact-Form Backend for Static and Modern Websites",
   description:
     "SendCMS is a contact-form backend for static and modern sites built with Astro, Hugo, or Next.js. Add one script tag and every form submission lands in a dashboard inbox.",
+  openGraph: {
+    siteName: "SendCMS",
+    locale: "en_US",
+    type: "website",
+    images: [
+      {
+        url: `${baseUrl}${config.metadata.meta_image}`,
+        width: 1200,
+        height: 630,
+        alt: "SendCMS — a contact-form backend for static and modern websites",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 }
 
 // Brand theme color (PRF-040): the light/dark pair tracks --primary,
@@ -63,16 +93,19 @@ export default async function RootLayout({
       <link rel="manifest" href="/manifest.webmanifest" />
 
       <body suppressHydrationWarning>
+        {/* PRF-036 (Wave 11, Stream C): WebSite + Organization JSON-LD
+            on every marketing page (same pattern as ProductSchema). */}
+        <SiteSchema />
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow"
         >
           Skip to main content
         </a>
-        <ThemeProvider nonce={nonce}>
-          {children}
-          <Toaster richColors position="top-right" />
-        </ThemeProvider>
+        {/* PRF-007 (Wave 11): no Toaster component in the public apps — no
+            toast() call site exists in this app, so the sonner bundle
+            was dead weight on every page. Dashboard/admin keep theirs. */}
+        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>
   )

@@ -145,7 +145,14 @@ describe("securityHeaders", () => {
     const config = readFileSync("apps/api/next.config.mjs", "utf8")
     expect(config).toContain('"/api/:path*"')
     expect(config).toContain('{ key: "Cache-Control", value: "no-store" }')
-    expect(config).not.toContain("public, max-age=0")
+    // PRF-003 (Wave 11) is the deliberate exception: the static SDK
+    // bundle under /forms/* (not an API response) is public-cacheable
+    // at the edge, so the "no public caching" assertion is scoped to
+    // the /api rule block instead of the whole file. (Matched on the
+    // header VALUE — the rule's own comment mentions "public".)
+    const apiRule = config.slice(config.indexOf('"/api/:path*"'))
+    const apiBlock = apiRule.slice(0, apiRule.indexOf('"/forms/:path*"'))
+    expect(apiBlock).not.toContain('"public,')
   })
 })
 

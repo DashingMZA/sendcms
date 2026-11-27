@@ -183,7 +183,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>{t("byokCalls")}</CardTitle>
+            <CardTitle as="h2">{t("byokCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
             {summaryLoading ? (
@@ -200,7 +200,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("platformCalls")}</CardTitle>
+            <CardTitle as="h2">{t("platformCalls")}</CardTitle>
           </CardHeader>
           <CardContent>
             {summaryLoading ? (
@@ -217,7 +217,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t("totalCalls")}</CardTitle>
+            <CardTitle as="h2">{t("totalCalls")}</CardTitle>
             <CardDescription>{t("costNote")}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -242,7 +242,7 @@ export function AiUsageTable({ actorRole, initialFilters }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("usageTitle")}</CardTitle>
+          <CardTitle as="h2">{t("usageTitle")}</CardTitle>
           <CardDescription>{t("usageDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

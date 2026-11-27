@@ -1,3 +1,7 @@
+---
+description: "A dependency-free vanilla-TS snippet (10 KB minified) that turns any form into a SendCMS form — posts to the public API and blocks double submits."
+---
+
 # SendCMS JavaScript SDK
 
 A dependency-free vanilla-TS snippet (10 KB minified) that turns any
@@ -171,16 +175,16 @@ const result = await SendCMS.submit(formElement, {
 })
 ```
 
-| Option                               | Default                                      | Notes                                             |
-| ------------------------------------ | -------------------------------------------- | ------------------------------------------------- |
-| `userId` / `formId`                  | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win              |
+| Option                               | Default                                      | Notes                                                                                                                |
+| ------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `userId` / `formId`                  | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win                                                                                 |
 | `apiUrl`                             | origin of the `<script>` tag                 | Override only when the bundle is hosted elsewhere (CDN / npm import — otherwise the SDK warns and `submit()` throws) |
-| `turnstileSiteKey`                   | —                                            | Set when the form has Turnstile on (see below)    |
-| `redirectUrl`                        | —                                            | The form's own redirectUrl wins when set          |
-| `resetOnSuccess`                     | `true`                                       | Skipped when redirecting                          |
-| `honeypot`                           | `true`                                       | Adds the hidden trap input                        |
-| `messages`                           | see code                                     | `sending`, `verifying`, `success`, `error`       |
-| `onSuccess` / `onError` / `onSubmit` | —                                            | Errors in callbacks never break the flow          |
+| `turnstileSiteKey`                   | —                                            | Set when the form has Turnstile on (see below)                                                                       |
+| `redirectUrl`                        | —                                            | The form's own redirectUrl wins when set                                                                             |
+| `resetOnSuccess`                     | `true`                                       | Skipped when redirecting                                                                                             |
+| `honeypot`                           | `true`                                       | Adds the hidden trap input                                                                                           |
+| `messages`                           | see code                                     | `sending`, `verifying`, `success`, `error`                                                                           |
+| `onSuccess` / `onError` / `onSubmit` | —                                            | Errors in callbacks never break the flow                                                                             |
 
 ## Turnstile
 

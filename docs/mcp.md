@@ -1,3 +1,7 @@
+---
+description: "SendCMS exposes a Model Context Protocol (MCP) server so an AI host can list domains and forms and read inbox submissions without opening the dashboard."
+---
+
 # MCP server
 
 SendCMS exposes a Model Context Protocol (MCP) server so an AI host —
@@ -81,27 +85,27 @@ HTTP+SSE transport or `stdio` cannot connect — SendCMS offers neither.
 
 ## Tools
 
-| Tool                      | Scope | What it does                                                                                                                                                                                                                   |
-| ------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `list_domains`            | READ  | List the domains you registered in SendCMS, newest first, with their verification status and linked-form count.                                                                |
-| `get_domain`              | READ  | Get one domain by id, with its verification attempts and linked-form count.                                                                                                   |
-| `create_domain`           | FULL  | Register a domain in SendCMS. A verification challenge is created with it — verify ownership next with verify_domain. Requires a verified account email.                       |
-| `verify_domain`           | FULL  | Start (or reuse) a verification for a domain, then check ownership right away — DNS TXT record, meta tag, or verification file. Returns whether the domain is now verified and how many attempts remain. |
-| `delete_domain`           | FULL  | Delete a domain. Refused while any form is still linked to it — unlink those forms first. Pass the domain string as confirmation.                                             |
-| `list_forms`              | READ  | List your contact forms, newest first, with their fields and linked domains.                                                                                                  |
-| `get_form`                | READ  | Get one form by id, with its fields, linked domains and notification settings.                                                                                                 |
+| Tool                      | Scope | What it does                                                                                                                                                                                                  |
+| ------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_domains`            | READ  | List the domains you registered in SendCMS, newest first, with their verification status and linked-form count.                                                                                               |
+| `get_domain`              | READ  | Get one domain by id, with its verification attempts and linked-form count.                                                                                                                                   |
+| `create_domain`           | FULL  | Register a domain in SendCMS. A verification challenge is created with it — verify ownership next with verify_domain. Requires a verified account email.                                                      |
+| `verify_domain`           | FULL  | Start (or reuse) a verification for a domain, then check ownership right away — DNS TXT record, meta tag, or verification file. Returns whether the domain is now verified and how many attempts remain.      |
+| `delete_domain`           | FULL  | Delete a domain. Refused while any form is still linked to it — unlink those forms first. Pass the domain string as confirmation.                                                                             |
+| `list_forms`              | READ  | List your contact forms, newest first, with their fields and linked domains.                                                                                                                                  |
+| `get_form`                | READ  | Get one form by id, with its fields, linked domains and notification settings.                                                                                                                                |
 | `create_form`             | FULL  | Create a contact form. The form starts with the three default fields (name, email, message) — add more fields from the dashboard. Link a verified domain from the dashboard before it can accept submissions. |
-| `update_form`             | FULL  | Update a form's name, description, success message, redirect URL, spam protections, or daily limit. Only the fields you pass change.                                          |
-| `delete_form`             | FULL  | Archive a form and hide it from the dashboard. Its submissions are kept. Pass the form name as confirmation.                                                                   |
-| `list_submissions`        | READ  | List inbox submissions (newest first) with filters: tab (all, unread, read, starred, archived, spam), form, origin domain, text search, and a date range. Paginated, 20 per page. |
-| `get_submission`          | READ  | Get one submission by id, with its field values, status, origin, and event history.                                                                                           |
-| `update_submission`       | FULL  | Change a submission's status: read, unread, star, unstar, archive, restore, spam, or not-spam. Archived and spam submissions must be restored before any other action.       |
-| `bulk_update_submissions` | FULL  | Apply one status action to up to 100 submissions at once.                                                                                                                      |
-| `delete_submission`       | FULL  | Permanently delete a submission. This cannot be undone.                                                                                                                        |
-| `get_overview`            | READ  | Your account at a glance: domain, form and submission counts, recent submissions, and the unread total.                                                                        |
-| `get_analytics`           | READ  | Per-day submission counts and the status breakdown for the last N days (default 30, max 365).                                                                                  |
-| `list_email_jobs`         | READ  | List the email notification outbox (newest first) with filters: delivery status (PENDING, SENT, FAILED), form, and page. Paginated.                                           |
-| `send_test_email`         | FULL  | Send a test submission-notification email for a form to one address, to check that delivery works.                                                                            |
+| `update_form`             | FULL  | Update a form's name, description, success message, redirect URL, spam protections, or daily limit. Only the fields you pass change.                                                                          |
+| `delete_form`             | FULL  | Archive a form and hide it from the dashboard. Its submissions are kept. Pass the form name as confirmation.                                                                                                  |
+| `list_submissions`        | READ  | List inbox submissions (newest first) with filters: tab (all, unread, read, starred, archived, spam), form, origin domain, text search, and a date range. Paginated, 20 per page.                             |
+| `get_submission`          | READ  | Get one submission by id, with its field values, status, origin, and event history.                                                                                                                           |
+| `update_submission`       | FULL  | Change a submission's status: read, unread, star, unstar, archive, restore, spam, or not-spam. Archived and spam submissions must be restored before any other action.                                        |
+| `bulk_update_submissions` | FULL  | Apply one status action to up to 100 submissions at once.                                                                                                                                                     |
+| `delete_submission`       | FULL  | Permanently delete a submission. This cannot be undone.                                                                                                                                                       |
+| `get_overview`            | READ  | Your account at a glance: domain, form and submission counts, recent submissions, and the unread total.                                                                                                       |
+| `get_analytics`           | READ  | Per-day submission counts and the status breakdown for the last N days (default 30, max 365).                                                                                                                 |
+| `list_email_jobs`         | READ  | List the email notification outbox (newest first) with filters: delivery status (PENDING, SENT, FAILED), form, and page. Paginated.                                                                           |
+| `send_test_email`         | FULL  | Send a test submission-notification email for a form to one address, to check that delivery works.                                                                                                            |
 
 The "What it does" column copies each tool's registered description
 verbatim (`packages/mcp/src/tools/*.ts`); a test
@@ -140,16 +144,16 @@ tool calls count.
 
 ## Errors
 
-| Status  | Meaning                                                                                                                                                  |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **401** | Missing, unknown, or revoked API key. Create or rotate a key at `/dashboard/api-keys`.                                                                   |
-| **400** | Malformed JSON body, or a body that is not a JSON object.                                                                                                  |
-| **403** | Suspended account, or MCP disabled for this account by the platform administrator.                                                                        |
-| **404** | Tool not in the key's admin-set allowlist (`Tool <name> not found`).                                                                                      |
-| **405** | Anything but POST on `/api/mcp` (GET and DELETE are rejected).                                                                                             |
-| **413** | Body over 4 MiB.                                                                                                                                           |
-| **429** | Rate limit for this key (see above).                                                                                                                       |
-| **503** | MCP temporarily disabled by the platform administrator (global kill-switch).                                                                               |
+| Status  | Meaning                                                                                |
+| ------- | -------------------------------------------------------------------------------------- |
+| **401** | Missing, unknown, or revoked API key. Create or rotate a key at `/dashboard/api-keys`. |
+| **400** | Malformed JSON body, or a body that is not a JSON object.                              |
+| **403** | Suspended account, or MCP disabled for this account by the platform administrator.     |
+| **404** | Tool not in the key's admin-set allowlist (`Tool <name> not found`).                   |
+| **405** | Anything but POST on `/api/mcp` (GET and DELETE are rejected).                         |
+| **413** | Body over 4 MiB.                                                                       |
+| **429** | Rate limit for this key (see above).                                                   |
+| **503** | MCP temporarily disabled by the platform administrator (global kill-switch).           |
 
 The 403 / 404 / 503 refusals come from the admin MCP controls
 (`packages/mcp/src/access.ts`) — see

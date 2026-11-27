@@ -16,8 +16,8 @@ export default function TrialsLoading() {
         <Skeleton className="mt-2 h-4 w-96 max-w-full" />
       </div>
 
-      <main
-        id="main-content"
+      <div
+        tabIndex={-1}
         className="flex flex-col gap-6 p-6"
         aria-label="Loading"
       >
@@ -48,7 +48,7 @@ export default function TrialsLoading() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      </main>
+      </div>
     </div>
   )
 }

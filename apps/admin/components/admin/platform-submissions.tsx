@@ -139,7 +139,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>{t("statsByStatus")}</CardTitle>
+            <CardTitle as="h2">{t("statsByStatus")}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="flex flex-col gap-2 text-sm">
@@ -162,7 +162,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("topFormsSpam")}</CardTitle>
+            <CardTitle as="h2">{t("topFormsSpam")}</CardTitle>
           </CardHeader>
           <CardContent>
             {stats ? (
@@ -196,7 +196,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("topUsersVolume")}</CardTitle>
+            <CardTitle as="h2">{t("topUsersVolume")}</CardTitle>
           </CardHeader>
           <CardContent>
             {stats ? (
@@ -233,7 +233,7 @@ export function PlatformSubmissions({ actorRole }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("title")}</CardTitle>
+          <CardTitle as="h2">{t("title")}</CardTitle>
           <CardDescription>{t("description")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

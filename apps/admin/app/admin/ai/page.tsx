@@ -40,9 +40,9 @@ export default async function AdminAiPage() {
         title={t("overviewTitle")}
         description={t("overviewDescription")}
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <AiOverview actorRole={actorRole} />
-      </main>
+      </div>
     </div>
   )
 }

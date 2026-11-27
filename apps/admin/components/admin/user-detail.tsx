@@ -248,7 +248,7 @@ export function UserDetail({
           </div>
         }
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="profile">{t("tabProfile")}</TabsTrigger>
@@ -350,7 +350,7 @@ export function UserDetail({
           onOpenChange={setStepUpOpen}
           onVerified={() => void confirmAction()}
         />
-      </main>
+      </div>
     </div>
   )
 }

@@ -8,6 +8,7 @@
   "assignTitle": "Assign",
   "backToQueue": "Back to tickets",
   "cancel": "Cancel",
+  "clearSearch": "Clear search",
   "closeConfirmButton": "Close ticket",
   "closeConfirmDescription": "Closing is final — the ticket cannot be reopened or replied to. The customer can open a new ticket if they still need help.",
   "closeConfirmTitle": "Close this ticket?",

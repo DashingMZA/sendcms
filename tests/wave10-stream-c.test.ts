@@ -180,9 +180,13 @@ describe("Logo dimensions (SRC-328(d))", () => {
         brand: { ...BRAND, logo_width: "abc", logo_height: "abc" },
       })
     )
-    // Default 208x50, requested at 2x for high-DPI screens.
-    expect(markup).toContain('width="416"')
-    expect(markup).toContain('height="100"')
+    // Default 208x50, rendered at the DISPLAY size (PRF-008, Wave 11):
+    // the logo displays at most 160px wide (max-w-40), so the width /
+    // height attributes are the display size (160x38, aspect kept),
+    // with the 2x DPR variant served via the srcset (160w / 320w) —
+    // not by requesting a 2x-sized image as the layout size.
+    expect(markup).toContain('width="160"')
+    expect(markup).toContain('height="38"')
   })
 
   it("uses configured numeric dimensions when they are valid", () => {
@@ -191,8 +195,10 @@ describe("Logo dimensions (SRC-328(d))", () => {
         brand: { ...BRAND, logo_width: "100", logo_height: "25" },
       })
     )
-    expect(markup).toContain('width="200"')
-    expect(markup).toContain('height="50"')
+    // Configured 100x25 is under the 160px display cap, so it renders
+    // at its own size (PRF-008, Wave 11 — display size, not 2x).
+    expect(markup).toContain('width="100"')
+    expect(markup).toContain('height="25"')
   })
 })
 

@@ -224,7 +224,7 @@ function AnnouncementsInner() {
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle>{t("title")}</CardTitle>
+            <CardTitle as="h2">{t("title")}</CardTitle>
             <CardDescription>{t("description")}</CardDescription>
           </div>
           <Button onClick={openCreate}>{t("createAnnouncement")}</Button>

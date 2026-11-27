@@ -60,7 +60,7 @@ export function UserAuditTab({ userId, auditEvents, notes, canManage }: Props) {
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>{t("auditTitle")}</CardTitle>
+          <CardTitle as="h2">{t("auditTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           {auditEvents.length === 0 ? (
@@ -119,7 +119,7 @@ export function UserAuditTab({ userId, auditEvents, notes, canManage }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("notesTitle")}</CardTitle>
+          <CardTitle as="h2">{t("notesTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {notes.length === 0 ? (

@@ -191,6 +191,7 @@ export function AppSidebar({
                 "S" tile takes its place. */}
             <SidebarMenuButton
               size="lg"
+              asChild
               className="flex items-center p-0 group-data-[collapsible=icon]:hidden hover:bg-transparent"
             >
               <Link href="/dashboard" className="max-h-[42px] ps-0">
@@ -209,7 +210,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       {/* ── Content ─────────────────────────────────────── */}
-      <SidebarContent>
+      <SidebarContent aria-label="Dashboard">
         {/* New form shortcut */}
         <SidebarGroup>
           <SidebarGroupContent className="group-data-[collapsible=icon]:px-0">
@@ -218,7 +219,7 @@ export function AppSidebar({
                 <SidebarMenuButton
                   asChild
                   tooltip={t("newForm")}
-                  className="border-2 border-dashed border-primary/40 bg-primary/5 py-5 text-primary/70 transition-colors duration-200 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:text-sidebar-foreground hover:bg-primary/10 hover:text-primary group-data-[collapsible=icon]:hover:bg-primary/10 group-data-[collapsible=icon]:hover:text-primary"
+                  className="border-2 border-dashed border-primary/40 bg-primary/5 py-5 text-primary transition-colors duration-200 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2 group-data-[collapsible=icon]:text-sidebar-foreground hover:bg-primary/10 hover:text-primary group-data-[collapsible=icon]:hover:bg-primary/10 group-data-[collapsible=icon]:hover:text-primary"
                 >
                   <Link href="/dashboard/forms/new">
                     <RiAddLine className="size-4 shrink-0" aria-hidden="true" />

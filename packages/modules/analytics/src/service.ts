@@ -1,4 +1,4 @@
-import { SubmissionStatus, db } from "@sendcms/database"
+import { Prisma, SubmissionStatus, db } from "@sendcms/database"
 
 import { getSubmissionSender, previewSubmissionText } from "@sendcms/shared"
 
@@ -6,6 +6,24 @@ export type DayCount = { date: string; count: number }
 
 function dayKey(date: Date): string {
   return date.toISOString().slice(0, 10)
+}
+
+/** Fills the `days`-long UTC window ending today with per-day counts
+    (0 for days with no submissions). Shared by bucketByDay (raw
+    timestamps) and dayCountsFromGroups (SQL-aggregated rows). */
+function fillDayWindow(
+  counts: Map<string, number>,
+  days: number,
+  now = new Date()
+): DayCount[] {
+  const out: DayCount[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(now)
+    day.setUTCDate(now.getUTCDate() - i)
+    const key = dayKey(day)
+    out.push({ date: key, count: counts.get(key) ?? 0 })
+  }
+  return out
 }
 
 /** Pure: bucket timestamps into per-day counts for the last `days`
@@ -20,14 +38,49 @@ export function bucketByDay(
     const key = dayKey(date)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
-  const out: DayCount[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(now)
-    day.setUTCDate(now.getUTCDate() - i)
-    const key = dayKey(day)
-    out.push({ date: key, count: counts.get(key) ?? 0 })
+  return fillDayWindow(counts, days, now)
+}
+
+/** Pure: build the same per-day chart from rows already aggregated in
+    SQL (`{ day, count }`, one row per day) — DB-046. The database
+    returns at most `days` rows, never one row per submission, so a
+    14-day window over a huge history costs 14 rows, not the whole
+    table. Days outside the returned groups get count 0. */
+export function dayCountsFromGroups(
+  groups: { day: Date; count: number }[],
+  days: number,
+  now = new Date()
+): DayCount[] {
+  const counts = new Map<string, number>()
+  for (const group of groups) {
+    counts.set(dayKey(new Date(group.day)), group.count)
   }
-  return out
+  return fillDayWindow(counts, days, now)
+}
+
+// DB-046: one SQL aggregation for the activity chart — DATE_TRUNC
+// groups submissions by UTC day in the database instead of loading
+// every `createdAt` in the window into memory (the old findMany had
+// no `take`). At most `days` rows come back.
+async function submissionDayCounts(
+  userId: string,
+  since: Date
+): Promise<{ day: Date; count: number }[]> {
+  return db.$queryRaw<{ day: Date; count: number }[]>(Prisma.sql`
+    SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::int AS count
+    FROM "Submission"
+    WHERE "ownerId" = ${userId} AND "createdAt" >= ${since}
+    GROUP BY DATE_TRUNC('day', "createdAt")
+    ORDER BY day ASC
+  `)
+}
+
+/** UTC start of day `daysAgo` days ago (DSH-407 alignment: the chart's
+    first bucket starts at 00:00, so the bound must too). */
+function startOfDayDaysAgo(daysAgo: number): Date {
+  const since = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
+  since.setUTCHours(0, 0, 0, 0)
+  return since
 }
 
 export type RecentSubmission = {
@@ -79,7 +132,7 @@ export async function getDashboardOverview(
     starredCount,
     archivedCount,
     recent,
-    recentDates,
+    activityGroups,
   ] = await Promise.all([
     db.domain.count({ where: { ownerId: userId } }),
     db.domain.count({
@@ -109,15 +162,10 @@ export async function getDashboardOverview(
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
-    db.submission.findMany({
-      where: {
-        ownerId: userId,
-        createdAt: {
-          gte: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000),
-        },
-      },
-      select: { createdAt: true },
-    }),
+    // DB-046: the 14-day activity chart is aggregated in SQL (at most
+    // 14 rows) — the old findMany loaded every `createdAt` in the
+    // window with no `take`. Start-of-day bound (DSH-407 alignment).
+    submissionDayCounts(userId, startOfDayDaysAgo(13)),
   ])
 
   return {
@@ -144,10 +192,7 @@ export async function getDashboardOverview(
         createdAt: submission.createdAt,
       }
     }),
-    activity: bucketByDay(
-      recentDates.map((row) => row.createdAt),
-      14
-    ),
+    activity: dayCountsFromGroups(activityGroups, 14),
   }
 }
 
@@ -165,7 +210,9 @@ export async function getSubmissionAnalytics(
 ): Promise<SubmissionAnalytics> {
   // SRC-236: clamp `days` to 1–365 at the service — a negative value
   // used to yield an empty result and a huge one loaded the whole
-  // table (the unbounded findMany below). Callers happen to be safe
+  // table (the old unbounded findMany). DB-046 finished that fix:
+  // the per-day chart is now aggregated in SQL (submissionDayCounts),
+  // so the window costs at most `days` rows. Callers happen to be safe
   // (dashboard hardcodes 30; MCP zod-validates 1–365); this is the
   // defense-in-depth half.
   const clampedDays = Number.isFinite(days)
@@ -178,32 +225,32 @@ export async function getSubmissionAnalytics(
   // start-of-day bound, total == sum(byDay).
   const since = new Date(Date.now() - (clampedDays - 1) * 24 * 60 * 60 * 1000)
   since.setUTCHours(0, 0, 0, 0)
-  const [total, rows, byFormRaw, byDomainRaw, byStatusRaw] = await Promise.all([
-    db.submission.count({
-      where: { ownerId: userId, createdAt: { gte: since } },
-    }),
-    db.submission.findMany({
-      where: { ownerId: userId, createdAt: { gte: since } },
-      select: { createdAt: true },
-    }),
-    db.submission.groupBy({
-      by: ["formId"],
-      where: { ownerId: userId, createdAt: { gte: since } },
-      _count: true,
-      orderBy: { _count: { formId: "desc" } },
-    }),
-    db.submission.groupBy({
-      by: ["originDomain"],
-      where: { ownerId: userId, createdAt: { gte: since } },
-      _count: true,
-      orderBy: { _count: { originDomain: "desc" } },
-    }),
-    db.submission.groupBy({
-      by: ["status"],
-      where: { ownerId: userId, createdAt: { gte: since } },
-      _count: true,
-    }),
-  ])
+  const [total, dayGroups, byFormRaw, byDomainRaw, byStatusRaw] =
+    await Promise.all([
+      db.submission.count({
+        where: { ownerId: userId, createdAt: { gte: since } },
+      }),
+      // DB-046: same SQL day-grouping as the overview — the old
+      // findMany loaded one row per submission in the window.
+      submissionDayCounts(userId, since),
+      db.submission.groupBy({
+        by: ["formId"],
+        where: { ownerId: userId, createdAt: { gte: since } },
+        _count: true,
+        orderBy: { _count: { formId: "desc" } },
+      }),
+      db.submission.groupBy({
+        by: ["originDomain"],
+        where: { ownerId: userId, createdAt: { gte: since } },
+        _count: true,
+        orderBy: { _count: { originDomain: "desc" } },
+      }),
+      db.submission.groupBy({
+        by: ["status"],
+        where: { ownerId: userId, createdAt: { gte: since } },
+        _count: true,
+      }),
+    ])
 
   const formNames = new Map(
     (
@@ -219,10 +266,7 @@ export async function getSubmissionAnalytics(
 
   return {
     total,
-    byDay: bucketByDay(
-      rows.map((row) => row.createdAt),
-      clampedDays
-    ),
+    byDay: dayCountsFromGroups(dayGroups, clampedDays),
     byForm: byFormRaw.map((row) => ({
       formId: row.formId,
       formName: formNames.get(row.formId) ?? "Deleted form",

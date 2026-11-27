@@ -56,7 +56,7 @@ export function SystemOverview() {
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>{t("versionsTitle")}</CardTitle>
+          <CardTitle as="h2">{t("versionsTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid gap-2 text-sm sm:grid-cols-3">
@@ -78,7 +78,7 @@ export function SystemOverview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("envTitle")}</CardTitle>
+          <CardTitle as="h2">{t("envTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-4 text-sm text-muted-foreground">{t("envNote")}</p>
@@ -102,7 +102,7 @@ export function SystemOverview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("configTitle")}</CardTitle>
+          <CardTitle as="h2">{t("configTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <p className="text-sm">

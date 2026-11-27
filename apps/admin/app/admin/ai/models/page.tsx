@@ -39,9 +39,9 @@ export default async function AdminAiModelsPage() {
         title={t("modelsTitle")}
         description={t("modelsDescription")}
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <AiModels actorRole={actorRole} />
-      </main>
+      </div>
     </div>
   )
 }

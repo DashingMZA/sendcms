@@ -4,10 +4,15 @@ import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { getListPage } from "@sendcms/content"
 import { marketingUrl } from "@/lib/app-links"
+import { getBaseUrl, pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
   title: "Changelog — SendCMS",
-  description: "What's new in SendCMS. Notes from each release.",
+  description:
+    "What's new in SendCMS, newest first — every release, feature, and fix, with the date it shipped and a note on what changed.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + article OG.
+  alternates: { canonical: "/changelog" },
+  openGraph: pageOpenGraph("/changelog", "article"),
 }
 
 type ChangelogEntry = {
@@ -23,9 +28,28 @@ export default function ChangelogPage() {
     subtitle: string
     entries: ChangelogEntry[]
   }
+  const baseUrl = getBaseUrl()
+
+  // PRF-036 (Wave 11, Stream C): one BlogPosting per changelog entry
+  // (same pattern as ProductSchema).
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": entries.map((entry) => ({
+      "@type": "BlogPosting",
+      headline: `SendCMS v${entry.version}`,
+      description: entry.changes[0] ?? subtitle,
+      url: `${baseUrl}/changelog`,
+      datePublished: new Date(entry.date).toISOString(),
+      author: { "@type": "Organization", name: "SendCMS", url: baseUrl },
+    })),
+  }
 
   return (
     <div className="flex min-h-svh flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <header className="border-b">
         <div className="mx-auto flex h-16 max-w-3xl items-center px-4">
           <Link

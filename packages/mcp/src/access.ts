@@ -68,10 +68,25 @@ export async function checkMcpAccess(input: {
   // exist. A MISSING row means "enabled" (documented default — see
   // the schema comment): the live platform has no row until an
   // admin first opens the MCP page.
-  const settings = await db.mcpSettings.findUnique({
-    where: { id: "platform" },
-    select: { globalEnabled: true },
-  })
+  //
+  // DB-047: the three reads are independent, so they run in parallel
+  // — this check runs on EVERY MCP request, and three serial round
+  // trips preceded every tool call. The guards below still evaluate
+  // in the same order (kill-switch, then account, then per-user), so
+  // the refusal precedence is unchanged.
+  const [settings, user, userSettings] = await Promise.all([
+    db.mcpSettings.findUnique({
+      where: { id: "platform" },
+      select: { globalEnabled: true },
+    }),
+    db.user.findUnique({
+      where: { id: auth.userId },
+      select: { status: true },
+    }),
+    db.mcpUserSettings.findUnique({
+      where: { userId: auth.userId },
+    }),
+  ])
   if (settings && !settings.globalEnabled) {
     throw new ApiError(
       "MCP is temporarily disabled by the platform administrator.",
@@ -79,10 +94,6 @@ export async function checkMcpAccess(input: {
     )
   }
 
-  const user = await db.user.findUnique({
-    where: { id: auth.userId },
-    select: { status: true },
-  })
   if (!user || user.status !== "ACTIVE") {
     throw new ApiError(
       "This account is suspended. MCP access is disabled.",
@@ -90,9 +101,6 @@ export async function checkMcpAccess(input: {
     )
   }
 
-  const userSettings = await db.mcpUserSettings.findUnique({
-    where: { userId: auth.userId },
-  })
   if (userSettings && !userSettings.isEnabled) {
     throw new ApiError(
       "MCP is disabled for this account by the platform administrator.",

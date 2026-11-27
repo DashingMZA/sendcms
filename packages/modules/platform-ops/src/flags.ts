@@ -54,6 +54,9 @@ export type FeatureFlagRow = {
   isEnabled: boolean
   createdAt: Date
   updatedAt: Date
+  /** ADM-098: per-user override count — set by listFlags (one
+      groupBy), not by getFlag. Absent means "not computed". */
+  overrideCount?: number
 }
 
 function toFlagRow(row: {
@@ -103,15 +106,31 @@ export async function getFlag(
 
 /** Every flag, newest first. Reads and writes both need
     MANAGE_FEATURE_FLAGS — the flags page is a management page, and
-    the role map keeps it owner + SUPER_ADMIN only. */
+    the role map keeps it owner + SUPER_ADMIN only.
+    ADM-098: the per-flag override count rides along in the same
+    response (one groupBy on featureFlagOverride, joined on flagId),
+    so the overview no longer fires one useFlagOverrides query per
+    row. */
 export async function listFlags(
   actor: AdminSession
 ): Promise<{ flags: FeatureFlagRow[] }> {
   requireAdmin(actor, "MANAGE_FEATURE_FLAGS")
-  const flags = await db.featureFlag.findMany({
-    orderBy: { createdAt: "desc" },
-  })
-  return { flags: flags.map(toFlagRow) }
+  const [flags, counts] = await Promise.all([
+    db.featureFlag.findMany({
+      orderBy: { createdAt: "desc" },
+    }),
+    db.featureFlagOverride.groupBy({
+      by: ["flagId"],
+      _count: { _all: true },
+    }),
+  ])
+  const overrideCount = new Map(counts.map((c) => [c.flagId, c._count._all]))
+  return {
+    flags: flags.map((flag) => ({
+      ...toFlagRow(flag),
+      overrideCount: overrideCount.get(flag.id) ?? 0,
+    })),
+  }
 }
 
 /** Creates a flag (off by default). MANAGE_FEATURE_FLAGS, audited.

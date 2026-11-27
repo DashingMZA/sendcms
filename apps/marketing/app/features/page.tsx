@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react"
 import Link from "next/link"
 import config from "@/config/config.json"
 import { resolveLink } from "@/lib/app-links"
+import { pageOpenGraph } from "@/lib/utils"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@sendcms/ui"
 import { Logo } from "@sendcms/ui"
 import {
@@ -21,6 +22,9 @@ export const metadata: Metadata = {
   title: "Features — SendCMS",
   description:
     "Everything SendCMS does: contact forms on any website, verified domains, spam protection, an inbox for every submission, email notifications, AI assistance, and API access.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/features" },
+  openGraph: pageOpenGraph("/features"),
 }
 
 type Feature = {

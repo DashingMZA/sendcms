@@ -39,6 +39,11 @@ export type PlatformHealth = {
   outbox: {
     pending: number
     oldestPendingAgeMinutes: number | null
+    // PRF-018: true when the oldest PENDING job has waited longer
+    // than OUTBOX_STALE_AGE_MINUTES — the drain (cron route or
+    // worker) has stopped running, or a provider outage is holding
+    // every job. The admin health page shows this as an alert.
+    outboxStale: boolean
     pendingDue: number
     sending: number
     failed: number
@@ -100,6 +105,13 @@ export type PlatformHealth = {
 // test in tests/platform-ops.test.ts asserts the read is issued
 // against exactly this id.
 const MCP_SETTINGS_ID = "platform"
+
+// PRF-018: the outbox is stale when its oldest PENDING job has
+// waited over an hour with no drain. The threshold is the same signal
+// the dead-man's-switch heartbeat watches from the other side: the
+// heartbeat fires per run, this flag fires when no run has drained
+// the queue for an hour.
+export const OUTBOX_STALE_AGE_MINUTES = 60
 
 /** Live platform health: DB ping, real counts, outbox depth, today's
     AI calls, the last-24h MCP error rate, the MCP kill-switch state,
@@ -218,6 +230,15 @@ export async function getPlatformHealth(
     if (g.status === "FAILED") mcpFailed += g._count._all
   }
 
+  // PRF-018: computed once, used for the age and the stale flag.
+  const oldestPendingAgeMinutes =
+    oldestPending === null
+      ? null
+      : Math.round((now.getTime() - oldestPending.createdAt.getTime()) / 60000)
+  const outboxStale =
+    oldestPendingAgeMinutes !== null &&
+    oldestPendingAgeMinutes > OUTBOX_STALE_AGE_MINUTES
+
   return {
     database,
     counts: {
@@ -241,12 +262,8 @@ export async function getPlatformHealth(
     },
     outbox: {
       pending: pendingJobs,
-      oldestPendingAgeMinutes:
-        oldestPending === null
-          ? null
-          : Math.round(
-              (now.getTime() - oldestPending.createdAt.getTime()) / 60000
-            ),
+      oldestPendingAgeMinutes,
+      outboxStale,
       pendingDue: pendingDueJobs,
       sending: sendingJobs,
       failed: failedJobs,

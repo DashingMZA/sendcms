@@ -64,7 +64,7 @@ export function UserProfileTab({
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>{t("profileTitle")}</CardTitle>
+          <CardTitle as="h2">{t("profileTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="divide-y">
@@ -121,7 +121,7 @@ export function UserProfileTab({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("actionsTitle")}</CardTitle>
+          <CardTitle as="h2">{t("actionsTitle")}</CardTitle>
           <CardDescription>{t("description")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">

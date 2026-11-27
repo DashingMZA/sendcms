@@ -1,3 +1,7 @@
+---
+description: "The SendCMS public REST API: one submit endpoint behind Origin verification, plus the session-cookie admin API the dashboard uses. No API keys needed."
+---
+
 # REST API
 
 Base URL: `https://YOUR_APP` (your SendCMS deployment — in production,

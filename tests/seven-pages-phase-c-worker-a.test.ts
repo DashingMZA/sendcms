@@ -64,6 +64,9 @@ const mockRequireStepUp = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRecordWorkerFailedPoll = vi.hoisted(() =>
   vi.fn(async () => ({ id: "run-worker-1" }))
 )
+// PRF-018 (Wave 11): the worker also imports the heartbeat ping from
+// the cron barrel — the mock must export it or the poll throws.
+const mockPingCronHeartbeat = vi.hoisted(() => vi.fn(async () => undefined))
 const mockQueueDepth = vi.hoisted(() =>
   vi.fn(async () => ({
     pending: 0,
@@ -236,6 +239,7 @@ vi.mock("@sendcms/security", async (importOriginal) => {
 // source path, so this mock only affects the worker tests.
 vi.mock("@sendcms/cron", () => ({
   recordWorkerFailedPoll: mockRecordWorkerFailedPoll,
+  pingCronHeartbeat: mockPingCronHeartbeat,
 }))
 vi.mock("@sendcms/platform-ops", () => ({
   getEmailQueueDepth: mockQueueDepth,
@@ -688,9 +692,16 @@ describe("deriveCronRunStatus / buildCronRunSteps / emptyCronRunSteps", () => {
 
 describe("retention — 90 days, CronRun rows only (Q8)", () => {
   it("deletes only rows older than 90 days", async () => {
-    const old = seedRun({ id: "run-old", createdAt: daysAgo(91) })
-    const edge = seedRun({ id: "run-edge", createdAt: daysAgo(89) })
-    const fresh = seedRun({ id: "run-fresh", createdAt: NOW })
+    // Dates are relative to the REAL now: the prune cutoff is computed
+    // from the wall clock, so anchoring the seeds to the file's fixed
+    // NOW (2026-11-26) makes the 89-day edge row expire the day after
+    // the test was written. Anchor to real now instead.
+    const realNow = new Date()
+    const realDaysAgo = (n: number) =>
+      new Date(realNow.getTime() - n * 24 * 60 * 60 * 1000)
+    const old = seedRun({ id: "run-old", createdAt: realDaysAgo(91) })
+    const edge = seedRun({ id: "run-edge", createdAt: realDaysAgo(89) })
+    const fresh = seedRun({ id: "run-fresh", createdAt: realNow })
     await runEmailOutboxCron()
     expect(store.runs.has(old.id)).toBe(false)
     expect(store.runs.has(edge.id)).toBe(true)

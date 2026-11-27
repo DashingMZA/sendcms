@@ -31,9 +31,9 @@ export default async function AdminUsagePage() {
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <UsageOverview />
-      </main>
+      </div>
     </div>
   )
 }

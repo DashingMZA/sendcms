@@ -2,23 +2,25 @@
 
 import { useState, useCallback, useRef } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { Input } from "@sendcms/ui"
+import { SearchInput } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
-
-import { RiCloseLine, RiSearchLine } from "@remixicon/react"
 
 const DEBOUNCE_MS = 300
 
 /** Debounced search for a paged dashboard list (DSH-107): keeps the
     other list params in the URL and resets to page 1 on change. The
     translation domain supplies `searchPlaceholder` / `clearSearch`
-    (the inbox has its own copy, InboxSearchInput, for the same job). */
+    (the inbox has its own copy, InboxSearchInput, for the same job).
+    Renders the shared `SearchInput` (PRF-027/PRF-030) so the field is
+    labelled and the clear button is 24 px. */
 export function ListSearchInput({
   domain,
   defaultValue = "",
+  id = "list-search",
 }: {
   domain: string
   defaultValue?: string
+  id?: string
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -42,8 +44,7 @@ export function ListSearchInput({
     [pathname, router, searchParams]
   )
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value
+  function handleChange(next: string) {
     setValue(next)
 
     if (debounceRef.current) {
@@ -63,25 +64,14 @@ export function ListSearchInput({
   }
 
   return (
-    <div className="relative">
-      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="text"
-        placeholder={t("searchPlaceholder")}
-        value={value}
-        onChange={handleChange}
-        className="h-9 w-64 ps-9 pe-9 text-sm"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={t("clearSearch")}
-        >
-          <RiCloseLine className="size-4" />
-        </button>
-      )}
-    </div>
+    <SearchInput
+      id={id}
+      label={t("searchPlaceholder")}
+      placeholder={t("searchPlaceholder")}
+      value={value}
+      onChange={handleChange}
+      onClear={handleClear}
+      clearLabel={t("clearSearch")}
+    />
   )
 }

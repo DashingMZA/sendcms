@@ -250,7 +250,7 @@ export default async function AdminJobsPage({
           canManage ? <JobsRunNowButton canManage={canManage} /> : undefined
         }
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard
             title={t("statPending")}
@@ -328,7 +328,7 @@ export default async function AdminJobsPage({
         <section aria-labelledby="jobs-worker-heading">
           <JobsWorkerCard status={workerStatus} />
         </section>
-      </main>
+      </div>
     </div>
   )
 }

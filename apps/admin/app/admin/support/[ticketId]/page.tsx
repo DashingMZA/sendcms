@@ -63,13 +63,13 @@ export default async function AdminSupportThreadPage({
         description={t("queueDescription")}
         back={{ href: "/admin/support", label: t("backToQueue") }}
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <SupportThread
           initialData={ticket}
           staffUsers={staffUsers}
           actorRole={actorRole}
         />
-      </main>
+      </div>
     </div>
   )
 }

@@ -12,7 +12,7 @@ import {
   Button,
   Card,
   CardContent,
-  Input,
+  SearchInput,
   Select,
   SelectContent,
   SelectItem,
@@ -117,11 +117,13 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Input
-          value={search}
-          onChange={(event) => handleSearchChange(event.target.value)}
+        <SearchInput
+          id="support-search"
+          label={t("searchPlaceholder")}
           placeholder={t("searchPlaceholder")}
-          className="h-9 w-64"
+          value={search}
+          onChange={handleSearchChange}
+          clearLabel={t("clearSearch")}
         />
         <Select
           value={filters.status ?? "all"}
@@ -132,7 +134,7 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
             })
           }
         >
-          <SelectTrigger className="h-9 w-44">
+          <SelectTrigger className="h-9 w-44" aria-label={t("filterStatus")}>
             <SelectValue placeholder={t("filterStatus")} />
           </SelectTrigger>
           <SelectContent>
@@ -161,7 +163,7 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
             })
           }
         >
-          <SelectTrigger className="h-9 w-36">
+          <SelectTrigger className="h-9 w-36" aria-label={t("filterPriority")}>
             <SelectValue placeholder={t("filterPriority")} />
           </SelectTrigger>
           <SelectContent>
@@ -185,7 +187,10 @@ export function SupportQueue({ initialData, filters, actorRole }: Props) {
               })
             }
           >
-            <SelectTrigger className="h-9 w-48">
+            <SelectTrigger
+              className="h-9 w-48"
+              aria-label={t("filterAssignee")}
+            >
               <SelectValue placeholder={t("filterAssignee")} />
             </SelectTrigger>
             <SelectContent>

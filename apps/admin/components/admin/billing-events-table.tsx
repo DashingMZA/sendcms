@@ -90,7 +90,7 @@ export function BillingEventsTable({ actorRole }: Props) {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>{t("eventsTitle")}</CardTitle>
+          <CardTitle as="h2">{t("eventsTitle")}</CardTitle>
           <CardDescription>{t("eventsDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

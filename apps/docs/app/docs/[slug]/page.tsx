@@ -4,8 +4,9 @@ import { notFound } from "next/navigation"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { markdownify } from "@sendcms/content"
-import { DOC_SLUGS, getDoc, isDocSlug } from "@/lib/docs"
+import { DOC_SLUGS, getDoc, getDocLastModified, isDocSlug } from "@/lib/docs"
 import { marketingUrl } from "@/lib/app-links"
+import { getBaseUrl, pageOpenGraph } from "@/lib/utils"
 
 export function generateStaticParams() {
   return DOC_SLUGS.map((slug) => ({ slug }))
@@ -22,6 +23,10 @@ export async function generateMetadata({
   return {
     title: `${doc.title} — SendCMS`,
     description: doc.description,
+    // PRF-031/032 (Wave 11, Stream C): self-canonical + article OG.
+    // 404s deliberately get no canonical (PRF-031).
+    alternates: { canonical: `/docs/${slug}` },
+    openGraph: pageOpenGraph(`/docs/${slug}`, "article"),
   }
 }
 
@@ -33,9 +38,60 @@ export default async function DocPage({
   const { slug } = await params
   if (!isDocSlug(slug)) notFound()
   const doc = getDoc(slug)
+  const baseUrl = getBaseUrl()
+  const pageUrl = `${baseUrl}/docs/${slug}`
+
+  // PRF-036 (Wave 11, Stream C): TechArticle + BreadcrumbList JSON-LD
+  // (same pattern as ProductSchema). datePublished is the doc source's
+  // last-modified time — the same value the sitemap uses for lastmod.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        headline: doc.title,
+        description: doc.description,
+        url: pageUrl,
+        datePublished: getDocLastModified(slug).toISOString(),
+        author: { "@type": "Organization", name: "SendCMS", url: baseUrl },
+        publisher: {
+          "@type": "Organization",
+          name: "SendCMS",
+          url: baseUrl,
+        },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "Home",
+            item: marketingUrl(),
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "Docs",
+            item: `${baseUrl}/docs`,
+          },
+          {
+            "@type": "ListItem",
+            position: 3,
+            name: doc.title,
+            item: pageUrl,
+          },
+        ],
+      },
+    ],
+  }
 
   return (
     <div className="flex min-h-svh flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <header className="border-b">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
           <Link

@@ -17,15 +17,15 @@ const mockDb = vi.hoisted(() => ({
     // in the erasure test below proves executeErasure never calls this.
     delete: vi.fn(),
   },
-  form: { findMany: vi.fn(), deleteMany: vi.fn() },
-  domain: { findMany: vi.fn(), deleteMany: vi.fn() },
+  form: { findMany: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
+  domain: { findMany: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
   submission: {
     groupBy: vi.fn(),
     count: vi.fn(),
     findMany: vi.fn(),
     findFirst: vi.fn(),
   },
-  apiKey: { findMany: vi.fn(), updateMany: vi.fn() },
+  apiKey: { findMany: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
   session: { deleteMany: vi.fn() },
   account: { deleteMany: vi.fn() },
   userAiKey: { deleteMany: vi.fn() },
@@ -43,7 +43,7 @@ const mockDb = vi.hoisted(() => ({
     count: vi.fn(),
     deleteMany: vi.fn(),
   },
-  auditLog: { findMany: vi.fn(), create: vi.fn() },
+  auditLog: { findMany: vi.fn(), create: vi.fn(), count: vi.fn() },
   // Phase 7: requestDeletion checks for an open request, then creates
   // the DeletionRequest row inside the same transaction.
   deletionRequest: {
@@ -942,10 +942,20 @@ describe("exportUserData", () => {
       { prefix: "sk_live_aB3x", last4: "9f2k", scope: "FULL", revokedAt: null },
     ])
     mockDb.auditLog.findMany.mockResolvedValue([])
+    mockDb.domain.count.mockResolvedValue(0)
+    mockDb.form.count.mockResolvedValue(1)
+    mockDb.submission.count.mockResolvedValue(1)
+    mockDb.apiKey.count.mockResolvedValue(1)
+    mockDb.auditLog.count.mockResolvedValue(0)
     const data = await exportUserData(supportActor(), userId)
     const serialized = JSON.stringify(data)
     expect(serialized).not.toMatch(/keyHash|password|token/i)
     expect(data.submissions.count).toBe(1)
+    expect(data.submissions.truncated).toBe(false)
+    expect(data.truncated).toBe(false)
+    expect(data.limit).toBe(1000)
+    expect(mockDb.submission.findMany.mock.calls[0][0].take).toBe(1000)
+    expect(mockDb.domain.findMany.mock.calls[0][0].take).toBe(1000)
     expect(data.submissions.items[0]).not.toHaveProperty("data")
     expect(data.forms[0].fields).toEqual([
       { name: "email", type: "EMAIL", required: true },
@@ -959,6 +969,47 @@ describe("exportUserData", () => {
         detail: expect.objectContaining({ event: "user-data-exported" }),
       })
     )
+  })
+
+  // SRC-209: the export is bounded — 5,000 submissions return at most
+  // the 1,000-row cap, the total is still reported, and `truncated`
+  // says rows were left out instead of silently handing over a part.
+  it("caps a 5,000-submission history at 1,000 rows and flags truncated", async () => {
+    mockDb.user.findUnique.mockResolvedValue({
+      id: userId,
+      name: "Customer",
+      email: "customer@example.com",
+      emailVerified: true,
+      platformRole: "PLATFORM_USER",
+      adminRole: null,
+      status: "ACTIVE",
+      locale: "en",
+      createdAt: new Date(),
+    })
+    mockDb.domain.findMany.mockResolvedValue([])
+    mockDb.form.findMany.mockResolvedValue([])
+    mockDb.submission.findMany.mockResolvedValue(
+      Array.from({ length: 1000 }, (_, i) => ({
+        id: `sub-${i}`,
+        formId: "form-1",
+        status: "NEW",
+        createdAt: new Date(),
+        originDomain: "example.com",
+        form: { name: "Contact us" },
+      }))
+    )
+    mockDb.apiKey.findMany.mockResolvedValue([])
+    mockDb.auditLog.findMany.mockResolvedValue([])
+    mockDb.domain.count.mockResolvedValue(0)
+    mockDb.form.count.mockResolvedValue(0)
+    mockDb.submission.count.mockResolvedValue(5000)
+    mockDb.apiKey.count.mockResolvedValue(0)
+    mockDb.auditLog.count.mockResolvedValue(0)
+    const data = await exportUserData(supportActor(), userId)
+    expect(data.submissions.items).toHaveLength(1000)
+    expect(data.submissions.count).toBe(5000)
+    expect(data.submissions.truncated).toBe(true)
+    expect(data.truncated).toBe(true)
   })
 })
 

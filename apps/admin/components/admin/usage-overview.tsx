@@ -1,6 +1,5 @@
 "use client"
 
-import { RiSearchLine } from "@remixicon/react"
 import { useRef, useState } from "react"
 import { useAdminUsers } from "@sendcms/admin-users/queries"
 import {
@@ -19,8 +18,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Input,
   Label,
+  SearchInput,
   Select,
   SelectContent,
   SelectItem,
@@ -99,17 +98,19 @@ export function UsageOverview() {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>{t("selectUserTitle")}</CardTitle>
+          <CardTitle as="h2">{t("selectUserTitle")}</CardTitle>
           <CardDescription>{t("searchHint")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="relative max-w-md">
-            <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
+            <SearchInput
+              id="usage-user-search"
+              label={t("searchPlaceholder")}
               placeholder={t("searchPlaceholder")}
               value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="ps-9"
+              onChange={handleSearchChange}
+              clearLabel={t("clearSearch")}
+              className="w-full"
             />
           </div>
           {users.length > 0 && (
@@ -152,7 +153,9 @@ export function UsageOverview() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>{selectedUser.name ?? selectedUser.email}</CardTitle>
+            <CardTitle as="h2">
+              {selectedUser.name ?? selectedUser.email}
+            </CardTitle>
             <CardDescription>{selectedUser.email}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">

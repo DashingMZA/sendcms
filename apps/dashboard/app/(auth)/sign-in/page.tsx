@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -14,6 +15,14 @@ import { resolveSignInCallbackURL } from "@/lib/callback-url"
 // asked for, and the admin proxy an absolute admin URL. The value is
 // validated (dashboard/admin origin only) before it reaches either
 // form, so a crafted link can never redirect elsewhere.
+// PRF-037: each auth page has a distinct tab title (the layout
+// template appends "— SendCMS Dashboard").
+export const metadata: Metadata = {
+  title: "Sign in",
+  description:
+    "Sign in to your SendCMS dashboard to manage forms and submissions.",
+}
+
 export default async function SignInPage({
   searchParams,
 }: {

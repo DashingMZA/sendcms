@@ -336,24 +336,30 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
+              asChild
               className="flex items-center p-0 hover:bg-transparent"
             >
               {/* UX-014: in collapsed (icon) mode the button is 32 px
                   wide with overflow hidden — the 160 px wordmark
                   would show as a clipped slice. Hide the wordmark
                   and show a compact brand mark instead. */}
-              <Link
-                href="/admin"
-                className="max-h-[42px] ps-0 group-data-[collapsible=icon]:hidden"
-              >
-                <Logo brand={config.site} />
-              </Link>
+              {/* UX-010: one link (not a button wrapping two links) —
+                  the wordmark and the compact mark are spans inside
+                  the same link, so the logo is a single focusable link. */}
               <Link
                 href="/admin"
                 aria-label={config.site.title}
-                className="hidden size-8 items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground group-data-[collapsible=icon]:flex"
+                className="max-h-[42px] ps-0"
               >
-                {config.site.logo_text.charAt(0)}
+                <span className="group-data-[collapsible=icon]:hidden">
+                  <Logo brand={config.site} />
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="hidden size-8 items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground group-data-[collapsible=icon]:flex"
+                >
+                  {config.site.logo_text.charAt(0)}
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -361,7 +367,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       {/* ── Content ─────────────────────────────────────── */}
-      <SidebarContent>
+      <SidebarContent aria-label="Admin">
         {navGroups.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>

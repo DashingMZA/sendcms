@@ -789,33 +789,59 @@ export async function processEmailOutbox({
   let sent = 0
   let failed = 0
   let skipped = 0
-  for (const job of due) {
-    // EML-037: race each job against the per-job timeout. A hung
-    // render/send must fail that job (retriable) and let the drain
-    // move on — never stall the whole poll. `processOneJob` catches
-    // its own errors, so the attempt promise never rejects after the
-    // timeout wins except for a claim throw; the no-op catch below
-    // keeps that from surfacing as an unhandled rejection.
-    const attempt = processOneJob(job)
-    attempt.catch(() => {})
-    const outcome = await awaitWithTimeout(attempt, jobTimeoutMs)
-    if (outcome === undefined) {
-      // Timed out: the claim already counted this attempt, so
-      // marking it failed schedules the correct backoff rung and
-      // clears the lease. If the hung send later completes, its
-      // markEmailJobSent still lands and corrects the state.
-      await markEmailJobFailed(job.id, {
-        error: `Email job timed out after ${jobTimeoutMs} ms`,
-        terminal: false,
-      })
-      failed++
-      continue
+  // DB-047: drain with a small concurrency cap instead of one send
+  // at a time — a 100-job backlog used to drain one SMTP round trip
+  // at a time. The claim already prevents double-send, so parallel
+  // attempts cannot deliver the same job twice; the per-job timeout
+  // below still bounds each attempt.
+  let next = 0
+  async function drainWorker(): Promise<void> {
+    while (next < due.length) {
+      const job = due[next++]
+      const outcome = await attemptOneJob(job, jobTimeoutMs)
+      if (outcome === "sent") sent++
+      if (outcome === "failed") failed++
+      if (outcome === "skipped") skipped++
     }
-    if (outcome === "sent") sent++
-    if (outcome === "failed") failed++
-    if (outcome === "skipped") skipped++
   }
+  const workers = Math.min(EMAIL_OUTBOX_DRAIN_CONCURRENCY, due.length)
+  await Promise.all(Array.from({ length: workers }, () => drainWorker()))
   return { processed: sent + failed, sent, failed, skipped }
+}
+
+/** DB-047: at most this many sends in flight during one drain. 5
+    keeps a slow provider from serialising the queue while bounding
+    the SMTP burst a single poll can make. */
+export const EMAIL_OUTBOX_DRAIN_CONCURRENCY = 5
+
+/** One job's attempt (extracted from processEmailOutbox so the drain
+    can run several in parallel): race the send against the per-job
+    timeout, count the outcome. `processOneJob` catches its own
+    errors, so the attempt promise never rejects after the timeout
+    wins except for a claim throw; the no-op catch below keeps that
+    from surfacing as an unhandled rejection. */
+async function attemptOneJob(
+  job: EmailJob,
+  jobTimeoutMs: number
+): Promise<"sent" | "failed" | "skipped"> {
+  // EML-037: race each job against the per-job timeout. A hung
+  // render/send must fail that job (retriable) and let the drain
+  // move on — never stall the whole poll.
+  const attempt = processOneJob(job)
+  attempt.catch(() => {})
+  const outcome = await awaitWithTimeout(attempt, jobTimeoutMs)
+  if (outcome === undefined) {
+    // Timed out: the claim already counted this attempt, so
+    // marking it failed schedules the correct backoff rung and
+    // clears the lease. If the hung send later completes, its
+    // markEmailJobSent still lands and corrects the state.
+    await markEmailJobFailed(job.id, {
+      error: `Email job timed out after ${jobTimeoutMs} ms`,
+      terminal: false,
+    })
+    return "failed"
+  }
+  return outcome
 }
 
 export type EmailJobListItem = EmailJob & {

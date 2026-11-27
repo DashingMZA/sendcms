@@ -3,11 +3,15 @@ import Link from "next/link"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { getListPage } from "@sendcms/content"
+import { pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
   title: "Privacy Policy — SendCMS",
   description:
     "What data SendCMS collects, why, and what happens to it — in plain language.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/privacy" },
+  openGraph: pageOpenGraph("/privacy"),
 }
 
 type PrivacySection = {

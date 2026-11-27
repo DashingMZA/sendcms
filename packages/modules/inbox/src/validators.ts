@@ -86,7 +86,10 @@ export const InboxListQuerySchema = z.object({
   search: z.string().max(200).optional(),
   from: dateString,
   to: dateString,
-  page: z.coerce.number().int().min(1).default(1).catch(1),
+  // DB-048: `page` is capped at 1000 — the `.catch(1)` below swallows
+  // an out-of-range page back to 1, so a deep offset can never reach
+  // the raw-SQL list (and the service clamps direct callers too).
+  page: z.coerce.number().int().min(1).max(1000).default(1).catch(1),
 })
 
 export type InboxListQuery = z.infer<typeof InboxListQuerySchema>

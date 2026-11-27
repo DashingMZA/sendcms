@@ -104,7 +104,7 @@ export function AiOverview({ actorRole }: Props) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("totalCalls")}</CardTitle>
+              <CardTitle as="h2">{t("totalCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -127,7 +127,7 @@ export function AiOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("byokCalls")}</CardTitle>
+              <CardTitle as="h2">{t("byokCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -149,7 +149,7 @@ export function AiOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("platformCalls")}</CardTitle>
+              <CardTitle as="h2">{t("platformCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -171,7 +171,7 @@ export function AiOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("costReported")}</CardTitle>
+              <CardTitle as="h2">{t("costReported")}</CardTitle>
               <CardDescription>{t("costNote")}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -195,7 +195,7 @@ export function AiOverview({ actorRole }: Props) {
       {canManageAi && (
         <Card>
           <CardHeader>
-            <CardTitle>{t("healthTitle")}</CardTitle>
+            <CardTitle as="h2">{t("healthTitle")}</CardTitle>
             <CardDescription>{t("healthDescription")}</CardDescription>
           </CardHeader>
           <CardContent>

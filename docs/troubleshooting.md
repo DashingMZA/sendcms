@@ -1,3 +1,7 @@
+---
+description: "Fixes for the problems that come up most often with SendCMS — submissions, verification, email delivery, and embedding — grouped by area."
+---
+
 # Troubleshooting
 
 Fixes for the problems that come up most often, grouped by area. If a

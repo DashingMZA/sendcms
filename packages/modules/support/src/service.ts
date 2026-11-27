@@ -91,7 +91,11 @@ export type TicketRow = {
   messageCount: number
 }
 
-export type TicketDetailRow = TicketRow & { messages: TicketMessageRow[] }
+export type TicketDetailRow = TicketRow & {
+  messages: TicketMessageRow[]
+  /** DB-046: true when older messages exist beyond the returned page. */
+  hasMoreMessages: boolean
+}
 
 export type StaffUserRow = {
   id: string
@@ -115,7 +119,8 @@ type TicketDetailPayload = Prisma.SupportTicketGetPayload<{
     assignedTo: { select: { id: true; name: true; email: true } }
     messages: {
       include: { author: { select: { id: true; name: true; email: true } } }
-      orderBy: { createdAt: "asc" }
+      orderBy: { createdAt: "desc" }
+      take: 100
     }
     _count: { select: { messages: true } }
   }
@@ -147,8 +152,17 @@ function toTicketDetailRow(row: TicketDetailPayload): TicketDetailRow {
       body: m.body,
       createdAt: m.createdAt,
     })),
+    // DB-046: the thread is capped (TICKET_MESSAGES_MAX, newest first
+    // at the query, reversed to display order by the callers) — the
+    // count says whether older messages were left out.
+    hasMoreMessages: row._count.messages > row.messages.length,
   }
 }
+
+// DB-046: at most this many messages on a ticket detail read, newest
+// first. A long support thread used to load in full on every read and
+// every reply; callers reverse the page to oldest-first for display.
+export const TICKET_MESSAGES_MAX = 100
 
 // ─── Row locking (DB-026) ────────────────────────────────────────────
 
@@ -237,6 +251,9 @@ export async function createTicket(
     createdAt: created.ticket.createdAt,
     updatedAt: created.ticket.updatedAt,
     messageCount: 1,
+    // DB-046: a just-created ticket has exactly one message — nothing
+    // more was left out by the thread cap.
+    hasMoreMessages: false,
     messages: [
       {
         id: created.message.id,
@@ -308,7 +325,11 @@ export async function getMyTicket(
         include: {
           author: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { createdAt: "asc" },
+        // DB-046: newest first, capped — the page is reversed to
+        // display order below, so the newest messages are the ones
+        // kept, never the oldest.
+        orderBy: { createdAt: "desc" },
+        take: TICKET_MESSAGES_MAX,
       },
       _count: { select: { messages: true } },
     },
@@ -316,7 +337,7 @@ export async function getMyTicket(
   if (!row || row.userId !== userId) {
     throw new ApiError("Ticket not found.", 404)
   }
-  return toTicketDetailRow(row)
+  return toTicketDetailRow({ ...row, messages: [...row.messages].reverse() })
 }
 
 /** Appends the caller's reply. Replying to a RESOLVED ticket reopens
@@ -361,7 +382,8 @@ export async function replyToTicket(
             include: {
               author: { select: { id: true, name: true, email: true } },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: { createdAt: "desc" },
+            take: TICKET_MESSAGES_MAX,
           },
           _count: { select: { messages: true } },
         },
@@ -384,7 +406,10 @@ export async function replyToTicket(
       reopened,
     },
   })
-  return toTicketDetailRow(updated)
+  return toTicketDetailRow({
+    ...updated,
+    messages: [...updated.messages].reverse(),
+  })
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────
@@ -473,13 +498,14 @@ export async function getTicket(
         include: {
           author: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
+        take: TICKET_MESSAGES_MAX,
       },
       _count: { select: { messages: true } },
     },
   })
   if (!row) throw new ApiError("Ticket not found.", 404)
-  return toTicketDetailRow(row)
+  return toTicketDetailRow({ ...row, messages: [...row.messages].reverse() })
 }
 
 /** A staff reply. The reply moves OPEN / IN_PROGRESS /
@@ -523,7 +549,8 @@ export async function adminReply(
             include: {
               author: { select: { id: true, name: true, email: true } },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: { createdAt: "desc" },
+            take: TICKET_MESSAGES_MAX,
           },
           _count: { select: { messages: true } },
         },
@@ -543,7 +570,10 @@ export async function adminReply(
       statusChanged: nextStatus !== oldStatus,
     },
   })
-  return toTicketDetailRow(updated)
+  return toTicketDetailRow({
+    ...updated,
+    messages: [...updated.messages].reverse(),
+  })
 }
 
 /** Moves a ticket along the status machine. Only the transitions in
@@ -580,7 +610,8 @@ export async function setTicketStatus(
             include: {
               author: { select: { id: true, name: true, email: true } },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: { createdAt: "desc" },
+            take: TICKET_MESSAGES_MAX,
           },
           _count: { select: { messages: true } },
         },
@@ -601,7 +632,10 @@ export async function setTicketStatus(
       newStatus: input.status,
     },
   })
-  return toTicketDetailRow(updated)
+  return toTicketDetailRow({
+    ...updated,
+    messages: [...updated.messages].reverse(),
+  })
 }
 
 /** Assigns a ticket to a staff user — the platform owner or a user
@@ -637,7 +671,8 @@ export async function assignTicket(
         include: {
           author: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
+        take: TICKET_MESSAGES_MAX,
       },
       _count: { select: { messages: true } },
     },
@@ -654,7 +689,10 @@ export async function assignTicket(
       newAssigneeId: assignee.id,
     },
   })
-  return toTicketDetailRow(updated)
+  return toTicketDetailRow({
+    ...updated,
+    messages: [...updated.messages].reverse(),
+  })
 }
 
 /** Every staff user (owner + adminRole holders), for the assign

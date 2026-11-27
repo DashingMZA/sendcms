@@ -4,11 +4,15 @@ import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { listDocs } from "@/lib/docs"
 import { marketingUrl } from "@/lib/app-links"
+import { pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
   title: "Documentation — SendCMS",
   description:
     "Guides and references for SendCMS — setup, the SDK, the REST API, and embedding.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/docs" },
+  openGraph: pageOpenGraph("/docs", "article"),
 }
 
 export default function DocsIndexPage() {

@@ -198,7 +198,7 @@ function FeaturesInner() {
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle>{t("title")}</CardTitle>
+            <CardTitle as="h2">{t("title")}</CardTitle>
             <CardDescription>{t("description")}</CardDescription>
           </div>
           <Button onClick={openCreate}>{t("createFlag")}</Button>
@@ -244,7 +244,9 @@ function FeaturesInner() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <FlagOverrideCount flagKey={flag.key} />
+                        {/* ADM-098: the count rides along in listFlags
+                            — no per-row useFlagOverrides query. */}
+                        <span>{flag.overrideCount ?? 0}</span>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
@@ -497,14 +499,6 @@ function FeaturesInner() {
   )
 }
 
-/** The per-user override count for one flag (its own query, cached
-    under the same key the overrides panel reads). */
-function FlagOverrideCount({ flagKey }: { flagKey: string }) {
-  const { data, isLoading } = useFlagOverrides(flagKey)
-  if (isLoading) return <Skeleton className="h-5 w-8" />
-  return <span>{data?.overrides.length ?? 0}</span>
-}
-
 /** The per-user overrides manager for one flag: the existing
     overrides, and the add form (user search + state + reason). */
 function FlagOverridesPanel({
@@ -571,7 +565,7 @@ function FlagOverridesPanel({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>{t("overridesFor", { key: flagKey })}</CardTitle>
+          <CardTitle as="h2">{t("overridesFor", { key: flagKey })}</CardTitle>
           <CardDescription>{t("overridesDescription")}</CardDescription>
         </div>
         <Button variant="outline" size="sm" onClick={onClose}>

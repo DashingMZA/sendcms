@@ -28,8 +28,8 @@ export default function JobsError({
   }, [error])
 
   return (
-    <main
-      id="main-content"
+    <div
+      tabIndex={-1}
       className="flex flex-col items-center justify-center px-4 py-16 text-center"
     >
       <h1 className="mb-3 text-2xl font-bold tracking-tight">
@@ -44,6 +44,6 @@ export default function JobsError({
           <Link href="/admin">{t("errorGoToDashboard")}</Link>
         </Button>
       </div>
-    </main>
+    </div>
   )
 }

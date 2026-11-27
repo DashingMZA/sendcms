@@ -88,7 +88,7 @@ export default async function AdminTrialsPage({
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t("statActiveTrials")}
@@ -123,7 +123,7 @@ export default async function AdminTrialsPage({
           tab={tab}
           plans={plansData.plans}
         />
-      </main>
+      </div>
     </div>
   )
 }

@@ -531,11 +531,13 @@ describe("SRC-411 drift test for intentional copies", () => {
 
   it("the shared stylesheets are byte-identical across the 5 apps", () => {
     const apps = ["dashboard", "marketing", "updates", "docs", "admin"]
-    const files = [
-      "app/globals.css",
-      "styles/design-tokens.css",
-      "styles/components.css",
-    ]
+    // NOTE (Wave 11, UX-208): app/globals.css is intentionally NOT in
+    // this list anymore. Dashboard/admin globals no longer import the
+    // marketing section stylesheet (styles/components.css) — no dashboard
+    // or admin page uses its classes — so their globals.css diverges
+    // from the other three apps by exactly that removed import. The two
+    // stylesheets below stay byte-identical across all 5 apps.
+    const files = ["styles/design-tokens.css", "styles/components.css"]
     for (const file of files) {
       const base = read(`apps/dashboard/${file}`)
       for (const app of apps.slice(1)) {
@@ -585,6 +587,9 @@ describe("SRC-411 drift test for intentional copies", () => {
       unknown
     >
     expect(Object.keys(root).sort()).toEqual([
+      // PRF-018 (Wave 11): "monitoring" holds the owner-configured
+      // dead-man's-switch URL (cronHeartbeatUrl, null until configured).
+      "monitoring",
       "platform",
       "rateLimits",
       "stepUp",

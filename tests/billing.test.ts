@@ -417,6 +417,7 @@ import {
   listBillingEvents,
   listEnabledProviders,
   listProviderConfigs,
+  resetPayPalTokenCache,
   setProviderConfig,
 } from "@sendcms/billing"
 import { listPublishedPlans } from "@sendcms/plans"
@@ -489,6 +490,9 @@ beforeEach(() => {
   store.versions.clear()
   store.plans.length = 0
   store.users.clear()
+  // BIL-022: the PayPal token cache is module-scope — reset it so no
+  // test inherits a token minted by an earlier test's stubbed fetch.
+  resetPayPalTokenCache()
   vi.clearAllMocks()
 })
 
@@ -966,6 +970,109 @@ describe("PayPal webhook — verification + activation", () => {
       vi.unstubAllGlobals()
     }
   })
+
+  // BIL-019: the verify call retries ONCE on a transient upstream
+  // status, then succeeds — a single 502 from PayPal must not drop a
+  // legitimate webhook.
+  it("retries the verify call once on a transient 502, then succeeds", async () => {
+    let verifyCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/oauth2/token")) {
+        return {
+          ok: true,
+          json: async () => ({ access_token: "tok", expires_in: 32400 }),
+        }
+      }
+      verifyCalls++
+      if (verifyCalls === 1) {
+        return {
+          ok: false,
+          status: 502,
+          json: async () => ({ message: "Bad Gateway" }),
+        }
+      }
+      return {
+        ok: true,
+        json: async () => ({ verification_status: "SUCCESS" }),
+      }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const payload = JSON.stringify({
+        id: "WH-test-retry",
+        event_type: "BILLING.SUBSCRIPTION.ACTIVATED",
+        resource: { id: "I-TESTSUB", custom_id: "user-1:pv-1" },
+      })
+      const result = await handleWebhook("PAYPAL", payload, {
+        "paypal-auth-algo": "SHA256withRSA",
+        "paypal-cert-url": "https://example.com/cert",
+        "paypal-transmission-id": "tx-1",
+        "paypal-transmission-sig": "sig",
+        "paypal-transmission-time": new Date().toISOString(),
+      })
+      expect(result).toMatchObject({
+        received: true,
+        kind: "checkout-completed",
+      })
+      expect(verifyCalls).toBe(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // BIL-019: exactly one retry — a persistently failing verify call
+  // still ends in the generic 502 after two attempts, not a loop.
+  it("fails with 502 after the single retry when PayPal keeps 503ing", async () => {
+    let verifyCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/oauth2/token")) {
+        return {
+          ok: true,
+          json: async () => ({ access_token: "tok", expires_in: 32400 }),
+        }
+      }
+      verifyCalls++
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({ message: "Service Unavailable" }),
+      }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const payload = JSON.stringify({
+        id: "WH-test-retry-fail",
+        event_type: "BILLING.SUBSCRIPTION.ACTIVATED",
+        resource: { id: "I-TESTSUB", custom_id: "user-1:pv-1" },
+      })
+      let thrown: unknown = null
+      try {
+        await handleWebhook("PAYPAL", payload, {
+          "paypal-auth-algo": "SHA256withRSA",
+          "paypal-cert-url": "https://example.com/cert",
+          "paypal-transmission-id": "tx-1",
+          "paypal-transmission-sig": "sig",
+          "paypal-transmission-time": new Date().toISOString(),
+        })
+      } catch (err) {
+        thrown = err
+      }
+      expect(thrown).toMatchObject({ status: 502 })
+      expect(verifyCalls).toBe(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // BIL-019 note: the "fails fast" half of this finding is SRC-233,
+  // already present at base — every PayPal fetch (token + verify)
+  // carries AbortSignal.timeout(30_000), so a never-resolving fetch
+  // rejects with the generic 502 instead of hanging the route. It is
+  // not re-tested here: Node's AbortSignal.timeout uses an internal
+  // timer that vitest's fake timers do not drive, so a fake-timer
+  // probe cannot fire it, and a real 30 s wait is not a unit test.
+  // The two retry tests above are the regression tests for the new
+  // BIL-019 behaviour (single retry on 502/503/504).
 })
 
 describe("Freemius webhook — HMAC + plan mapping", () => {

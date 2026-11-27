@@ -312,4 +312,40 @@ describe("GET /api/cron/email-outbox", () => {
     expect(logged.length).toBeGreaterThanOrEqual(1)
     expect(logged[0]).toMatchObject({ processed: 2, sent: 1 })
   })
+
+  // PRF-018: a completed cron run pings the dead-man's-switch
+  // monitor once — and a failed ping never fails the run.
+  it("pings the heartbeat monitor once when a run completes", async () => {
+    process.env.CRON_HEARTBEAT_URL = "https://hb.example/ping"
+    const fetchMock = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const res = await GET(cronRequest(`Bearer ${SECRET}`))
+      expect(res.status).toBe(200)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://hb.example/ping",
+        expect.objectContaining({ method: "GET" })
+      )
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.CRON_HEARTBEAT_URL
+    }
+  })
+
+  it("still returns 200 when the heartbeat ping fails", async () => {
+    process.env.CRON_HEARTBEAT_URL = "https://hb.example/ping"
+    const fetchMock = vi.fn(async () => {
+      throw new Error("monitor down")
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const res = await GET(cronRequest(`Bearer ${SECRET}`))
+      expect(res.status).toBe(200)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.CRON_HEARTBEAT_URL
+    }
+  })
 })

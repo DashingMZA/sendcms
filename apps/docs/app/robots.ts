@@ -11,6 +11,8 @@ export default function robots(): MetadataRoute.Robots {
       // This app serves only the public documentation pages.
     },
     sitemap: `${baseUrl}/sitemap.xml`,
-    host: baseUrl,
+    // PRF-039 (Wave 11): `Host` takes a bare hostname, not a URL.
+    // Google ignores the directive; it is kept for Yandex, which reads it.
+    host: new URL(baseUrl).hostname,
   }
 }

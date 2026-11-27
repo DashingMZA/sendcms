@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
 import { requireDashboardSession } from "@/lib/require-session"
 import { getUserAuthMethods } from "@sendcms/users"
 
@@ -31,6 +33,19 @@ import { UpdateNameForm } from "./update-name-form"
 import { ChangeEmailForm } from "./change-email-form"
 import { ChangePasswordForm } from "./change-password-form"
 import { LinkProviderButtons } from "./link-provider-buttons"
+
+// Page <title> follows the page locale (I18N-204): the title is the same
+// key the <h1> renders, so title == heading. (SRC-113: every dashboard
+// page exports metadata; the layout template appends "— SendCMS Dashboard".)
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "account")
+  return {
+    title: t("title"),
+    description: t("description"),
+  }
+}
 
 export default async function AccountPage() {
   const session = await requireDashboardSession()

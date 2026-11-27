@@ -336,7 +336,9 @@ export function DomainDetail({
                 value={method}
                 onValueChange={(v) => setMethod(v as DomainVerificationMethod)}
               >
-                <SelectTrigger className="w-56">
+                {/* PRF-027: the verification-method filter has no visible
+                    label, so the trigger carries the accessible name. */}
+                <SelectTrigger className="w-56" aria-label={t("methodLabel")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

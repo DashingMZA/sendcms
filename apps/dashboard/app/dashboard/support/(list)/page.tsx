@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
@@ -18,6 +19,19 @@ import { SupportList } from "../support-list"
 // The customer's support tickets (Phase 8). The server fetches the
 // caller's own tickets and passes them as initialData; the client
 // component owns the status filter and pagination through the URL.
+// Page <title> follows the page locale (I18N-204): the title is the same
+// key the <h1> renders, so title == heading. (SRC-113: every dashboard
+// page exports metadata; the layout template appends "— SendCMS Dashboard".)
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "support")
+  return {
+    title: t("title"),
+    description: t("description"),
+  }
+}
+
 export default async function SupportPage({
   searchParams,
 }: {

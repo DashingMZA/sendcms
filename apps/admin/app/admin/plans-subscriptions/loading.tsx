@@ -14,8 +14,8 @@ export default function PlansSubscriptionsLoading() {
         <Skeleton className="h-6 w-56" />
       </div>
 
-      <main
-        id="main-content"
+      <div
+        tabIndex={-1}
         className="flex flex-col gap-6 p-6"
         aria-label="Loading"
       >
@@ -40,7 +40,7 @@ export default function PlansSubscriptionsLoading() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      </main>
+      </div>
     </div>
   )
 }

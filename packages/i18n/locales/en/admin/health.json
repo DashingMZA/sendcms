@@ -37,6 +37,7 @@
   "outboxOldestAge": "Oldest pending",
   "outboxOldestAgeMinutes": "{minutes} min",
   "outboxPending": "Pending",
+  "outboxStaleAlert": "Oldest pending job is {minutes} min old — the outbox drain may have stopped. Check the cron and the worker.",
   "outboxTitle": "Email outbox",
   "ownBucketHour": "Your requests (this hour)",
   "ownBucketMinute": "Your requests (this minute)",

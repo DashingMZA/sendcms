@@ -141,8 +141,15 @@ describe("awaitWithTimeout (I18N-308 race, shared helper)", () => {
 describe("stored-locale call sites (DSH-001 / DSH-201 / DSH-401 / I18N-203 / AIM-015 / I18N-311)", () => {
   it("no no-arg getRequestLocale() call remains in either app", () => {
     const offenders: string[] = []
+    // PRF-006 (Wave 11) allowlist: apps/admin/app/page.tsx is the
+    // session-free landing shell — it deliberately resolves the locale
+    // from the cookie only (signed-out visitors have no stored
+    // preference), while the session-dependent LandingActions below it
+    // passes session?.user?.id. No other no-arg call may exist.
+    const allowlisted = new Set(["apps/admin/app/page.tsx"])
     for (const dir of ["apps/dashboard", "apps/admin"]) {
       for (const file of walk(dir)) {
+        if (allowlisted.has(file)) continue
         if (read(file).includes("getRequestLocale()")) offenders.push(file)
       }
     }

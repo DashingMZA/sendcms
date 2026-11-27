@@ -46,13 +46,13 @@ export default async function AdminSupportPage({
   return (
     <div>
       <PageHeader title={t("queueTitle")} description={t("queueDescription")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <SupportQueue
           initialData={initialData}
           filters={filters}
           actorRole={actorRole}
         />
-      </main>
+      </div>
     </div>
   )
 }

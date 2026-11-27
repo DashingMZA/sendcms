@@ -3,11 +3,15 @@ import Link from "next/link"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import ContactForm from "./contact-form"
+import { pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
-  title: "Contact us",
+  title: "Contact us — SendCMS",
   description:
     "Questions, feedback, or a partnership idea? Send us a message — it lands straight in our inbox.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/contact" },
+  openGraph: pageOpenGraph("/contact"),
 }
 
 export default function ContactPage() {

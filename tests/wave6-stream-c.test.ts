@@ -30,6 +30,9 @@ const mockDb = vi.hoisted(() => ({
   supportTicket: { count: vi.fn(), findMany: vi.fn() },
   userAiKey: { findMany: vi.fn() },
   userAiSettings: { findUnique: vi.fn() },
+  // DB-046: the activity chart is a SQL day-grouping ($queryRaw),
+  // not a findMany of every createdAt in the window.
+  $queryRaw: vi.fn(),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
@@ -122,6 +125,7 @@ describe("DSH-004 — overview status breakdown", () => {
       }
     )
     mockDb.submission.findMany.mockResolvedValue([])
+    mockDb.$queryRaw.mockResolvedValue([])
   })
 
   it("counts READ / STARRED / ARCHIVED separately", async () => {
@@ -155,8 +159,8 @@ describe("DSH-407 — analytics window alignment", () => {
 
   it("counts a 00:30 day-29 submission in both total and byDay[0]", async () => {
     mockDb.submission.count.mockResolvedValue(1)
-    mockDb.submission.findMany.mockResolvedValue([
-      { createdAt: new Date("2026-10-19T00:30:00.000Z") },
+    mockDb.$queryRaw.mockResolvedValue([
+      { day: new Date("2026-10-19T00:00:00.000Z"), count: 1 },
     ])
     const analytics = await getSubmissionAnalytics("user-1", 30)
     // The window starts at UTC start of day 29 days ago, not at the
@@ -175,9 +179,9 @@ describe("DSH-407 — analytics window alignment", () => {
 
   it("excludes a submission from the day before the window", async () => {
     mockDb.submission.count.mockResolvedValue(0)
-    mockDb.submission.findMany.mockResolvedValue([
-      { createdAt: new Date("2026-10-18T23:30:00.000Z") },
-    ])
+    // DB-046: the chart comes from the SQL day-grouping, so a day
+    // outside the window simply has no group row.
+    mockDb.$queryRaw.mockResolvedValue([])
     const analytics = await getSubmissionAnalytics("user-1", 30)
     expect(analytics.total).toBe(0)
     expect(analytics.byDay.every((bucket) => bucket.count === 0)).toBe(true)

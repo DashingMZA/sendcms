@@ -1,3 +1,7 @@
+---
+description: "How SendCMS protects submissions, accounts, and data — spam checks, Origin verification, rate limits — and what it deliberately does not verify."
+---
+
 # Security
 
 How SendCMS protects submissions, accounts, and data — and what it

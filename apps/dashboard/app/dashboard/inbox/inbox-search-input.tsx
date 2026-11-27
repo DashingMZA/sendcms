@@ -2,10 +2,8 @@
 
 import { useState, useCallback, useRef } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { Input } from "@sendcms/ui"
+import { SearchInput } from "@sendcms/ui"
 import { useTranslation } from "@/components/dashboard/translation-provider"
-
-import { RiCloseLine, RiSearchLine } from "@remixicon/react"
 
 const DEBOUNCE_MS = 300
 
@@ -38,8 +36,7 @@ export function InboxSearchInput({
     [pathname, router, searchParams]
   )
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value
+  function handleChange(next: string) {
     setValue(next)
 
     if (debounceRef.current) {
@@ -59,25 +56,14 @@ export function InboxSearchInput({
   }
 
   return (
-    <div className="relative">
-      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="text"
-        placeholder={t("searchPlaceholder")}
-        value={value}
-        onChange={handleChange}
-        className="h-9 w-64 ps-9 pe-9 text-sm"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={t("clearSearch")}
-        >
-          <RiCloseLine className="size-4" />
-        </button>
-      )}
-    </div>
+    <SearchInput
+      id="inbox-search"
+      label={t("searchPlaceholder")}
+      placeholder={t("searchPlaceholder")}
+      value={value}
+      onChange={handleChange}
+      onClear={handleClear}
+      clearLabel={t("clearSearch")}
+    />
   )
 }

@@ -21,7 +21,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (rateLimited) return rateLimited
     const parsed = AiProviderNameSchema.safeParse((await params).provider)
     if (!parsed.success) throw new ApiError("Unknown provider.", 422)
-    const result = await testUserAiKey(session.user.id, parsed.data)
+    const result = await testUserAiKey(session.user.id, parsed.data, {
+      // AIM-001: a client disconnect aborts the probe instead of
+      // letting it run out the 25 s timeout.
+      signal: req.signal,
+    })
     return ok(result)
   } catch (err) {
     return handleApiError(err)

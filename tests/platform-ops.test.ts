@@ -355,6 +355,22 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         }
         return { count: n }
       }),
+      // ADM-098: listFlags groups overrides by flagId in one query.
+      // The mock mirrors Prisma's groupBy shape: one row per flagId
+      // with _count._all.
+      groupBy: vi.fn(async () => {
+        const counts = new Map<string, number>()
+        for (const o of store.overrides.values()) {
+          counts.set(
+            o.flagId as string,
+            (counts.get(o.flagId as string) ?? 0) + 1
+          )
+        }
+        return [...counts.entries()].map(([flagId, count]) => ({
+          flagId,
+          _count: { _all: count },
+        }))
+      }),
     },
     announcement: {
       findMany: vi.fn(async (args: Row = {}) => {
@@ -665,6 +681,12 @@ const { store, mockDb, mockLoadDomain, mockLoadAppDomain } = vi.hoisted(() => {
         }
         store.submissionEvents.push(row)
         return { ...row }
+      }),
+      // DB-046: getPlatformSubmission counts events for its capped page.
+      count: vi.fn(async (args: Row = {}) => {
+        return store.submissionEvents.filter((e) =>
+          matchesWhere(e, args.where as Row)
+        ).length
       }),
     },
     form: {
@@ -1502,6 +1524,21 @@ describe("feature flags", () => {
     ).rejects.toThrowError(ApiError)
   })
 
+  // ADM-098: listFlags carries the per-flag override count in the
+  // same response (one groupBy) — ai-features has 1 override in the
+  // seed, beta-ui has none.
+  it("includes overrideCount in listFlags (one groupBy, no per-row query)", async () => {
+    const { flags } = await listFlags(ownerSession)
+    expect(mockDb.featureFlagOverride.groupBy).toHaveBeenCalledTimes(1)
+    expect(mockDb.featureFlagOverride.groupBy).toHaveBeenCalledWith({
+      by: ["flagId"],
+      _count: { _all: true },
+    })
+    const byKey = new Map(flags.map((f) => [f.key, f]))
+    expect(byKey.get("ai-features")?.overrideCount).toBe(1)
+    expect(byKey.get("beta-ui")?.overrideCount).toBe(0)
+  })
+
   it("forbids flag writes for MANAGER and SUPPORT", async () => {
     await expect(
       setFlag(managerSession, "beta-ui", {
@@ -1762,6 +1799,7 @@ describe("audit trail", () => {
     expect(capped.logs).toHaveLength(2)
     expect(capped.total).toBe(4)
     expect(capped.capped).toBe(true)
+    expect(capped.truncated).toBe(true)
     expect(capped.limit).toBe(2)
     const full = await exportAuditLogs(ownerSession, {
       page: 1,
@@ -1770,6 +1808,7 @@ describe("audit trail", () => {
     expect(full.logs).toHaveLength(4)
     expect(full.total).toBe(4)
     expect(full.capped).toBe(false)
+    expect(full.truncated).toBe(false)
     expect(full.limit).toBe(10000)
     expect(mockDb.auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 10000 })
@@ -1851,6 +1890,9 @@ describe("health and system", () => {
     })
     expect(health.outbox.pending).toBe(2)
     expect(health.outbox.oldestPendingAgeMinutes).toBeGreaterThanOrEqual(170)
+    // PRF-018: the oldest pending job waited ~3 h — past the 60 min
+    // stale threshold, so the outbox is stale.
+    expect(health.outbox.outboxStale).toBe(true)
     // EML-092: the per-status breakdown, not a single pending count.
     expect(health.outbox.pendingDue).toBe(2)
     expect(health.outbox.sending).toBe(0)
@@ -1923,6 +1965,19 @@ describe("health and system", () => {
     expect(health.outbox.lastCronRunAt).toBe(
       new Date(now - 15 * 60 * 1000).toISOString()
     )
+  })
+
+  it("reports the outbox stale only past the 60 min threshold (PRF-018)", async () => {
+    // Both seeded PENDING jobs are fresh now — nothing waited an hour.
+    for (const job of store.emailJobs) {
+      if (job.status === "PENDING") {
+        job.createdAt = hoursAgo(0.15)
+        job.updatedAt = hoursAgo(0.15)
+      }
+    }
+    const health = await getPlatformHealth(ownerSession)
+    expect(health.outbox.oldestPendingAgeMinutes).toBeLessThanOrEqual(10)
+    expect(health.outbox.outboxStale).toBe(false)
   })
 
   it("reports a null own bucket when the admin has no rate-limit row yet (ADM-124)", async () => {

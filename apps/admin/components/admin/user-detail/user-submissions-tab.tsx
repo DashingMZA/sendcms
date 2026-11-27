@@ -74,7 +74,7 @@ export function UserSubmissionsTab({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("submissionsTitle")}</CardTitle>
+        <CardTitle as="h2">{t("submissionsTitle")}</CardTitle>
         <CardDescription>{t("submissionsMaskedNote")}</CardDescription>
         {!canReveal && (
           <CardDescription>{t("submissionsNoReveal")}</CardDescription>

@@ -57,7 +57,7 @@ export function JobsWorkerCard({ status }: { status: JobsWorkerStatus }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("workerTitle")}</CardTitle>
+        <CardTitle as="h2">{t("workerTitle")}</CardTitle>
         <CardDescription>{t("workerDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-sm">

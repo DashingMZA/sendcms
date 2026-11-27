@@ -9,11 +9,7 @@ import { Skeleton } from "@sendcms/ui"
 
 export default function AdminLoading() {
   return (
-    <main
-      id="main-content"
-      className="flex flex-col gap-6 p-6"
-      aria-label="Loading"
-    >
+    <div tabIndex={-1} className="flex flex-col gap-6 p-6" aria-label="Loading">
       <div>
         <Skeleton className="h-8 w-56" />
         <Skeleton className="mt-2 h-4 w-96 max-w-full" />
@@ -37,6 +33,6 @@ export default function AdminLoading() {
           <Skeleton key={i} className="h-10 w-full" />
         ))}
       </div>
-    </main>
+    </div>
   )
 }

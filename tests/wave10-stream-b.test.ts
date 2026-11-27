@@ -450,7 +450,10 @@ describe("PRF-040 dashboard part — viewport + icons + manifest", () => {
   it("the root layout exports the media-qualified themeColor viewport", () => {
     const src = read("apps/dashboard/app/layout.tsx")
     expect(src).toContain("export const viewport: Viewport")
-    expect(src).toContain("oklch(0.6373 0.1362 162.517)")
+    // PRF-022 (Wave 11, Stream A): the light --primary token darkened
+    // from oklch(0.6373 ...) to oklch(0.42 ...) for 4.5:1 contrast; the
+    // light themeColor tracks the token, so it changed with it.
+    expect(src).toContain("oklch(0.42 0.1362 162.517)")
     expect(src).toContain("oklch(0.7678 0.1655 162.189)")
     expect(src).toContain('manifest: "/manifest.webmanifest"')
     expect(src).toContain('apple: "/apple-touch-icon.png"')

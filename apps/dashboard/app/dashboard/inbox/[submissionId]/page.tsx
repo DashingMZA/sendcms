@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
 import { notFound } from "next/navigation"
 import { requireDashboardSession } from "@/lib/require-session"
 import { getSubmissionForUser } from "@sendcms/inbox"
@@ -15,6 +17,17 @@ import {
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
 
 type Params = { params: Promise<{ submissionId: string }> }
+
+// SRC-113: one title for every submission detail page.
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "inbox")
+  return {
+    title: t("detailTitle"),
+    description: t("description"),
+  }
+}
 
 export default async function SubmissionDetailPage({ params }: Params) {
   const { submissionId } = await params

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -7,6 +8,13 @@ import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
 import { SignUpForm } from "./sign-up-form"
 import { marketingTermsURL } from "@/lib/app-links"
+
+// PRF-037: each auth page has a distinct tab title (the layout
+// template appends "— SendCMS Dashboard").
+export const metadata: Metadata = {
+  title: "Sign up",
+  description: "Create a SendCMS account to start collecting form submissions.",
+}
 
 export default async function SignUpPage() {
   const session = await auth()

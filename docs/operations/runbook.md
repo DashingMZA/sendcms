@@ -20,6 +20,8 @@ branch (this branch) is **not deployed** — the ✅ items marked
 - [Logs and the audit log](#logs-and-the-audit-log)
 - [Security posture (what is and isn't in place)](#security-posture-what-is-and-isnt-in-place)
 - [When something is wrong](#when-something-is-wrong)
+- [Incidents](#incidents)
+- [Failover, per tier (PRF-017 — accepted risk)](#failover-per-tier-prf-017--accepted-risk)
 
 ## What runs where
 
@@ -126,7 +128,7 @@ flowchart TB
    the cron every 5 min. Either can run alone; running both is safe
    (claiming is atomic). On the Hobby plan the cron runs only once
    daily (`0 0 * * *`, owner decision 2026-11-20) — it is the
-   *fallback* drain, not the prompt path: with the worker running, a
+   _fallback_ drain, not the prompt path: with the worker running, a
    job is normally sent within one poll interval, and the cron only
    catches what the worker missed (EML-013). When the plan allows
    it, the schedule goes back to `*/5 * * * *`.
@@ -139,7 +141,7 @@ flowchart TB
    jobs return zero counts, check the flags first — a missing or
    disabled flag turns its job off by design (see
    [Deployment](../deployment.md#ai-background-jobs)).
-4. Auth mail (verification + password reset) is sent directly, and
+5. Auth mail (verification + password reset) is sent directly, and
    with no provider configured the dev server logs the link
    (`[auth-email] …`) while production fails loudly. When a
    configured provider fails the send, the failure is logged at
@@ -358,12 +360,116 @@ fresh-DB test only, no shadow DB).
 
 ## When something is wrong
 
-| Symptom                                   | First check                                                                                                                                                                                                                         |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Submissions not arriving in the inbox     | The api worker's logs; then the `Submission` table (was it saved?) vs the `EmailJob` table (was the notification enqueued?). A 201 with no inbox row means the save failed — check the submit route's `scope: "submissions"` error. |
+| Symptom                                                      | First check                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Submissions not arriving in the inbox                        | The api worker's logs; then the `Submission` table (was it saved?) vs the `EmailJob` table (was the notification enqueued?). A 201 with no inbox row means the save failed — check the submit route's `scope: "submissions"` error.                                          |
 | AI re-scoring / digests never run (cron returns zero counts) | The `ai-spam-rescore` / `ai-digest` flags in `/admin/features` — both are seeded **disabled** and gate their jobs (missing/disabled = job off, by design). Enable with a reason once a platform AI key is configured. See [Deployment](../deployment.md#ai-background-jobs). |
-| Emails not arriving                       | `EmailJob` rows for the form (stuck `PENDING` = the drain isn't running — check the cron schedule / worker health; `FAILED` = provider error, read the job's error). Then the Resend dashboard.                                     |
-| Sign-in fails with 403                    | `BETTER_AUTH_URL` vs the request `Origin` (the api app's URL must match) and `TRUSTED_ORIGINS` (must include the dashboard and admin apps' URLs).                                                                                   |
-| Verification link lands on the wrong host | `NEXT_PUBLIC_DASHBOARD_URL` (the callback URL is built from it on the server).                                                                                                                                                      |
-| Dashboard shows a 500 on `/sign-in`       | The callback-URL helper falls back to `NEXT_PUBLIC_DASHBOARD_URL` during SSR — check it is set.                                                                                                                                     |
-| CI fails on a fresh checkout              | `pnpm db:generate` and `pnpm sdk:build` run before typecheck/lint/test (the Prisma client and the SDK bundle are both gitignored).                                                                                                  |
+| Emails not arriving                                          | `EmailJob` rows for the form (stuck `PENDING` = the drain isn't running — check the cron schedule / worker health; `FAILED` = provider error, read the job's error). Then the Resend dashboard.                                                                              |
+| Sign-in fails with 403                                       | `BETTER_AUTH_URL` vs the request `Origin` (the api app's URL must match) and `TRUSTED_ORIGINS` (must include the dashboard and admin apps' URLs).                                                                                                                            |
+| Verification link lands on the wrong host                    | `NEXT_PUBLIC_DASHBOARD_URL` (the callback URL is built from it on the server).                                                                                                                                                                                               |
+| Dashboard shows a 500 on `/sign-in`                          | The callback-URL helper falls back to `NEXT_PUBLIC_DASHBOARD_URL` during SSR — check it is set.                                                                                                                                                                              |
+| CI fails on a fresh checkout                                 | `pnpm db:generate` and `pnpm sdk:build` run before typecheck/lint/test (the Prisma client and the SDK bundle are both gitignored).                                                                                                                                           |
+
+## Incidents
+
+(DOC-051 — added Phase 16, Wave 11. There is no on-call rotation and no
+paging: SendCMS is a single-owner operation. This section exists so an
+outage is handled the same way every time instead of ad hoc, and so a
+user filing a ticket gets a written response-time commitment.)
+
+### Severity
+
+| Severity | Meaning                                      | Examples                                                                                                     |
+| -------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| SEV-1    | The platform is down or losing customer data | api returns 5xx on submit / sign-in for all users; database unreachable; submissions accepted but not stored |
+| SEV-2    | A core flow is broken for many users         | email notifications not sending (outbox stuck); dashboard inbox not loading; one provider's checkout failing |
+| SEV-3    | Degraded or single-user impact               | one form's notifications delayed; one user's sign-in failing; a docs page rendering wrong                    |
+| SEV-4    | Cosmetic / no user impact                    | typo on a marketing page; a stale changelog entry                                                            |
+
+### First actions (declare → mitigate → communicate → record)
+
+1. **Declare.** Decide the severity from the table above and say it out
+   loud (in the incident note — see step 4): what is broken, since when,
+   and who is affected. A SEV-1/2 is declared even before the cause is
+   known; do not wait for a diagnosis to call it an incident.
+2. **Mitigate before diagnosing.** Stop the bleeding first: for a bad
+   deploy, roll back (see [Deployment](../deployment.md) rollback notes
+   and "Database backup, migrations, and rollback" above — restore from
+   the pre-migration backup, never hand-edit `_prisma_migrations`); for
+   a stuck email outbox, trigger the cron route / restart the email
+   worker; for a provider outage (Resend, Stripe, PayPal), confirm the
+   provider status page and wait it out — do not retry blindly against
+   a down provider. Mitigation is "users can submit / sign in again",
+   not "the root cause is fixed".
+3. **Communicate.** Tell affected users what happened and what is being
+   done, in the same place they report problems: reply to their support
+   ticket (see "Support response times" below) and, for a SEV-1/2 that
+   lasts more than an hour, post a note on the changelog
+   (`updates` app) once service is restored. Never promise a fix time
+   before the mitigation is verified.
+4. **Record.** Write a short post-incident note and keep it with the
+   repo's operations docs (a dated entry under `docs/operations/`):
+   what broke, the severity, the timeline (detected / declared /
+   mitigated / resolved), what fixed it, and one follow-up action so
+   the same failure is caught sooner next time. The note is the
+   deliverable — an incident with no note will repeat silently.
+
+### Escalation path
+
+There is no second responder: the platform owner is the only person
+who can touch production (deploy, restore a backup, rotate a secret).
+Escalation therefore means **escalating to the provider**, not to a
+person:
+
+- **Vercel / Cloudflare down** → provider status page; no code change
+  will help — communicate and wait.
+- **Database provider (Prisma Postgres) down** → provider status page
+  and dashboard; if the outage outlasts the provider's own recovery,
+  restore from the latest backup to a new database (see "Failover, per
+  tier" below).
+- **Email / payment provider down** → provider status page; submissions
+  keep working (the outbox retries), checkouts wait for the provider.
+- **Owner unavailable** → there is no backup responder. Nothing in
+  production is touched until the owner returns; the incident note
+  records the delay honestly. This is an accepted risk (see below).
+
+### Support response times
+
+Support tickets come only from the signed-in user's dashboard
+(`/dashboard/support`); there is no public/anonymous submission.
+Response times are **owner-only, best effort** — written down here so
+it is a commitment, not an assumption:
+
+- **SEV-1/2 (platform down or a core flow broken):** first response
+  within 1 business day; the ticket is the incident record until the
+  post-incident note exists.
+- **SEV-3 (degraded / single-user):** first response within 2 business
+  days.
+- **SEV-4 / questions:** first response within 5 business days.
+
+"Best effort" means exactly that: no SLA penalty, no 24/7 cover, no
+weekend guarantee. If the owner is away, tickets wait — the auto-reply
+(if any) must say so rather than imply a faster response.
+
+## Failover, per tier (PRF-017 — accepted risk)
+
+(PRF-017 — added Phase 16, Wave 11. There is no replica, no
+multi-region configuration, and no automated failover anywhere in the
+system. The table below is the honest failure story per tier, recorded
+as an **accepted risk** by the owner rather than as a design that
+does not exist.)
+
+| Tier                                                                          | What happens on loss                                                                                                                                                                | Recovery path                                                                                                                                                                                                                                                                                                                                                              | RTO / RPO                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Database (single Prisma Postgres, one `DATABASE_URL`, no replica)             | Full platform outage: api, dashboard, and admin all need the DB for every request. Submissions cannot be saved; sign-in cannot work.                                                | Restore from backup (see "Backups and point-in-time recovery" above — **status still NOT CONFIRMED**: no backup schedule or PITR window is verified for the production database, and no restore has ever been tested). Until that is confirmed, the fallback is an owner-side `pg_dump -Fc` restore to a new database and a `DATABASE_URL` rotation in the deployment env. | **RTO: hours** (manual restore + env rotation + redeploy). **RPO: last verified backup** — unquantified until the backup story is confirmed; treat as "up to a day of writes" in the worst case. |
+| Vercel region loss (all six apps on Vercel, default region, no `regions` key) | The affected app(s) are unreachable until Vercel recovers or reroutes; there is no second region to fail over to.                                                                   | None in-repo: wait for Vercel. The Cloudflare Workers path (Phase 10, per-app `wrangler.jsonc`) is a separate deployment target, not a live standby — failing over to it is a manual redeploy, not a switch.                                                                                                                                                               | **RTO: provider-dependent (hours). RPO: n/a** (stateless apps; no data lives in the region).                                                                                                     |
+| Email worker loss (standalone Node process, or the cron drain)                | No new failure for submissions (they still save, 201) — but notification emails stop: jobs sit `PENDING` in the outbox. The cron route (once daily on Hobby) is the fallback drain. | Restart the worker process, or trigger the cron route manually (`GET /api/cron/email-outbox` with `Bearer <CRON_SECRET>`). Check `oldestPendingAgeMinutes` on the admin health page to confirm the drain caught up.                                                                                                                                                        | **RTO: minutes** once noticed — but detection is manual (no alerting; see the runbook symptom table). **RPO: none** — queued jobs are durable in the DB and send on the next drain.              |
+| Payment / email provider loss (Stripe / PayPal / Resend)                      | Checkouts (that provider) or outbound mail fail; the rest of the platform keeps working.                                                                                            | Wait for the provider; no local failover exists (there is no automatic provider fallback for checkout or mail). Failed checkouts are retried by the customer; failed mail retries from the outbox.                                                                                                                                                                         | **RTO: provider-dependent. RPO: none** (no platform data is lost).                                                                                                                               |
+
+**Accepted risk (owner decision to record, Wave 11):** single region,
+single database, no replica, no automated failover. The mitigations
+are the backup story (unconfirmed — owner to confirm in the Prisma
+dashboard), the durable email outbox (nothing is lost when the worker
+dies), and this written procedure. If the platform grows past the
+point where "RTO: hours" is acceptable, the next step is a read
+replica + PITR confirmation first — not a second region.

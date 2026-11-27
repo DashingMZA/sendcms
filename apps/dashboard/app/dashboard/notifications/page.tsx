@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
 import { format } from "date-fns"
 import { requireDashboardSession } from "@/lib/require-session"
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -27,6 +29,19 @@ import { EmailJobsTable } from "./email-jobs-table"
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+// Page <title> follows the page locale (I18N-204): the title is the same
+// key the <h1> renders, so title == heading. (SRC-113: every dashboard
+// page exports metadata; the layout template appends "— SendCMS Dashboard".)
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "notifications")
+  return {
+    title: t("title"),
+    description: t("description"),
+  }
 }
 
 export default async function NotificationsPage({ searchParams }: Props) {

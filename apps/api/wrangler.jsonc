@@ -45,8 +45,12 @@
       "service": "sendcms",
     },
   ],
+  // LVE-014: Cloudflare built-in observability (logs + metrics) —
+  // was `false` on every worker, so even the platform's own
+  // telemetry was off. The uptime monitor + alert channel
+  // themselves are owner-side (no provider is configured here).
   "observability": {
-    "enabled": false,
+    "enabled": true,
   },
   "vars": {
     "AUTH_TRUST_HOST": "true",

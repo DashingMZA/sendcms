@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
@@ -17,6 +18,19 @@ import { CheckoutManager } from "./checkout-manager"
 // popup. The server detects the customer's country from the request
 // geo headers (Vercel/Cloudflare); with no header (local dev) the
 // customer picks the country on the page instead.
+// Page <title> follows the page locale (I18N-204): the title is the same
+// key the <h1> renders, so title == heading. (SRC-113: every dashboard
+// page exports metadata; the layout template appends "— SendCMS Dashboard".)
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "billing")
+  return {
+    title: t("checkoutTitle"),
+    description: t("checkoutDescription"),
+  }
+}
+
 export default async function CheckoutPage({
   searchParams,
 }: {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { PageHeader } from "@/components/dashboard/page-header"
@@ -13,6 +14,19 @@ import { NewTicketForm } from "./new-ticket-form"
 
 // A proper page for opening a ticket (Phase 8 UX rule: pages, not
 // popups — the form lives here, not in a dialog on the list page).
+// Page <title> follows the page locale (I18N-204): the title is the same
+// key the <h1> renders, so title == heading. (SRC-113: every dashboard
+// page exports metadata; the layout template appends "— SendCMS Dashboard".)
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "support")
+  return {
+    title: t("newTicketTitle"),
+    description: t("newTicketDescription"),
+  }
+}
+
 export default async function NewTicketPage() {
   const session = await auth()
   if (!session?.user) redirect("/sign-in")

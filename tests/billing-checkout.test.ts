@@ -47,7 +47,10 @@ vi.spyOn(
 ).mockImplementation(mockSessionsCreate as never)
 
 import { createStripeCheckoutSession } from "../packages/modules/billing/src/providers/stripe"
-import { createPayPalCheckoutSession } from "../packages/modules/billing/src/providers/paypal"
+import {
+  createPayPalCheckoutSession,
+  resetPayPalTokenCache,
+} from "../packages/modules/billing/src/providers/paypal"
 
 const version = {
   id: "pv-1",
@@ -69,6 +72,9 @@ const args = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // BIL-022: the PayPal token cache is module-scope — reset it so no
+  // test inherits a token minted by an earlier test's stubbed fetch.
+  resetPayPalTokenCache()
   process.env.STRIPE_SECRET_KEY = "sk_test_x"
   process.env.PAYPAL_CLIENT_ID = "id"
   process.env.PAYPAL_CLIENT_SECRET = "secret"
@@ -170,6 +176,49 @@ describe("PayPal checkout idempotency keys", () => {
       expect(seen.map((entry) => entry.requestId)).toEqual([
         "attempt-123:order",
       ])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // BIL-022: two consecutive checkouts exchange the OAuth token once —
+  // the second checkout reuses the cached token until near expiry.
+  it("exchanges the PayPal OAuth token once for two consecutive checkouts", async () => {
+    resetPayPalTokenCache()
+    let tokenCalls = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      if (url.endsWith("/v1/oauth2/token")) {
+        tokenCalls++
+        return {
+          ok: true,
+          json: async () => ({ access_token: "tok", expires_in: 32400 }),
+        }
+      }
+      if (url.endsWith("/v1/catalogs/products")) {
+        return { ok: true, json: async () => ({ id: "prod_1" }) }
+      }
+      if (url.endsWith("/v1/billing/plans")) {
+        return { ok: true, json: async () => ({ id: "plan_1" }) }
+      }
+      if (url.endsWith("/v1/billing/subscriptions")) {
+        return {
+          ok: true,
+          json: async () => ({
+            id: "I-SUB1",
+            links: [{ rel: "approve", href: "https://paypal.test/approve" }],
+          }),
+        }
+      }
+      throw new Error(`unexpected PayPal URL: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      const first = await createPayPalCheckoutSession(args)
+      const second = await createPayPalCheckoutSession(args)
+      expect(first.checkoutUrl).toBe("https://paypal.test/approve")
+      expect(second.checkoutUrl).toBe("https://paypal.test/approve")
+      expect(tokenCalls).toBe(1)
     } finally {
       vi.unstubAllGlobals()
     }

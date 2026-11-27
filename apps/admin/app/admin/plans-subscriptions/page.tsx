@@ -99,7 +99,7 @@ export default async function AdminPlansSubscriptionsPage({
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <div
           className={`grid gap-4 sm:grid-cols-2 ${
             canViewPlans ? "lg:grid-cols-4" : "lg:grid-cols-3"
@@ -152,7 +152,7 @@ export default async function AdminPlansSubscriptionsPage({
             />
           }
         />
-      </main>
+      </div>
     </div>
   )
 }

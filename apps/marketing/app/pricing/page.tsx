@@ -3,11 +3,15 @@ import Link from "next/link"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { apiUrl, dashboardUrl } from "@/lib/app-links"
+import { pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
-  title: "Pricing",
+  title: "Pricing — SendCMS",
   description:
     "Every SendCMS plan, exactly as set in the admin — prices and limits come live from the API, never hardcoded.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/pricing" },
+  openGraph: pageOpenGraph("/pricing"),
 }
 
 type PublicPlan = {

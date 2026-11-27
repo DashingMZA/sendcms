@@ -29,7 +29,7 @@ export function UserFormsTab({ forms }: { forms: AdminUserDetail["forms"] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("formsTitle")}</CardTitle>
+        <CardTitle as="h2">{t("formsTitle")}</CardTitle>
       </CardHeader>
       <CardContent>
         {forms.length === 0 ? (

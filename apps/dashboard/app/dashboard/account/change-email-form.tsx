@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { authClient } from "@sendcms/auth/client"
 
 import { ChangeEmailSchema } from "@sendcms/users/validators"
@@ -16,23 +16,41 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   const [error, setError] = useState<string | null>(null)
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // PRF-028: which field the current error belongs to — it gets
+  // aria-invalid + aria-describedby (pointing at the role="alert"
+  // paragraph) and receives focus once the error is rendered.
+  const [errorField, setErrorField] = useState<"email" | "password" | null>(
+    null
+  )
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!errorField) return
+    const target = errorField === "email" ? emailRef : passwordRef
+    target.current?.focus()
+  }, [errorField])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setErrorField(null)
     const parsed = ChangeEmailSchema.safeParse({ email })
     if (!parsed.success) {
       // The schema's message is English-only; the account domain already
       // carries its translated twin, so show that instead.
       setError(t("emailInvalid"))
+      setErrorField("email")
       return
     }
     if (parsed.data.email.toLowerCase() === currentEmail.toLowerCase()) {
       setError(t("emailSame"))
+      setErrorField("email")
       return
     }
     if (!currentPassword) {
       setError(t("currentPasswordRequired"))
+      setErrorField("password")
       return
     }
     setLoading(true)
@@ -51,6 +69,8 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
     } catch (err) {
       setLoading(false)
       setError(err instanceof Error ? err.message : t("emailChangeFailed"))
+      // The step-up proof is the re-entered password.
+      setErrorField("password")
       return
     }
     // The verification email goes to the NEW address; the change applies
@@ -65,6 +85,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
     setLoading(false)
     if (error) {
       setError(error.message ?? t("emailChangeFailed"))
+      setErrorField("email")
       return
     }
     setSentTo(parsed.data.email)
@@ -85,6 +106,7 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
       <div className="space-y-2">
         <Label htmlFor="account-new-email">{t("newEmailLabel")}</Label>
         <Input
+          ref={emailRef}
           id="account-new-email"
           type="email"
           autoComplete="email"
@@ -92,6 +114,10 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          aria-invalid={errorField === "email"}
+          aria-describedby={
+            errorField === "email" ? "change-email-error" : undefined
+          }
         />
         <p className="text-xs text-muted-foreground">{t("newEmailHint")}</p>
       </div>
@@ -100,16 +126,25 @@ export function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
           {t("currentPasswordLabel")}
         </Label>
         <Input
+          ref={passwordRef}
           id="account-email-current-password"
           type="password"
           autoComplete="current-password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           required
+          aria-invalid={errorField === "password"}
+          aria-describedby={
+            errorField === "password" ? "change-email-error" : undefined
+          }
         />
       </div>
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p
+          role="alert"
+          id="change-email-error"
+          className="text-sm text-destructive"
+        >
           {error}
         </p>
       )}

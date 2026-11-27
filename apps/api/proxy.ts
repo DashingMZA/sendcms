@@ -74,6 +74,31 @@ export function proxy(req: NextRequest) {
   })
   const headerName = cspHeaderName(CSP_REPORT_ONLY)
 
+  // PRF-005 (Phase 16, Wave 11): reject non-POST methods on the public
+  // submit endpoint HERE, in the proxy, so the 405 is returned without
+  // a route-handler (serverless function) invocation — the GET 405
+  // used to be the slowest endpoint measured (median TTFB 1.88 s for
+  // a 0-byte response) because it paid the full invocation cost. Only
+  // POST (the submission) and OPTIONS (the CORS preflight, answered
+  // by the route) pass through. The route still exports its own 405s
+  // (SDK-031) as a backstop for any request that reaches it, with the
+  // same `Allow: POST, OPTIONS` value — keep the two in sync. The
+  // 405 still carries the CSP header, like every other api response
+  // (SEC-303).
+  if (
+    req.nextUrl.pathname === "/api/public/v1/submit" &&
+    req.method !== "POST" &&
+    req.method !== "OPTIONS"
+  ) {
+    return NextResponse.json(
+      { error: "Method not allowed" },
+      {
+        status: 405,
+        headers: { Allow: "POST, OPTIONS", [headerName]: policy },
+      }
+    )
+  }
+
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set("x-nonce", nonce)
   requestHeaders.set(headerName, policy)

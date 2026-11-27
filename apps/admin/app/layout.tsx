@@ -3,7 +3,12 @@ import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
-import { DirectionProvider, ThemeProvider, Toaster } from "@sendcms/ui"
+import {
+  DirectionProvider,
+  FocusMainOnRouteChange,
+  ThemeProvider,
+  Toaster,
+} from "@sendcms/ui"
 import {
   SHELL_TRANSLATION_DOMAINS,
   getDictionaries,
@@ -35,7 +40,7 @@ export const viewport: Viewport = {
   themeColor: [
     {
       media: "(prefers-color-scheme: light)",
-      color: "oklch(0.6373 0.1362 162.517)",
+      color: "oklch(0.42 0.1362 162.517)",
     },
     {
       media: "(prefers-color-scheme: dark)",
@@ -106,6 +111,8 @@ export default async function RootLayout({
         <DirectionProvider dir={direction}>
           <ThemeProvider nonce={nonce}>
             <QueryProvider>
+              {/* PRF-028: move focus to #main-content on route change. */}
+              <FocusMainOnRouteChange />
               <LocaleProvider locale={locale}>
                 <TranslationProvider dictionaries={dictionaries}>
                   {children}

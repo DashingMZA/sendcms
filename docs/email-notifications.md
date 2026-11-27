@@ -1,3 +1,7 @@
+---
+description: "When a visitor submits a form, SendCMS saves it first, then queues one notification email per enabled recipient — delivery retries if a provider is down."
+---
+
 # Email notifications
 
 When a visitor submits a form, SendCMS saves the submission first and
@@ -58,13 +62,13 @@ dictionary renders English.
 
 How the locale is chosen, per email kind:
 
-| Email | Recipient locale |
-| ----- | ---------------- |
-| Verification / password reset | The user's stored `User.locale`, resolved by the auth factory at send time (`packages/auth/src/auth.ts`); no preference → English |
-| Submission notification | The form owner's stored locale, resolved at enqueue time (for the stored subject) and again at send time from the job's denormalized `ownerId` (for the body) |
-| Digest | The form owner's stored locale, resolved in `sendDueDigests` and stored on the job payload (`locale`); jobs enqueued before this shipped carry no locale and render English |
-| Reply to a submission | The form owner's stored locale, stored on the job payload at enqueue; the reply **body** is the owner's own words and is never translated, only the chrome (heading, footer, button) |
-| Test notification | The requesting owner's stored locale |
+| Email                         | Recipient locale                                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Verification / password reset | The user's stored `User.locale`, resolved by the auth factory at send time (`packages/auth/src/auth.ts`); no preference → English                                                    |
+| Submission notification       | The form owner's stored locale, resolved at enqueue time (for the stored subject) and again at send time from the job's denormalized `ownerId` (for the body)                        |
+| Digest                        | The form owner's stored locale, resolved in `sendDueDigests` and stored on the job payload (`locale`); jobs enqueued before this shipped carry no locale and render English          |
+| Reply to a submission         | The form owner's stored locale, stored on the job payload at enqueue; the reply **body** is the owner's own words and is never translated, only the chrome (heading, footer, button) |
+| Test notification             | The requesting owner's stored locale                                                                                                                                                 |
 
 Template chrome (headings, buttons, footers, subjects, the
 "Received" line) follows the recipient locale, and dates/times in
@@ -115,9 +119,9 @@ midnight UTC) — the Hobby plan allows one cron per day (owner decision
 2026-11-20; reply emails can wait up to a day). To go faster later,
 change the schedule to `*/5 * * * *` when the plan allows it.
 
-> **Cron vs worker (EML-013):** the daily cron is the *fallback*
+> **Cron vs worker (EML-013):** the daily cron is the _fallback_
 > drain — it exists so a job is never stranded when no worker is
-> running. The *prompt* path is the standalone worker's attempts
+> running. The _prompt_ path is the standalone worker's attempts
 > (every 30 s) and the submit route's immediate `after()` drain.
 > With the worker fixed (templates render under tsx again), a job
 > enqueued after midnight is normally sent within one poll interval,

@@ -128,7 +128,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
           </div>
         }
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <p className="text-sm text-muted-foreground">
           {t("colVersions")}: {plan.versionCount} · {t("colSubscriptions")}:{" "}
           {plan.subscriptionCount}
@@ -150,7 +150,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("currentVersionTitle")}</CardTitle>
+            <CardTitle as="h2">{t("currentVersionTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             {!currentVersion ? (
@@ -193,7 +193,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("historyTitle")}</CardTitle>
+            <CardTitle as="h2">{t("historyTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-lg border">
@@ -261,7 +261,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("compareTitle")}</CardTitle>
+            <CardTitle as="h2">{t("compareTitle")}</CardTitle>
             <CardDescription>{t("compareSelectPrompt")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -345,7 +345,7 @@ export function PlanDetailView({ initialData, planId, actorRole }: Props) {
         {dialog === "archive" && (
           <ArchiveDialog planId={planId} onClose={() => setDialog(null)} />
         )}
-      </main>
+      </div>
     </div>
   )
 }

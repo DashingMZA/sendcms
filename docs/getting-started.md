@@ -1,3 +1,7 @@
+---
+description: "SendCMS is a contact-form backend for any website — Astro, Next.js, Hugo, WordPress, or plain HTML. Register a domain, create a form, paste one script tag."
+---
+
 # Getting started with SendCMS
 
 SendCMS is a contact-form backend for any website — Astro, Next.js, Hugo,

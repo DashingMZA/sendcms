@@ -1,8 +1,16 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { AuthShell } from "../auth-shell"
 import { ForgotPasswordForm } from "./forgot-password-form"
+
+// PRF-037: each auth page has a distinct tab title (the layout
+// template appends "— SendCMS Dashboard").
+export const metadata: Metadata = {
+  title: "Forgot password",
+  description: "Reset your SendCMS dashboard password by email.",
+}
 
 export default async function ForgotPasswordPage() {
   const session = await auth()

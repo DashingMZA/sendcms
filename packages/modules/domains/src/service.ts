@@ -99,12 +99,25 @@ async function getOwnedDomainOrThrow(userId: string, domainId: string) {
   const domain = await db.domain.findFirst({
     where: { id: domainId, ownerId: userId },
     include: {
-      verifications: { orderBy: { createdAt: "desc" } },
-      _count: { select: { formLinks: true } },
+      // DB-046: newest 50 verifications only — every re-verification
+      // appends a row, and the detail page used to load the whole
+      // history. A PENDING verification is always the newest row
+      // (startVerification reuses it under a lock), so the cap can
+      // never hide the row verifyDomainForUser looks for.
+      verifications: { orderBy: { createdAt: "desc" }, take: 50 },
+      _count: { select: { formLinks: true, verifications: true } },
     },
   })
   if (!domain) throw new ApiError("Domain not found", 404)
-  return domain
+  // `??` fallback: the count is always selected above, but a caller
+  // handing in a partial row still gets a sane count, never undefined.
+  const verificationCount =
+    domain._count.verifications ?? domain.verifications.length
+  return {
+    ...domain,
+    verificationCount,
+    hasMoreVerifications: verificationCount > domain.verifications.length,
+  }
 }
 
 export async function getDomainCountForUser(userId: string) {

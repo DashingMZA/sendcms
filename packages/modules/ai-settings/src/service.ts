@@ -603,6 +603,8 @@ export type AiKeyTestResult = {
   latencyMs: number
   model: string
   error?: string
+  /** AIM-001: true when the probe failed on the 25 s timeout. */
+  timedOut?: boolean
 }
 
 // ─── Key-test error sanitisation (AIM-006) ──────────────────────────
@@ -624,6 +626,13 @@ const KEY_TEST_ERROR_MESSAGES: { pattern: RegExp; message: string }[] = [
   {
     pattern: /rate limit|too many requests/i,
     message: "Rate limit exceeded. Try again later.",
+  },
+  // AIM-001: a timed-out probe is a distinct, user-actionable error —
+  // not the generic "Key test failed." The 25 s probe timeout surfaces
+  // as a TimeoutError whose message matches this pattern.
+  {
+    pattern: /timed out|timeout/i,
+    message: "The provider timed out. Try again later.",
   },
   {
     pattern: /overloaded|currently experiencing high demand/i,
@@ -651,10 +660,17 @@ export function sanitizeKeyTestError(message: string, apiKey: string): string {
     generateText works for all five through the one AI SDK. Cost is a
     few tokens. The key is used for this one call only — it is never
     stored or logged here; the caller decides what to record. */
+
+// AIM-001 / SRC-311: the probe's own timeout bound. The request's
+// abort signal (passed in by the caller) can cut it shorter.
+export const AI_KEY_PROBE_TIMEOUT_MS = 25_000
 async function probeKey(
   provider: AiProviderName,
   apiKey: string,
-  modelId: string
+  modelId: string,
+  // AIM-001: the caller's request signal — a client disconnect aborts
+  // the probe instead of letting it burn the full 25 s timeout.
+  options: { signal?: AbortSignal } = {}
 ): Promise<{
   ok: boolean
   latencyMs: number
@@ -664,6 +680,10 @@ async function probeKey(
       caller feeds that back to the stored key row. The sanitised
       error string alone cannot carry the classification. */
   authFailure?: boolean
+  /** AIM-001: true when the 25 s probe timeout fired. */
+  timedOut: boolean
+  /** AIM-001: true when the caller's request signal aborted. */
+  aborted: boolean
   usage: AiCallUsage | null
 }> {
   const started = Date.now()
@@ -675,17 +695,30 @@ async function probeKey(
       maxOutputTokens: 1,
       // SRC-311: a hung probe used to block the Test button until
       // the proxy gave up (AIM-001's live 85 s evidence).
-      abortSignal: AbortSignal.timeout(25_000),
+      // AIM-001: the timeout is combined with the request's abort
+      // signal — whichever fires first cancels the probe.
+      abortSignal: options.signal
+        ? AbortSignal.any([
+            AbortSignal.timeout(AI_KEY_PROBE_TIMEOUT_MS),
+            options.signal,
+          ])
+        : AbortSignal.timeout(AI_KEY_PROBE_TIMEOUT_MS),
     })
     return {
       ok: true,
       latencyMs: Date.now() - started,
       model: modelId,
+      timedOut: false,
+      aborted: false,
       usage: toAiCallUsageWithCost(modelId, result.usage),
     }
   } catch (err) {
     // Sanitised (AIM-006): a provider error can echo part of the key
     // — the raw message never leaves this function.
+    const timedOut = err instanceof Error && err.name === "TimeoutError"
+    const aborted =
+      options.signal?.aborted === true ||
+      (err instanceof Error && err.name === "AbortError")
     return {
       ok: false,
       latencyMs: Date.now() - started,
@@ -695,6 +728,8 @@ async function probeKey(
         apiKey
       ),
       authFailure: isAiAuthFailure(err),
+      timedOut,
+      aborted,
       usage: null,
     }
   }
@@ -720,8 +755,15 @@ async function assertAiTestAllowed(userId: string): Promise<void> {
     (key-test, BYOK) is written either way. */
 export async function testUserAiKey(
   userId: string,
-  provider: AiProviderName
+  provider: AiProviderName,
+  // AIM-001: the request's abort signal — a client disconnect cancels
+  // the probe and suppresses the usage write (below).
+  options: { signal?: AbortSignal } = {}
 ): Promise<AiKeyTestResult> {
+  // AIM-001: a disconnected client gets no usage row — the probe's
+  // FAILED row would otherwise be written for a test nobody sees,
+  // and a retry would double-count it.
+  const disconnected = () => options.signal?.aborted === true
   await assertAiTestAllowed(userId)
   const row = await db.userAiKey.findUnique({
     where: {
@@ -763,15 +805,18 @@ export async function testUserAiKey(
           provider,
         })
       )
-    await recordAiUsage({
-      userId,
-      provider,
-      model: modelId,
-      billingMode: "BYOK",
-      status: "FAILED",
-      sourceEvent: "key-test",
-      resourceId: row.id,
-    })
+    // AIM-001: no usage row for a test the client already abandoned.
+    if (!disconnected()) {
+      await recordAiUsage({
+        userId,
+        provider,
+        model: modelId,
+        billingMode: "BYOK",
+        status: "FAILED",
+        sourceEvent: "key-test",
+        resourceId: row.id,
+      })
+    }
     return { ok: false, latencyMs: 0, model: modelId, error }
   }
   // AIM-028: a key test is a billable model call — it counts toward
@@ -785,7 +830,14 @@ export async function testUserAiKey(
       429
     )
   }
-  const probe = await probeKey(provider, apiKey, modelId)
+  const probe = await probeKey(provider, apiKey, modelId, {
+    signal: options.signal,
+  })
+  // AIM-001: the probe tells us whether the CLIENT abandoned it
+  // (aborted, not timed out) — the request signal alone cannot: a
+  // caller-passed timeout signal is aborted too, but a timeout is a
+  // real probe outcome that still gets its usage row.
+  const probeDisconnected = probe.aborted && !probe.timedOut
   if (!probe.ok) {
     // The log carries the sanitised probe error plus the fingerprint
     // last4 (AIM-006) — never key material.
@@ -798,7 +850,9 @@ export async function testUserAiKey(
     // AIM-003: a probe that fails on provider auth feeds the
     // auto-disable counter — the Test button is a call-time failure
     // too. Transient failures do not count.
-    if (probe.authFailure) {
+    // AIM-001: a disconnect is neither — no auth-failure bookkeeping
+    // for a probe the client abandoned.
+    if (probe.authFailure && !probeDisconnected) {
       await recordByokAuthFailure(userId, provider)
     }
   } else {
@@ -820,23 +874,29 @@ export async function testUserAiKey(
       provider,
     })
   }
-  await recordAiUsage({
-    userId,
-    provider,
-    model: modelId,
-    billingMode: "BYOK",
-    status: probe.ok ? "SUCCESS" : "FAILED",
-    tokensIn: probe.usage?.promptTokens ?? null,
-    tokensOut: probe.usage?.completionTokens ?? null,
-    costMicros: probe.usage?.costMicros ?? null,
-    sourceEvent: "key-test",
-    resourceId: row.id,
-  })
+  // AIM-001: skip the usage write when the client disconnected —
+  // at most one FAILED row per test invocation, and none for a test
+  // nobody is waiting on.
+  if (!probeDisconnected) {
+    await recordAiUsage({
+      userId,
+      provider,
+      model: modelId,
+      billingMode: "BYOK",
+      status: probe.ok ? "SUCCESS" : "FAILED",
+      tokensIn: probe.usage?.promptTokens ?? null,
+      tokensOut: probe.usage?.completionTokens ?? null,
+      costMicros: probe.usage?.costMicros ?? null,
+      sourceEvent: "key-test",
+      resourceId: row.id,
+    })
+  }
   return {
     ok: probe.ok,
     latencyMs: probe.latencyMs,
     model: modelId,
     ...(probe.error ? { error: probe.error } : {}),
+    timedOut: probe.timedOut,
   }
 }
 
@@ -850,7 +910,9 @@ export async function testBrowserKey(
   userId: string,
   provider: AiProviderName,
   apiKey: string,
-  model?: string
+  model?: string,
+  // AIM-001: the request's abort signal — see testUserAiKey.
+  options: { signal?: AbortSignal } = {}
 ): Promise<AiKeyTestResult> {
   await assertAiTestAllowed(userId)
   if (typeof apiKey !== "string" || apiKey.trim().length < 8) {
@@ -866,7 +928,11 @@ export async function testBrowserKey(
     )
   }
   const modelId = model?.trim() || DEFAULT_MODELS[provider]
-  const probe = await probeKey(provider, apiKey.trim(), modelId)
+  const probe = await probeKey(provider, apiKey.trim(), modelId, {
+    signal: options.signal,
+  })
+  // AIM-001: aborted-by-the-client (not timed out) — see testUserAiKey.
+  const probeDisconnected = probe.aborted && !probe.timedOut
   if (!probe.ok) {
     // Sanitised by probeKey (AIM-006) — never key material.
     logger.warn("browser key test failed", {
@@ -875,22 +941,26 @@ export async function testBrowserKey(
       error: probe.error,
     })
   }
-  await recordAiUsage({
-    userId,
-    provider,
-    model: modelId,
-    billingMode: "BYOK",
-    status: probe.ok ? "SUCCESS" : "FAILED",
-    tokensIn: probe.usage?.promptTokens ?? null,
-    tokensOut: probe.usage?.completionTokens ?? null,
-    costMicros: probe.usage?.costMicros ?? null,
-    sourceEvent: "key-test",
-  })
+  // AIM-001: skip the usage write when the client disconnected.
+  if (!probeDisconnected) {
+    await recordAiUsage({
+      userId,
+      provider,
+      model: modelId,
+      billingMode: "BYOK",
+      status: probe.ok ? "SUCCESS" : "FAILED",
+      tokensIn: probe.usage?.promptTokens ?? null,
+      tokensOut: probe.usage?.completionTokens ?? null,
+      costMicros: probe.usage?.costMicros ?? null,
+      sourceEvent: "key-test",
+    })
+  }
   return {
     ok: probe.ok,
     latencyMs: probe.latencyMs,
     model: modelId,
     ...(probe.error ? { error: probe.error } : {}),
+    timedOut: probe.timedOut,
   }
 }
 

@@ -200,6 +200,8 @@ export async function exportAuditLogs(
   total: number
   exportedAt: Date
   capped: boolean
+  /** SRC-209: alias of `capped` — true when rows were left out. */
+  truncated: boolean
   limit: number
 }> {
   requireAdmin(actor, "EXPORT_AUDIT_LOGS")
@@ -224,6 +226,10 @@ export async function exportAuditLogs(
     total,
     exportedAt: new Date(),
     capped: total > limit,
+    // SRC-209: `truncated` is the finding's flag name — same value as
+    // `capped`, kept alongside it so existing callers/tests that read
+    // `capped` keep working.
+    truncated: total > limit,
     limit,
   }
 }

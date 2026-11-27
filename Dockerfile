@@ -4,6 +4,10 @@
 #   docker build --build-arg APP=@sendcms/api -t sendcms-api .
 #   docker build --build-arg APP=@sendcms/email-worker -t sendcms-worker .
 #
+# LVE-021: APP has NO default by design — building without it used to
+# pass an empty filter to pnpm and fail opaquely. The app-build stage
+# below fails fast with a clear error when APP is empty instead.
+#
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time,
 # so the Dockerfile declares each one as an ARG (builders such as Railway
 # only pass variables the Dockerfile declares). They are also set as ENV
@@ -37,6 +41,9 @@ RUN pnpm --filter @sendcms/database db:generate
 # and has no build step.
 FROM builder AS app-build
 ARG APP
+# LVE-021: guard — no APP means no app to build; fail here with a
+# clear message instead of an opaque `pnpm --filter ""` failure.
+RUN if [ -z "$APP" ]; then echo "ERROR: missing --build-arg APP (e.g. APP=@sendcms/api or APP=@sendcms/email-worker). See the header comment." >&2; exit 1; fi
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_DASHBOARD_URL
@@ -68,6 +75,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ARG APP
 ENV APP=$APP
+# LVE-021: the image self-describes its port and health endpoint, so
+# a single-app `docker run` (platforms.md "Single-app image") has a
+# health signal without compose. Per-app path: the api app answers
+# /api/health (DB ping), the email worker answers /health, every other
+# Next app answers its root page. wget is BusyBox in node:24-alpine.
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD sh -c 'case "$APP" in @sendcms/api) path=/api/health ;; @sendcms/email-worker) path=/health ;; *) path=/ ;; esac; wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}$path" || exit 1'
 COPY . .
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 # Built app output (only the selected app has a .next) + the generated

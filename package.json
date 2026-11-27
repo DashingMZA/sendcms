@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run build --concurrency 1",
+    "bundle:budget": "node scripts/check-bundle-budget.mjs",
     "cf-typegen": "wrangler types --config apps/api/wrangler.jsonc --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "db:generate": "pnpm --filter @sendcms/database db:generate",
     "db:migrate": "pnpm --filter @sendcms/database db:migrate",
@@ -25,6 +26,8 @@
     "sdk:build": "pnpm --filter @sendcms/sdk build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:setup": "tsx e2e/setup-e2e-user.ts",
     "check:workspace-imports": "node scripts/check-workspace-imports.mjs",
     "typecheck": "turbo run typecheck && tsc --noEmit && node scripts/check-workspace-imports.mjs",
     "validate:i18n": "pnpm --filter @sendcms/i18n validate"
@@ -44,6 +47,7 @@
     "@freemius/sdk": "^0.5.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@opennextjs/cloudflare": "^1.20.17",
+    "@playwright/test": "^1.65.1",
     "@polar-sh/sdk": "^1.3.2",
     "@sendcms/admin-users": "workspace:*",
     "@sendcms/ai": "workspace:*",

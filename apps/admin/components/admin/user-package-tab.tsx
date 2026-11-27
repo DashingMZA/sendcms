@@ -119,7 +119,7 @@ export function UserPackageTab({
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>{t("currentSubscription")}</CardTitle>
+          <CardTitle as="h2">{t("currentSubscription")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {/* ADM-035: while loading a skeleton, on failure an error
@@ -259,7 +259,7 @@ export function UserPackageTab({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("overridesTitle")}</CardTitle>
+          <CardTitle as="h2">{t("overridesTitle")}</CardTitle>
           <CardDescription>{t("overridesDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -324,7 +324,7 @@ export function UserPackageTab({
 
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>{t("historyTitle")}</CardTitle>
+          <CardTitle as="h2">{t("historyTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           {/* ADM-035: same loading/error gate as the subscription

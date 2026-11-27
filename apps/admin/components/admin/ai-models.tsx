@@ -71,7 +71,7 @@ export function AiModels({ actorRole }: Props) {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>{t("providersTitle")}</CardTitle>
+          <CardTitle as="h2">{t("providersTitle")}</CardTitle>
           <CardDescription>{t("providersDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -117,7 +117,7 @@ export function AiModels({ actorRole }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("modelsInUseTitle")}</CardTitle>
+          <CardTitle as="h2">{t("modelsInUseTitle")}</CardTitle>
           <CardDescription>{t("modelsInUseDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

@@ -48,9 +48,9 @@ export default async function AdminOverviewPage({
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <OverviewDashboard initialData={overview} query={query} />
-      </main>
+      </div>
     </div>
   )
 }

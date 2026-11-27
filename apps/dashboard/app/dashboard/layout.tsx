@@ -1,7 +1,12 @@
 import { auth } from "@/lib/auth"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { SidebarInset, SidebarProvider, TooltipProvider } from "@sendcms/ui"
+import {
+  SidebarInset,
+  SidebarProvider,
+  Toaster,
+  TooltipProvider,
+} from "@sendcms/ui"
 
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { QueryProvider } from "@/components/dashboard/query-provider"
@@ -14,6 +19,7 @@ import {
   getDictionaries,
   getLocaleDirection,
   getRequestLocale,
+  getTranslator,
 } from "@/lib/i18n"
 import { getDomainCountForUser } from "@sendcms/domains"
 import { getFormCountForUser } from "@sendcms/forms"
@@ -44,6 +50,10 @@ export default async function DashboardLayout({
   const locale = await getRequestLocale(session.user.id)
   const side = getLocaleDirection(locale) === "rtl" ? "right" : "left"
   const dictionaries = await getDictionaries(locale, DASHBOARD_SHELL_DOMAINS)
+  // Toast live-region label, same source as the root layout used
+  // (PRF-007: the container moved here from the root layout because
+  // only this group calls toast() — see layout.tsx).
+  const t = await getTranslator(locale, "common")
 
   // UX-006: the sidebar's open/collapsed state survives reloads — the
   // client persists it in the `sidebar_state` cookie and the server
@@ -66,6 +76,14 @@ export default async function DashboardLayout({
                 initialLocale={locale}
               />
               <SidebarInset>{children}</SidebarInset>
+              {/* PRF-007 (Wave 11): the toast container lives here, not
+                  in the root layout — every toast() call site is under
+                  this group, so auth pages never load the sonner bundle. */}
+              <Toaster
+                richColors
+                position="top-right"
+                containerAriaLabel={t("notifications")}
+              />
             </SidebarProvider>
           </TooltipProvider>
         </TranslationProvider>

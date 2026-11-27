@@ -38,9 +38,9 @@ export default async function AdminSubmissionsPage() {
   return (
     <div>
       <PageHeader title={t("title")} description={t("description")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <PlatformSubmissions actorRole={actorRole} />
-      </main>
+      </div>
     </div>
   )
 }

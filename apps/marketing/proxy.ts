@@ -17,9 +17,10 @@ import {
 // nonce lets Next.js's own inline scripts run under the policy — see
 // `packages/security/src/csp.ts`). The matcher excludes static assets
 // (`/_next/static`, `/_next/image`, `favicon.ico`, and any path with a
-// file extension): those are not documents, and the static HTML demo
-// page (`/demo/contact-us.html`) has inline `<style>`/`<script>` no
-// nonce can be injected into, so it must not receive a CSP header.
+// file extension): those are not documents. (The static HTML demo page
+// `/demo/contact-us.html` used to be excluded here for its inline
+// `<style>`/`<script>`; it was deleted in Wave 11 (PRF-035) and 301s
+// to the Next route, so the exclusion no longer has a demo to cover.)
 //
 // The CSP builder lives in `@sendcms/security`, but this proxy imports
 // it by relative path: the package barrel (`src/index.ts`) is owned by

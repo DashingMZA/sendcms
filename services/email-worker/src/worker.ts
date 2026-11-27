@@ -6,7 +6,7 @@
 // kills the worker — the next poll retries, and the health endpoint
 // surfaces the last error.
 import { createServer, type Server } from "node:http"
-import { recordWorkerFailedPoll } from "@sendcms/cron"
+import { pingCronHeartbeat, recordWorkerFailedPoll } from "@sendcms/cron"
 import { createLogger } from "@sendcms/observability"
 import { processEmailOutbox } from "@sendcms/notifications"
 import {
@@ -317,6 +317,12 @@ export function createEmailWorker(options: EmailWorkerOptions = {}) {
       canceled: run.canceled,
       durationMs: Date.now() - started,
     })
+    // PRF-018: the poll completed — tell the dead-man's-switch
+    // monitor. Fire-and-forget (the `void` precedent of
+    // recordWorkerFailedPoll below): the worker is long-lived, so the
+    // bounded ping completes, and a failed ping must never fail a
+    // poll that already succeeded.
+    void pingCronHeartbeat("worker")
     return run
   }
 

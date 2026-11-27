@@ -462,7 +462,10 @@ describe("PRF-040 — admin viewport + touch icon + manifest", () => {
   it("exports the media-qualified themeColor pair and links the assets", () => {
     const layout = read("apps/admin/app/layout.tsx")
     expect(layout).toContain("export const viewport: Viewport")
-    expect(layout).toContain("oklch(0.6373 0.1362 162.517)")
+    // PRF-022 (Wave 11, Stream A): the light --primary token darkened
+    // from oklch(0.6373 ...) to oklch(0.42 ...) for 4.5:1 contrast; the
+    // light themeColor tracks the token, so it changed with it.
+    expect(layout).toContain("oklch(0.42 0.1362 162.517)")
     expect(layout).toContain("oklch(0.7678 0.1655 162.189)")
     expect(layout).toContain("(prefers-color-scheme: light)")
     expect(layout).toContain("(prefers-color-scheme: dark)")

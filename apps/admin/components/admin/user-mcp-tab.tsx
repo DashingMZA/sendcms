@@ -163,7 +163,7 @@ function UserMcpSettingsForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("userMcpTitle")}</CardTitle>
+        <CardTitle as="h2">{t("userMcpTitle")}</CardTitle>
         <CardDescription>{t("userMcpDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">

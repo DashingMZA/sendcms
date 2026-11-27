@@ -33,9 +33,19 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+function CardTitle({
+  className,
+  as = "div",
+  ...props
+}: React.ComponentProps<"div"> & {
+  // UX-011: section titles are real headings — pass `as="h2"` so the
+  // document outline is h1 (page) → h2 (section) → h3 (empty states).
+  // Default stays "div" so existing non-section uses are unchanged.
+  as?: "div" | "h2" | "h3"
+}) {
+  const Comp = as
   return (
-    <div
+    <Comp
       data-slot="card-title"
       className={cn("text-base font-medium", className)}
       {...props}

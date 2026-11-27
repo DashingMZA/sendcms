@@ -110,7 +110,7 @@ export function SupportList({ initialData, filters }: Props) {
             })
           }
         >
-          <SelectTrigger className="h-9 w-44">
+          <SelectTrigger className="h-9 w-44" aria-label={t("colStatus")}>
             <SelectValue placeholder={t("colStatus")} />
           </SelectTrigger>
           <SelectContent>

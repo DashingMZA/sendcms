@@ -4,12 +4,39 @@ import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
 import { ThemeProvider } from "@sendcms/ui"
-import { Toaster } from "@sendcms/ui"
+import { getBaseUrl } from "@/lib/utils"
+
+const baseUrl = getBaseUrl()
 
 export const metadata: Metadata = {
+  // PRF-031/032 (Wave 11, Stream C): metadataBase makes every relative
+  // metadata URL (canonicals, og:url, og:image) resolve to an absolute
+  // URL. The layout sets the shared Open Graph / Twitter defaults;
+  // each page adds its own canonical + og:url via pageOpenGraph() in
+  // @/lib/utils — a page openGraph REPLACES the layout's wholesale,
+  // so pages must repeat the shared fields (siteName/locale/images).
+  // No `twitter:site`/`twitter:creator`: SendCMS has no X handle
+  // anywhere in the repo — do not invent one.
+  metadataBase: new URL(baseUrl),
   title: "Documentation — SendCMS",
   description:
     "Guides and references for SendCMS — setup, the SDK, the REST API, and embedding.",
+  openGraph: {
+    siteName: "SendCMS",
+    locale: "en_US",
+    type: "website",
+    images: [
+      {
+        url: `${baseUrl}${config.metadata.meta_image}`,
+        width: 1200,
+        height: 630,
+        alt: "SendCMS documentation",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 }
 
 // Brand theme color (PRF-040): the light/dark pair tracks --primary,
@@ -69,10 +96,10 @@ export default async function RootLayout({
         >
           Skip to main content
         </a>
-        <ThemeProvider nonce={nonce}>
-          {children}
-          <Toaster richColors position="top-right" />
-        </ThemeProvider>
+        {/* PRF-007 (Wave 11): no Toaster component in the public apps — no
+            toast() call site exists in this app, so the sonner bundle
+            was dead weight on every page. Dashboard/admin keep theirs. */}
+        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>
   )

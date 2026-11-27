@@ -45,6 +45,36 @@ const { store, mockDb } = vi.hoisted(() => {
         if (key) store.keys.add(key)
         return row
       }),
+      // DB-047: recordMcpCallOutcomes writes the batch with one
+      // createMany. The mock mirrors skipDuplicates: a row whose
+      // idempotency key is already stored is dropped, not counted.
+      createMany: vi.fn(
+        async ({
+          data,
+          skipDuplicates,
+        }: {
+          data: Record<string, unknown>[]
+          skipDuplicates?: boolean
+        }) => {
+          let count = 0
+          for (const d of data) {
+            const key = d.idempotencyKey as string | null
+            if (skipDuplicates && key && store.keys.has(key)) continue
+            store.usage.push({
+              id: `usage-${store.seq++}`,
+              apiKeyId: d.apiKeyId as string,
+              userId: d.userId as string,
+              tool: d.tool as string,
+              status: d.status as string,
+              durationMs: (d.durationMs as number | null) ?? null,
+              idempotencyKey: key ?? null,
+            })
+            if (key) store.keys.add(key)
+            count++
+          }
+          return { count }
+        }
+      ),
     },
   }
   return { store, mockDb }
@@ -167,6 +197,23 @@ describe("recordMcpCallOutcomes idempotency (DB-003)", () => {
     expect(store.usage).toHaveLength(1)
     expect(store.usage[0].tool).toBe("list_domains")
     expect(store.usage[0].status).toBe("SUCCESS")
+  })
+
+  // DB-047: the batch is ONE createMany call (skipDuplicates), not
+  // one sequential insert per tool call.
+  it("writes a two-tool batch with a single createMany", async () => {
+    await recordMcpCallOutcomes(
+      auth,
+      [toolsCall(7, "list_domains"), toolsCall(7, "create_form")],
+      [okResponse(7), okResponse(7)],
+      10
+    )
+    expect(store.usage).toHaveLength(2)
+    expect(mockDb.mcpUsageRecord.createMany).toHaveBeenCalledTimes(1)
+    expect(mockDb.mcpUsageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skipDuplicates: true })
+    )
+    expect(mockDb.mcpUsageRecord.create).not.toHaveBeenCalled()
   })
 
   it("a new request id records again (a new call, not a retry)", async () => {

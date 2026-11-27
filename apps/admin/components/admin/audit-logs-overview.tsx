@@ -146,7 +146,7 @@ function AuditLogsInner({ actorRole }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle>{t("filtersTitle")}</CardTitle>
+            <CardTitle as="h2">{t("filtersTitle")}</CardTitle>
             <CardDescription>{t("description")}</CardDescription>
           </div>
           {canExport && (
@@ -296,7 +296,7 @@ function AuditLogsInner({ actorRole }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("title")}</CardTitle>
+          <CardTitle as="h2">{t("title")}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (

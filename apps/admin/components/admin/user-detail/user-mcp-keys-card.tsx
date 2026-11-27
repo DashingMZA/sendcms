@@ -40,7 +40,7 @@ export function UserMcpKeysCard({ apiKeys, canManage, onRevokeKeys }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("mcpTitle")}</CardTitle>
+        <CardTitle as="h2">{t("mcpTitle")}</CardTitle>
         <CardDescription>{t("mcpNote")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

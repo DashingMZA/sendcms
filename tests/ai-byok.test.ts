@@ -595,6 +595,7 @@ vi.mock("ai", async (importOriginal) => {
 
 import {
   AiNotAvailableError,
+  AI_KEY_PROBE_TIMEOUT_MS,
   deleteUserAiKey,
   disableUserAiKey,
   enableUserAiKey,
@@ -953,6 +954,79 @@ describe("testUserAiKey", () => {
       fingerprintLast4: sha256(BYOK_KEY).slice(-4),
     })
   })
+
+  // AIM-001: a provider stub that hangs until its abort signal fires,
+  // then rejects with the signal's reason — what the AI SDK does when
+  // a generateText call is aborted.
+  function hangUntilAborted() {
+    mockGenerateText.mockImplementationOnce(
+      async ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+        new Promise<never>((_resolve, reject) => {
+          if (!abortSignal) {
+            reject(new Error("generateText called without an abort signal"))
+            return
+          }
+          if (abortSignal.aborted) {
+            reject(abortSignal.reason)
+            return
+          }
+          abortSignal.addEventListener(
+            "abort",
+            () => reject(abortSignal.reason),
+            { once: true }
+          )
+        })
+    )
+  }
+
+  // AIM-001: a hung provider must fail on the timeout with a distinct
+  // error — not hang until the proxy gives up, and not the generic
+  // "Key test failed." The 50 ms request signal stands in for the
+  // 25 s probe bound, so the test stays fast.
+  it("fails fast with a distinct timeout error when the provider hangs", async () => {
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
+    hangUntilAborted()
+    const result = await testUserAiKey("user-1", "openai", {
+      signal: AbortSignal.timeout(50),
+    })
+    expect(result.ok).toBe(false)
+    expect(result.timedOut).toBe(true)
+    expect(result.error).toBe("The provider timed out. Try again later.")
+    // Fast: the probe returned on the 50 ms signal, not the 25 s bound.
+    expect(result.latencyMs).toBeLessThan(AI_KEY_PROBE_TIMEOUT_MS)
+    // A timeout is a real probe outcome — exactly one FAILED row.
+    expect(store.usage).toHaveLength(1)
+    expect(store.usage[0]).toMatchObject({
+      status: "FAILED",
+      sourceEvent: "key-test",
+    })
+  })
+
+  // AIM-001: a client disconnect mid-probe cancels the probe and
+  // writes no usage row — at most one FAILED row per invocation, and
+  // none for a test nobody is waiting on.
+  it("writes no usage row when the client disconnects mid-probe", async () => {
+    await saveUserAiKey("user-1", {
+      provider: "openai",
+      apiKey: BYOK_KEY,
+      termsAcknowledged: true,
+    })
+    hangUntilAborted()
+    const controller = new AbortController()
+    const pending = testUserAiKey("user-1", "openai", {
+      signal: controller.signal,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort()
+    const result = await pending
+    expect(result.ok).toBe(false)
+    expect(result.timedOut).toBe(false)
+    expect(store.usage).toHaveLength(0)
+  })
 })
 
 describe("sanitizeKeyTestError", () => {
@@ -971,6 +1045,13 @@ describe("sanitizeKeyTestError", () => {
   it("falls back to a generic message for unknown errors", () => {
     expect(sanitizeKeyTestError("Something exploded", BYOK_KEY)).toBe(
       "Key test failed."
+    )
+  })
+
+  // AIM-001: a probe timeout maps to the distinct timeout message.
+  it("maps a probe timeout to the distinct timeout message", () => {
+    expect(sanitizeKeyTestError("The operation timed out", BYOK_KEY)).toBe(
+      "The provider timed out. Try again later."
     )
   })
 

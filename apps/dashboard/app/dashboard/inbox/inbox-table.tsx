@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { formatRelativeDate } from "@sendcms/i18n"
@@ -441,9 +442,16 @@ export function InboxTable({ initialData, params, forms, domains }: Props) {
                   />
                 </TableCell>
                 <TableCell>
-                  <p className="font-medium">
+                  {/* PRF-023: the sender is a real link, so keyboard
+                      users can open the submission (the row click stays
+                      for mouse users). The row actions menu already has
+                      a "view" item for the same destination. */}
+                  <Link
+                    href={`/dashboard/inbox/${item.id}`}
+                    className="font-medium hover:underline"
+                  >
                     {item.sender.name ?? item.sender.email ?? t("unknown")}
-                  </p>
+                  </Link>
                   {item.sender.name && item.sender.email && (
                     <p className="text-sm text-muted-foreground">
                       <bdi dir="ltr">{item.sender.email}</bdi>

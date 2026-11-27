@@ -26,6 +26,7 @@ import {
   DialogTitle,
   Input,
   Label,
+  SearchInput,
   Select,
   SelectContent,
   SelectItem,
@@ -40,7 +41,7 @@ import {
   TableRow,
   Textarea,
 } from "@sendcms/ui"
-import { RiCloseLine, RiPriceTag3Line, RiSearchLine } from "@remixicon/react"
+import { RiPriceTag3Line } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -106,6 +107,10 @@ export function PlansTable({ initialData, filters, actorRole }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* UX-011: the page's section heading for the outline (the visible
+          title is the PageHeader h1; the empty-state heading below is
+          an h3, so this h2 keeps the levels from skipping). */}
+      <h2 className="sr-only">{t("title")}</h2>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <PlansSearchInput defaultValue={filters.q ?? ""} />
@@ -321,8 +326,7 @@ function PlansSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
     [pathname, router, searchParams]
   )
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value
+  function handleChange(next: string) {
     setValue(next)
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
@@ -341,26 +345,15 @@ function PlansSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
   }
 
   return (
-    <div className="relative">
-      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="text"
-        placeholder={t("searchPlaceholder")}
-        value={value}
-        onChange={handleChange}
-        className="h-9 w-64 ps-9 pe-9 text-sm"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={t("clearFilters")}
-        >
-          <RiCloseLine className="size-4" />
-        </button>
-      )}
-    </div>
+    <SearchInput
+      id="plans-search"
+      label={t("searchPlaceholder")}
+      placeholder={t("searchPlaceholder")}
+      value={value}
+      onChange={handleChange}
+      onClear={handleClear}
+      clearLabel={t("clearFilters")}
+    />
   )
 }
 

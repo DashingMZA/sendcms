@@ -21,6 +21,7 @@ export default async function HomePage() {
   return (
     <main
       id="main-content"
+      tabIndex={-1}
       className="flex min-h-svh flex-col items-center justify-center px-4 py-16 text-center"
     >
       <Logo brand={config.site} className="mb-6" />

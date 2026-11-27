@@ -35,14 +35,14 @@ export default async function UnauthorizedPage() {
         title={tErrors("forbidden")}
         description={tErrors("unauthorized")}
       />
-      <main
-        id="main-content"
+      <div
+        tabIndex={-1}
         className="flex flex-col items-center justify-center px-4 py-16 text-center"
       >
         <Button asChild>
           <Link href={dashboardSignInURL()}>{tAuth("signIn")}</Link>
         </Button>
-      </main>
+      </div>
     </div>
   )
 }

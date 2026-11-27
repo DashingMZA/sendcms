@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
 import { notFound } from "next/navigation"
 import { requireDashboardSession } from "@/lib/require-session"
 import { getDomainForUser } from "@sendcms/domains"
@@ -13,6 +15,26 @@ import {
 } from "@/lib/i18n"
 import { TranslationProvider } from "@/components/dashboard/translation-provider"
 import { DomainDetail } from "./domain-detail"
+
+// SRC-113: the tab title is the domain itself (the same string the
+// <h1> renders); a missing/wrong-owner domain falls back to the
+// generic title and the page itself still 404s.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ domainId: string }>
+}): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "domains")
+  const { domainId } = await params
+  try {
+    const domain = await getDomainForUser(session?.user?.id ?? "", domainId)
+    return { title: domain.domain, description: t("detailDescription") }
+  } catch {
+    return { title: t("title"), description: t("detailDescription") }
+  }
+}
 
 export default async function DomainDetailPage({
   params,

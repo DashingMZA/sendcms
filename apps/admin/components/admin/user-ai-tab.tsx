@@ -106,7 +106,7 @@ export function UserAiTab({
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>{userName ?? userEmail}</CardTitle>
+          <CardTitle as="h2">{userName ?? userEmail}</CardTitle>
           <CardDescription>{t("userAiDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -148,7 +148,7 @@ export function UserAiTab({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("keysTitle")}</CardTitle>
+          <CardTitle as="h2">{t("keysTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           {keysLoading ? (
@@ -208,7 +208,7 @@ export function UserAiTab({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("usageSummaryTitle")}</CardTitle>
+          <CardTitle as="h2">{t("usageSummaryTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-3">

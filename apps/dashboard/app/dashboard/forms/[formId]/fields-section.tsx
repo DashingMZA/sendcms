@@ -503,7 +503,13 @@ function AiFieldsPanel({ form }: { form: FormDetail }) {
           </p>
         </div>
         <div className="mt-3 flex flex-col gap-2">
+          {/* PRF-027: the AI prompt textarea had only a placeholder —
+              label it with the section title it sits under. */}
+          <Label htmlFor="ai-prompt" className="sr-only">
+            {t("aiBuildTitle")}
+          </Label>
           <Textarea
+            id="ai-prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={t("aiPromptPlaceholder")}

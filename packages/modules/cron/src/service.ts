@@ -28,6 +28,7 @@ import { requireAdmin } from "@sendcms/permissions"
 import type { AdminRole, PlatformRole } from "@sendcms/permissions"
 import { expireSubscriptions } from "@sendcms/plans"
 import { logAudit, requireStepUp } from "@sendcms/security"
+import { pingCronHeartbeat } from "./heartbeat"
 import { ApiError } from "@sendcms/shared"
 import { rescoreNewSubmissions, sendDueDigests } from "@sendcms/submissions"
 import type { CronRunsQuery } from "./validators"
@@ -520,6 +521,11 @@ export async function runEmailOutboxCron(
   const { result } = await executeEmailOutboxCron(opts, {
     trigger: "VERCEL_CRON",
   })
+  // PRF-018: the run completed — tell the dead-man's-switch monitor.
+  // Awaited (bounded by the 5 s ping timeout) so a serverless
+  // invocation cannot be frozen before the ping leaves. A missing or
+  // failed ping never fails the run itself.
+  await pingCronHeartbeat("cron-route")
   return result
 }
 

@@ -1,7 +1,15 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { AuthShell } from "../auth-shell"
 import { VerifyEmailHandler } from "./verify-email-handler"
+
+// PRF-037: each auth page has a distinct tab title (the layout
+// template appends "— SendCMS Dashboard").
+export const metadata: Metadata = {
+  title: "Verify email",
+  description: "Verify your email address to finish setting up SendCMS.",
+}
 
 export default async function VerifyEmailPage({
   searchParams,

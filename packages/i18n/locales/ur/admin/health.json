@@ -37,6 +37,7 @@
   "outboxOldestAge": "سب سے پرانی زیر التواء",
   "outboxOldestAgeMinutes": "{minutes} منٹ",
   "outboxPending": "زیر التواء",
+  "outboxStaleAlert": "سب سے پرانی زیر التواء جاب {minutes} منٹ پرانی ہے — آؤٹ باکس ڈرین رک گیا ہو سکتا ہے۔ کرون اور ورکر چیک کریں۔",
   "outboxTitle": "ای میل آؤٹ باکس",
   "ownBucketHour": "آپ کی درخواستیں (اس گھنٹہ)",
   "ownBucketMinute": "آپ کی درخواستیں (اس منٹ)",

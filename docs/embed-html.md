@@ -1,3 +1,7 @@
+---
+description: "No framework, no build step. Add a SendCMS contact form to any static site, WordPress page, or hand-written HTML file with one script tag."
+---
+
 # Embedding SendCMS in plain HTML
 
 No framework, no build step. Works on any static site, WordPress page

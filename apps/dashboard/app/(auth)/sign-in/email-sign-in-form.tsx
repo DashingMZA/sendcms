@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { authClient } from "@sendcms/auth/client"
@@ -26,16 +26,33 @@ export function EmailSignInForm({
   const [needsVerification, setNeedsVerification] = useState(false)
   const [resent, setResent] = useState(false)
   const [loading, setLoading] = useState(false)
+  // PRF-028: which field the current error belongs to. The failing field
+  // gets aria-invalid + aria-describedby (pointing at the role="alert"
+  // paragraph) and receives focus once the error is rendered.
+  const [errorField, setErrorField] = useState<"email" | "password" | null>(
+    null
+  )
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!errorField) return
+    const target = errorField === "email" ? emailRef : passwordRef
+    target.current?.focus()
+  }, [errorField])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setErrorField(null)
     setNeedsVerification(false)
     const parsed = SignInSchema.safeParse({ email, password })
     if (!parsed.success) {
       setError(
         parsed.error.issues[0]?.message ?? "Check your email and password."
       )
+      const field = parsed.error.issues[0]?.path[0]
+      setErrorField(field === "password" ? "password" : "email")
       return
     }
     setLoading(true)
@@ -58,6 +75,9 @@ export function EmailSignInForm({
           error.message ?? "Sign-in failed. Check your email and password."
         )
       }
+      // A failed sign-in is a credentials error — the email field is the
+      // first field to re-check.
+      setErrorField("email")
       return
     }
     router.push(callbackURL)
@@ -66,12 +86,14 @@ export function EmailSignInForm({
 
   async function resendVerification() {
     setError(null)
+    setErrorField(null)
     const { error } = await authClient.sendVerificationEmail({
       email,
       callbackURL: dashboardCallbackURL(),
     })
     if (error) {
       setError(error.message ?? "Couldn't resend the verification email.")
+      setErrorField("email")
       return
     }
     setResent(true)
@@ -82,6 +104,7 @@ export function EmailSignInForm({
       <div className="space-y-2">
         <Label htmlFor="signin-email">Email</Label>
         <Input
+          ref={emailRef}
           id="signin-email"
           type="email"
           autoComplete="email"
@@ -89,6 +112,8 @@ export function EmailSignInForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          aria-invalid={errorField === "email"}
+          aria-describedby={errorField === "email" ? "signin-error" : undefined}
         />
       </div>
       <div className="space-y-2">
@@ -102,17 +127,22 @@ export function EmailSignInForm({
           </Link>
         </div>
         <Input
+          ref={passwordRef}
           id="signin-password"
           type="password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          aria-invalid={errorField === "password"}
+          aria-describedby={
+            errorField === "password" ? "signin-error" : undefined
+          }
         />
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" id="signin-error" className="text-sm text-destructive">
           {error}
         </p>
       )}

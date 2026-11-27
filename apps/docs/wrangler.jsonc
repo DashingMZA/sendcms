@@ -43,8 +43,12 @@
       "service": "sendcms-docs",
     },
   ],
+  // LVE-014: Cloudflare built-in observability (logs + metrics) —
+  // was `false` on every worker, so even the platform's own
+  // telemetry was off. The uptime monitor + alert channel
+  // themselves are owner-side (no provider is configured here).
   "observability": {
-    "enabled": false,
+    "enabled": true,
   },
   "vars": {
     "NEXT_PUBLIC_DOCS_URL": "https://docs.jadoo.bond",

@@ -899,6 +899,10 @@ export async function listAdminNotes(
 
 // ─── Export & deletion ────────────────────────────────────────────────
 
+// SRC-209: at most this many rows per export section (newest first).
+// The audit-events section keeps its own smaller cap (50) below.
+export const USER_DATA_EXPORT_MAX_ROWS = 1000
+
 // Safe fields ONLY: no password, no tokens, no keyHash, no submission
 // `data`. The export itself is audited.
 export async function exportUserData(actor: AdminSession, userId: string) {
@@ -918,54 +922,83 @@ export async function exportUserData(actor: AdminSession, userId: string) {
     },
   })
   if (!user) throw new ApiError("User not found", 404)
-  const [domains, forms, submissions, apiKeys, auditEvents] = await Promise.all(
-    [
-      db.domain.findMany({
-        where: { ownerId: userId },
-        select: { id: true, domain: true, status: true },
-      }),
-      db.form.findMany({
-        where: { ownerId: userId },
-        select: {
-          id: true,
-          name: true,
-          fields: {
-            select: { name: true, type: true, required: true },
-            orderBy: { order: "asc" },
-          },
+  // SRC-209: every section is capped at USER_DATA_EXPORT_MAX_ROWS
+  // (newest first) with a matching total, so a user with a huge
+  // history cannot OOM the export the way the old unbounded
+  // submission/domain/form/apiKey loads could. `submissions.count`
+  // is now the TOTAL (was the returned length — identical while
+  // under the cap); `truncated` says whether any section was cut.
+  const [
+    domains,
+    domainTotal,
+    forms,
+    formTotal,
+    submissions,
+    submissionTotal,
+    apiKeys,
+    apiKeyTotal,
+    auditEvents,
+    auditEventTotal,
+  ] = await Promise.all([
+    db.domain.findMany({
+      where: { ownerId: userId },
+      select: { id: true, domain: true, status: true },
+      orderBy: { createdAt: "desc" },
+      take: USER_DATA_EXPORT_MAX_ROWS,
+    }),
+    db.domain.count({ where: { ownerId: userId } }),
+    db.form.findMany({
+      where: { ownerId: userId },
+      select: {
+        id: true,
+        name: true,
+        fields: {
+          select: { name: true, type: true, required: true },
+          orderBy: { order: "asc" },
         },
-      }),
-      db.submission.findMany({
-        where: { form: { ownerId: userId } },
-        select: {
-          id: true,
-          formId: true,
-          status: true,
-          createdAt: true,
-          originDomain: true,
-          form: { select: { name: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      db.apiKey.findMany({
-        where: { userId },
-        select: { prefix: true, last4: true, scope: true, revokedAt: true },
-      }),
-      db.auditLog.findMany({
-        where: { OR: [{ resourceId: userId }, { userId }] },
-        select: {
-          id: true,
-          action: true,
-          resourceType: true,
-          resourceId: true,
-          detail: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      }),
-    ]
-  )
+      },
+      orderBy: { createdAt: "desc" },
+      take: USER_DATA_EXPORT_MAX_ROWS,
+    }),
+    db.form.count({ where: { ownerId: userId } }),
+    db.submission.findMany({
+      where: { form: { ownerId: userId } },
+      select: {
+        id: true,
+        formId: true,
+        status: true,
+        createdAt: true,
+        originDomain: true,
+        form: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: USER_DATA_EXPORT_MAX_ROWS,
+    }),
+    db.submission.count({ where: { form: { ownerId: userId } } }),
+    db.apiKey.findMany({
+      where: { userId },
+      select: { prefix: true, last4: true, scope: true, revokedAt: true },
+      orderBy: { createdAt: "desc" },
+      take: USER_DATA_EXPORT_MAX_ROWS,
+    }),
+    db.apiKey.count({ where: { userId } }),
+    db.auditLog.findMany({
+      where: { OR: [{ resourceId: userId }, { userId }] },
+      select: {
+        id: true,
+        action: true,
+        resourceType: true,
+        resourceId: true,
+        detail: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    db.auditLog.count({
+      where: { OR: [{ resourceId: userId }, { userId }] },
+    }),
+  ])
   await logAudit({
     userId: actor.user.id,
     action: AuditAction.UPDATE,
@@ -982,7 +1015,7 @@ export async function exportUserData(actor: AdminSession, userId: string) {
       fields: form.fields,
     })),
     submissions: {
-      count: submissions.length,
+      count: submissionTotal,
       items: submissions.map((row) => ({
         id: row.id,
         formId: row.formId,
@@ -991,9 +1024,20 @@ export async function exportUserData(actor: AdminSession, userId: string) {
         createdAt: row.createdAt,
         originDomain: row.originDomain,
       })),
+      truncated: submissionTotal > submissions.length,
+      limit: USER_DATA_EXPORT_MAX_ROWS,
     },
     apiKeys,
     auditEvents,
+    // True when any section was cut at its cap, so the downloader can
+    // say so instead of silently handing over a partial export.
+    truncated:
+      domainTotal > domains.length ||
+      formTotal > forms.length ||
+      submissionTotal > submissions.length ||
+      apiKeyTotal > apiKeys.length ||
+      auditEventTotal > auditEvents.length,
+    limit: USER_DATA_EXPORT_MAX_ROWS,
   }
 }
 

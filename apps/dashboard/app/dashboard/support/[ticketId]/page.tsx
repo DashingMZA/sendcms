@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { notFound, redirect } from "next/navigation"
 import { getMyTicket } from "@sendcms/support"
@@ -16,6 +17,26 @@ import { TicketThread } from "./ticket-thread"
 // Customer thread page: the customer sees their own ticket and its
 // messages, and can reply. A reply to a RESOLVED ticket reopens it;
 // a CLOSED ticket is read-only (the service refuses replies with 409).
+// SRC-113: the tab title is the ticket subject (the same string the
+// <h1> renders); a missing/wrong-owner ticket falls back to the
+// generic title and the page itself still 404s.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ ticketId: string }>
+}): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "support")
+  const { ticketId } = await params
+  try {
+    const ticket = await getMyTicket(session?.user?.id ?? "", ticketId)
+    return { title: ticket.subject, description: t("threadDescription") }
+  } catch {
+    return { title: t("title"), description: t("threadDescription") }
+  }
+}
+
 export default async function TicketPage({
   params,
 }: {

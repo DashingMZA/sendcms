@@ -39,9 +39,9 @@ export default async function AdminAiProvidersPage() {
         title={t("providersTitle")}
         description={t("providersDescription")}
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <AiProviders actorRole={actorRole} />
-      </main>
+      </div>
     </div>
   )
 }

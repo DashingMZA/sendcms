@@ -6,6 +6,7 @@ import pkg from "@/package.json"
 import { cn } from "@sendcms/shared"
 import { getListPage, markdownify } from "@sendcms/content"
 import { apiUrl, docsUrl, resolveLink } from "@/lib/app-links"
+import { pageOpenGraph } from "@/lib/utils"
 import {
   Badge,
   Button,
@@ -32,11 +33,18 @@ import { Logo } from "@sendcms/ui"
 import { ProductSchema } from "@/components/product-schema"
 
 export const metadata: Metadata = {
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  // Relative URLs resolve against the layout's metadataBase.
+  alternates: { canonical: "/" },
   description: config.metadata.meta_description,
   authors: [{ name: config.metadata.meta_author }],
   openGraph: {
+    // PRF-032: pageOpenGraph repeats the layout's shared OG fields —
+    // a page openGraph replaces the layout's wholesale, so a bare
+    // { url } would drop og:image/site_name/locale. The description
+    // stays the config one (shorter than the top-level description).
+    ...pageOpenGraph("/", "website"),
     description: config.metadata.meta_description,
-    images: [config.metadata.meta_image],
   },
   twitter: {
     card: "summary_large_image",
@@ -106,6 +114,9 @@ export default function HomePage() {
             </Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <Link href="/contact">Contact us</Link>
+            </Button>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href="/demo/contact-us">Live demo</Link>
             </Button>
             <Button asChild variant="ghost">
               <Link

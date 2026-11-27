@@ -15,6 +15,10 @@ const mockDb = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
   auditLog: { create: vi.fn() },
+  // DB-046 (Wave 11): getDashboardOverview aggregates the activity chart
+  // in SQL via db.$queryRaw (DATE_TRUNC) instead of loading every
+  // createdAt — the mock must cover it or the tool call throws.
+  $queryRaw: vi.fn(),
 }))
 vi.mock("@sendcms/database", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sendcms/database")>()
@@ -210,6 +214,7 @@ beforeEach(() => {
   mockDb.submission.count.mockResolvedValue(3)
   mockDb.submission.findMany.mockResolvedValue([])
   mockDb.submission.groupBy.mockResolvedValue([])
+  mockDb.$queryRaw.mockResolvedValue([])
   mockDb.form.findMany.mockResolvedValue([])
   rateStore.clear()
   mockDb.apiKeyRateLimit.findUnique.mockImplementation(

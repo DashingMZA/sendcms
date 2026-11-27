@@ -29,10 +29,6 @@
   --text-step-5: var(--step-5);
 }
 
-@layer components {
-  @import "../styles/components.css";
-}
-
 @keyframes grid-drift {
   from {
     background-position: 0 0;

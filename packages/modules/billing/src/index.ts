@@ -44,6 +44,9 @@ export type {
   EnabledBillingProvider,
 } from "./service"
 export { getFreemiusPlanMapCount } from "./providers"
+// BIL-022: test/reset hook for the module-scope PayPal token cache
+// (same reset*Cache precedent as @sendcms/plans / @sendcms/security).
+export { resetPayPalTokenCache } from "./providers/paypal"
 // BIL-001 / BIL-082 / BIL-089: the provider-side cancel + plan-change
 // dispatchers — the api routes pass them into the plans service so
 // provider-billed subscriptions are actually canceled / re-priced at

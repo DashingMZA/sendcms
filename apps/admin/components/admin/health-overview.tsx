@@ -87,7 +87,7 @@ export function HealthOverview() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t("databaseTitle")}</CardTitle>
+            <CardTitle as="h2">{t("databaseTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <Stat
@@ -111,7 +111,7 @@ export function HealthOverview() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("platformTitle")}</CardTitle>
+            <CardTitle as="h2">{t("platformTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
             <Stat label={t("users")} value={String(data.counts.users)} />
@@ -126,7 +126,7 @@ export function HealthOverview() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("outboxTitle")}</CardTitle>
+            <CardTitle as="h2">{t("outboxTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
@@ -186,12 +186,26 @@ export function HealthOverview() {
                 </span>
               </p>
             )}
+            {/* PRF-018: the outbox is stale — the oldest pending job
+                has waited over an hour, so the drain (cron route or
+                worker) has stopped running or a provider outage is
+                holding every job. Visible alert, not a plain stat. */}
+            {data.outbox.outboxStale && (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {t("outboxStaleAlert", {
+                  minutes: data.outbox.oldestPendingAgeMinutes ?? 0,
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("aiTitle")}</CardTitle>
+            <CardTitle as="h2">{t("aiTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
             <Stat
@@ -207,7 +221,7 @@ export function HealthOverview() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("mcpTitle")}</CardTitle>
+            <CardTitle as="h2">{t("mcpTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
@@ -235,7 +249,7 @@ export function HealthOverview() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("emergencyTitle")}</CardTitle>
+            <CardTitle as="h2">{t("emergencyTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm">
@@ -257,7 +271,7 @@ export function HealthOverview() {
             counts for the current windows + the CSP mode. */}
         <Card>
           <CardHeader>
-            <CardTitle>{t("securityTitle")}</CardTitle>
+            <CardTitle as="h2">{t("securityTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">

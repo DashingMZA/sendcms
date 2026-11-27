@@ -1,3 +1,7 @@
+---
+description: "Add a SendCMS contact form to an Astro site with one script tag and a normal HTML form — submissions land in your dashboard inbox."
+---
+
 # Embedding SendCMS in Astro
 
 Add a SendCMS contact form to an Astro site with one script tag and a

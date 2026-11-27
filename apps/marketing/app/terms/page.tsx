@@ -3,10 +3,15 @@ import Link from "next/link"
 import config from "@/config/config.json"
 import { Logo } from "@sendcms/ui"
 import { getListPage } from "@sendcms/content"
+import { pageOpenGraph } from "@/lib/utils"
 
 export const metadata: Metadata = {
   title: "Terms of Service — SendCMS",
-  description: "The terms that govern your use of SendCMS.",
+  description:
+    "The terms that govern your use of SendCMS — what you may do with the service, what we promise, and where the limits are.",
+  // PRF-031/032 (Wave 11, Stream C): self-canonical + og:url.
+  alternates: { canonical: "/terms" },
+  openGraph: pageOpenGraph("/terms"),
 }
 
 type TermsSection = {

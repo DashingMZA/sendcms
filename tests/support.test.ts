@@ -248,11 +248,13 @@ describe("replyToTicket", () => {
       createdAt: new Date("2026-11-22T11:00:00Z"),
     })
     mockDb.supportTicket.update.mockResolvedValue(
+      // DB-046: the update include returns the newest 100 first — the
+      // mock mirrors the real query (newest first), the service
+      // reverses to display order.
       makeTicketRow({
         status: "OPEN",
         _count: { messages: 2 },
         messages: [
-          ...resolved.messages,
           {
             id: "msg-2",
             authorId: customerId,
@@ -260,6 +262,7 @@ describe("replyToTicket", () => {
             body: "Still broken.",
             createdAt: new Date("2026-11-22T11:00:00Z"),
           },
+          ...resolved.messages,
         ],
       })
     )
@@ -269,6 +272,8 @@ describe("replyToTicket", () => {
     })
     expect(updated.status).toBe("OPEN")
     expect(updated.messageCount).toBe(2)
+    expect(updated.hasMoreMessages).toBe(false)
+    expect(updated.messages.map((m) => m.id)).toEqual(["msg-1", "msg-2"])
     expect(mockDb.supportTicket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "OPEN" } })
     )

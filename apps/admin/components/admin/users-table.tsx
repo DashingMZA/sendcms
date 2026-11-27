@@ -10,8 +10,8 @@ import {
 } from "@sendcms/admin-users/queries"
 import {
   Button,
-  Input,
   Label,
+  SearchInput,
   Select,
   SelectContent,
   SelectItem,
@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@sendcms/ui"
-import { RiCloseLine, RiSearchLine, RiUserLine } from "@remixicon/react"
+import { RiUserLine } from "@remixicon/react"
 import {
   useLocale,
   useTranslation,
@@ -91,6 +91,8 @@ export function UsersTable({ initialData, filters }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* UX-011: section heading for the outline — see plans-table. */}
+      <h2 className="sr-only">{t("title")}</h2>
       <div className="flex flex-wrap items-end gap-3">
         <UsersSearchInput defaultValue={filters.q ?? ""} />
         <div className="space-y-1">
@@ -370,8 +372,7 @@ function UsersSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
     [pathname, router, searchParams]
   )
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const next = e.target.value
+  function handleChange(next: string) {
     setValue(next)
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
@@ -390,25 +391,14 @@ function UsersSearchInput({ defaultValue = "" }: { defaultValue?: string }) {
   }
 
   return (
-    <div className="relative">
-      <RiSearchLine className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="text"
-        placeholder={t("searchPlaceholder")}
-        value={value}
-        onChange={handleChange}
-        className="h-9 w-64 ps-9 pe-9 text-sm"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="absolute end-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={t("clearFilters")}
-        >
-          <RiCloseLine className="size-4" />
-        </button>
-      )}
-    </div>
+    <SearchInput
+      id="users-search"
+      label={t("searchPlaceholder")}
+      placeholder={t("searchPlaceholder")}
+      value={value}
+      onChange={handleChange}
+      onClear={handleClear}
+      clearLabel={t("clearFilters")}
+    />
   )
 }

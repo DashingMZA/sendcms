@@ -21,7 +21,13 @@ export function AuthShell({
       {/* Left — brand panel */}
       <SignInPanel />
       {/* Right — form */}
-      <div className="flex flex-col items-center justify-center px-6 py-16">
+      {/* PRF-021: the auth pages had no <main> at all, so the skip link
+          was dead on all five. This is the only main on auth pages. */}
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex flex-col items-center justify-center px-6 py-16"
+      >
         {/* Mobile logo */}
         <Link href="/" className="mb-10 flex items-center lg:hidden">
           <Logo brand={config.site} />
@@ -37,7 +43,7 @@ export function AuthShell({
 
           {children}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

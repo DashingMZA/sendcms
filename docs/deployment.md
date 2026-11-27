@@ -1,3 +1,7 @@
+---
+description: "SendCMS is a pnpm + Turborepo monorepo with PostgreSQL and a vanilla-TS SDK. It runs anywhere Next.js runs — Vercel, Cloudflare, Node, Render, Netlify."
+---
+
 # Deployment
 
 SendCMS is a pnpm + Turborepo monorepo (six Next.js apps, thirty-one
@@ -220,10 +224,10 @@ email worker runs them too):
 Both jobs are gated on DB-backed feature flags
 (`packages/modules/platform-ops/src/flags.ts`, `SYSTEM_FLAGS`):
 
-| Flag key         | Job                    | Seeded state |
-| ---------------- | ---------------------- | ------------ |
-| `ai-spam-rescore` | AI spam re-scoring    | disabled     |
-| `ai-digest`       | AI inbox digest       | disabled     |
+| Flag key          | Job                | Seeded state |
+| ----------------- | ------------------ | ------------ |
+| `ai-spam-rescore` | AI spam re-scoring | disabled     |
+| `ai-digest`       | AI inbox digest    | disabled     |
 
 The flags are seeded (disabled) by migration
 `20261125091400_wave8d_seed_platform_settings`, so they are visible

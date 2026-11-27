@@ -200,7 +200,7 @@ function ActivityFeedInner() {
       <TabsContent value={tab} className="mt-6 flex flex-col gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>{t("filtersTitle")}</CardTitle>
+            <CardTitle as="h2">{t("filtersTitle")}</CardTitle>
             <CardDescription>{t("description")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -310,7 +310,7 @@ function ActivityFeedInner() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("title")}</CardTitle>
+            <CardTitle as="h2">{t("title")}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (

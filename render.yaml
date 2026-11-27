@@ -56,7 +56,7 @@ services:
     branch: feature/monorepo-architecture-migration
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/api build:server
     startCommand: pnpm --filter @sendcms/api start -- -H 0.0.0.0 -p $PORT
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health/deep
     # Runs before traffic switches to the new deploy. Paid instance
     # types only — on a free plan, run migrations manually instead:
     #   pnpm db:migrate:deploy   (with the production DATABASE_URL set)

@@ -136,6 +136,9 @@ const { store, mockDb } = vi.hoisted(() => {
     globalSettings: null as { globalEnabled: boolean } | null,
     userSettings: new Map<string, StoredUserSettings>(),
     usage: [] as StoredUsage[],
+    // DB-047: idempotency keys seen by the createMany mock (the
+    // StoredUsage rows carry no key field).
+    usageKeys: new Set<string>(),
     rateLimits: new Map<string, StoredRateLimit>(),
     usageSeq: 1,
   }
@@ -306,6 +309,38 @@ const { store, mockDb } = vi.hoisted(() => {
         store.usage.push(row)
         return row
       }),
+      // DB-047: recordMcpCallOutcomes writes the batch with one
+      // createMany. The mock mirrors skipDuplicates: a row whose
+      // idempotency key is already stored is dropped, not counted.
+      // (The store rows carry no idempotencyKey field — the key is
+      // kept in a side set, like wave8-stream-a-mcp's store.)
+      createMany: vi.fn(
+        async ({
+          data,
+          skipDuplicates,
+        }: {
+          data: Record<string, unknown>[]
+          skipDuplicates?: boolean
+        }) => {
+          let count = 0
+          for (const d of data) {
+            const key = d.idempotencyKey as string | null
+            if (skipDuplicates && key && store.usageKeys.has(key)) continue
+            store.usage.push({
+              id: `usage-${store.usageSeq++}`,
+              apiKeyId: d.apiKeyId as string,
+              userId: d.userId as string,
+              tool: d.tool as string,
+              status: d.status as string,
+              durationMs: (d.durationMs as number | null) ?? null,
+              createdAt: new Date(),
+            })
+            if (key) store.usageKeys.add(key)
+            count++
+          }
+          return { count }
+        }
+      ),
       count: vi.fn(
         async ({ where }: { where?: Record<string, unknown> }) =>
           store.usage.filter((r) => matchesUsageWhere(r, where)).length
@@ -662,6 +697,7 @@ beforeEach(() => {
   store.globalSettings = null
   store.userSettings.clear()
   store.usage = []
+  store.usageKeys.clear()
   store.rateLimits.clear()
   store.usageSeq = 1
   vi.clearAllMocks()
@@ -710,6 +746,46 @@ describe("checkMcpAccess — global kill-switch", () => {
       minuteLimit: null,
       hourLimit: null,
     })
+  })
+
+  // DB-047: the three reads (kill-switch, user, per-user settings)
+  // are issued concurrently. Each mock read waits until all three
+  // have STARTED before resolving — sequential awaits would stall
+  // on the first read until the 500 ms safety timeout fires.
+  it("issues its three reads concurrently", async () => {
+    let started = 0
+    let release!: () => void
+    const allStarted = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const gate = async <T>(value: T): Promise<T> => {
+      started++
+      if (started === 3) release()
+      await Promise.race([
+        allStarted,
+        new Promise((resolve) => setTimeout(resolve, 500)),
+      ])
+      return value
+    }
+    mockDb.mcpSettings.findUnique.mockImplementationOnce(async () => gate(null))
+    mockDb.user.findUnique.mockImplementationOnce(async () =>
+      gate({
+        id: "user-1",
+        name: "User One",
+        email: "user-1@example.com",
+        status: "ACTIVE",
+      })
+    )
+    mockDb.mcpUserSettings.findUnique.mockImplementationOnce(async () =>
+      gate(null)
+    )
+    const startedAt = Date.now()
+    await expect(checkMcpAccess({ auth: fullAuth })).resolves.toEqual({
+      allowedTools: null,
+      minuteLimit: null,
+      hourLimit: null,
+    })
+    expect(Date.now() - startedAt).toBeLessThan(400)
   })
 })
 

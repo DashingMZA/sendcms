@@ -80,7 +80,7 @@ function makeDomain(overrides: Record<string, unknown> = {}) {
         expiresAt: new Date(Date.now() + 86_400_000),
       },
     ],
-    _count: { formLinks: 0 },
+    _count: { formLinks: 0, verifications: 1 },
     ...overrides,
   }
 }

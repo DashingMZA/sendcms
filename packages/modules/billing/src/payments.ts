@@ -262,6 +262,97 @@ function statusForEventKind(kind: BillingEventKind): PaymentStatus {
   }
 }
 
+// ─── Refund linkage (F2, Wave 11) ─────────────────────────────────────
+
+// `applyRefund` writes NO `PAYMENT_REFUNDED` BillingEvent, so a tab
+// that matches on the event kind alone can never show a recorded
+// refund (F2): a FULL refund cancels the subscription (a `CANCELED`
+// SubscriptionEvent whose reason starts "Refunded in full…", plus the
+// linked one-time purchase flipped to `REFUNDED`); a PARTIAL refund
+// keeps the subscription and writes a `REFUNDED` SubscriptionEvent.
+// There is no `REFUNDED` value on SubscriptionStatus — the refund
+// signal for a subscription IS those timeline events, so the refunded
+// tab matches on them (and on the linked purchase status), not only
+// on the BillingEvent kind. `applyRefund` itself is untouched.
+//
+// The reason check is a `contains` at the DB level so a normal
+// provider cancel ("Canceled by stripe (canceled)") never matches:
+// both refund-cancel reasons contain "refunded in full"
+// ("Refunded in full by <provider>…" and "One-time purchase refunded
+// in full by <provider>").
+async function findRefundedLinks(): Promise<{
+  subscriptionIds: Set<string>
+  purchaseIds: Set<string>
+  userIds: Set<string>
+}> {
+  const [refundSubEvents, refundedPurchases] = await Promise.all([
+    db.subscriptionEvent.findMany({
+      where: {
+        OR: [
+          { type: "REFUNDED" },
+          {
+            type: "CANCELED",
+            reason: { contains: "refunded in full", mode: "insensitive" },
+          },
+        ],
+      },
+      select: { subscriptionId: true },
+    }),
+    db.oneTimePurchase.findMany({
+      where: { status: "REFUNDED" },
+      select: { id: true, subscriptionId: true, userId: true },
+    }),
+  ])
+  const subscriptionIds = new Set<string>(
+    refundSubEvents.map((event) => event.subscriptionId)
+  )
+  for (const purchase of refundedPurchases) {
+    if (purchase.subscriptionId) subscriptionIds.add(purchase.subscriptionId)
+  }
+  const purchaseIds = new Set(refundedPurchases.map((p) => p.id))
+  const subOwners =
+    subscriptionIds.size > 0
+      ? await db.subscription.findMany({
+          where: { id: { in: [...subscriptionIds] } },
+          select: { userId: true },
+        })
+      : []
+  const userIds = new Set<string>([
+    ...subOwners.map((sub) => sub.userId),
+    ...refundedPurchases.map((p) => p.userId),
+  ])
+  return { subscriptionIds, purchaseIds, userIds }
+}
+
+// Is one already-built payment row refund-linked? The event kind
+// `PAYMENT_REFUNDED` is the webhook-recorded refund; the other two
+// arms are the `applyRefund` record (F2): the row's resolved
+// subscription is refund-linked, or its resolved purchase is.
+function isRefundedRow(
+  row: PaymentRow,
+  links: { subscriptionIds: Set<string>; purchaseIds: Set<string> }
+): boolean {
+  if (row.kind === "PAYMENT_REFUNDED") return true
+  if (
+    row.sourceRefs.oneTimePurchaseId !== null &&
+    links.purchaseIds.has(row.sourceRefs.oneTimePurchaseId)
+  ) {
+    return true
+  }
+  return (
+    row.subscriptionId !== null && links.subscriptionIds.has(row.subscriptionId)
+  )
+}
+
+// Candidate-event cap for the refunded tab (F2): the tab post-filters
+// by refund linkage, which no DB filter can express (the link is the
+// amount-resolution join), so it reads the newest candidates and
+// filters in memory. Refunded users are rare, so 500 newest events
+// across them is far more than a real refunded list — but the cap is
+// real: beyond it, older refunded payments fall off this tab (they
+// stay visible on the All tab and in the stats).
+const REFUNDED_TAB_CANDIDATE_CAP = 500
+
 // ─── Query helpers ────────────────────────────────────────────────────
 
 // `q` searches the customer by email, name, or user id. Returns null
@@ -697,8 +788,6 @@ export async function listPayments(
 ): Promise<PaymentsPage> {
   requireBillingAdmin(actor, "VIEW_BILLING")
   const tab = filters.tab ?? "all"
-  const kinds = kindsForTab(tab)
-  const purchaseStatuses = purchaseStatusesForTab(tab)
   const qUserIds = await resolveUserIdsForQuery(filters.q)
   if (qUserIds !== null && qUserIds.length === 0) {
     return {
@@ -709,6 +798,13 @@ export async function listPayments(
       totalPages: 1,
     }
   }
+  // F2 (Wave 11): the refunded tab cannot be a kind filter — see
+  // listRefundedPayments below. Every other tab is unchanged.
+  if (tab === "refunded") {
+    return listRefundedPayments(actor, filters, qUserIds)
+  }
+  const kinds = kindsForTab(tab)
+  const purchaseStatuses = purchaseStatusesForTab(tab)
   const userIds = qUserIds ?? (filters.userId ? [filters.userId] : undefined)
   const createdAt = dateRangeFilter(filters)
   const eventWhere = {
@@ -781,6 +877,119 @@ export async function listPayments(
   }
 }
 
+// The Refunded tab (F2, Wave 11). `applyRefund` writes no
+// `PAYMENT_REFUNDED` BillingEvent, so matching on the event kind alone
+// leaves this tab empty after a recorded refund. The tab therefore
+// ALSO matches event rows whose linked subscription/purchase is
+// refunded (`isRefundedRow`): a `PAYMENT_SUCCEEDED` /
+// `CHECKOUT_COMPLETED` row for a refund-canceled or partially-refunded
+// subscription shows here, with its status overridden to `REFUNDED`.
+// The row keeps its original kind (it did succeed — and was later
+// refunded), so it still appears on the Succeeded / All tabs; only the
+// status shown on this tab changes.
+//
+// Candidate events are the `PAYMENT_REFUNDED` rows for anyone (a
+// provider refund with no local subscription/purchase still counts)
+// plus the succeeded/completed/unmapped rows of users with a refund
+// link. `PAYMENT_FAILED` rows can never be refunded and are excluded.
+// Pagination is in-memory after the refund filter (the link is the
+// amount-resolution join, which no DB filter can express), bounded by
+// REFUNDED_TAB_CANDIDATE_CAP.
+async function listRefundedPayments(
+  actor: AdminSession,
+  filters: PaymentsQuery,
+  qUserIds: string[] | null
+): Promise<PaymentsPage> {
+  requireBillingAdmin(actor, "VIEW_BILLING")
+  const links = await findRefundedLinks()
+  const userIds = qUserIds ?? (filters.userId ? [filters.userId] : undefined)
+  const createdAt = dateRangeFilter(filters)
+  const shared = {
+    ...(filters.provider ? { provider: filters.provider } : {}),
+    ...(userIds ? { userId: { in: userIds } } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  }
+  const refundedUserIds = [...links.userIds].filter(
+    (id) => !userIds || userIds.includes(id)
+  )
+  const candidateEvents = await db.billingEvent.findMany({
+    where: {
+      OR: [
+        // `as BillingEventKind[]`: without it the literals widen to
+        // string[] through the spread below and fail the Prisma where
+        // type (TS2322).
+        { ...shared, kind: { in: ["PAYMENT_REFUNDED"] as BillingEventKind[] } },
+        ...(refundedUserIds.length > 0
+          ? [
+              {
+                ...shared,
+                kind: {
+                  in: [
+                    "CHECKOUT_COMPLETED",
+                    "PAYMENT_SUCCEEDED",
+                    "UNMAPPED_PAYMENT",
+                  ] as BillingEventKind[],
+                },
+                userId: { in: refundedUserIds },
+              },
+            ]
+          : []),
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    take: REFUNDED_TAB_CANDIDATE_CAP,
+  })
+  const amounts = await resolveEventAmounts(candidateEvents)
+
+  // Standalone REFUNDED purchases (same logic as the main list: a
+  // purchase with no covering event is its own row).
+  const purchaseWhere = {
+    status: { in: ["REFUNDED"] as OneTimePurchaseStatus[] },
+    ...(filters.provider ? { provider: filters.provider } : {}),
+    ...(userIds ? { userId: { in: userIds } } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  }
+  const allRefundedPurchases = await db.oneTimePurchase.findMany({
+    where: purchaseWhere,
+    orderBy: { createdAt: "desc" },
+  })
+  const covered = await findCoveredPurchaseIds(allRefundedPurchases)
+  const standalonePurchases = allRefundedPurchases.filter(
+    (p) => !covered.has(p.id)
+  )
+
+  const usersById = await loadUsersById([
+    ...candidateEvents.map((e) => e.userId),
+    ...standalonePurchases.map((p) => p.userId),
+  ])
+  const eventRows = candidateEvents.flatMap((event) => {
+    const row = toPaymentRow(
+      event,
+      amounts.get(event.id),
+      event.userId ? (usersById.get(event.userId) ?? null) : null
+    )
+    if (!row || !isRefundedRow(row, links)) return []
+    // The row was a successful payment that was later refunded:
+    // show REFUNDED on this tab (its kind is unchanged).
+    return [{ ...row, status: "REFUNDED" as PaymentStatus }]
+  })
+  const rows = [
+    ...eventRows,
+    ...standalonePurchases.map((purchase) =>
+      toPurchaseRow(purchase, usersById.get(purchase.userId) ?? null)
+    ),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime())
+  const total = rows.length
+  const skip = (filters.page - 1) * filters.perPage
+  return {
+    payments: rows.slice(skip, skip + filters.perPage),
+    total,
+    page: filters.page,
+    perPage: filters.perPage,
+    totalPages: Math.max(1, Math.ceil(total / filters.perPage)),
+  }
+}
+
 // ─── Stats ────────────────────────────────────────────────────────────
 
 function dayKey(date: Date): string {
@@ -844,9 +1053,13 @@ export async function getPaymentStats(
       orderBy: { createdAt: "desc" },
     }),
   ])
-  const [amounts, covered] = await Promise.all([
+  const [amounts, covered, links] = await Promise.all([
     resolveEventAmounts(events),
     findCoveredPurchaseIds(purchases),
+    // F2 (Wave 11): refunded money must not stay in the paid bucket —
+    // a recorded refund moves its rows to the refunded bucket (same
+    // linkage as the Refunded tab).
+    findRefundedLinks(),
   ])
   const rows = [
     ...events.flatMap((event) => {
@@ -884,20 +1097,15 @@ export async function getPaymentStats(
     paid30d: toBucket(
       deduped.filter(
         (row) =>
-          row.kind === "CHECKOUT_COMPLETED" ||
-          row.kind === "PAYMENT_SUCCEEDED" ||
-          row.kind === "UNMAPPED_PAYMENT" ||
-          (row.kind === "ONE_TIME_PURCHASE" && row.status === "SUCCEEDED")
+          !isRefundedRow(row, links) &&
+          (row.kind === "CHECKOUT_COMPLETED" ||
+            row.kind === "PAYMENT_SUCCEEDED" ||
+            row.kind === "UNMAPPED_PAYMENT" ||
+            (row.kind === "ONE_TIME_PURCHASE" && row.status === "SUCCEEDED"))
       )
     ),
     failed30d: toBucket(deduped.filter((row) => row.kind === "PAYMENT_FAILED")),
-    refunded30d: toBucket(
-      deduped.filter(
-        (row) =>
-          row.kind === "PAYMENT_REFUNDED" ||
-          (row.kind === "ONE_TIME_PURCHASE" && row.status === "REFUNDED")
-      )
-    ),
+    refunded30d: toBucket(deduped.filter((row) => isRefundedRow(row, links))),
   }
 }
 
@@ -946,6 +1154,17 @@ export async function getPaymentDetail(
       : null
     const payment = toPaymentRow(event, match, user)
     if (!payment) throw new ApiError("Payment not found", 404)
+    // F2 (Wave 11): a recorded refund must show on the detail too —
+    // the row's event kind is still PAYMENT_SUCCEEDED, but its linked
+    // subscription/purchase is refunded. Only SUCCEEDED rows need the
+    // check; FAILED / REFUNDED rows already show their own status.
+    if (
+      match &&
+      payment.status === "SUCCEEDED" &&
+      isRefundedRow(payment, await findRefundedLinks())
+    ) {
+      payment.status = "REFUNDED"
+    }
     let subscription = await loadSubscriptionForDetail(
       match?.subscriptionId ?? null
     )

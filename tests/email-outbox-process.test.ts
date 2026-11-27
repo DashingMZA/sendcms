@@ -390,4 +390,35 @@ describe("processEmailOutbox", () => {
     const retried = await processEmailOutbox()
     expect(retried).toEqual({ processed: 1, sent: 1, failed: 0, skipped: 0 })
   })
+
+  // DB-047: the drain runs up to 5 sends in flight — 10 due jobs
+  // with a 100 ms mocked send each drain in ~2 rounds (~200 ms),
+  // not the ~1000 ms the old sequential loop took.
+  it("drains 10 due jobs in parallel, bounded to 5 in flight", async () => {
+    const jobs = Array.from({ length: 10 }, (_, i) =>
+      makeJob({ id: `job-${i + 1}` })
+    )
+    mockDb.emailJob.findMany.mockResolvedValue(jobs)
+    let inFlight = 0
+    let maxInFlight = 0
+    mockSendEmail.mockImplementation(async () => {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      inFlight--
+      return { messageId: "msg-1", provider: "resend" }
+    })
+    const started = Date.now()
+    const result = await processEmailOutbox({ limit: 10 })
+    const elapsed = Date.now() - started
+    expect(result).toEqual({
+      processed: 10,
+      sent: 10,
+      failed: 0,
+      skipped: 0,
+    })
+    expect(elapsed).toBeLessThan(800)
+    expect(maxInFlight).toBeGreaterThan(1)
+    expect(maxInFlight).toBeLessThanOrEqual(5)
+  })
 })

@@ -37,6 +37,20 @@ function credentials(): { clientId: string; clientSecret: string } {
   return { clientId, clientSecret }
 }
 
+// BIL-019: a single retry for transient upstream failures (502/503/504
+// — PayPal occasionally answers a verify call with a 502). The retry is
+// opt-in per call: only the idempotent verify call retries, never a
+// create that might double-issue a resource. A timed-out attempt is
+// retried the same way (the verify call is a read).
+export const PAYPAL_VERIFY_RETRY_DELAY_MS = 250
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+type PayPalFetchOptions = {
+  /** BIL-019: retry once on a transient 502/503/504 (or a timeout). */
+  retryTransient?: boolean
+}
+
 async function paypalFetch(
   path: string,
   method: "GET" | "POST",
@@ -45,56 +59,94 @@ async function paypalFetch(
   // BIL-014: per-call idempotency key, sent as PayPal-Request-Id so a
   // retried checkout replays the same provider object instead of
   // creating a duplicate.
-  requestId?: string
+  requestId?: string,
+  options: PayPalFetchOptions = {}
 ): Promise<unknown> {
   // SRC-233: bounded — a hung PayPal call used to hang the
   // checkout/webhook route indefinitely. `AbortSignal.timeout`
   // (the Turnstile/DoH precedent) aborts the fetch; the abort is
   // mapped to the same generic 502 as any other PayPal failure, so
   // no provider internals reach the customer.
-  let res: Response
-  try {
-    res = await fetch(`${baseUrl()}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(BILLING_PROVIDER_TIMEOUT_MS),
-    })
-  } catch (err) {
-    if (err instanceof Error && err.name === "TimeoutError") {
-      log.warn("PayPal request timed out", {
-        path,
-        timeoutMs: BILLING_PROVIDER_TIMEOUT_MS,
+  const maxAttempts = options.retryTransient ? 2 : 1
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(`${baseUrl()}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(BILLING_PROVIDER_TIMEOUT_MS),
       })
+    } catch (err) {
+      // BIL-019: retry a timed-out verify attempt once (same idempotent
+      // read); a timeout on the final attempt is the usual generic 502.
+      if (
+        options.retryTransient &&
+        err instanceof Error &&
+        err.name === "TimeoutError" &&
+        attempt + 1 < maxAttempts
+      ) {
+        log.warn("PayPal request timed out; retrying once", {
+          path,
+          timeoutMs: BILLING_PROVIDER_TIMEOUT_MS,
+        })
+        await sleep(PAYPAL_VERIFY_RETRY_DELAY_MS)
+        continue
+      }
+      if (err instanceof Error && err.name === "TimeoutError") {
+        log.warn("PayPal request timed out", {
+          path,
+          timeoutMs: BILLING_PROVIDER_TIMEOUT_MS,
+        })
+        throw new ApiError(
+          "The payment provider is unavailable. Please try again.",
+          502
+        )
+      }
+      throw err
+    }
+    const json = (await res.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null
+    if (!res.ok) {
+      // BIL-019: one retry on a transient upstream status, then the
+      // usual generic 502 (no provider detail leaks to the caller).
+      if (
+        options.retryTransient &&
+        (res.status === 502 || res.status === 503 || res.status === 504) &&
+        attempt + 1 < maxAttempts
+      ) {
+        log.warn("PayPal request got a transient status; retrying once", {
+          path,
+          status: res.status,
+        })
+        await sleep(PAYPAL_VERIFY_RETRY_DELAY_MS)
+        continue
+      }
+      // BIL-024: the provider's raw error text is logged server-side
+      // only — the customer gets a generic 502, never PayPal internals.
+      const detail =
+        (json?.message as string | undefined) ??
+        (json?.error_description as string | undefined) ??
+        `PayPal request failed (${res.status})`
+      log.warn("PayPal request failed", { path, status: res.status, detail })
       throw new ApiError(
         "The payment provider is unavailable. Please try again.",
         502
       )
     }
-    throw err
+    return json
   }
-  const json = (await res.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null
-  if (!res.ok) {
-    // BIL-024: the provider's raw error text is logged server-side
-    // only — the customer gets a generic 502, never PayPal internals.
-    const detail =
-      (json?.message as string | undefined) ??
-      (json?.error_description as string | undefined) ??
-      `PayPal request failed (${res.status})`
-    log.warn("PayPal request failed", { path, status: res.status, detail })
-    throw new ApiError(
-      "The payment provider is unavailable. Please try again.",
-      502
-    )
-  }
-  return json
+  // Unreachable: the loop always returns or throws.
+  throw new ApiError(
+    "The payment provider is unavailable. Please try again.",
+    502
+  )
 }
 
 // BIL-014: one request id per provider call, derived from the checkout
@@ -104,8 +156,39 @@ function attemptRequestId(args: CheckoutArgs, suffix: string): string {
   return `${attempt}:${suffix}`
 }
 
+// BIL-022: PayPal access tokens are valid ~9 h, but every checkout and
+// every webhook verification used to pay for a fresh OAuth exchange.
+// Cache `{ token, expiresAt }` in module scope and reuse it until near
+// expiry. The cache is keyed by client id, so a credential rotation
+// never reuses a token minted for the old credentials. `expires_in`
+// comes back in seconds; when it is missing (or unusable) fall back to
+// the documented ~9 h lifetime. `resetPayPalTokenCache()` is the
+// test/reset hook (the reset*Cache precedent in @sendcms/plans and
+// @sendcms/security).
+type CachedPayPalToken = {
+  token: string
+  expiresAt: number
+  clientId: string
+}
+
+let cachedPayPalToken: CachedPayPalToken | null = null
+
+const PAYPAL_TOKEN_SAFETY_MARGIN_MS = 60_000
+const PAYPAL_TOKEN_DEFAULT_TTL_MS = 9 * 60 * 60 * 1000
+
+export function resetPayPalTokenCache(): void {
+  cachedPayPalToken = null
+}
+
 async function getAccessToken(): Promise<string> {
   const { clientId, clientSecret } = credentials()
+  if (
+    cachedPayPalToken &&
+    cachedPayPalToken.clientId === clientId &&
+    Date.now() < cachedPayPalToken.expiresAt
+  ) {
+    return cachedPayPalToken.token
+  }
   // SRC-233: bounded, same as paypalFetch — the token call is the
   // first hop of every PayPal checkout/verification.
   let res: Response
@@ -134,6 +217,16 @@ async function getAccessToken(): Promise<string> {
   > | null
   if (!res.ok || typeof json?.access_token !== "string") {
     throw new ApiError("PayPal authentication failed", 502)
+  }
+  // BIL-022: cache the token until shortly before it expires.
+  const expiresInMs =
+    typeof json.expires_in === "number" && json.expires_in > 0
+      ? json.expires_in * 1000
+      : PAYPAL_TOKEN_DEFAULT_TTL_MS
+  cachedPayPalToken = {
+    token: json.access_token,
+    expiresAt: Date.now() + expiresInMs - PAYPAL_TOKEN_SAFETY_MARGIN_MS,
+    clientId,
   }
   return json.access_token
 }
@@ -409,6 +502,9 @@ export async function verifyPayPalWebhook(
     }
     throw error
   }
+  // BIL-019: the verify call is an idempotent read — retry it once on
+  // a transient 502/503/504 (or a timeout) instead of dropping a
+  // legitimate webhook on one bad upstream response.
   const verification = (await paypalFetch(
     "/v1/notifications/verify-webhook-signature",
     "POST",
@@ -421,7 +517,9 @@ export async function verifyPayPalWebhook(
       transmission_time: transmissionTime,
       webhook_id: webhookId,
       webhook_event: event,
-    }
+    },
+    undefined,
+    { retryTransient: true }
   )) as { verification_status?: string }
   if (verification.verification_status !== "SUCCESS") {
     log.warn("PayPal webhook signature verification failed", {

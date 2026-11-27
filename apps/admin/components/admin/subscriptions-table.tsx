@@ -110,6 +110,8 @@ export function SubscriptionsTable({ initialData, filters, actorRole }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* UX-011: section heading for the outline — see plans-table. */}
+      <h2 className="sr-only">{t("title")}</h2>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
           {/* ADM-032: the search box — debounced, URL-as-state (`q`),

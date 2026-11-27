@@ -55,7 +55,7 @@ export function AiSettingsPanel({ actorRole, emergency }: Props) {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle as="h2" className="flex items-center gap-2">
             {t("emergencyTitle")}
             <Badge variant={emergency ? "destructive" : "secondary"}>
               {emergency ? t("emergencyOn") : t("emergencyOff")}
@@ -70,7 +70,7 @@ export function AiSettingsPanel({ actorRole, emergency }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("platformControlsTitle")}</CardTitle>
+          <CardTitle as="h2">{t("platformControlsTitle")}</CardTitle>
           <CardDescription>{t("platformControlsDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -95,7 +95,7 @@ export function AiSettingsPanel({ actorRole, emergency }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("planControlsTitle")}</CardTitle>
+          <CardTitle as="h2">{t("planControlsTitle")}</CardTitle>
           <CardDescription>{t("planControlsDescription")}</CardDescription>
         </CardHeader>
         <CardContent>

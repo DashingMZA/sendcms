@@ -2,6 +2,9 @@
 // JSON-LD). This is the live Cloudflare deployment URL (wrangler vars set
 // the same value); when the final production domain is decided, change it
 // here and in wrangler.jsonc together.
+import type { Metadata } from "next"
+import config from "@/config/config.json"
+
 const FALLBACK_APP_URL = "https://jadoo.bond"
 
 // Absolute, trailing-slash-free base URL for canonical SEO metadata
@@ -12,4 +15,33 @@ export function getBaseUrl() {
     /\/$/,
     ""
   )
+}
+
+// PRF-032 (Wave 11, Stream C): a page's `openGraph` REPLACES the
+// layout's `openGraph` wholesale — Next.js does not merge the two — so
+// any page that sets its own og:url/type must repeat the shared fields
+// or they vanish from the rendered <head> (live-verified 2026-11-27:
+// sub-pages rendered with no og:image, og:site_name or og:locale).
+// Use this helper for every per-page openGraph so the shared fields
+// always survive; the layout's openGraph stays as the fallback for
+// pages that set none.
+export function pageOpenGraph(
+  url: string,
+  type: "website" | "article" = "website"
+): NonNullable<Metadata["openGraph"]> {
+  const baseUrl = getBaseUrl()
+  return {
+    url,
+    type,
+    siteName: "SendCMS",
+    locale: "en_US",
+    images: [
+      {
+        url: `${baseUrl}${config.metadata.meta_image}`,
+        width: 1200,
+        height: 630,
+        alt: "SendCMS — a contact-form backend for static and modern websites",
+      },
+    ],
+  }
 }

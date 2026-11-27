@@ -42,9 +42,9 @@ export default async function AdminMigrateSubscriptionsPage() {
         description={t("migrateDescription")}
         back={{ href: "/admin/subscriptions", label: t("backToSubscriptions") }}
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <MigrationWizard actorRole={actorRole} />
-      </main>
+      </div>
     </div>
   )
 }

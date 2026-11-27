@@ -229,7 +229,7 @@ export default async function AdminCouponsPage({
           canManage ? <CouponsCreateDialog canManage={canManage} /> : undefined
         }
       />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             title={t("statActive")}
@@ -264,7 +264,7 @@ export default async function AdminCouponsPage({
           tab={tab}
           canManage={canManage}
         />
-      </main>
+      </div>
     </div>
   )
 }

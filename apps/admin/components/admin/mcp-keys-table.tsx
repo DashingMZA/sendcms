@@ -152,6 +152,8 @@ export function McpKeysTable({ actorRole, initialFilters }: Props) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 pt-6">
+        {/* UX-011: section heading for the outline — see plans-table. */}
+        <h2 className="sr-only">{t("keysTitle")}</h2>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="mcp-keys-search">{t("searchKeys")}</Label>

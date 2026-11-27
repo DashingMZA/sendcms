@@ -44,9 +44,9 @@ export default async function AdminAiUsagePage({
   return (
     <div>
       <PageHeader title={t("usageTitle")} description={t("usageDescription")} />
-      <main id="main-content" className="flex flex-col gap-6 p-6">
+      <div tabIndex={-1} className="flex flex-col gap-6 p-6">
         <AiUsageTable actorRole={actorRole} initialFilters={filters} />
-      </main>
+      </div>
     </div>
   )
 }

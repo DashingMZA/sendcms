@@ -39,7 +39,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       session.user.id,
       parsedProvider.data,
       parsed.data.apiKey,
-      parsed.data.model
+      parsed.data.model,
+      // AIM-001: a client disconnect aborts the probe instead of
+      // letting it run out the 25 s timeout.
+      { signal: req.signal }
     )
     return ok(result)
   } catch (err) {

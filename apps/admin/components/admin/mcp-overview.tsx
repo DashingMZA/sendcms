@@ -120,7 +120,7 @@ export function McpOverview({ actorRole }: Props) {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2">
+          <CardTitle as="h2" className="flex flex-wrap items-center gap-2">
             {t("killSwitchTitle")}
             {settingsLoading ? (
               <Skeleton className="h-5 w-24" />
@@ -200,7 +200,7 @@ export function McpOverview({ actorRole }: Props) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("totalCalls")}</CardTitle>
+              <CardTitle as="h2">{t("totalCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -214,7 +214,7 @@ export function McpOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("successCalls")}</CardTitle>
+              <CardTitle as="h2">{t("successCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -228,7 +228,7 @@ export function McpOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("failedCalls")}</CardTitle>
+              <CardTitle as="h2">{t("failedCalls")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -242,7 +242,7 @@ export function McpOverview({ actorRole }: Props) {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{t("errorRate24h")}</CardTitle>
+              <CardTitle as="h2">{t("errorRate24h")}</CardTitle>
             </CardHeader>
             <CardContent>
               {summaryLoading ? (
@@ -259,7 +259,7 @@ export function McpOverview({ actorRole }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("byToolTitle")}</CardTitle>
+          <CardTitle as="h2">{t("byToolTitle")}</CardTitle>
           <CardDescription>{t("byToolDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -304,7 +304,7 @@ export function McpOverview({ actorRole }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("topUsersTitle")}</CardTitle>
+          <CardTitle as="h2">{t("topUsersTitle")}</CardTitle>
           <CardDescription>{t("topUsersDescription")}</CardDescription>
         </CardHeader>
         <CardContent>

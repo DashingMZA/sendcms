@@ -127,7 +127,7 @@ function ProviderCard({ config }: { config: AiProviderConfigRow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle as="h2" className="flex items-center gap-2">
           {providerDisplayName(config.provider)}
           <Badge variant="secondary">
             {healthError

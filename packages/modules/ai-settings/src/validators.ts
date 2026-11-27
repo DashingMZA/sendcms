@@ -25,8 +25,11 @@ export const AiProviderNameSchema = z.enum(AI_PROVIDER_NAMES)
 export const AiBillingModeSchema = z.enum(["BYOK", "PLATFORM", "DISABLED"])
 
 // Shared pagination for admin list endpoints.
+// DB-048: `page` is capped at 1000 (100k rows deep at perPage 100) —
+// an unbounded page let `skip = (page - 1) * perPage` scan and discard
+// millions of rows for an empty page. Beyond the cap the schema 422s.
 export const AiPaginationQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
   perPage: z.coerce.number().int().min(1).max(100).default(20),
 })
 

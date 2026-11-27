@@ -307,6 +307,12 @@ function SidebarRail({
 function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
+      // PRF-021: the skip link (`href="#main-content"`) targets this
+      // shared landmark, so every dashboard/admin page has a working
+      // target. PRF-028: `tabIndex={-1}` makes it focusable so route
+      // changes can move focus here without adding it to the tab order.
+      id="main-content"
+      tabIndex={-1}
       data-slot="sidebar-inset"
       className={cn(
         "relative flex w-full flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
@@ -368,6 +374,22 @@ function SidebarSeparator({
 }
 
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
+  // PRF-026: when the app labels the menu container it is the primary
+  // navigation landmark (`<nav aria-label="Dashboard"|"Admin">`); without
+  // a label it stays a plain div, as before.
+  if (props["aria-label"]) {
+    return (
+      <nav
+        data-slot="sidebar-content"
+        data-sidebar="content"
+        className={cn(
+          "no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+          className
+        )}
+        {...props}
+      />
+    )
+  }
   return (
     <div
       data-slot="sidebar-content"
@@ -512,6 +534,8 @@ function SidebarMenuButton({
       data-sidebar="menu-button"
       data-size={size}
       data-active={isActive}
+      // UX-004: expose the active nav item to assistive technology.
+      aria-current={isActive ? "page" : undefined}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
       {...props}
     />

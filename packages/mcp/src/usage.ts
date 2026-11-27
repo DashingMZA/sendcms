@@ -175,19 +175,33 @@ export async function recordMcpCallOutcomes(
   if (outcomes.length === 0) return
   const base = Math.floor(durationMs / outcomes.length)
   const remainder = durationMs - base * outcomes.length
-  for (let i = 0; i < outcomes.length; i++) {
-    const outcome = outcomes[i]
-    // DB-003: the idempotency key is the client request identity —
-    // a retried call (same JSON-RPC id, same tool) reuses the key
-    // and dedupes instead of double-counting. The batch index
-    // disambiguates one request carrying the same tool twice.
-    await recordMcpUsage({
+  // DB-047: one `createMany` for the batch instead of one sequential
+  // `recordMcpUsage` insert per tool call. `skipDuplicates` keeps the
+  // DB-003 dedupe (the `idempotencyKey` unique index drops the retried
+  // rows instead of double-counting them); a failed batch is logged,
+  // never thrown — a usage write must never fail the tool call.
+  try {
+    await db.mcpUsageRecord.createMany({
+      data: outcomes.map((outcome, i) => ({
+        apiKeyId: auth.keyId,
+        userId: auth.userId,
+        tool: outcome.tool,
+        status: outcome.ok ? "SUCCESS" : "FAILED",
+        durationMs: base + (i === 0 ? remainder : 0),
+        // DB-003: the idempotency key is the client request identity —
+        // a retried call (same JSON-RPC id, same tool) reuses the key
+        // and dedupes instead of double-counting. The batch index
+        // disambiguates one request carrying the same tool twice.
+        idempotencyKey: `mcp:${auth.keyId}:${String(outcome.requestId)}:${outcome.tool}:${i}`,
+      })),
+      skipDuplicates: true,
+    })
+  } catch (err) {
+    logger.error("mcp usage batch record failed", {
+      error: err,
       apiKeyId: auth.keyId,
       userId: auth.userId,
-      tool: outcome.tool,
-      status: outcome.ok ? "SUCCESS" : "FAILED",
-      durationMs: base + (i === 0 ? remainder : 0),
-      idempotencyKey: `mcp:${auth.keyId}:${String(outcome.requestId)}:${outcome.tool}:${i}`,
+      count: outcomes.length,
     })
   }
 }

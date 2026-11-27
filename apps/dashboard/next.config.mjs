@@ -14,6 +14,13 @@ const nextConfig = {
   // X-Powered-By (Phase 16, SEC-302): suppress the `X-Powered-By:
   // Next.js` header on every document response.
   poweredByHeader: false,
+  // PRF-008 (Phase 16, Wave 11): the Logo is the only next/image user
+  // in the repo and displays at max 160px wide — 160/320w srcset
+  // candidates only (the default imageSizes start at 16 and the
+  // deviceSizes at 640, which served a 640w logo for a 160px slot).
+  images: {
+    imageSizes: [160, 320],
+  },
   transpilePackages: [
     "@sendcms/shared",
     "@sendcms/ui",
@@ -50,6 +57,49 @@ const nextConfig = {
         // noindex, so a crawler that ignores one still sees this.
         source: "/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      // PRF-001 (Phase 16, Wave 11): session-dependent routes are
+      // `no-store` — explicitly, not just by Next's dynamic default —
+      // so a future static-ification of a page can never silently
+      // start serving one user's session HTML to another. The list
+      // is the session-aware surface: the `/` landing (awaits
+      // auth()), `/dashboard/*`, and every auth page. Public images
+      // + favicon keep the PRF-004 rule below (disjoint paths).
+      ...[
+        "/",
+        "/dashboard/:path*",
+        "/sign-in",
+        "/sign-up",
+        "/forgot-password",
+        "/reset-password",
+        "/verify-email",
+      ].map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      })),
+      {
+        // PRF-004 (Phase 16, Wave 11): public images + favicon change
+        // only on redeploy — edge caches them a day, browsers
+        // revalidate. `/_next/image` is deliberately NOT listed: the
+        // optimizer sets its own caching.
+        source: "/images/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value:
+              "public, max-age=0, s-maxage=86400, stale-while-revalidate=86400",
+          },
+        ],
+      },
+      {
+        source: "/favicon.ico",
+        headers: [
+          {
+            key: "Cache-Control",
+            value:
+              "public, max-age=0, s-maxage=86400, stale-while-revalidate=86400",
+          },
+        ],
       },
     ]
   },

@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { auth } from "@/lib/auth"
 import { notFound } from "next/navigation"
 import { requireDashboardSession } from "@/lib/require-session"
 import { getFormForUser } from "@sendcms/forms"
@@ -15,6 +17,26 @@ import { TranslationProvider } from "@/components/dashboard/translation-provider
 import { FormDetail } from "./form-detail"
 
 type Params = { params: Promise<{ formId: string }> }
+
+// SRC-113: the tab title is the form name (the same string the <h1>
+// renders); a missing/wrong-owner form falls back to the generic
+// title and the page itself still 404s.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ formId: string }>
+}): Promise<Metadata> {
+  const session = await auth()
+  const locale = await getRequestLocale(session?.user?.id)
+  const t = await getTranslator(locale, "forms")
+  const { formId } = await params
+  try {
+    const form = await getFormForUser(session?.user?.id ?? "", formId)
+    return { title: form.name, description: t("detailDescription") }
+  } catch {
+    return { title: t("title"), description: t("detailDescription") }
+  }
+}
 
 export default async function FormDetailPage({ params }: Params) {
   const { formId } = await params

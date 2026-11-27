@@ -202,7 +202,7 @@ export function MigrationWizard({ actorRole }: Props) {
       {/* Step 1 — target */}
       <Card>
         <CardHeader>
-          <CardTitle>{t("migrateStepTarget")}</CardTitle>
+          <CardTitle as="h2">{t("migrateStepTarget")}</CardTitle>
           <CardDescription>{t("migrateTargetLabel")}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -257,7 +257,7 @@ export function MigrationWizard({ actorRole }: Props) {
       {/* Step 2 — scope */}
       <Card>
         <CardHeader>
-          <CardTitle>{t("migrateStepScope")}</CardTitle>
+          <CardTitle as="h2">{t("migrateStepScope")}</CardTitle>
           <CardDescription>{t("migrateScopeLabel")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -402,7 +402,7 @@ export function MigrationWizard({ actorRole }: Props) {
       {/* Step 3 — preview */}
       <Card>
         <CardHeader>
-          <CardTitle>{t("migrateStepPreview")}</CardTitle>
+          <CardTitle as="h2">{t("migrateStepPreview")}</CardTitle>
           <CardDescription>{t("migratePreviewTitle")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -502,7 +502,7 @@ export function MigrationWizard({ actorRole }: Props) {
       {result && (
         <Card>
           <CardHeader>
-            <CardTitle>{t("migrateResultTitle")}</CardTitle>
+            <CardTitle as="h2">{t("migrateResultTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
             <p>{t("migratedCount", { count: result.count })}</p>

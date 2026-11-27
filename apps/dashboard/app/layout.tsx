@@ -3,12 +3,22 @@ import { headers } from "next/headers"
 import { Geist, Geist_Mono } from "next/font/google"
 import config from "@/config/config.json"
 import "./globals.css"
-import { DirectionProvider, ThemeProvider, Toaster } from "@sendcms/ui"
+import {
+  DirectionProvider,
+  FocusMainOnRouteChange,
+  ThemeProvider,
+} from "@sendcms/ui"
 import { auth } from "@/lib/auth"
 import { getLocaleDirection, getRequestLocale, getTranslator } from "@/lib/i18n"
 
 export const metadata: Metadata = {
-  title: "SendCMS Dashboard",
+  // SRC-113: per-page titles fill the template (each dashboard/auth
+  // page exports its own `metadata.title`); the default is the bare
+  // dashboard title for pages that do not.
+  title: {
+    template: "%s — SendCMS Dashboard",
+    default: "SendCMS Dashboard",
+  },
   description:
     "Manage your SendCMS domains, forms, and submissions — view the inbox, check analytics, and get the embed snippet.",
   // Authenticated app — nothing here is for crawlers (Phase 16,
@@ -26,7 +36,7 @@ export const viewport: Viewport = {
   themeColor: [
     {
       media: "(prefers-color-scheme: light)",
-      color: "oklch(0.6373 0.1362 162.517)",
+      color: "oklch(0.42 0.1362 162.517)",
     },
     {
       media: "(prefers-color-scheme: dark)",
@@ -93,12 +103,15 @@ export default async function RootLayout({
         </a>
         <DirectionProvider dir={direction}>
           <ThemeProvider nonce={nonce}>
+            {/* PRF-028: move focus to #main-content on route change. */}
+            <FocusMainOnRouteChange />
             {children}
-            <Toaster
-              richColors
-              position="top-right"
-              containerAriaLabel={t("notifications")}
-            />
+            {/* PRF-007 (Wave 11): the toast container is NOT rendered
+                here. No auth page calls toast() — every call site lives
+                under app/dashboard/ or components/dashboard/ — so the
+                container (and the sonner bundle) is rendered by the
+                dashboard group layout instead. Auth pages then skip it
+                entirely; the dashboard pages keep it. */}
           </ThemeProvider>
         </DirectionProvider>
       </body>
