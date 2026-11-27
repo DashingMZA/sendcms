@@ -34,6 +34,23 @@ const mockExpire = vi.hoisted(() =>
 const mockFindMany = vi.hoisted(() => vi.fn())
 const mockCount = vi.hoisted(() => vi.fn())
 const mockEnqueue = vi.hoisted(() => vi.fn(async () => 1))
+// Phase C (Jobs): the CronRun writer. The create returns the RUNNING
+// row; the update echoes the finish data back as the finished row.
+const mockCronRunCreate = vi.hoisted(() =>
+  vi.fn(async (args: { data: Record<string, unknown> }) => ({
+    id: "run-1",
+    ...args.data,
+  }))
+)
+const mockCronRunUpdate = vi.hoisted(() =>
+  vi.fn(async (args: { data: Record<string, unknown> }) => ({
+    id: "run-1",
+    ...args.data,
+  }))
+)
+const mockCronRunDeleteMany = vi.hoisted(() =>
+  vi.fn(async () => ({ count: 0 }))
+)
 vi.mock("@sendcms/notifications", () => ({
   processEmailOutbox: mockProcessOutbox,
   enqueueSubmissionNotifications: mockEnqueue,
@@ -55,6 +72,11 @@ vi.mock("@sendcms/database", async (importOriginal) => {
     db: {
       submission: { findMany: mockFindMany },
       emailJob: { count: mockCount },
+      cronRun: {
+        create: mockCronRunCreate,
+        update: mockCronRunUpdate,
+        deleteMany: mockCronRunDeleteMany,
+      },
     },
   }
 })
@@ -166,6 +188,41 @@ describe("GET /api/cron/email-outbox", () => {
     })
     expect(typeof body.durationMs).toBe("number")
     expect(Number.isNaN(Date.parse(body.runAt as string))).toBe(false)
+  })
+
+  it("writes a CronRun row: RUNNING at start, SUCCESS at finish (Phase C)", async () => {
+    const res = await GET(cronRequest(`Bearer ${SECRET}`))
+    expect(res.status).toBe(200)
+    expect(mockCronRunCreate).toHaveBeenCalledTimes(1)
+    expect(mockCronRunCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          jobName: "EMAIL_OUTBOX",
+          trigger: "VERCEL_CRON",
+          status: "RUNNING",
+        }),
+      })
+    )
+    expect(mockCronRunUpdate).toHaveBeenCalledTimes(1)
+    expect(mockCronRunUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "run-1" },
+        data: expect.objectContaining({
+          status: "SUCCESS",
+          finishedAt: expect.any(Date),
+          durationMs: expect.any(Number),
+        }),
+      })
+    )
+    const steps = (
+      mockCronRunUpdate.mock.calls[0][0] as {
+        data: { steps: Record<string, { processed: number }> }
+      }
+    ).data.steps
+    expect(steps.outbox.processed).toBe(2)
+    expect(steps.rescore.processed).toBe(3)
+    // Retention runs inside the cron run itself (Q8).
+    expect(mockCronRunDeleteMany).toHaveBeenCalledTimes(1)
   })
 
   it("is idempotent: a double call re-processes no jobs", async () => {

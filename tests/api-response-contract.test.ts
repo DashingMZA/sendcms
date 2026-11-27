@@ -132,7 +132,7 @@ describe("SRC-114 revalidatePath is not the refresh mechanism", () => {
       }
     }
     walk(path.join(repoRoot, "packages/modules"))
-    expect(files).toHaveLength(12)
+    expect(files).toHaveLength(13)
     for (const file of files) {
       expect(
         readFileSync(file, "utf8"),

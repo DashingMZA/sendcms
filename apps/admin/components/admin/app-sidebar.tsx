@@ -29,6 +29,7 @@ import {
   RiPlugLine,
   RiPriceTag3Line,
   RiPulseLine,
+  RiRefreshLine,
   RiRepeatLine,
   RiRobotLine,
   RiSettings3Line,
@@ -236,6 +237,11 @@ export function AppSidebar({
           label: t("auditLogs"),
           href: "/admin/audit-logs",
           icon: RiFileTextLine,
+        },
+        {
+          label: t("jobs"),
+          href: "/admin/jobs",
+          icon: RiRefreshLine,
         },
         {
           label: t("support"),

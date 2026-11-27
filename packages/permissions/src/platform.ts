@@ -39,6 +39,11 @@ export type PlatformCapability =
   // Admin Control Plane (Phase 8) — billing providers + payments.
   | "VIEW_BILLING"
   | "MANAGE_BILLING"
+  // Seven Admin Pages, Phase C — Jobs (plan §3.6, Q9): VIEW_JOBS is
+  // all staff (Health-page parity); MANAGE_JOBS is SUPER_ADMIN +
+  // owner (requeue a FAILED job, manual cron run).
+  | "VIEW_JOBS"
+  | "MANAGE_JOBS"
 
 const PLATFORM_PERMISSIONS: Record<
   PlatformRole,
@@ -74,6 +79,8 @@ const PLATFORM_PERMISSIONS: Record<
     "MANAGE_ANNOUNCEMENTS",
     "VIEW_BILLING",
     "MANAGE_BILLING",
+    "VIEW_JOBS",
+    "MANAGE_JOBS",
   ],
   PLATFORM_USER: [],
 }
@@ -124,6 +131,9 @@ const ADMIN_CAPABILITIES: readonly PlatformCapability[] = [
   // Admin Control Plane (Phase 8) — billing providers + payments.
   "VIEW_BILLING",
   "MANAGE_BILLING",
+  // Seven Admin Pages, Phase C — Jobs (plan §3.6, Q9).
+  "VIEW_JOBS",
+  "MANAGE_JOBS",
 ]
 
 export const ADMIN_ROLE_CAPABILITIES: Record<
@@ -150,14 +160,20 @@ export const ADMIN_ROLE_CAPABILITIES: Record<
     "VIEW_AI_USAGE",
     "VIEW_MCP",
     "VIEW_BILLING",
+    // Seven Admin Pages, Phase C — Jobs (plan §3.6, Q9): MANAGER
+    // views Jobs (all staff) but never requeues or triggers a run.
+    "VIEW_JOBS",
   ],
   // Support queries only: view users and their data, nothing else.
+  // Seven Admin Pages, Phase C — Jobs (plan §3.6, Q9): SUPPORT views
+  // Jobs (all staff, Health-page parity) but never mutates it.
   SUPPORT: [
     "VIEW_ADMIN_DASHBOARD",
     "VIEW_USERS",
     "VIEW_CUSTOMER_DATA",
     "VIEW_SENSITIVE_SUBMISSIONS",
     "VIEW_MCP",
+    "VIEW_JOBS",
   ],
 }
 
@@ -203,6 +219,7 @@ export const PLATFORM_ROUTE_CAPABILITY: Record<string, PlatformCapability> = {
   "/admin/billing": "VIEW_BILLING",
   "/admin/features": "MANAGE_FEATURE_FLAGS",
   "/admin/health": "VIEW_ADMIN_DASHBOARD",
+  "/admin/jobs": "VIEW_JOBS",
   "/admin/mcp": "VIEW_MCP",
   "/admin/mcp/keys": "VIEW_MCP",
   "/admin/payments": "VIEW_BILLING",

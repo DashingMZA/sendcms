@@ -3,20 +3,30 @@
     "@sendcms/database": "workspace:*",
     "@sendcms/notifications": "workspace:*",
     "@sendcms/observability": "workspace:*",
+    "@sendcms/permissions": "workspace:*",
     "@sendcms/plans": "workspace:*",
-    "@sendcms/submissions": "workspace:*"
+    "@sendcms/security": "workspace:*",
+    "@sendcms/shared": "workspace:*",
+    "@sendcms/submissions": "workspace:*",
+    "zod": "^4.6.5"
   },
   "description": "Scheduled jobs for SendCMS (daily email-outbox cron: outbox drain, AI re-score, digests, subscription expiry, missed-notification reconciliation).",
   "devDependencies": {
     "@sendcms/config": "workspace:*",
+    "@tanstack/react-query": "^5.108.0",
     "@types/node": "^26.6.6",
     "typescript": "6.0.3"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./queries": "./src/queries.ts"
   },
   "main": "./src/index.ts",
   "name": "@sendcms/cron",
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.108.0",
+    "react": "^19.3.1"
+  },
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit"

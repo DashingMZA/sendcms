@@ -70,3 +70,24 @@ export function useRequeueEmailJob() {
     },
   })
 }
+
+/** Admin requeue (Seven Admin Pages, Phase C, plan §3.6): same
+    outcome as the owner-scoped requeue, admin actor — a FAILED job
+    (or a SENDING job stuck past the 10-min claim lease) moves to
+    PENDING with attempts reset. MANAGE_JOBS + step-up re-auth are
+    enforced by the service; the call site opens the StepUpDialog
+    first and runs this mutation only onVerified — the payments
+    refund flow, not a new pattern. */
+export function useRequeueEmailJobForAdmin() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<{ id: string; status: string }>(
+        `/api/v1/admin/jobs/email/${jobId}/requeue`,
+        { method: "POST" }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["email-jobs"] })
+    },
+  })
+}

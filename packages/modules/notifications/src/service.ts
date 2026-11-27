@@ -17,7 +17,8 @@ import {
   getSubmissionSender,
 } from "@sendcms/shared"
 import { getDigestIntervalHours, getNextDigestAt } from "@sendcms/ai"
-import { logAudit } from "@sendcms/security"
+import { logAudit, requireStepUp } from "@sendcms/security"
+import { requireAdmin, type AdminActor } from "@sendcms/permissions"
 import {
   buildUnsubscribeUrl,
   getEmailTranslator,
@@ -843,6 +844,61 @@ function ageMinutesSince(date: Date): number {
   return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000))
 }
 
+/** Shared list-row shape for an EmailJob (EML-094/095): claim age
+    for SENDING rows, and whether the delivery log / Jobs page may
+    offer a requeue for the row. Both the owner list and the admin
+    list map through this so the two views can never disagree about
+    a row's requeueability. */
+function toEmailJobListItem(
+  item: EmailJob & { form: { name: string } | null }
+): EmailJobListItem {
+  // EML-094: a SENDING row carries its claim age so a stuck job
+  // is visible, not just present. EML-031: the age is measured
+  // from the claim lease start (`claimedAt`), falling back to
+  // `updatedAt` for rows claimed before the column existed.
+  const claimAgeMinutes =
+    item.status === EmailJobStatus.SENDING
+      ? ageMinutesSince(item.claimedAt ?? item.updatedAt)
+      : null
+  return {
+    ...item,
+    formName: item.form?.name ?? null,
+    claimAgeMinutes,
+    canRequeue:
+      item.status === EmailJobStatus.FAILED ||
+      (item.status === EmailJobStatus.SENDING &&
+        (claimAgeMinutes ?? 0) >= STALE_CLAIM_LEASE_MINUTES),
+  }
+}
+
+/** Shared requeue guard for `requeueEmailJob` and
+    `requeueEmailJobForAdmin` (one implementation, so admin vs owner
+    parity is structural, not two copies that can drift). FAILED is
+    terminal — requeue restarts the ladder. A SENDING job inside the
+    10-min claim lease is refused (409) — its processor may still be
+    alive, and requeueing it could double-send. Anything else
+    (PENDING / SENT) is refused (409). */
+function assertJobRequeueable(job: EmailJob): void {
+  if (job.status === EmailJobStatus.FAILED) {
+    return
+  }
+  if (job.status === EmailJobStatus.SENDING) {
+    // EML-031: the lease is measured from the claim start.
+    const claimAgeMinutes = ageMinutesSince(job.claimedAt ?? job.updatedAt)
+    if (claimAgeMinutes < STALE_CLAIM_LEASE_MINUTES) {
+      throw new ApiError(
+        `This email is still being sent (claimed ${claimAgeMinutes} minute${claimAgeMinutes === 1 ? "" : "s"} ago). Wait until it is stuck past the ${STALE_CLAIM_LEASE_MINUTES}-minute lease, then retry.`,
+        409
+      )
+    }
+    return
+  }
+  throw new ApiError(
+    `Only failed or stuck emails can be requeued (this one is ${job.status.toLowerCase()}).`,
+    409
+  )
+}
+
 export async function listEmailJobsForUser(
   userId: string,
   filters: {
@@ -883,25 +939,7 @@ export async function listEmailJobsForUser(
   const byStatus = new Map(counts.map((c) => [c.status, c._count]))
   const at = (status: EmailJobStatus) => byStatus.get(status) ?? 0
   return {
-    items: items.map((item) => {
-      // EML-094: a SENDING row carries its claim age so a stuck job
-      // is visible, not just present. EML-031: the age is measured
-      // from the claim lease start (`claimedAt`), falling back to
-      // `updatedAt` for rows claimed before the column existed.
-      const claimAgeMinutes =
-        item.status === EmailJobStatus.SENDING
-          ? ageMinutesSince(item.claimedAt ?? item.updatedAt)
-          : null
-      return {
-        ...item,
-        formName: item.form?.name ?? null,
-        claimAgeMinutes,
-        canRequeue:
-          item.status === EmailJobStatus.FAILED ||
-          (item.status === EmailJobStatus.SENDING &&
-            (claimAgeMinutes ?? 0) >= STALE_CLAIM_LEASE_MINUTES),
-      }
-    }),
+    items: items.map((item) => toEmailJobListItem(item)),
     total,
     page,
     pageSize: EMAIL_JOB_PAGE_SIZE,
@@ -937,23 +975,7 @@ export async function requeueEmailJob(
   if (!job || job.ownerId !== userId) {
     throw new ApiError("Email job not found.", 404)
   }
-  if (job.status === EmailJobStatus.FAILED) {
-    // FAILED is terminal — requeue restarts the ladder.
-  } else if (job.status === EmailJobStatus.SENDING) {
-    // EML-031: the lease is measured from the claim start.
-    const claimAgeMinutes = ageMinutesSince(job.claimedAt ?? job.updatedAt)
-    if (claimAgeMinutes < STALE_CLAIM_LEASE_MINUTES) {
-      throw new ApiError(
-        `This email is still being sent (claimed ${claimAgeMinutes} minute${claimAgeMinutes === 1 ? "" : "s"} ago). Wait until it is stuck past the ${STALE_CLAIM_LEASE_MINUTES}-minute lease, then retry.`,
-        409
-      )
-    }
-  } else {
-    throw new ApiError(
-      `Only failed or stuck emails can be requeued (this one is ${job.status.toLowerCase()}).`,
-      409
-    )
-  }
+  assertJobRequeueable(job)
   const previousStatus = job.status
   const previousAttempts = job.attempts
   const requeued = await db.emailJob.update({
@@ -969,6 +991,191 @@ export async function requeueEmailJob(
     action: AuditAction.UPDATE,
     resourceType: job.formId ? AuditResource.FORM : AuditResource.USER,
     resourceId: job.formId ?? userId,
+    detail: {
+      event: "email-job-requeued",
+      emailJobId: job.id,
+      previousStatus,
+      previousAttempts,
+    },
+  })
+  return requeued
+}
+
+// ─── Admin variants (Seven Admin Pages, Phase C, plan §3.6) ────────────
+// Same logic as the owner-scoped functions above, admin actor:
+// `requireAdmin` + an audit row where the owner variant audits.
+// The actor is the permissions package's structural AdminActor plus
+// the user id the audit row needs — the permissions package must
+// stay free of the auth package, and every AdminSession is
+// assignable to this shape.
+
+export type AdminEmailJobActor = AdminActor & { user: { id: string } }
+
+export type AdminEmailJobFilters = {
+  /** Status tab (plan §3.6): all / pending / sending / failed. */
+  status?: "all" | "pending" | "sending" | "failed"
+  type?: EmailJobType
+  /** Free text on the job owner (email or name). */
+  ownerSearch?: string
+  page?: number
+}
+
+export type AdminEmailJobListItem = EmailJobListItem & {
+  ownerName: string | null
+  ownerEmail: string
+}
+
+export type AdminEmailJobListResult = Omit<EmailJobListResult, "items"> & {
+  items: AdminEmailJobListItem[]
+}
+
+const ADMIN_JOB_STATUS_BY_TAB = {
+  pending: EmailJobStatus.PENDING,
+  sending: EmailJobStatus.SENDING,
+  failed: EmailJobStatus.FAILED,
+} as const
+
+/** Admin email-job list (Jobs page, Queue section): every owner's
+    jobs, newest first, with the same row shape as the owner list
+    plus the owner identity. Filters mirror the owner list's shape
+    (status, page) extended with type + owner search. Counts are
+    computed over the same type/owner-search scope as the rows,
+    without the status tab — so the tabs always sum to `all`. */
+export async function listEmailJobsForAdmin(
+  actor: AdminEmailJobActor,
+  filters: AdminEmailJobFilters
+): Promise<AdminEmailJobListResult> {
+  requireAdmin(actor, "VIEW_JOBS")
+  const page = Math.max(1, filters.page ?? 1)
+  const status =
+    filters.status && filters.status !== "all"
+      ? ADMIN_JOB_STATUS_BY_TAB[filters.status]
+      : undefined
+  const ownerSearch = filters.ownerSearch?.trim() || undefined
+  const scopeWhere: Prisma.EmailJobWhereInput = {
+    ...(filters.type ? { type: filters.type } : {}),
+    ...(ownerSearch
+      ? {
+          owner: {
+            OR: [
+              { email: { contains: ownerSearch, mode: "insensitive" } },
+              { name: { contains: ownerSearch, mode: "insensitive" } },
+            ],
+          },
+        }
+      : {}),
+  }
+  const where: Prisma.EmailJobWhereInput = {
+    ...scopeWhere,
+    ...(status ? { status } : {}),
+  }
+  const [items, total, counts] = await Promise.all([
+    db.emailJob.findMany({
+      where,
+      include: {
+        form: { select: { name: true } },
+        owner: { select: { name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * EMAIL_JOB_PAGE_SIZE,
+      take: EMAIL_JOB_PAGE_SIZE,
+    }),
+    db.emailJob.count({ where }),
+    db.emailJob.groupBy({
+      by: ["status"],
+      where: scopeWhere,
+      _count: true,
+    }),
+  ])
+  const byStatus = new Map(counts.map((c) => [c.status, c._count]))
+  const at = (status: EmailJobStatus) => byStatus.get(status) ?? 0
+  return {
+    items: items.map((item) => ({
+      ...toEmailJobListItem(item),
+      ownerName: item.owner.name,
+      ownerEmail: item.owner.email,
+    })),
+    total,
+    page,
+    pageSize: EMAIL_JOB_PAGE_SIZE,
+    counts: {
+      all:
+        at(EmailJobStatus.PENDING) +
+        at(EmailJobStatus.SENT) +
+        at(EmailJobStatus.FAILED) +
+        at(EmailJobStatus.SENDING),
+      pending: at(EmailJobStatus.PENDING),
+      sending: at(EmailJobStatus.SENDING),
+      sent: at(EmailJobStatus.SENT),
+      failed: at(EmailJobStatus.FAILED),
+    },
+  }
+}
+
+/** Single-job read for the Jobs detail route — no admin single-job
+    read existed before (the owner side has no detail read either;
+    the owner delivery log requeues from the list row). */
+export async function getEmailJobForAdmin(
+  actor: AdminEmailJobActor,
+  jobId: string
+): Promise<AdminEmailJobListItem> {
+  requireAdmin(actor, "VIEW_JOBS")
+  const job = await db.emailJob.findUnique({
+    where: { id: jobId },
+    include: {
+      form: { select: { name: true } },
+      owner: { select: { name: true, email: true } },
+    },
+  })
+  if (!job) {
+    throw new ApiError("Email job not found.", 404)
+  }
+  return {
+    ...toEmailJobListItem(job),
+    ownerName: job.owner.name,
+    ownerEmail: job.owner.email,
+  }
+}
+
+/** Admin requeue (Jobs page, Queue section; plan §3.6, Q9):
+    MANAGE_JOBS + step-up re-auth. Same outcome as the owner-scoped
+    requeue — a FAILED job (or a SENDING job stuck past the 10-min
+    claim lease) moves to PENDING with attempts reset and the retry
+    ladder restarted; `lastError` is kept. Step-up runs last, after
+    every cheap guard, immediately before the write — one password
+    entry authorizes exactly one requeue (single-use). Audit-logged
+    with the admin actor; the resource is the job's form, else its
+    owner (same resource the owner variant records). */
+export async function requeueEmailJobForAdmin(
+  actor: AdminEmailJobActor,
+  jobId: string
+): Promise<EmailJob> {
+  requireAdmin(actor, "MANAGE_JOBS")
+  const job = await db.emailJob.findUnique({ where: { id: jobId } })
+  if (!job) {
+    throw new ApiError("Email job not found.", 404)
+  }
+  assertJobRequeueable(job)
+  // Step-up (Phase 9): checked last, after every cheap guard,
+  // immediately before the write — the admin-users disable pattern.
+  // Consumes one unbound admin verification, so one password entry
+  // authorizes exactly one requeue.
+  await requireStepUp(actor)
+  const previousStatus = job.status
+  const previousAttempts = job.attempts
+  const requeued = await db.emailJob.update({
+    where: { id: job.id },
+    data: {
+      status: EmailJobStatus.PENDING,
+      attempts: 0,
+      nextAttemptAt: new Date(),
+    },
+  })
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: job.formId ? AuditResource.FORM : AuditResource.USER,
+    resourceId: job.formId ?? job.ownerId,
     detail: {
       event: "email-job-requeued",
       emailJobId: job.id,

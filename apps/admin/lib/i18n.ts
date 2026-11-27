@@ -55,6 +55,7 @@ export const SHELL_TRANSLATION_DOMAINS = [
   "errors",
   "features",
   "health",
+  "jobs",
   "navigation",
   "language",
   "dashboard",

@@ -18,6 +18,7 @@
     "@sendcms/database": "workspace:*",
     "@sendcms/email": "workspace:*",
     "@sendcms/observability": "workspace:*",
+    "@sendcms/permissions": "workspace:*",
     "@sendcms/queue": "workspace:*",
     "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",

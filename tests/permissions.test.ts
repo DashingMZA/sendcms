@@ -42,6 +42,9 @@ const ALL_CAPABILITIES: PlatformCapability[] = [
   // Admin Control Plane (Phase 8)
   "VIEW_BILLING",
   "MANAGE_BILLING",
+  // Seven Admin Pages, Phase C — Jobs (plan §3.6, Q9)
+  "VIEW_JOBS",
+  "MANAGE_JOBS",
 ]
 
 describe("platformCan", () => {
@@ -68,6 +71,7 @@ describe("platformCan", () => {
       "/admin/billing": "VIEW_BILLING",
       "/admin/features": "MANAGE_FEATURE_FLAGS",
       "/admin/health": "VIEW_ADMIN_DASHBOARD",
+      "/admin/jobs": "VIEW_JOBS",
       "/admin/mcp": "VIEW_MCP",
       "/admin/mcp/keys": "VIEW_MCP",
       "/admin/payments": "VIEW_BILLING",
@@ -141,6 +145,7 @@ describe("adminCan", () => {
       "VIEW_AI_USAGE",
       "VIEW_MCP",
       "VIEW_BILLING",
+      "VIEW_JOBS",
     ]
     expect([...ADMIN_ROLE_CAPABILITIES.MANAGER].sort()).toEqual(
       [...expected].sort()
@@ -148,6 +153,7 @@ describe("adminCan", () => {
     expect(adminCan("MANAGER", "MANAGE_PLANS")).toBe(false)
     expect(adminCan("MANAGER", "MANAGE_AI")).toBe(false)
     expect(adminCan("MANAGER", "MANAGE_ADMINISTRATORS")).toBe(false)
+    expect(adminCan("MANAGER", "MANAGE_JOBS")).toBe(false)
   })
 
   it("grants SUPPORT view-only support capabilities", () => {
@@ -157,12 +163,14 @@ describe("adminCan", () => {
       "VIEW_CUSTOMER_DATA",
       "VIEW_SENSITIVE_SUBMISSIONS",
       "VIEW_MCP",
+      "VIEW_JOBS",
     ]
     expect([...ADMIN_ROLE_CAPABILITIES.SUPPORT].sort()).toEqual(
       [...expected].sort()
     )
     expect(adminCan("SUPPORT", "MANAGE_USERS")).toBe(false)
     expect(adminCan("SUPPORT", "VIEW_AUDIT_LOGS")).toBe(false)
+    expect(adminCan("SUPPORT", "MANAGE_JOBS")).toBe(false)
   })
 
   it("denies an unknown role instead of throwing (SRC-307)", () => {

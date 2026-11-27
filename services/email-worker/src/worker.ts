@@ -6,6 +6,7 @@
 // kills the worker — the next poll retries, and the health endpoint
 // surfaces the last error.
 import { createServer, type Server } from "node:http"
+import { recordWorkerFailedPoll } from "@sendcms/cron"
 import { createLogger } from "@sendcms/observability"
 import { processEmailOutbox } from "@sendcms/notifications"
 import {
@@ -326,6 +327,17 @@ export function createEmailWorker(options: EmailWorkerOptions = {}) {
     consecutiveFailedPolls += 1
     logger.error("outbox poll failed", {
       error: err,
+      durationMs: Date.now() - started,
+    })
+    // Seven admin pages, Phase C — Jobs (plan §3.6, Q8): a failed
+    // poll writes ONE CronRun row (trigger WORKER, status FAILED).
+    // Successful polls write nothing — a row per 30 s poll would be
+    // ~2,880 rows/day. `recordWorkerFailedPoll` is best-effort and
+    // never throws, so this cannot kill the worker; the health
+    // endpoint already surfaces the poll error.
+    void recordWorkerFailedPoll({
+      error: lastError,
+      startedAt: new Date(started),
       durationMs: Date.now() - started,
     })
     return zeroRun()

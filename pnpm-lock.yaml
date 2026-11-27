@@ -389,6 +389,9 @@ importers:
       '@sendcms/billing':
         specifier: workspace:*
         version: link:../../packages/modules/billing
+      '@sendcms/cron':
+        specifier: workspace:*
+        version: link:../../packages/modules/cron
       '@sendcms/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -398,6 +401,9 @@ importers:
       '@sendcms/mcp-admin':
         specifier: workspace:*
         version: link:../../packages/modules/mcp-admin
+      '@sendcms/notifications':
+        specifier: workspace:*
+        version: link:../../packages/modules/notifications
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -1295,16 +1301,34 @@ importers:
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../observability
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../permissions
       '@sendcms/plans':
         specifier: workspace:*
         version: link:../plans
+      '@sendcms/security':
+        specifier: workspace:*
+        version: link:../../security
+      '@sendcms/shared':
+        specifier: workspace:*
+        version: link:../../shared
       '@sendcms/submissions':
         specifier: workspace:*
         version: link:../submissions
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.7
     devDependencies:
       '@sendcms/config':
         specifier: workspace:*
         version: link:../../config
+      '@tanstack/react-query':
+        specifier: ^5.108.0
+        version: 5.108.0(@types/react@19.3.0)(react@19.3.1)
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
@@ -1501,6 +1525,9 @@ importers:
       '@sendcms/observability':
         specifier: workspace:*
         version: link:../../observability
+      '@sendcms/permissions':
+        specifier: workspace:*
+        version: link:../../permissions
       '@sendcms/queue':
         specifier: workspace:*
         version: link:../../queue
@@ -1888,6 +1915,9 @@ importers:
 
   services/email-worker:
     dependencies:
+      '@sendcms/cron':
+        specifier: workspace:*
+        version: link:../../packages/modules/cron
       '@sendcms/notifications':
         specifier: workspace:*
         version: link:../../packages/modules/notifications
