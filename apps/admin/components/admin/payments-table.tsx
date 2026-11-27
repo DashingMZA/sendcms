@@ -314,14 +314,37 @@ export function PaymentsTable({ initialData, filters, tab, canRefund }: Props) {
                         <TableCell>{providerLabel(row.provider)}</TableCell>
                         <TableCell>{t(KIND_LABEL_KEYS[row.kind])}</TableCell>
                         <TableCell>
-                          <p>
+                          <p
+                            className={
+                              row.discountAmountMinor !== null &&
+                              row.discountAmountMinor > 0
+                                ? "text-muted-foreground line-through"
+                                : undefined
+                            }
+                          >
                             {formatAmountMinor(
                               locale,
-                              row.amountMinor,
+                              row.discountAmountMinor !== null &&
+                                row.discountAmountMinor > 0
+                                ? row.fullAmountMinor
+                                : row.amountMinor,
                               row.currency,
                               t("amountUnknown")
                             )}
                           </p>
+                          {row.discountAmountMinor !== null &&
+                            row.discountAmountMinor > 0 &&
+                            row.paidAmountMinor !== null && (
+                              <p className="text-sm">
+                                {t("paidAmount")}:{" "}
+                                {formatAmountMinor(
+                                  locale,
+                                  row.paidAmountMinor,
+                                  row.currency,
+                                  t("amountUnknown")
+                                )}
+                              </p>
+                            )}
                           {row.amountMinor === null &&
                             row.source === "billing-event" && (
                               <Link
@@ -472,15 +495,42 @@ export function PaymentsTable({ initialData, filters, tab, canRefund }: Props) {
                 <span className="text-muted-foreground">
                   {t("detailAmount")}
                 </span>
-                <span className="font-medium">
+                <span
+                  className={
+                    detailData.payment.discountAmountMinor !== null &&
+                    detailData.payment.discountAmountMinor > 0
+                      ? "font-medium text-muted-foreground line-through"
+                      : "font-medium"
+                  }
+                >
                   {formatAmountMinor(
                     locale,
-                    detailData.payment.amountMinor,
+                    detailData.payment.discountAmountMinor !== null &&
+                      detailData.payment.discountAmountMinor > 0
+                      ? detailData.payment.fullAmountMinor
+                      : detailData.payment.amountMinor,
                     detailData.payment.currency,
                     t("amountUnknown")
                   )}
                 </span>
               </div>
+              {detailData.payment.discountAmountMinor !== null &&
+                detailData.payment.discountAmountMinor > 0 &&
+                detailData.payment.paidAmountMinor !== null && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">
+                      {t("paidAmount")}
+                    </span>
+                    <span className="font-medium">
+                      {formatAmountMinor(
+                        locale,
+                        detailData.payment.paidAmountMinor,
+                        detailData.payment.currency,
+                        t("amountUnknown")
+                      )}
+                    </span>
+                  </div>
+                )}
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">{t("detailDate")}</span>
                 <span>{formatDateTime(locale, detailData.payment.at)}</span>

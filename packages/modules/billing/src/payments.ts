@@ -145,6 +145,13 @@ export type PaymentRow = {
   // Minor units; null = unknown (unmatched provider event).
   amountMinor: number | null
   currency: string | null
+  // Payments display fix: the discount on this payment and what the
+  // user actually paid, next to the undiscounted price. All three
+  // are null when no discount applies (or the amount is unknown) —
+  // the UI then renders amountMinor exactly as before.
+  discountAmountMinor: number | null
+  paidAmountMinor: number | null
+  fullAmountMinor: number | null
   status: PaymentStatus
   subscriptionId: string | null
   sourceRefs: {
@@ -413,6 +420,14 @@ type AmountMatch = {
   providerCheckoutId: string | null
   providerReference: string | null
   oneTimePurchaseId: string | null
+  // Payments display fix: what the user actually paid, next to the
+  // undiscounted price. amountMinor keeps its existing meaning (full
+  // plan price for subscriptions, discounted amount for purchases /
+  // attempts) so stats and existing callers are unchanged. All three
+  // are null when the amount is unknown or no discount applies.
+  discountAmountMinor: number | null
+  paidAmountMinor: number | null
+  fullAmountMinor: number | null
 }
 
 const UNKNOWN_AMOUNT: AmountMatch = {
@@ -423,6 +438,28 @@ const UNKNOWN_AMOUNT: AmountMatch = {
   providerCheckoutId: null,
   providerReference: null,
   oneTimePurchaseId: null,
+  discountAmountMinor: null,
+  paidAmountMinor: null,
+  fullAmountMinor: null,
+}
+
+// Derive the discount triple from an undiscounted full price and the
+// amount actually paid. The discount is only set when it is strictly
+// positive — a zero discount is "no discount", not a discount of 0.
+function withDiscount(
+  full: number | null,
+  paid: number | null
+): Pick<
+  AmountMatch,
+  "discountAmountMinor" | "paidAmountMinor" | "fullAmountMinor"
+> {
+  const discount =
+    full !== null && paid !== null && full > paid ? full - paid : null
+  return {
+    discountAmountMinor: discount,
+    paidAmountMinor: paid,
+    fullAmountMinor: full,
+  }
 }
 
 type EventAmountInput = {
@@ -540,11 +577,62 @@ async function resolveEventAmounts(
     }
   }
 
+  // 5. Discounts (Payments display fix). A subscription payment's
+  // discount is its CouponRedemption (grant-time, minor units
+  // actually discounted — latest redemption per subscription); a
+  // one-time purchase's full price is its PlanVersion's price (the
+  // purchase stores the discounted amount). A redemption in another
+  // currency than the plan price is ignored — amounts in different
+  // currencies are never subtracted.
+  const discountSubIds = [
+    ...new Set([
+      ...exactSubIds,
+      ...[...fallbackByPair.values()].map((sub) => sub.id),
+    ]),
+  ]
+  const purchaseVersionIds = [...new Set(purchases.map((p) => p.planVersionId))]
+  const [redemptions, versions] = await Promise.all([
+    discountSubIds.length > 0
+      ? db.couponRedemption.findMany({
+          where: { subscriptionId: { in: discountSubIds } },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+    purchaseVersionIds.length > 0
+      ? db.planVersion.findMany({
+          where: { id: { in: purchaseVersionIds } },
+          select: { id: true, priceAmount: true },
+        })
+      : Promise.resolve([]),
+  ])
+  const redemptionBySub = new Map<
+    string,
+    { discountAmount: number; currency: string }
+  >()
+  for (const row of redemptions) {
+    if (row.subscriptionId && !redemptionBySub.has(row.subscriptionId)) {
+      redemptionBySub.set(row.subscriptionId, {
+        discountAmount: row.discountAmount,
+        currency: row.currency,
+      })
+    }
+  }
+  const purchaseVersionPrice = new Map<string, number | null>()
+  for (const version of versions) {
+    purchaseVersionPrice.set(version.id, version.priceAmount)
+  }
+
   for (const event of events) {
     const exactSubId = subscriptionIdByEvent.get(event.providerEventId)
     if (exactSubId) {
       const sub = subsById.get(exactSubId)
       if (sub) {
+        const full = sub.planVersion.priceAmount
+        const redemption = redemptionBySub.get(sub.id)
+        const discount =
+          redemption && redemption.currency === sub.planVersion.priceCurrency
+            ? Math.min(Math.max(redemption.discountAmount, 0), full ?? 0)
+            : 0
         result.set(event.id, {
           amountMinor: sub.planVersion.priceAmount,
           currency: sub.planVersion.priceCurrency,
@@ -553,6 +641,7 @@ async function resolveEventAmounts(
           providerCheckoutId: null,
           providerReference: null,
           oneTimePurchaseId: null,
+          ...withDiscount(full, full === null ? null : full - discount),
         })
         continue
       }
@@ -584,6 +673,10 @@ async function resolveEventAmounts(
         providerCheckoutId: bestPurchase.checkoutId,
         providerReference: bestPurchase.providerReference,
         oneTimePurchaseId: bestPurchase.id,
+        ...withDiscount(
+          purchaseVersionPrice.get(bestPurchase.planVersionId) ?? null,
+          bestPurchase.priceAmount
+        ),
       })
       continue
     }
@@ -605,6 +698,12 @@ async function resolveEventAmounts(
       }
     }
     if (bestAttempt) {
+      // CheckoutAttempt.priceAmount is the DISCOUNTED amount actually
+      // charged (billing service); the discount it carries is
+      // discountAmountMinor (Phase D), so the full price is paid +
+      // discount.
+      const paid = bestAttempt.priceAmount
+      const discount = bestAttempt.discountAmountMinor ?? 0
       result.set(event.id, {
         amountMinor: bestAttempt.priceAmount,
         currency: bestAttempt.priceCurrency,
@@ -613,12 +712,23 @@ async function resolveEventAmounts(
         providerCheckoutId: bestAttempt.providerCheckoutId,
         providerReference: null,
         oneTimePurchaseId: null,
+        ...withDiscount(
+          paid === null ? null : paid + Math.max(discount, 0),
+          paid
+        ),
       })
       continue
     }
     if (event.userId) {
       const fallback = fallbackByPair.get(`${event.provider}:${event.userId}`)
       if (fallback) {
+        const full = fallback.planVersion.priceAmount
+        const redemption = redemptionBySub.get(fallback.id)
+        const discount =
+          redemption &&
+          redemption.currency === fallback.planVersion.priceCurrency
+            ? Math.min(Math.max(redemption.discountAmount, 0), full ?? 0)
+            : 0
         result.set(event.id, {
           amountMinor: fallback.planVersion.priceAmount,
           currency: fallback.planVersion.priceCurrency,
@@ -627,6 +737,7 @@ async function resolveEventAmounts(
           providerCheckoutId: null,
           providerReference: null,
           oneTimePurchaseId: null,
+          ...withDiscount(full, full === null ? null : full - discount),
         })
         continue
       }
@@ -711,6 +822,9 @@ function toPaymentRow(
     eventType: event.eventType,
     amountMinor: m.amountMinor,
     currency: m.currency,
+    discountAmountMinor: m.discountAmountMinor,
+    paidAmountMinor: m.paidAmountMinor,
+    fullAmountMinor: m.fullAmountMinor,
     status: statusForEventKind(event.kind),
     subscriptionId: m.subscriptionId,
     sourceRefs: {
@@ -737,7 +851,11 @@ function toPurchaseRow(
     checkoutId: string | null
     createdAt: Date
   },
-  user: PaymentUser | null
+  user: PaymentUser | null,
+  // Undiscounted one-time price from the purchase's PlanVersion (the
+  // purchase stores the discounted amount); null when unknown — the
+  // row then shows the recorded amount only, as before.
+  fullAmountMinor: number | null = null
 ): PaymentRow {
   return {
     id: purchase.id,
@@ -750,6 +868,7 @@ function toPurchaseRow(
     eventType: null,
     amountMinor: purchase.priceAmount,
     currency: purchase.priceCurrency,
+    ...withDiscount(fullAmountMinor, purchase.priceAmount),
     status: purchase.status === "REFUNDED" ? "REFUNDED" : "SUCCEEDED",
     subscriptionId: purchase.subscriptionId,
     sourceRefs: {
@@ -773,6 +892,20 @@ async function loadUsersById(
     select: { id: true, name: true, email: true },
   })
   return new Map(users.map((u) => [u.id, u]))
+}
+
+// Undiscounted one-time prices for standalone purchase rows (the
+// purchase stores the discounted amount — Payments display fix).
+async function loadPlanVersionPrices(
+  planVersionIds: string[]
+): Promise<Map<string, number | null>> {
+  const ids = [...new Set(planVersionIds)]
+  if (ids.length === 0) return new Map()
+  const versions = await db.planVersion.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, priceAmount: true },
+  })
+  return new Map(versions.map((v) => [v.id, v.priceAmount]))
 }
 
 // ─── List ─────────────────────────────────────────────────────────────
@@ -852,6 +985,9 @@ export async function listPayments(
     ...eventRows.map((e) => e.userId),
     ...standaloneRows.map((p) => p.userId),
   ])
+  const planVersionPrices = await loadPlanVersionPrices(
+    standaloneRows.map((p) => p.planVersionId)
+  )
   const rows = [
     ...eventRows.flatMap((event) => {
       const row = toPaymentRow(
@@ -862,7 +998,11 @@ export async function listPayments(
       return row ? [row] : []
     }),
     ...standaloneRows.map((purchase) =>
-      toPurchaseRow(purchase, usersById.get(purchase.userId) ?? null)
+      toPurchaseRow(
+        purchase,
+        usersById.get(purchase.userId) ?? null,
+        planVersionPrices.get(purchase.planVersionId) ?? null
+      )
     ),
   ]
     .sort((a, b) => b.at.getTime() - a.at.getTime())
@@ -962,6 +1102,9 @@ async function listRefundedPayments(
     ...candidateEvents.map((e) => e.userId),
     ...standalonePurchases.map((p) => p.userId),
   ])
+  const planVersionPrices = await loadPlanVersionPrices(
+    standalonePurchases.map((p) => p.planVersionId)
+  )
   const eventRows = candidateEvents.flatMap((event) => {
     const row = toPaymentRow(
       event,
@@ -976,7 +1119,11 @@ async function listRefundedPayments(
   const rows = [
     ...eventRows,
     ...standalonePurchases.map((purchase) =>
-      toPurchaseRow(purchase, usersById.get(purchase.userId) ?? null)
+      toPurchaseRow(
+        purchase,
+        usersById.get(purchase.userId) ?? null,
+        planVersionPrices.get(purchase.planVersionId) ?? null
+      )
     ),
   ].sort((a, b) => b.at.getTime() - a.at.getTime())
   const total = rows.length
@@ -1212,6 +1359,7 @@ export async function getPaymentDetail(
       id: true,
       provider: true,
       userId: true,
+      planVersionId: true,
       priceAmount: true,
       priceCurrency: true,
       status: true,
@@ -1228,7 +1376,15 @@ export async function getPaymentDetail(
     where: { id: purchase.userId },
     select: { id: true, name: true, email: true },
   })
-  const payment = toPurchaseRow(purchase, user)
+  const planVersion = await db.planVersion.findUnique({
+    where: { id: purchase.planVersionId },
+    select: { priceAmount: true },
+  })
+  const payment = toPurchaseRow(
+    purchase,
+    user,
+    planVersion?.priceAmount ?? null
+  )
   const subscription = await loadSubscriptionForDetail(purchase.subscriptionId)
   return {
     payment,

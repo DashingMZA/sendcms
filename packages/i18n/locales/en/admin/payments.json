@@ -38,6 +38,7 @@
   "noPaymentsFilteredDescription": "Try a different search or clear the filters.",
   "noPaymentsTitle": "No payments found",
   "pageOf": "Page {page} of {totalPages}",
+  "paidAmount": "Paid",
   "previous": "Previous",
   "providerAll": "All providers",
   "providerFilterLabel": "Provider",

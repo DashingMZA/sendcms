@@ -38,6 +38,7 @@
   "noPaymentsFilteredDescription": "کوئی اور تلاش آزمائیں یا فلٹرز صاف کریں۔",
   "noPaymentsTitle": "کوئی ادائیگی نہیں ملی",
   "pageOf": "صفحہ {page} از {totalPages}",
+  "paidAmount": "ادا شدہ",
   "previous": "پچھلا",
   "providerAll": "تمام فراہم کنندگان",
   "providerFilterLabel": "فراہم کنندہ",

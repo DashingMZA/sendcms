@@ -417,7 +417,24 @@ const { store, mockDb } = vi.hoisted(() => {
         return store.purchases.get(where.id) ?? null
       }),
     },
+    couponRedemption: {
+      // Payments display fix: the service reads the latest redemption
+      // per subscription for the discount triple. This file seeds no
+      // redemptions, so the faithful answer is always empty.
+      findMany: vi.fn(async () => []),
+    },
     planVersion: {
+      // Payments display fix: the service reads plan-version prices
+      // for one-time purchases (their full price). The select asks for
+      // id + priceAmount only; the stored rows carry both.
+      findMany: vi.fn(
+        async ({ where }: { where?: { id?: { in: string[] } } }) => {
+          const ids = where?.id?.in ?? []
+          return [...store.planVersions.values()].filter((v) =>
+            ids.includes(v.id)
+          )
+        }
+      ),
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
         return store.planVersions.get(where.id) ?? null
       }),
