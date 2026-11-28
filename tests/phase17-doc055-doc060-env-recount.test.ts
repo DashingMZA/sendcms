@@ -65,9 +65,9 @@ describe("Phase 17 findings fix — DOC-055/DOC-060 env recount + inventory §9"
     () => {
       const out = runRecount()
       expect(parseCount(out, "listed in .env.example")).toBe(67)
-      expect(parseCount(out, "referenced \\(app vars, after exclusions\\)")).toBe(
-        67
-      )
+      expect(
+        parseCount(out, "referenced \\(app vars, after exclusions\\)")
+      ).toBe(67)
       expect(parseList(out, "referenced NOT listed")).toEqual([])
       // Empty here proves the script sees the envInt read: a script blind
       // to envInt would list WORKER_POLL_TIMEOUT_MS as listed-not-referenced.
