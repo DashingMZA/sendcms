@@ -137,6 +137,34 @@ async function handleToolsCall(
     )
   }
   const access = await checkMcpAccess({ auth, tool: toolName })
+  // AIM-030: the transport's Accept validation runs BEFORE the rate
+  // limiter — a tools/call whose Accept header lacks
+  // application/json + text/event-stream used to burn 1 quota unit
+  // and write no usage row, because the limiter ran first and the
+  // transport 406d afterwards. The check below mirrors the
+  // Streamable HTTP transport's POST validation exactly, and the
+  // response is byte-identical to the transport's 406 (JSON-RPC
+  // -32000, id null), so clients see no change — only the
+  // quota/usage side effects disappear.
+  const accept = req.headers.get("accept")
+  if (
+    accept === null ||
+    !accept.includes("application/json") ||
+    !accept.includes("text/event-stream")
+  ) {
+    return NextResponse.json(
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32000,
+          message:
+            "Not Acceptable: Client must accept both application/json and text/event-stream",
+        },
+      },
+      { status: 406 }
+    )
+  }
   // Rate-limit tool calls only — initialize / tools/list are cheap
   // metadata and do not count against the key's budget.
   await checkMcpRateLimit(auth.keyId, {

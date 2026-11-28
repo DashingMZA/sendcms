@@ -177,6 +177,20 @@ model is documented in
 version lifecycle in
 [plan-versioning](./plan-versioning.md).
 
+**Polar unconfigured — two branches, two statuses (DOC-062).**
+Which status an unconfigured Polar returns depends on which value is
+missing; the two must not be conflated:
+
+- Missing `POLAR_WEBHOOK_SECRET` → **503** `Polar is not
+  configured`, thrown by `verifyPolarWebhook`
+  (`packages/modules/billing/src/providers/polar.ts:284`). A missing
+  webhook secret is a server-side misconfiguration the provider
+  retries (BIL-101), not a permanent failure — hence 503, not 422.
+- Missing `POLAR_ACCESS_TOKEN` → **422** `Polar is not configured`,
+  thrown by `getClient()` (`polar.ts:34`) before any SDK call, so the
+  checkout / cancel / plan-update paths refuse with 422 when the
+  token is unset.
+
 ## Public plans + pricing page
 
 `listPublishedPlans` (`@sendcms/plans`) returns PUBLISHED, non-private

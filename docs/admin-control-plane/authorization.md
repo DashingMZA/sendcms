@@ -47,9 +47,10 @@ flowchart TB
 
 ## Capabilities
 
-26 admin capabilities. (The "23" in the Phase 2 record was the
+28 admin capabilities. (The "23" in the Phase 2 record was the
 count then; Phase 7 added `MANAGE_ANNOUNCEMENTS`, Phase 8 added
-`VIEW_BILLING` + `MANAGE_BILLING`.)
+`VIEW_BILLING` + `MANAGE_BILLING`, Phase C added `VIEW_JOBS` +
+`MANAGE_JOBS`.)
 
 | Capability                   | Guards                                                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -79,6 +80,8 @@ count then; Phase 7 added `MANAGE_ANNOUNCEMENTS`, Phase 8 added
 | `MANAGE_ADMINISTRATORS`      | Managing administrators (owner-only)                                                                      |
 | `VIEW_BILLING`               | Billing provider reads                                                                                    |
 | `MANAGE_BILLING`             | Billing provider enable/disable + countries                                                               |
+| `VIEW_JOBS`                  | Jobs page reads                                                                                             |
+| `MANAGE_JOBS`                | Requeue a FAILED email job, manual email-outbox cron run (both + step-up re-auth)                           |
 
 Three legacy capabilities exist outside the admin set and stay
 owner-only: `VIEW_NOTICE_BOARD`, `VIEW_ADMINISTRATION`,
@@ -86,7 +89,7 @@ owner-only: `VIEW_NOTICE_BOARD`, `VIEW_ADMINISTRATION`,
 
 ## Role matrix
 
-✓ = the role holds the capability. The owner holds all 26 (plus
+✓ = the role holds the capability. The owner holds all 28 (plus
 the 3 legacy ones). A plain customer holds none.
 
 | Capability                   | SUPER_ADMIN | MANAGER | SUPPORT |
@@ -117,22 +120,25 @@ the 3 legacy ones). A plain customer holds none.
 | `MANAGE_ADMINISTRATORS`      |      —      |    —    |    —    |
 | `VIEW_BILLING`               |      ✓      |    ✓    |    —    |
 | `MANAGE_BILLING`             |      ✓      |    —    |    —    |
+| `VIEW_JOBS`                  |      ✓      |    ✓    |    ✓    |
+| `MANAGE_JOBS`                |      ✓      |    —    |    —    |
 
 Notes on the map:
 
 - **SUPER_ADMIN** is "full access except managing
-  administrators" — 25 of 26. `MANAGE_ADMINISTRATORS` is
+  administrators" — 27 of 28. `MANAGE_ADMINISTRATORS` is
   owner-only.
 - **MANAGER** is view + manage users and subscriptions, inspect
-  plans and usage, read audit logs and AI usage, read billing —
-  12 capabilities. No plan/AI/MCP publishing, no feature flags,
-  no translations, no administrator management. The
+  plans and usage, read audit logs and AI usage, read billing,
+  view Jobs — 13 capabilities. No plan/AI/MCP publishing, no
+  feature flags, no translations, no administrator management,
+  no job requeues or manual runs. The
   `MANAGE_USERS` in the MANAGER row excludes role changes — that
   sub-restriction is enforced in the `@sendcms/admin-users`
   service, not in the role map.
-- **SUPPORT** is "support queries only" — 5 capabilities: enter
+- **SUPPORT** is "support queries only" — 6 capabilities: enter
   the admin app, view users and their data, read sensitive
-  submissions, view MCP usage. SUPPORT does full ticket work
+  submissions, view MCP usage, view Jobs. SUPPORT does full ticket work
   through the separate exception below, not through
   `MANAGE_USERS`.
 

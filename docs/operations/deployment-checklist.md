@@ -141,14 +141,12 @@ here so they are not forgotten:
       marketing project (→ `https://sendcms.bond/`, 308) or decide it
       is unsupported and remove the DNS record. Verify with
       `https://www.sendcms.bond/` → 308 to the apex.
-- [ ] **LVE-009 (decision open):** `render.yaml` pins the dead
-      branch `feature/monorepo-architecture-migration` on all 7
-      services. The pin value is an owner decision (Wave 12, Stream A
-      recommendation: `feature/admin-control-plane`, the live branch) —
-      do not use the Blueprint until it is decided.
-- [ ] **LVE-010 (decision open):** the docs/updates bare roots
-      (`https://docs.sendcms.bond/`, `https://updates.sendcms.bond/`)
-      404 — redirect vs landing page is undecided (Wave 12, Stream A
-      recommendation: root redirects, `/` → `/docs` and `/` →
-      `/changelog`). The api 404's "Read the docs" link already points
-      at `/docs` (fixed in Wave 12).
+- [x] **LVE-009 (fixed in the Wave 12 decision follow-ups):**
+      `render.yaml` pins the live branch `feature/admin-control-plane`
+      on all 7 services (lines 33, 58, 175, 283, 388, 413, 438). No
+      owner decision remains — the Blueprint is usable as-is.
+- [x] **LVE-010 (fixed in the Wave 12 decision follow-ups):** the
+      docs/updates bare roots permanent-redirect (308) instead of
+      404ing: `apps/docs/app/page.tsx` uses
+      `permanentRedirect("/docs")` and `apps/updates/app/page.tsx`
+      uses `permanentRedirect("/changelog")`.

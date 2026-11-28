@@ -216,6 +216,33 @@ The pass shipped in two steps, in the same phase:
 To diagnose a live violation without blocking, flip the flag back to
 `true` temporarily (report-only again).
 
+## Violation reports (`POST /api/csp-report`)
+
+Every app's enforcing policy carries
+`report-uri <api origin>/api/csp-report` (built by `buildCsp` in
+`packages/security/src/csp.ts`; the docs/updates proxies point their
+reports at the same endpoint), so a browser that blocks something
+under the policy POSTs the violation here instead of dropping it
+silently. The route lives at
+`apps/api/app/api/csp-report/route.ts`:
+
+- **Purpose:** receive CSP violation reports and log them — nothing
+  else. It never touches the database and never requires auth
+  (browsers send reports without credentials).
+- **Always 204:** the route answers `204` with
+  `Cache-Control: no-store`, even for a malformed or empty body — a
+  reporting failure must never fail the browser's report (or the
+  request that triggered it), so the handler never throws.
+- **16 KB cap:** the body is truncated to 16,384 bytes before parsing,
+  so a flood of reports costs one log line each and nothing else.
+- **Parsing is lenient:** the classic `report-uri` shape nests the
+  fields under `csp-report`; the newer Reporting API shape sends them
+  flat. Both are accepted; unparseable JSON is logged as an `unparsed`
+  snippet (first 200 characters), never a 500.
+- **Logged fields:** `document-uri`, `blocked-uri`,
+  `violated-directive`, `effective-directive`, `original-policy`,
+  `source-file`, `line-number` (via the `csp-report` logger scope).
+
 ## Verification (dev, 2026-11-22)
 
 Dev servers started one app at a time (`next dev` directly from the

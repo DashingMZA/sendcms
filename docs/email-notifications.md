@@ -163,7 +163,9 @@ pnpm --filter @sendcms/email-worker start
 It polls every `WORKER_POLL_INTERVAL_MS` (default 30_000), processes
 up to 100 due jobs per poll, and serves a health endpoint at
 `GET http://localhost:<WORKER_PORT>/health` (`WORKER_PORT`, default
-3005). The health response reports `polling`, the last run's counts,
+3005). Each poll is bounded by `WORKER_POLL_TIMEOUT_MS` (default
+300_000, 5 min — a hung poll is abandoned so the next poll can run
+instead of wedging the worker forever; EML-037). The health response reports `polling`, the last run's counts,
 and the last error. The worker shuts down gracefully on SIGTERM/SIGINT
 (it finishes the in-flight poll before exiting), and a failed poll
 never kills it — the next poll retries. Running the worker and the cron

@@ -142,7 +142,7 @@ describe("Wave 12 Stream D — SDK docs match the code", () => {
     )
     const apiRow = deployment
       .split("\n")
-      .find((line) => line.startsWith("| `sendcms` (api)"))!
+      .find((line) => line.startsWith("| `sendcms-api` (api)"))!
     const dashboardRow = deployment
       .split("\n")
       .find((line) => line.startsWith("| `sendcms-dashboard`"))!

@@ -31,11 +31,19 @@ import { POST } from "../apps/api/app/api/mcp/route"
 
 const URL = "http://localhost:3000/api/mcp"
 
-function jsonRequest(body: unknown) {
+// A real MCP client sends `Accept: application/json,
+// text/event-stream` (the Streamable HTTP transport 406s without
+// it). Requests under test carry it by default; pass null to omit
+// it, or another value to send a malformed one (AIM-030).
+function jsonRequest(
+  body: unknown,
+  accept: string | null = "application/json, text/event-stream"
+) {
   return new Request(URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(accept === null ? {} : { Accept: accept }),
       Authorization: "Bearer mcp_test_key",
     },
     body: JSON.stringify(body),
@@ -295,5 +303,83 @@ describe("checkMcpRateLimit burst (AIM-017)", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// ─── Accept pre-check (AIM-030) ─────────────────────────────────────
+//
+// The transport 406s a tools/call whose Accept header lacks
+// application/json + text/event-stream — but the limiter used to run
+// first, so the call burned 1 quota unit and wrote no usage row.
+// The route now validates Accept before the limiter (mirroring the
+// AIM-008 scope pre-refusal); these tests pin the 406, the
+// transport-identical body, and the untouched counter.
+describe("POST /api/mcp — AIM-030 Accept pre-check", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDb.reset()
+    mockResolveMcpAuth.mockResolvedValue({
+      keyId: "key-1",
+      userId: "user-1",
+      scope: "READ",
+    })
+    mockCheckMcpAccess.mockResolvedValue({ allowedTools: null })
+    // The REAL limiter against the fake DB, so "no quota consumed"
+    // is asserted on the counter row itself, not just on the mock.
+    mockCheckMcpRateLimit.mockImplementation(
+      (
+        keyId: string,
+        overrides?: { minuteLimit?: number | null; hourLimit?: number | null }
+      ) => checkMcpRateLimit(keyId, overrides)
+    )
+  })
+
+  it("406s a tools/call with no Accept header — no quota, no usage row", async () => {
+    const res = await POST(jsonRequest(toolsCall("list_domains"), null))
+    expect(res.status).toBe(406)
+    expect(await res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32000,
+        message:
+          "Not Acceptable: Client must accept both application/json and text/event-stream",
+      },
+    })
+    // The limiter never ran, so no counter row exists at all.
+    expect(mockDb.getRow()).toBeNull()
+    expect(mockRecordMcpCallOutcomes).not.toHaveBeenCalled()
+    expect(mockCreateMcpServer).not.toHaveBeenCalled()
+  })
+
+  it("406s a tools/call whose Accept lacks text/event-stream", async () => {
+    const res = await POST(
+      jsonRequest(toolsCall("list_domains"), "application/json")
+    )
+    expect(res.status).toBe(406)
+    expect(mockDb.getRow()).toBeNull()
+    expect(mockRecordMcpCallOutcomes).not.toHaveBeenCalled()
+  })
+
+  it("406s a tools/call whose Accept lacks application/json", async () => {
+    const res = await POST(
+      jsonRequest(toolsCall("list_domains"), "text/event-stream")
+    )
+    expect(res.status).toBe(406)
+    expect(mockDb.getRow()).toBeNull()
+    expect(mockRecordMcpCallOutcomes).not.toHaveBeenCalled()
+  })
+
+  it("lets a tools/call with a valid Accept reach the limiter (minuteCount 1)", async () => {
+    // The transport run is out of scope here (createMcpServer is
+    // mocked): the probe fails after the limiter, which is the
+    // point — the pre-check did NOT block the call.
+    mockCreateMcpServer.mockImplementation(() => {
+      throw new Error("transport stub — not reached in this test")
+    })
+    const res = await POST(jsonRequest(toolsCall("list_domains")))
+    expect(mockDb.getRow()?.minuteCount).toBe(1)
+    // The stubbed transport failure surfaces as a 500, not a 406.
+    expect(res.status).toBe(500)
   })
 })

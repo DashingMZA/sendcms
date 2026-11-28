@@ -68,7 +68,7 @@ production since 2026-11-23**, the platform adds:
 | Nonce-based CSP, enforcing on all six page apps                                                                    | [admin-control-plane/csp.md](admin-control-plane/csp.md)                             |
 | Admin-API rate limiting (600/min + 10,000/hour per user) and auth sign-in limits (20/min per IP, 10/min per email) | [admin-control-plane/rate-limiting.md](admin-control-plane/rate-limiting.md)         |
 | Step-up re-auth (10-minute window) for irreversible actions                                                        | [admin-control-plane/authorization.md](admin-control-plane/authorization.md)         |
-| Capability model (26 capabilities) and role matrix                                                                 | [admin-control-plane/authorization.md](admin-control-plane/authorization.md)         |
+| Capability model (28 capabilities) and role matrix                                                                 | [admin-control-plane/authorization.md](admin-control-plane/authorization.md)         |
 | Append-only audit trail with `reason` / `correlationId` / `outcome`                                                | [admin-control-plane/admin-audit-trail.md](admin-control-plane/admin-audit-trail.md) |
 
 The production posture is the table above: CSP enforcing, and the
