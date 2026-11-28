@@ -13,6 +13,8 @@ import {
   CSP_HEADER_NAME,
   CSP_REPORT_ONLY,
   CSP_REPORT_ONLY_HEADER_NAME,
+} from "@sendcms/security/csp"
+import {
   isValidBearerToken,
   renderHeadersFile,
   securityHeaders,

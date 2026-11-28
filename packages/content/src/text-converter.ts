@@ -75,6 +75,7 @@ const SERVED_DOC_SLUGS = [
   "embed-nextjs",
   "embed-astro",
   "embed-hugo",
+  "embed-wordpress",
   "email-notifications",
   "security",
   "troubleshooting",

@@ -152,7 +152,7 @@ the direct endpoint and the no-JS fallback.
 
 Framework-specific guides: [Astro](embed-astro.md),
 [Next.js](embed-nextjs.md), [Hugo](embed-hugo.md),
-[plain HTML](embed-html.md).
+[WordPress](embed-wordpress.md), [plain HTML](embed-html.md).
 
 ## 5. Read submissions in the inbox
 

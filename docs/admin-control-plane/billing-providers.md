@@ -42,17 +42,19 @@ Service module: `packages/modules/billing/` (`@sendcms/billing`) —
 the single source of truth for what each provider needs and whether
 it is configured.
 
-| Provider | Required env vars                                                                                                    | Checkout                                                                | Notes                                                                                                                      |
-| -------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Stripe   | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`                                               | Checkout Session (API)                                                  | Price created on the fly per checkout                                                                                      |
-| PayPal   | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` (+ `PAYPAL_MODE=sandbox\|live`)                      | Subscription API (direct REST — the v2.5 SDK has no catalog controller) | Product → Plan created per checkout                                                                                        |
-| Polar    | `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET` (+ `POLAR_ENVIRONMENT=sandbox\|production`)                             | Hosted checkout (API-created session)                                   | Product created on the fly                                                                                                 |
-| Freemius | `FREEMIUS_PRODUCT_ID`, `FREEMIUS_API_KEY`, `FREEMIUS_SECRET_KEY`, `FREEMIUS_PUBLIC_KEY` (+ `FREEMIUS_PLAN_MAP` JSON) | Hosted checkout (`checkout.create().getLink()`)                         | Plans live in the Freemius dashboard — see the plan map below                                                              |
-| Gumroad  | `GUMROAD_APP_ID`, `GUMROAD_APP_SECRET`                                                                               | **None — registered only**                                              | Gumroad has no subscription/payment creation API; checkout through Gumroad refuses with a clear 422, never fakes a payment |
+| Provider | Required env vars                                                                                                                     | Checkout                                                                | Notes                                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Stripe   | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`                                                                | Checkout Session (API)                                                  | Price created on the fly per checkout                                                                                      |
+| PayPal   | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` (+ `PAYPAL_MODE=sandbox\|live`)                                       | Subscription API (direct REST — the v2.5 SDK has no catalog controller) | Product → Plan created per checkout                                                                                        |
+| Polar    | `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET` (+ `POLAR_ENVIRONMENT=sandbox\|production`)                                              | Hosted checkout (API-created session)                                   | Product created on the fly                                                                                                 |
+| Freemius | `FREEMIUS_PRODUCT_ID`, `FREEMIUS_API_KEY`, `FREEMIUS_SECRET_KEY`, `FREEMIUS_PUBLIC_KEY` (+ `FREEMIUS_PLAN_MAP` JSON)                  | Hosted checkout (`checkout.create().getLink()`)                         | Plans live in the Freemius dashboard — see the plan map below                                                              |
+| Gumroad  | None — no env vars required (BIL-051; the `GUMROAD_APP_ID` / `GUMROAD_APP_SECRET` placeholders in `.env.example` are read by no code) | **None — registered only**                                              | Gumroad has no subscription/payment creation API; checkout through Gumroad refuses with a clear 422, never fakes a payment |
 
 SDK versions (latest stable, pinned in `packages/modules/billing/
-package.json`): `stripe` ^23.2.0, `@paypal/paypal-server-sdk` ^2.5.0,
-`@polar-sh/sdk` ^1.3.2, `@freemius/sdk` ^0.5.0. Gumroad has no
+package.json`): `stripe` ^23.2.0, `@polar-sh/sdk` ^1.3.2,
+`@freemius/sdk` ^0.5.0. PayPal uses hand-rolled REST (BIL-021 — the
+official server SDK v2.5 has no catalog controller, so products and
+billing plans cannot be created through it). Gumroad has no
 official Node SDK (CLI only) — none is installed for it.
 
 `isConfigured(provider, env)` is true only when every required var

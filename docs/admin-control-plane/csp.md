@@ -277,9 +277,10 @@ data block, which is exempt).
 - No `'unsafe-inline'` in `script-src` or `style-src`, no hash
   allowlists, no new dependencies. The only `'unsafe-inline'` is
   `style-src-attr`, scoped to style attributes (see above).
-- The CSP builder is imported by the proxies (and the tests) via a
-  relative path (`../../packages/security/src/csp`), not from the
-  `@sendcms/security` barrel: the barrel (`src/index.ts`) is owned by
-  the in-flight rate-limit work and must not be touched by this pass.
-  Move those imports to the barrel at integration — one export line
-  in `src/index.ts`.
+- The CSP builder is imported by the proxies (and the tests) from the
+  `@sendcms/security/csp` subpath entry (`packages/security/src/csp.ts`),
+  not from the `@sendcms/security` barrel (DOC-024, Phase 16, Wave 12):
+  the barrel also re-exports the db-backed audit writer, rate limiter,
+  and step-up helpers, and the proxies must not pull those into their
+  import graph. The split is hygiene — the build never failed on the
+  barrel import — not a build fix.

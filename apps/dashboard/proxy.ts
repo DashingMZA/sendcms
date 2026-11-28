@@ -11,7 +11,7 @@ import {
   createCspNonce,
   cspHeaderName,
   CSP_REPORT_ONLY,
-} from "@sendcms/security"
+} from "@sendcms/security/csp"
 
 /**
  * Route protection (Better Auth, database sessions).

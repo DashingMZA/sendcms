@@ -8,7 +8,8 @@ import {
 } from "@sendcms/database"
 import { resolveEmailProvider, validateResendSender } from "@sendcms/email"
 import { readPlatformConfig } from "@sendcms/plans"
-import { CSP_REPORT_ONLY, readRateLimitConfig } from "@sendcms/security"
+import { CSP_REPORT_ONLY } from "@sendcms/security/csp"
+import { readRateLimitConfig } from "@sendcms/security"
 import { requireAdmin } from "./require-admin"
 
 // Platform health + system summary (Admin Control Plane, Phase 7).

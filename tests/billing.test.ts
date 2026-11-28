@@ -423,6 +423,7 @@ import {
 import { listPublishedPlans } from "@sendcms/plans"
 import { setProviderConfigSchema } from "@sendcms/billing/validators"
 import {
+  getBillingProviderDefinition,
   isProviderConfigured,
   missingEnvVars,
   paypalMode,
@@ -521,8 +522,6 @@ describe("provider registry — configured/unconfigured", () => {
       FREEMIUS_API_KEY: undefined,
       FREEMIUS_SECRET_KEY: undefined,
       FREEMIUS_PUBLIC_KEY: undefined,
-      GUMROAD_APP_ID: undefined,
-      GUMROAD_APP_SECRET: undefined,
     })
     expect(isProviderConfigured("STRIPE")).toBe(false)
     // BIL-020: the publishable key is not required — no code reads
@@ -531,11 +530,22 @@ describe("provider registry — configured/unconfigured", () => {
       "STRIPE_SECRET_KEY",
       "STRIPE_WEBHOOK_SECRET",
     ])
-    expect(isProviderConfigured("GUMROAD")).toBe(false)
-    expect(missingEnvVars("GUMROAD")).toEqual([
-      "GUMROAD_APP_ID",
-      "GUMROAD_APP_SECRET",
-    ])
+    // BIL-051: Gumroad requires no env vars (no code reads
+    // GUMROAD_APP_ID / GUMROAD_APP_SECRET), so it is never
+    // "unconfigured" for missing vars.
+    expect(isProviderConfigured("GUMROAD")).toBe(true)
+    expect(missingEnvVars("GUMROAD")).toEqual([])
+  })
+
+  // BIL-051 (owner decision 2026-11-28, option (b)): Gumroad stays
+  // registered-only with an empty required-var list — the two vars
+  // were dropped because no code reads them. Reverting the registry
+  // change must fail this test.
+  it("requires no env vars for Gumroad (registered-only, BIL-051)", () => {
+    expect(getBillingProviderDefinition("GUMROAD").requiredEnvVars).toEqual([])
+    setEnv({ GUMROAD_APP_ID: undefined, GUMROAD_APP_SECRET: undefined })
+    expect(isProviderConfigured("GUMROAD")).toBe(true)
+    expect(missingEnvVars("GUMROAD")).toEqual([])
   })
 
   it("reports a provider configured once all its vars are set", () => {
@@ -768,9 +778,6 @@ describe("listEnabledProviders — country filter", () => {
       PAYPAL_CLIENT_ID: "id",
       PAYPAL_CLIENT_SECRET: "secret",
       PAYPAL_WEBHOOK_ID: "wh",
-      // Gumroad deliberately unconfigured.
-      GUMROAD_APP_ID: undefined,
-      GUMROAD_APP_SECRET: undefined,
     })
     seedConfig("STRIPE", true, []) // everywhere
     // BIL-125: the fixture matches the seeded owner defaults
@@ -780,7 +787,7 @@ describe("listEnabledProviders — country filter", () => {
     seedConfig("POLAR", false, [])
   })
 
-  it("US gets Stripe + PayPal, PK gets Stripe only (Gumroad unconfigured)", async () => {
+  it("US gets Stripe + PayPal, PK gets Stripe only (Gumroad has no checkout, BIL-095)", async () => {
     expect((await listEnabledProviders("US")).map((p) => p.provider)).toEqual([
       "STRIPE",
       "PAYPAL",
@@ -839,7 +846,9 @@ describe("checkout refuses unavailable providers", () => {
 
   it("refuses Gumroad checkout (no payment API)", async () => {
     seedConfig("GUMROAD", true, [])
-    setEnv({ GUMROAD_APP_ID: "app", GUMROAD_APP_SECRET: "secret" })
+    // BIL-051: the refusal must not depend on the Gumroad vars —
+    // none are required, so checkout refuses with the vars unset too.
+    setEnv({ GUMROAD_APP_ID: undefined, GUMROAD_APP_SECRET: undefined })
     await expect(
       createCheckoutSession(ownerSession, {
         planVersionId: "pv-1",

@@ -77,6 +77,13 @@
  *   would break it. The proxy matchers exclude it (and every other
  *   path with a file extension) — it keeps loading as before.
  */
+// This module is exported as its own subpath entry
+// (`@sendcms/security/csp`) instead of through the package barrel on
+// purpose: it is pure (its only import is `node:buffer` — no database,
+// no filesystem), and the proxies import it so they can build the CSP
+// policy without pulling the barrel's db-backed modules (audit writer,
+// rate limiter, step-up) into their import graph. Keep it that way —
+// do not add a db or fs import here; that belongs in a service.
 import { Buffer } from "node:buffer"
 
 // Report-only first, enforcing after the report-only run is clean.

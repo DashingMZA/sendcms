@@ -298,5 +298,7 @@ Any other path under `/api/public/v1/` returns 404 as JSON
 
 The dashboard uses a session-cookie API under `/api/v1/` (domains,
 forms, inbox, email jobs) — it is not a public API and is not
-documented for external use. AI hosts use the separate [MCP server](mcp.md)
+documented for external use. The session-cookie admin/user API is
+not documented here; `apps/api/app/api/` is the source of truth.
+AI hosts use the separate [MCP server](mcp.md)
 (`POST /api/mcp`, bearer API key) instead.

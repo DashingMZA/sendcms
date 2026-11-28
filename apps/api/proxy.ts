@@ -5,7 +5,7 @@ import {
   createCspNonce,
   cspHeaderName,
   CSP_REPORT_ONLY,
-} from "@sendcms/security"
+} from "@sendcms/security/csp"
 
 // The api app serves route handlers + a branded 404 page, and its
 // proxy used to be a no-op with an empty matcher — so no api response

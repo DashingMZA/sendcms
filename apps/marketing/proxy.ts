@@ -5,7 +5,7 @@ import {
   createCspNonce,
   cspHeaderName,
   CSP_REPORT_ONLY,
-} from "@sendcms/security"
+} from "@sendcms/security/csp"
 
 // The marketing app has no auth middleware: its pages are public.
 // This file exists so a proxy at the workspace root (if one is ever
@@ -22,8 +22,8 @@ import {
 // `<style>`/`<script>`; it was deleted in Wave 11 (PRF-035) and 301s
 // to the Next route, so the exclusion no longer has a demo to cover.)
 //
-// The CSP builder lives in `@sendcms/security` (imported from the
-// package barrel above).
+// The CSP builder lives in `@sendcms/security/csp` (imported from the
+// subpath entry above, not the package barrel).
 export function proxy(req: NextRequest) {
   const nonce = createCspNonce()
   // The demo page loads the SDK script from the api origin and its

@@ -4,7 +4,7 @@ import {
   createCspNonce,
   cspHeaderName,
   CSP_REPORT_ONLY,
-} from "@sendcms/security"
+} from "@sendcms/security/csp"
 
 // The updates app has no auth middleware: its pages are public. This
 // file exists so a proxy at the workspace root (if one is ever added)
@@ -18,8 +18,8 @@ import {
 // (`/_next/static`, `/_next/image`, `favicon.ico`, and any path with a
 // file extension), which are not documents.
 //
-// The CSP builder lives in `@sendcms/security` (imported from the
-// package barrel above).
+// The CSP builder lives in `@sendcms/security/csp` (imported from the
+// subpath entry above, not the package barrel).
 export function proxy(req: NextRequest) {
   const nonce = createCspNonce()
   // Violations report to the api app's report route (Phase 16,

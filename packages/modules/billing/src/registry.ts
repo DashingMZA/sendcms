@@ -82,7 +82,14 @@ export const BILLING_PROVIDERS: readonly BillingProviderDefinition[] = [
   {
     id: "GUMROAD",
     label: "Gumroad",
-    requiredEnvVars: ["GUMROAD_APP_ID", "GUMROAD_APP_SECRET"],
+    // BIL-051 (owner decision 2026-11-28, option (b)): Gumroad stays
+    // registered-only — no env vars are required. GUMROAD_APP_ID /
+    // GUMROAD_APP_SECRET were dropped from this list because no code
+    // reads them (zero process.env.GUMROAD reads); requiring them
+    // only made the provider report itself "not configured" for vars
+    // nothing consumes. The commented placeholders stay in
+    // .env.example for documentation.
+    requiredEnvVars: [],
     checkoutImplemented: false,
     // BIL-095: Gumroad is registered but can never sell through
     // SendCMS checkout — it has no API to create a payment or a

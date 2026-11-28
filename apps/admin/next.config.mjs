@@ -28,14 +28,17 @@ const nextConfig = {
   // `@sendcms/analytics`, `@sendcms/api-keys`, `@sendcms/domains`,
   // `@sendcms/email`, `@sendcms/forms`, `@sendcms/inbox`,
   // `@sendcms/sdk` — the admin app reaches those through the api app,
-  // not direct imports. NOTE: `build:server` for this app currently
-  // fails on a PRE-EXISTING Turbopack error unrelated to this list
-  // (`packages/security/src/step-up.ts:207` `readFileSync`, pulled
-  // into the middleware bundle via the `@sendcms/security` barrel —
-  // the same error reproduces with the pre-DOC-026 list), so the drop
-  // could not be build-verified; consolidation must re-verify once
-  // that error is fixed (see DOC-024: splitting the CSP helpers out
-  // of the barrel would remove it from the bundle).
+  // not direct imports. NOTE: the drop was verified by import analysis,
+  // not by a build — but `build:server` for this app does NOT fail on
+  // the `readFileSync` traces in `packages/security/src/step-up.ts:207`
+  // (pulled into the middleware bundle via the `@sendcms/security`
+  // barrel): those traces are Turbopack WARNINGS, not errors — a cold
+  // `build:server` passes (parent-verified 2026-11-27, exit 0), and the
+  // log that claimed a failure was a typecheck failure. The DOC-024
+  // split (the CSP helpers now live in the `@sendcms/security/csp`
+  // subpath, imported by the proxies instead of the barrel) is hygiene
+  // — it keeps the db-backed modules out of the proxy import graph —
+  // not a build fix.
   transpilePackages: [
     "@sendcms/shared",
     "@sendcms/ui",

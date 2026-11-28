@@ -10,15 +10,11 @@
  */
 export { logAudit } from "./audit"
 export type { AuditLogInput } from "./audit"
-export {
-  buildCsp,
-  createCspNonce,
-  cspHeaderName,
-  CSP_HEADER_NAME,
-  CSP_REPORT_ONLY,
-  CSP_REPORT_ONLY_HEADER_NAME,
-} from "./csp"
-export type { CspOptions } from "./csp"
+// The pure CSP helpers live in their own subpath entry
+// (`@sendcms/security/csp`), not in this barrel: the barrel also
+// re-exports the db-backed audit writer, rate limiter, and step-up
+// helpers, and the proxies must be able to import the CSP policy
+// without pulling those into their import graph.
 export {
   checkAdminApiRateLimit,
   checkAuthEmailRateLimit,

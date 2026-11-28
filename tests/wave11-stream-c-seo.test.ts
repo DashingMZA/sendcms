@@ -134,8 +134,10 @@ describe("PRF-033 — parseDoc: first paragraph, not first line", () => {
     }
     // DOC-049 (Phase 16, Wave 12): four user guides added (billing,
     // ai-byok, support-tickets, analytics) — 12 → 16 served docs.
-    expect(listDocs()).toHaveLength(16)
-    expect(DOC_SLUGS).toHaveLength(16)
+    // SDK-032 (Wave 12 decision follow-up): embed-wordpress added —
+    // 16 → 17 served docs.
+    expect(listDocs()).toHaveLength(17)
+    expect(DOC_SLUGS).toHaveLength(17)
   })
 })
 

@@ -140,19 +140,19 @@ except where the plan says enforcement was wired in).
 
 Shared packages the control plane builds on:
 
-| Package                  | Role                                                                                                              |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `@sendcms/database`      | The Prisma singleton (`db`) — only services import it                                                             |
-| `@sendcms/auth`          | `createSendcmsAuth` (Better Auth 1.7.25), `AdminSession`                                                          |
-| `@sendcms/permissions`   | Capability model, role maps, `adminCan` — see [authorization](./authorization.md)                                 |
-| `@sendcms/security`      | `logAudit`, rate limiter, step-up, CSP builder — the documented exceptions to "only services import the database" |
-| `@sendcms/i18n`          | Locale registry, translator, validation — see [internationalization](./internationalization.md)                   |
-| `@sendcms/ui`            | shadcn/ui components, design tokens (the admin app uses these, never Radix primitives directly)                   |
-| `@sendcms/ai`            | Provider plumbing + BYOK crypto (`byok-crypto.ts`)                                                                |
-| `@sendcms/mcp`           | The MCP server; enforcement lives here, not in the admin UI                                                       |
-| `@sendcms/api-client`    | Response/error helpers, CORS                                                                                      |
-| `@sendcms/observability` | Structured JSON logging (`createLogger`)                                                                          |
-| `@sendcms/email`         | The platform mailer (Resend → SMTP → none)                                                                        |
+| Package                  | Role                                                                                                                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@sendcms/database`      | The Prisma singleton (`db`) — only services import it                                                                                                                                                              |
+| `@sendcms/auth`          | `createSendcmsAuth` (Better Auth 1.7.25), `AdminSession`                                                                                                                                                           |
+| `@sendcms/permissions`   | Capability model, role maps, `adminCan` — see [authorization](./authorization.md)                                                                                                                                  |
+| `@sendcms/security`      | `logAudit`, rate limiter, step-up — the documented exceptions to "only services import the database"; the CSP builder is exported separately from the `@sendcms/security/csp` subpath (DOC-024, Phase 16, Wave 12) |
+| `@sendcms/i18n`          | Locale registry, translator, validation — see [internationalization](./internationalization.md)                                                                                                                    |
+| `@sendcms/ui`            | shadcn/ui components, design tokens (the admin app uses these, never Radix primitives directly)                                                                                                                    |
+| `@sendcms/ai`            | Provider plumbing + BYOK crypto (`byok-crypto.ts`)                                                                                                                                                                 |
+| `@sendcms/mcp`           | The MCP server; enforcement lives here, not in the admin UI                                                                                                                                                        |
+| `@sendcms/api-client`    | Response/error helpers, CORS                                                                                                                                                                                       |
+| `@sendcms/observability` | Structured JSON logging (`createLogger`)                                                                                                                                                                           |
+| `@sendcms/email`         | The platform mailer (Resend → SMTP → none)                                                                                                                                                                         |
 
 ```mermaid
 flowchart LR
@@ -270,13 +270,13 @@ Full detail — including the RTL story — is in
 All of these live in `@sendcms/security`, next to `logAudit`, under
 the same documented exception:
 
-| Service          | File                                  | What it does                                                                                  |
-| ---------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Audit writer     | `packages/security/src/audit.ts`      | `logAudit()` — append-only, best-effort, with `reason` / `correlationId` / `outcome`          |
-| Rate limiter     | `packages/security/src/rate-limit.ts` | Generic DB-backed buckets, atomic upsert, fail-open — see [rate-limiting](./rate-limiting.md) |
-| Step-up re-auth  | `packages/security/src/step-up.ts`    | `verifyStepUp` / `requireStepUp` — password re-check for high-impact actions                  |
-| CSP builder      | `packages/security/src/csp.ts`        | `buildCsp(nonce)` — nonce-based policy for the five page apps — see [csp](./csp.md)           |
-| Security headers | `packages/security/src/headers.mjs`   | The shared non-CSP headers (one source for `next.config.mjs` + `public/_headers`)             |
+| Service          | File                                  | What it does                                                                                                                                                      |
+| ---------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Audit writer     | `packages/security/src/audit.ts`      | `logAudit()` — append-only, best-effort, with `reason` / `correlationId` / `outcome`                                                                              |
+| Rate limiter     | `packages/security/src/rate-limit.ts` | Generic DB-backed buckets, atomic upsert, fail-open — see [rate-limiting](./rate-limiting.md)                                                                     |
+| Step-up re-auth  | `packages/security/src/step-up.ts`    | `verifyStepUp` / `requireStepUp` — password re-check for high-impact actions                                                                                      |
+| CSP builder      | `packages/security/src/csp.ts`        | `buildCsp(nonce)` — nonce-based policy for the five page apps, imported via the `@sendcms/security/csp` subpath (DOC-024), never the barrel — see [csp](./csp.md) |
+| Security headers | `packages/security/src/headers.mjs`   | The shared non-CSP headers (one source for `next.config.mjs` + `public/_headers`)                                                                                 |
 
 ## Configuration
 
