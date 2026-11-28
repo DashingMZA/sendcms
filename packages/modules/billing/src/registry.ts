@@ -39,8 +39,8 @@ export const BILLING_PROVIDERS: readonly BillingProviderDefinition[] = [
     // BIL-020: the publishable key is NOT required — no server or
     // client code reads it (pure hosted Checkout, no Stripe.js on any
     // page). Required vars are exactly the vars the code reads
-    // (secret + webhook secret); the publishable key stays documented
-    // in .env.example for a future Stripe.js use.
+    // (secret + webhook secret); the publishable key is NOT listed
+    // in .env.example because nothing consumes it.
     requiredEnvVars: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
     checkoutImplemented: true,
     feeNote: "2.9% + 30¢ per successful domestic card transaction.",

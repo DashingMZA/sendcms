@@ -3650,19 +3650,34 @@ export async function getMyUsage(userId: string): Promise<MyUsageSummary> {
 // first — re-read instead of failing. Returns null only when the admin
 // deliberately ARCHIVED the Free plan; the resolver then falls back to
 // the in-memory FREE_PLAN_V1_ENTITLEMENTS instead of resurrecting it.
-export async function ensureDefaultFreePlan(): Promise<
+export async function ensureDefaultFreePlan(
+  // SRC-415: the in-transaction quota re-check reads the Free plan
+  // through this client. A transaction client can only READ here: plan
+  // creation writes via the shared pool (`createPlanVersionWithRetry`)
+  // and its own nested `$transaction`, which inside a submit transaction
+  // would need a second pool connection — the same deadlock this
+  // parameter exists to close. When the plan is missing (or
+  // version-less) under a transaction client, return null so the
+  // resolver falls back to the in-memory FREE_PLAN_V1_ENTITLEMENTS —
+  // the same fallback as the ARCHIVED case. The pre-transaction
+  // fast-path check already creates the plan on the shared pool, so
+  // this only fires on a cold platform.
+  client: typeof db | Prisma.TransactionClient = db
+): Promise<
   | (Plan & {
       currentVersion: PlanVersion | null
     })
   | null
 > {
-  const existing = await db.plan.findFirst({
+  const existing = await client.plan.findFirst({
     where: { slug: FREE_PLAN_SLUG },
     include: { currentVersion: true },
   })
   if (existing) {
     if (existing.status === "ARCHIVED") return null
     if (existing.currentVersion) return existing
+    // SRC-415: read-only under a transaction client (see above).
+    if (client !== db) return null
     // A Free plan exists but has no published version: publish a fresh
     // one (next version number) so the default always resolves. The
     // retry helper covers the concurrent-repair race (DB-028): two
@@ -3685,6 +3700,8 @@ export async function ensureDefaultFreePlan(): Promise<
       include: { currentVersion: true },
     })
   }
+  // SRC-415: read-only under a transaction client (see above).
+  if (client !== db) return null
   try {
     return await db.$transaction(async (tx) => {
       const plan = await tx.plan.create({
@@ -3749,10 +3766,17 @@ export async function ensureDefaultFreePlan(): Promise<
 // (or the in-memory default applies). Throws 404 only for an unknown
 // user.
 export async function getEffectiveEntitlements(
-  userId: string
+  userId: string,
+  // SRC-415: the in-transaction quota re-check (submit / domain-create /
+  // form-create) passes its transaction client here, so every read below
+  // runs on the transaction's own connection instead of needing a second
+  // pool connection while the transaction holds one. Defaults to the
+  // shared client — every existing caller is unchanged. Same convention
+  // as `findActiveSubscription`'s client parameter (DB-035).
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<EffectiveEntitlements> {
   const emergency = readPlatformConfig().emergency
-  const user = await db.user.findUnique({
+  const user = await client.user.findUnique({
     where: { id: userId },
     select: { id: true, status: true },
   })
@@ -3774,13 +3798,13 @@ export async function getEffectiveEntitlements(
   }
   const now = new Date()
   const [overrides, subscription] = await Promise.all([
-    db.entitlementOverride.findMany({
+    client.entitlementOverride.findMany({
       where: {
         userId,
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
     }),
-    findActiveSubscription(userId),
+    findActiveSubscription(userId, client),
   ])
   let entitlements: PlanEntitlements
   let source: EffectiveEntitlements["source"]
@@ -3790,7 +3814,7 @@ export async function getEffectiveEntitlements(
     source = "subscription"
     planVersionId = subscription.planVersionId
   } else {
-    const free = await ensureDefaultFreePlan()
+    const free = await ensureDefaultFreePlan(client)
     if (free?.currentVersion) {
       entitlements = parseEntitlements(free.currentVersion.entitlements)
       planVersionId = free.currentVersion.id
@@ -3894,10 +3918,13 @@ export async function getEffectiveEntitlements(
 // `checkLimitStrict` (fail closed). The failure is logged loudly — a
 // silent null here used to disable every quota.
 export async function getEffectiveEntitlementsSafe(
-  userId: string
+  userId: string,
+  // SRC-415: forwarded to `getEffectiveEntitlements` — an
+  // in-transaction caller passes its transaction client here.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<EffectiveEntitlements | null> {
   try {
-    return await getEffectiveEntitlements(userId)
+    return await getEffectiveEntitlements(userId, client)
   } catch (err) {
     logger.error(
       "effective entitlements lookup failed, failing open to Free defaults",
@@ -4178,23 +4205,27 @@ export async function reconcileUsageLedger(
 async function getUsedForMeter(
   userId: string,
   meter: UsageMeter,
-  at: Date = new Date()
+  at: Date = new Date(),
+  // SRC-415: the in-transaction quota re-check passes its transaction
+  // client here (via `checkLimit`), so the usage count runs on the
+  // transaction's own connection. Defaults to the shared client.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<number> {
   if (meter === "FORMS") {
-    return db.form.count({ where: { ownerId: userId } })
+    return client.form.count({ where: { ownerId: userId } })
   }
   if (meter === "DOMAINS") {
-    return db.domain.count({ where: { ownerId: userId } })
+    return client.domain.count({ where: { ownerId: userId } })
   }
   if (meter === "API_KEYS") {
-    return db.apiKey.count({ where: { userId, revokedAt: null } })
+    return client.apiKey.count({ where: { userId, revokedAt: null } })
   }
   if (meter === "SUBMISSIONS") {
     // PRF-011 (Phase 16, Wave 3): the monthly quota count filters on
     // the denormalized Submission.ownerId — served by
     // @@index([ownerId, createdAt]) — instead of joining Form. This
     // runs on the public submit path, so the index path matters.
-    return db.submission.count({
+    return client.submission.count({
       where: {
         ownerId: userId,
         createdAt: { gte: startOfUtcMonth(at) },
@@ -4202,7 +4233,7 @@ async function getUsedForMeter(
     })
   }
   if (meter === "AI_REQUESTS") {
-    const forms = await db.form.findMany({
+    const forms = await client.form.findMany({
       where: { ownerId: userId },
       select: { id: true },
     })
@@ -4214,14 +4245,14 @@ async function getUsedForMeter(
     const [formUsage, ownerUsage] = await Promise.all([
       forms.length === 0
         ? Promise.resolve({ _sum: { calls: null } })
-        : db.aiDailyUsage.aggregate({
+        : client.aiDailyUsage.aggregate({
             _sum: { calls: true },
             where: {
               formId: { in: forms.map((f) => f.id) },
               date: startOfUtcDay(at),
             },
           }),
-      db.aiDailyOwnerUsage.aggregate({
+      client.aiDailyOwnerUsage.aggregate({
         _sum: { calls: true },
         where: { userId, date: startOfUtcDay(at) },
       }),
@@ -4229,12 +4260,12 @@ async function getUsedForMeter(
     return (formUsage._sum.calls ?? 0) + (ownerUsage._sum.calls ?? 0)
   }
   // MCP_REQUESTS: the current hour's counted calls across the user's keys.
-  const keys = await db.apiKey.findMany({
+  const keys = await client.apiKey.findMany({
     where: { userId },
     select: { id: true },
   })
   if (keys.length === 0) return 0
-  const total = await db.apiKeyRateLimit.aggregate({
+  const total = await client.apiKeyRateLimit.aggregate({
     _sum: { hourCount: true },
     where: {
       apiKeyId: { in: keys.map((k) => k.id) },
@@ -4246,14 +4277,17 @@ async function getUsedForMeter(
 
 export async function checkLimit(
   userId: string,
-  meter: UsageMeter
+  meter: UsageMeter,
+  // SRC-415: forwarded to `getEffectiveEntitlements` / `getUsedForMeter` —
+  // an in-transaction caller passes its transaction client here.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<LimitCheck> {
-  const effective = await getEffectiveEntitlements(userId)
+  const effective = await getEffectiveEntitlements(userId, client)
   if (!effective.entitlements) {
     return { allowed: false, limit: 0, used: 0, remaining: 0 }
   }
   const limit = effective.entitlements[METER_LIMIT_KEY[meter]]
-  const used = await getUsedForMeter(userId, meter)
+  const used = await getUsedForMeter(userId, meter, new Date(), client)
   if (limit === null) {
     return { allowed: true, limit: null, used, remaining: null }
   }
@@ -4286,10 +4320,15 @@ export class LimitCheckError extends ApiError {
 
 export async function checkLimitStrict(
   userId: string,
-  meter: UsageMeter
+  meter: UsageMeter,
+  // SRC-415: forwarded to `checkLimit` — an in-transaction caller
+  // (submit / domain-create / form-create) passes its transaction
+  // client here so the quota re-check runs on the transaction's own
+  // connection instead of needing a second pool connection.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<LimitCheck> {
   try {
-    return await checkLimit(userId, meter)
+    return await checkLimit(userId, meter, client)
   } catch (err) {
     logger.error("limit check failed, creation refused (fail-closed)", {
       error: err,
@@ -4302,10 +4341,13 @@ export async function checkLimitStrict(
 
 export async function checkLimitSafe(
   userId: string,
-  meter: UsageMeter
+  meter: UsageMeter,
+  // SRC-415: forwarded to `checkLimit` — an in-transaction caller
+  // passes its transaction client here.
+  client: typeof db | Prisma.TransactionClient = db
 ): Promise<LimitCheck | null> {
   try {
-    return await checkLimit(userId, meter)
+    return await checkLimit(userId, meter, client)
   } catch (err) {
     // FAIL-OPEN, LOUD: read paths keep working, but a failed lookup
     // must never silently disable quotas — this line is the signal.

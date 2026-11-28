@@ -568,7 +568,15 @@ export async function submitForm(
             )
           }
         }
-        const lockedQuota = await checkLimitStrict(form.ownerId, "SUBMISSIONS")
+        // SRC-415: the locked quota re-check runs on the transaction's
+        // own connection (`tx`) — the shared-pool check needs a second
+        // pool connection while this transaction holds one, and 5
+        // concurrent submits wedged the max:5 pool on the 10 s timeout.
+        const lockedQuota = await checkLimitStrict(
+          form.ownerId,
+          "SUBMISSIONS",
+          tx
+        )
         if (!lockedQuota.allowed) {
           throw fail(
             "This form's monthly submission quota is exhausted.",

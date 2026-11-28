@@ -282,7 +282,11 @@ export async function createFormForUser(
     // effective plan. SRC-216: fail CLOSED — a plans-module error
     // refuses the creation (503) instead of silently granting
     // unlimited forms.
-    const limit = await checkLimitStrict(userId, "FORMS")
+    // SRC-415: the quota check runs on the transaction's own
+    // connection (`tx`) — the shared-pool check needs a second pool
+    // connection while this transaction holds one (same wedge as the
+    // submit path's SRC-415, at lower concurrency).
+    const limit = await checkLimitStrict(userId, "FORMS", tx)
     if (!limit.allowed) {
       throw new ApiError(
         `Your plan allows at most ${limit.limit} forms. Upgrade your plan or ask an admin to raise your limit.`,
@@ -294,7 +298,10 @@ export async function createFormForUser(
     // so the owner's verified domains are the allowlist). Relative
     // redirects are same-site and need no lookup.
     if (input.redirectUrl && !input.redirectUrl.trim().startsWith("/")) {
-      const verified = await db.domain.findMany({
+      // SRC-415: the verified-domain allowlist read also runs on the
+      // transaction's own connection — the shared-pool read needed a
+      // second pool connection while this transaction holds one.
+      const verified = await tx.domain.findMany({
         where: { ownerId: userId, status: DomainStatus.VERIFIED },
         select: { domain: true },
       })

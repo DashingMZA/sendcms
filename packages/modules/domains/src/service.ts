@@ -237,7 +237,11 @@ export async function createDomainForUser(
       // effective plan. SRC-216: fail CLOSED — a plans-module error
       // refuses the creation (503) instead of silently granting
       // unlimited domains.
-      const limit = await checkLimitStrict(userId, "DOMAINS")
+      // SRC-415: the quota check runs on the transaction's own
+      // connection (`tx`) — the shared-pool check needs a second pool
+      // connection while this transaction holds one (same wedge as the
+      // submit path's SRC-415, at lower concurrency).
+      const limit = await checkLimitStrict(userId, "DOMAINS", tx)
       if (!limit.allowed) {
         throw new ApiError(
           `Your plan allows at most ${limit.limit} domains. Upgrade your plan or ask an admin to raise your limit.`,
