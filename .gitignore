@@ -62,3 +62,8 @@ prisma/dev.db-journal
 
 # Brainstorming mockups
 .superpowers
+
+# SEC-305: dev server logs must never be committed (a real verification token was once committed in .dev-server.log)
+.dev-server*.log
+# SEC-305: generated SDK files under apps/api/public/forms/ are never committed either (root-anchored public/forms/ does not cover this path)
+apps/api/public/forms/
