@@ -10,7 +10,7 @@
   "scripts": {
     "build": "pnpm --filter @sendcms/database db:generate && pnpm sdk:build && turbo run build --concurrency 1",
     "bundle:budget": "node scripts/check-bundle-budget.mjs",
-    "cf-typegen": "wrangler types --config apps/api/wrangler.jsonc --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+    "cf-typegen": "for app in marketing api dashboard docs updates admin; do wrangler types --config apps/$app/wrangler.jsonc --env-interface CloudflareEnv apps/$app/cloudflare-env.d.ts || exit 1; done",
     "db:generate": "pnpm --filter @sendcms/database db:generate",
     "db:migrate": "pnpm --filter @sendcms/database db:migrate",
     "db:migrate:deploy": "pnpm --filter @sendcms/database exec prisma migrate deploy",
@@ -26,6 +26,7 @@
     "sdk:build": "pnpm --filter @sendcms/sdk build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "e2e:setup": "tsx e2e/setup-e2e-user.ts",
     "check:workspace-imports": "node scripts/check-workspace-imports.mjs",
@@ -43,7 +44,6 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.7",
     "@freemius/sdk": "^0.5.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@opennextjs/cloudflare": "^1.20.17",
@@ -86,6 +86,7 @@
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitest/coverage-v8": "5.1.2",
     "ai": "7.0.178",
     "eslint": "^10.15.0",
     "husky": "^9.1.7",

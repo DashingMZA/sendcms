@@ -1,11 +1,7 @@
-import {
-  createPolar,
-  webhooks,
-  type Environment,
-  type models,
-} from "@polar-sh/sdk/2026-10"
+import { createPolar, webhooks, type models } from "@polar-sh/sdk/2026-10"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
+import { polarEnvironment } from "../registry"
 import type {
   CheckoutArgs,
   CheckoutResult,
@@ -28,14 +24,15 @@ const log = createLogger("billing:polar")
 // version (no stored mapping) and a hosted checkout session is
 // opened for it. POLAR_ENVIRONMENT is sandbox by default — live only
 // when the admin sets it to "production" with a production token.
+// Any other value is a misconfiguration: `polarEnvironment()` throws
+// a 422 naming it (BIL-054) instead of silently running sandbox.
 // The billing interval and the trial sit on the Polar product
 // (recurring_interval / trial_interval), not on the price.
 
 function getClient() {
   const accessToken = process.env.POLAR_ACCESS_TOKEN
   if (!accessToken) throw new ApiError("Polar is not configured", 422)
-  const environment: Environment =
-    process.env.POLAR_ENVIRONMENT === "production" ? "production" : "sandbox"
+  const environment = polarEnvironment()
   // SRC-233: explicit timeout — the SDK default used to run
   // unconfigured. Polar's `timeout` is in SECONDS (unlike Stripe's
   // milliseconds).
@@ -44,6 +41,38 @@ function getClient() {
     environment,
     timeout: BILLING_PROVIDER_TIMEOUT_MS / 1000,
   })
+}
+
+// BIL-054: a production token against the sandbox host (or vice
+// versa) fails auth at the first real call — surface it as a clear
+// 502 naming the likely token/environment mismatch instead of a
+// generic 500. The SDK error shape is not pinned (status when the
+// SDK carries one, else the message), so both are checked.
+function isPolarAuthError(error: unknown): boolean {
+  const status =
+    (error as { status?: unknown; statusCode?: unknown })?.status ??
+    (error as { statusCode?: unknown })?.statusCode
+  if (status === 401 || status === 403) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /unauthori[sz]ed|invalid[^a-z]*token|authentication/i.test(message)
+}
+
+function mapPolarError(
+  error: unknown,
+  fallbackMessage = "The payment provider is unavailable. Please try again.",
+  fields: Record<string, unknown> = {}
+): ApiError {
+  log.warn("Polar request failed", {
+    error: error instanceof Error ? error.message : String(error),
+    ...fields,
+  })
+  if (isPolarAuthError(error)) {
+    return new ApiError(
+      "Polar rejected the access token — check that POLAR_ACCESS_TOKEN matches POLAR_ENVIRONMENT (sandbox and production tokens are separate).",
+      502
+    )
+  }
+  return new ApiError(fallbackMessage, 502)
 }
 
 export async function createPolarCheckoutSession(
@@ -73,67 +102,75 @@ export async function createPolarCheckoutSession(
   // its id is returned (catalog) for the service to persist.
   let productId = version.polarProductId ?? null
   const catalog: NonNullable<CheckoutResult["catalog"]> = {}
-  if (!productId) {
-    const product = await polar.products.create(
-      recurring
-        ? {
-            name: `${version.planName} plan`,
-            recurring_interval: interval,
-            recurring_interval_count: 1,
-            ...(version.trialDays > 0
-              ? {
-                  trial_interval: "day" as models.TrialInterval,
-                  trial_interval_count: version.trialDays,
-                }
-              : {}),
-            prices: [
-              {
-                amount_type: "fixed",
-                price_amount: priceInMinorUnits(version),
-                price_currency: currency,
-              },
-            ],
-          }
-        : {
-            name: `${version.planName} plan`,
-            prices: [
-              {
-                amount_type: "fixed",
-                price_amount: priceInMinorUnits(version),
-                price_currency: currency,
-              },
-            ],
-          }
-    )
-    productId = product.id
-    catalog.polarProductId = product.id
-  }
+  try {
+    if (!productId) {
+      const product = await polar.products.create(
+        recurring
+          ? {
+              name: `${version.planName} plan`,
+              recurring_interval: interval,
+              recurring_interval_count: 1,
+              ...(version.trialDays > 0
+                ? {
+                    trial_interval: "day" as models.TrialInterval,
+                    trial_interval_count: version.trialDays,
+                  }
+                : {}),
+              prices: [
+                {
+                  amount_type: "fixed",
+                  price_amount: priceInMinorUnits(version),
+                  price_currency: currency,
+                },
+              ],
+            }
+          : {
+              name: `${version.planName} plan`,
+              prices: [
+                {
+                  amount_type: "fixed",
+                  price_amount: priceInMinorUnits(version),
+                  price_currency: currency,
+                },
+              ],
+            }
+      )
+      productId = product.id
+      catalog.polarProductId = product.id
+    }
 
-  const checkout = await polar.checkouts.create({
-    products: [productId],
-    customer_email: customer.email,
-    external_customer_id: customer.userId,
-    success_url: args.successUrl,
-    // BIL-048: the service-built cancel URL is the checkout's
-    // return URL — a customer who abandons the hosted checkout
-    // gets a SendCMS return path instead of only the browser
-    // back button.
-    return_url: args.cancelUrl,
-    // BIL-057: the customer's IP helps Polar's currency/tax
-    // detection on server-side checkouts (Polar cannot see it
-    // otherwise). Omitted when the route could not determine it.
-    ...(args.customerIpAddress
-      ? { customer_ip_address: args.customerIpAddress }
-      : {}),
-    metadata: { user_id: customer.userId, plan_version_id: version.id },
-  })
-  if (!checkout.url) {
-    throw new ApiError("Polar did not return a checkout URL", 502)
-  }
-  return {
-    checkoutUrl: checkout.url,
-    providerCheckoutId: checkout.id,
-    ...(Object.keys(catalog).length > 0 ? { catalog } : {}),
+    const checkout = await polar.checkouts.create({
+      products: [productId],
+      customer_email: customer.email,
+      external_customer_id: customer.userId,
+      success_url: args.successUrl,
+      // BIL-048: the service-built cancel URL is the checkout's
+      // return URL — a customer who abandons the hosted checkout
+      // gets a SendCMS return path instead of only the browser
+      // back button.
+      return_url: args.cancelUrl,
+      // BIL-057: the customer's IP helps Polar's currency/tax
+      // detection on server-side checkouts (Polar cannot see it
+      // otherwise). Omitted when the route could not determine it.
+      ...(args.customerIpAddress
+        ? { customer_ip_address: args.customerIpAddress }
+        : {}),
+      metadata: { user_id: customer.userId, plan_version_id: version.id },
+    })
+    if (!checkout.url) {
+      throw new ApiError("Polar did not return a checkout URL", 502)
+    }
+    return {
+      checkoutUrl: checkout.url,
+      providerCheckoutId: checkout.id,
+      ...(Object.keys(catalog).length > 0 ? { catalog } : {}),
+    }
+  } catch (error) {
+    // BIL-054: an SDK failure is a 502 naming the likely
+    // token/environment mismatch when it looks like auth; a
+    // deliberate ApiError (e.g. no checkout URL) passes through.
+    if (error instanceof ApiError) throw error
+    throw mapPolarError(error)
   }
 }
 
@@ -155,13 +192,14 @@ export async function cancelPolarSubscription(
     await polar.subscriptions.revoke(args.providerSubscriptionId)
     return { canceledAtProvider: true, immediate: true }
   } catch (error) {
-    log.warn("Polar subscription cancel failed", {
-      subscriptionId: args.providerSubscriptionId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    throw new ApiError(
+    // BIL-054: map through the shared mapper so an auth failure
+    // names the likely token/environment mismatch.
+    throw mapPolarError(
+      error,
       "The payment provider could not cancel the subscription. Please try again.",
-      502
+      {
+        subscriptionId: args.providerSubscriptionId,
+      }
     )
   }
 }
@@ -214,13 +252,14 @@ export async function updatePolarSubscriptionPlan(
     })
     return { updated: true }
   } catch (error) {
-    log.warn("Polar subscription plan update failed", {
-      subscriptionId: providerSubscriptionId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    throw new ApiError(
+    // BIL-054: map through the shared mapper so an auth failure
+    // names the likely token/environment mismatch.
+    throw mapPolarError(
+      error,
       "The payment provider could not change the subscription plan. Please try again.",
-      502
+      {
+        subscriptionId: providerSubscriptionId,
+      }
     )
   }
 }

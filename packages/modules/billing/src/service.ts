@@ -55,6 +55,23 @@ import type {
 
 const log = createLogger("billing")
 
+// BIL-025: the dashboard URL backs the checkout success/cancel URLs
+// and the Billing Portal return URL. In production an unset var used
+// to silently redirect paying customers to http://localhost:3002 —
+// now it fails loudly at checkout time instead. Dev/test keep the
+// localhost fallback.
+function dashboardBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim()
+  if (configured) return configured.replace(/\/+$/, "")
+  if (process.env.NODE_ENV === "production") {
+    throw new ApiError(
+      "NEXT_PUBLIC_DASHBOARD_URL is not set — the checkout return URL cannot be built.",
+      422
+    )
+  }
+  return "http://localhost:3002"
+}
+
 // Billing admin + checkout service (Admin Control Plane, Phase 8).
 // Framework-independent (no Next.js imports); only services import
 // @sendcms/database. Authorization lives HERE, not in the routes:
@@ -685,9 +702,7 @@ export async function createCheckoutSession(
     }
   }
 
-  const dashboardUrl = (
-    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
-  ).replace(/\/+$/, "")
+  const dashboardUrl = dashboardBaseUrl()
   // BIL-015: Stripe's success URL carries the session id
   // ({CHECKOUT_SESSION_ID} is substituted by Stripe), so the
   // dashboard can VERIFY the payment against Stripe instead of
@@ -1742,9 +1757,7 @@ export async function createBillingPortalSession(
       422
     )
   }
-  const dashboardUrl = (
-    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3002"
-  ).replace(/\/+$/, "")
+  const dashboardUrl = dashboardBaseUrl()
   const url = await createStripeBillingPortalSession(
     user.stripeCustomerId,
     `${dashboardUrl}/dashboard/billing`

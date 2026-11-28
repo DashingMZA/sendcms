@@ -9,14 +9,14 @@ in the schema, routes, or code.
 
 Since the 2026-11-18 monorepo migration (see
 [architecture/migration-final-report.md](architecture/migration-final-report.md)),
-SendCMS is a pnpm + Turborepo monorepo: six Next.js apps, thirty-one
+SendCMS is a pnpm + Turborepo monorepo: six Next.js apps, thirty-three
 workspace packages, one standalone service. The root is a pure
 workspace root — there is no app, `lib/`, or `public/` at the root.
 
 📌 **Branch note:** this doc describes the `feature/admin-control-plane`
 branch, which adds the sixth app (`apps/admin`) and the admin, billing,
-AI, and MCP modules. That branch is **not merged to main and not
-deployed**. Production is `sendcms.bond`, running the `feature/ai`
+AI, and MCP modules. That branch is **live in production** (deployed
+2026-11-23) — it is not merged to `main`. Production is `sendcms.bond`, running the `feature/admin-control-plane`
 branch (see [Deployment](deployment.md)).
 
 ## Contents
@@ -56,7 +56,7 @@ flowchart TB
 The browser never talks to the database. Every submission goes
 site → api app → service module → `@sendcms/database` → PostgreSQL.
 The email worker reads the same database and drains the same outbox;
-it never serves HTTP to the browser.
+it serves no browser-facing HTTP (only `GET /health` for operators).
 
 ## The apps and packages
 
@@ -74,7 +74,7 @@ it never serves HTTP to the browser.
 | `packages/database`         | Prisma schema + migrations + client + health ping                                                                                                                                      |
 | `packages/auth`             | Better Auth factory + providers + browser client                                                                                                                                       |
 | `packages/permissions`      | Platform roles + capabilities                                                                                                                                                          |
-| `packages/modules/*`        | Business logic — 15 modules: domains, forms, submissions, inbox, notifications, users, analytics, api-keys, admin-users, plans, ai-settings, mcp-admin, platform-ops, billing, support |
+| `packages/modules/*`        | Business logic — 17 modules: domains, forms, submissions, inbox, notifications, users, analytics, api-keys, admin-users, plans, ai-settings, mcp-admin, platform-ops, billing, support, coupons, cron |
 | `packages/email`            | Platform email: Resend/SMTP/none provider + auth mailer                                                                                                                                |
 | `packages/queue`            | Email outbox queue: claim + retry state machine                                                                                                                                        |
 | `packages/security`         | Shared security headers, CSP builder, rate limiter, step-up re-auth, the one `logAudit()` writer                                                                                       |
@@ -106,7 +106,7 @@ flowchart TB
     Active{"Form active?"}
     Honey{"Honeypot filled?"}
     Turn{"Turnstile enabled?\nToken valid?"}
-    Valid{"Fields valid?\nPayload ≤ 64 KB?"}
+    Valid{"Fields valid?\nPayload ≤ 64,000 bytes?"}
     Dupe{"Idempotency key or\nidentical content ≤ 10 min?"}
     Rate{"Rate limits OK?\n10/min + 100/hour per IP"}
     Spam{"Spam heuristics?"}
@@ -144,7 +144,7 @@ In order, the submit pipeline checks:
    linked to the form (else 403); the form must be active (else 403);
    a filled honeypot gets a fake 201 and nothing is saved; Turnstile
    (if enabled) is verified fail-closed; fields are validated against
-   the form's `FormField` config (else 422); payloads over 64 KB get
+   the form's `FormField` config (else 422); payloads over 64,000 bytes get
    413; an idempotency key or identical content within 10 minutes
    returns 200 with the same id; rate limits are 10/min + 100/hour
    per IP plus the form daily limit (else 429); spam heuristics mark
@@ -206,7 +206,7 @@ writer in `@sendcms/security`; server logging through
 
 The form SDK is a dependency-free vanilla-TS bundle
 (`packages/sdk/`, built by esbuild to
-`apps/api/public/forms/v1.js`, ~7 KB minified):
+`apps/api/public/forms/v1.js`, ~10 KB minified):
 
 - **Auto-enhance** — every `<form data-cms-form>` on the page; config
   resolves form data attrs > `init()` options > script tag data attrs;
@@ -277,12 +277,13 @@ rate limits, idempotency + content-hash dedupe, durable save before
 success, email verification gating, audit logs.
 
 ✅ **On this branch (Phase 9):** nonce-based CSP is enforcing on all
-five page apps, and the admin API + auth sign-in routes are rate
+six page apps, and the admin API + auth sign-in routes are rate
 limited — see
 [admin-control-plane/csp.md](admin-control-plane/csp.md) and
 [admin-control-plane/rate-limiting.md](admin-control-plane/rate-limiting.md).
-Those close the deferred gap recorded in ADR 0008; they are **not
-deployed** (this branch is unmerged).
+Those close the deferred gap recorded in ADR 0008; they are **live**
+in production on the `feature/admin-control-plane` branch (deployed
+2026-11-23).
 
 ## Scaling path
 
@@ -291,5 +292,5 @@ deployed** (this branch is unmerged).
 | Database      | Postgres (Prisma)       | Read replica for the inbox; partition submissions by month at very large volumes                                |
 | Rate limiting | DB counts per IP        | Move to Redis/Upstash when the submission table grows hot                                                       |
 | Email         | Resend (or SMTP)        | Provider already abstracted (`packages/email/src/provider.ts`); add a second provider behind the same interface |
-| SDK bundle    | Single file, 7 KB       | CDN-hosted with long-lived cache headers                                                                        |
-| Cron          | Single route, 100/calls | Split per-form or raise the limit with the cron schedule                                                        |
+| SDK bundle    | Single file, 10 KB      | CDN-hosted with long-lived cache headers                                                                        |
+| Cron          | Single route, 100/call  | Split per-form or raise the limit with the cron schedule                                                        |

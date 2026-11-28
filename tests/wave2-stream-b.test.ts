@@ -508,25 +508,53 @@ describe("SRC-411 drift test for intentional copies", () => {
     return match![0]
   }
 
-  it("marketingUrl() is identical in the three app-links files that define it", () => {
-    const files = [
-      "apps/dashboard/lib/app-links.ts",
-      "apps/docs/lib/app-links.ts",
-      "apps/updates/lib/app-links.ts",
-    ]
-    const bodies = files.map((f) => functionBody(read(f), "marketingUrl"))
-    expect(bodies[1]).toBe(bodies[0])
-    expect(bodies[2]).toBe(bodies[0])
+  // NOTE (Wave 12, SRC-120): the four app-links copies were consolidated
+  // into one definition in `packages/shared/src/app-links.ts`; each app
+  // file now only re-exports it. The two tests below pin that structure
+  // (single definition + exact re-export lists) instead of the old
+  // copy-equality. The names are matched as whole export-list entries,
+  // not substrings, so renaming one helper fails the test.
+  const LINK_HELPERS = [
+    "adminUrl",
+    "apiUrl",
+    "dashboardUrl",
+    "docsUrl",
+    "marketingTermsURL",
+    "marketingUrl",
+    "resolveLink",
+    "updatesUrl",
+  ]
+  function reExportedNames(src: string): string[] {
+    const match = src.match(/export \{([\s\S]*?)\} from "@sendcms\/shared"/)
+    expect(match, "re-export block from @sendcms/shared").not.toBeNull()
+    return match![1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .sort()
+  }
+
+  it("marketingUrl()/apiUrl() are defined once, in the shared app-links module", () => {
+    const marketing = functionBody(
+      read("packages/shared/src/app-links.ts"),
+      "marketingUrl"
+    )
+    expect(marketing).toContain("NEXT_PUBLIC_APP_URL")
+    const api = functionBody(read("packages/shared/src/app-links.ts"), "apiUrl")
+    expect(api).toContain("NEXT_PUBLIC_API_URL")
   })
 
-  it("apiUrl() is a single copy (marketing only)", () => {
-    const holders = [
+  it("each app file re-exports exactly the shared link helpers, and defines none", () => {
+    for (const f of [
       "apps/dashboard/lib/app-links.ts",
       "apps/docs/lib/app-links.ts",
       "apps/marketing/lib/app-links.ts",
       "apps/updates/lib/app-links.ts",
-    ].filter((f) => read(f).includes("export function apiUrl"))
-    expect(holders).toEqual(["apps/marketing/lib/app-links.ts"])
+    ]) {
+      const src = read(f)
+      expect(reExportedNames(src), f).toEqual([...LINK_HELPERS].sort())
+      expect(src, f).not.toMatch(/export function \w+/)
+    }
   })
 
   it("the shared stylesheets are byte-identical across the 5 apps", () => {
@@ -599,8 +627,8 @@ describe("SRC-411 drift test for intentional copies", () => {
       unknown
     >
     expect(Object.keys(app).sort()).toEqual([
-      "branding",
-      "email",
+      // NOTE (Wave 12, DOC-025): the dead `branding` + `email` sections
+      // were removed from all five app configs — only live sections remain.
       "metadata",
       "site",
     ])

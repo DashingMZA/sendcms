@@ -2,8 +2,9 @@
 
 Add a SendCMS contact form to a Next.js site (App Router or Pages
 Router) with `next/script` and a normal HTML form. Put the ids on the
-**form** itself — `next/script` loads scripts dynamically, so the
-script tag's own data attributes are not readable then.
+**form** itself — a form's own data attributes win over the script
+tag's in the SDK's config resolution, and they are re-read on every
+scan, so they work regardless of how the script tag was loaded.
 
 ```mermaid
 flowchart LR
@@ -40,9 +41,10 @@ flowchart LR
 ## 1. Add the form to a page
 
 Put `data-user-id` and `data-form-id` on the **form** itself — that is
-the most reliable place for them, because `next/script` loads scripts
-dynamically and the script tag's own data attributes are not readable
-then. Add the script with `next/script` (or a plain `<script>` tag).
+the most reliable place for them: the form's own attributes win over
+the script tag's in the SDK's config resolution, and they survive any
+difference in how the script tag is loaded. Add the script with
+`next/script` (or a plain `<script>` tag).
 
 ```tsx
 // app/contact/page.tsx
@@ -89,7 +91,21 @@ The SDK watches the DOM with a `MutationObserver` and enhances forms
 whenever they appear, so client-side navigation needs no extra code.
 If you add a form dynamically after the SDK has loaded, call
 `window.SendCMS.scan()` after inserting it — or `window.SendCMS.init()`
-to (re-)register callbacks.
+to (re-)register callbacks. In App Router those manual
+`window.SendCMS.*` calls must live in a Client Component (`"use
+client"` at the top of the file) — a Server Component cannot touch
+`window`. The snippet above needs no `"use client"` itself.
+
+### Turnstile
+
+If the form has Turnstile enabled, the SDK needs its site key: add
+`data-turnstile-site-key="…"` to the `<Script>` tag (or to the form,
+or pass it to `SendCMS.init()`). Without the key the SDK never loads
+Turnstile and the API rejects every submission with 422
+(`"Verification is required for this form."`). The snippet copied
+from the dashboard already includes the key when Turnstile is on —
+and shows a warning instead of a snippet when no site key is
+configured. Full reference: [SDK — Turnstile](sdk.md#turnstile).
 
 ## 3. Check it works
 

@@ -7,10 +7,10 @@
   // The Cloudflare dashboard's Root directory for this project
   // must be apps/docs — the build command runs there (see
   // infrastructure/cloudflare/README.md). The public URLs
-  // below are PLACEHOLDERS on jadoo.bond until the production
-  // domain decision — change the vars, never the code.
+  // below use the decided production domain (sendcms.bond) —
+  // change the vars, never the code.
   "build": {
-    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+    "command": "pnpm --filter @sendcms/database db:generate && npx @opennextjs/cloudflare build",
   },
   // Dynamic Next.js App Router app (SSR + API routes + Prisma +
   // Better Auth), so it cannot run as plain static assets — the
@@ -51,8 +51,8 @@
     "enabled": true,
   },
   "vars": {
-    "NEXT_PUBLIC_DOCS_URL": "https://docs.jadoo.bond",
-    "NEXT_PUBLIC_APP_URL": "https://jadoo.bond",
+    "NEXT_PUBLIC_DOCS_URL": "https://docs.sendcms.bond",
+    "NEXT_PUBLIC_APP_URL": "https://sendcms.bond",
   },
   // This app needs no secrets (static content only).
 }

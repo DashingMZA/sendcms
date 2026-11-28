@@ -6,10 +6,11 @@
   longer applies.
 - Context: the audit's Phase 11 ("MCP foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
-  design document now (2026-11-19) and will decide separately when — or
-  whether — to build it. This record is the Phase 11 deliverable. **No
-  code was written for it: no `packages/mcp`, no `apps/mcp`, no route,
-  no dependency installed.**
+  design document now (2026-11-19) and would decide separately when — or
+  whether — to build it. This record is the Phase 11 deliverable. The
+  design was subsequently built (Phase 11, branch `feature/mcp`):
+  `packages/modules/mcp-admin` + the MCP routes under
+  `apps/api/app/api/mcp` — see the Status line above.
 
 ## What MCP would be for SendCMS
 

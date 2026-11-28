@@ -74,6 +74,28 @@ duplicate-submit protection, and a honeypot bot trap are built in.
 Your own CSS applies to the form as usual — the SDK only styles its
 status message and the invisible honeypot field.
 
+- **Script placement:** anywhere works — `<head>` or end of
+  `<body>`, with `async` / `defer` or neither. When the bundle is
+  still loading, the SDK waits for `DOMContentLoaded` before
+  enhancing forms.
+- **Multiple forms:** several forms can live on one page, even from
+  different accounts. Each form can override the script tag's
+  defaults with its own `data-user-id` / `data-form-id` attributes.
+- **Forms added later:** forms inserted by other scripts after page
+  load are picked up automatically (a `MutationObserver` watches the
+  page). See [SDK](sdk.md) for the details.
+
+### Turnstile
+
+If the form has Turnstile enabled, the SDK needs its site key: add
+`data-turnstile-site-key="…"` to the script tag (or to the form, or
+pass it to `SendCMS.init()`). Without the key the SDK never loads
+Turnstile and the API rejects every submission with 422
+(`"Verification is required for this form."`). The snippet copied
+from the dashboard already includes the key when Turnstile is on —
+and shows a warning instead of a snippet when no site key is
+configured. Full reference: [SDK — Turnstile](sdk.md#turnstile).
+
 ## 2. No JavaScript at all
 
 If you would rather not load the SDK, post the form directly to the
@@ -94,6 +116,40 @@ On success the browser is redirected to the form's redirect URL, or
 back to the page with `?cms_submitted=1` appended. On error it is
 redirected back with `?cms_error=<message>`. See
 [REST API](rest-api.md) for the details.
+
+Nothing reads those params for you — the API writes them, your page
+has to display them. Add this small script to the page with the form
+(it reads the params on load and renders a banner; `textContent`
+escapes the error message, which can contain literal `"` characters,
+so it is safe to display as-is):
+
+```html
+<script>
+  // No-JS fallback result: ?cms_submitted=1 / ?cms_error=<message>.
+  ;(function () {
+    var params = new URLSearchParams(window.location.search)
+    var error = params.get("cms_error")
+    var ok = params.get("cms_submitted") === "1"
+    if (!error && !ok) return
+    var banner = document.createElement("p")
+    banner.className = "sc-status sc-status--" + (ok ? "success" : "error")
+    banner.setAttribute("role", "status")
+    // textContent (not innerHTML): the error message is rendered as
+    // plain text, so quotes and markup in it cannot break the page.
+    banner.textContent = ok ? "Thanks! Your message has been sent." : error
+    var form = document.querySelector("form")
+    if (form) form.after(banner)
+    else document.body.appendChild(banner)
+  })()
+</script>
+```
+
+### Turnstile
+
+The no-JS form cannot fetch a Turnstile token, so a form with
+Turnstile enabled cannot be submitted this way — the API answers 422
+(`"Verification is required for this form."`). Use the SDK snippet
+above (with `data-turnstile-site-key`) for Turnstile forms.
 
 ## 3. Check it works
 

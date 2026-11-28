@@ -74,6 +74,17 @@ Replace `YOUR_APP`, `YOUR_USER_ID`, and `YOUR_FORM_ID` with your values.
 The form's fields must match the fields configured on the form in the
 dashboard — extra field names are rejected by the API.
 
+### Turnstile
+
+If the form has Turnstile enabled, the SDK needs its site key: add
+`data-turnstile-site-key="…"` to the script tag (or to the form, or
+pass it to `SendCMS.init()`). Without the key the SDK never loads
+Turnstile and the API rejects every submission with 422
+(`"Verification is required for this form."`). The snippet copied
+from the dashboard already includes the key when Turnstile is on —
+and shows a warning instead of a snippet when no site key is
+configured. Full reference: [SDK — Turnstile](sdk.md#turnstile).
+
 ## 2. Page transitions
 
 The SDK listens for `astro:page-load` and re-scans the page after every

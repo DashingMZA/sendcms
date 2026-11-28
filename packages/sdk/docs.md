@@ -3,7 +3,7 @@
 ## Overview
 
 Vanilla TypeScript embed that enhances `<form data-cms-form>` on any
-page. Bundles to `public/forms/v1.js` via esbuild. No framework, no
+page. Bundles to `apps/api/public/forms/v1.js` via esbuild. No framework, no
 runtime dependencies — all DOM work is imperative. (The honeypot field
 name comes from `@sendcms/shared/constants` at build time and is
 inlined into the bundle; nothing is fetched from the server.) It
@@ -26,20 +26,21 @@ packages/sdk/src/
 ## Build
 
 ```bash
-pnpm sdk:build   # minified → public/forms/v1.js + debug → public/forms/v1.debug.js
+pnpm sdk:build   # minified → apps/api/public/forms/v1.js + debug → apps/api/public/forms/v1.debug.js
 ```
 
 Runs automatically as part of `pnpm dev` and `pnpm build`. The build
-reads `.env` then `.env.local` for `NEXT_PUBLIC_APP_URL`, inlined as
-the compile-time `__APP_URL__` constant. The bundle prefers the
-`<script>` tag's own origin at runtime and only falls back to
-`__APP_URL__` when it cannot be determined.
+reads `.env` then `.env.local` for `NEXT_PUBLIC_API_URL` (falling back
+to `NEXT_PUBLIC_APP_URL` for the single-app era, then to the api app's
+dev port), inlined as the compile-time `__APP_URL__` constant. The
+bundle prefers the `<script>` tag's own origin at runtime and only
+falls back to `__APP_URL__` when it cannot be determined.
 
 ## Compile-time constants
 
 | Constant | Source |
 |---|---|
-| `__APP_URL__` | `NEXT_PUBLIC_APP_URL` env var |
+| `__APP_URL__` | `NEXT_PUBLIC_API_URL` env var (fallback `NEXT_PUBLIC_APP_URL`) |
 
 **Never** read `process.env` in `packages/sdk/src`.
 

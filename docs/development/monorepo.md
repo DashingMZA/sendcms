@@ -1,16 +1,21 @@
 # Developing in the SendCMS monorepo
 
-SendCMS is a pnpm + Turborepo monorepo: six Next.js apps, thirty-one
+SendCMS is a pnpm + Turborepo monorepo: six Next.js apps, thirty-three
 workspace packages, one standalone service, and one infrastructure
-folder. The root is a pure workspace root — there is no app, `lib/`,
-or `public/` at the root since Phase 8. The full layout lives in the
+folder. The root holds no app code — there is no `app/`, `lib/`,
+`components/`, `content/`, `styles/`, or `public/` at the root since
+Phase 8 — but it is not bare: it carries the workspace config, the
+repo-wide test suite (`tests/`), the docs (`docs/`), and shared
+tooling such as `postcss.config.mjs` and `render.yaml`. The full
+layout lives in the
 `project-guidelines` skill (`folder-structure.md`); this document is
 the day-to-day guide for working in it.
 
 📌 **Branch note:** this doc describes the `feature/admin-control-plane`
 branch (sixth app `apps/admin`, admin/AI/MCP modules, 46 test files).
-That branch is **not merged to main and not deployed**; production is
-`sendcms.bond` on the `feature/ai` branch.
+That branch is **live in production** (deployed 2026-11-23); it is not
+merged to `main`. Production is `sendcms.bond` on the
+`feature/admin-control-plane` branch.
 
 ## Contents
 
@@ -22,6 +27,7 @@ That branch is **not merged to main and not deployed**; production is
 - [Tests](#tests)
 - [Commits](#commits)
 - [Gotchas](#gotchas)
+- [Troubleshooting](#troubleshooting)
 
 ## Layout (short version)
 
@@ -33,10 +39,10 @@ packages/        config, shared, api-client, sdk, content, ui, database,
                  ai, mcp, i18n
 packages/modules/  domains, forms, submissions, inbox, notifications, users,
                  analytics, api-keys, admin-users, plans, ai-settings,
-                 mcp-admin, platform-ops, billing, support
+                 mcp-admin, platform-ops, billing, support, coupons, cron
 services/        email-worker (3005)
 infrastructure/  cloudflare/ (shared OpenNext config + deploy README)
-tests/           the whole test suite — 46 files (see "Tests" below)
+tests/           the whole test suite — 144 files (see "Tests" below)
 docs/            user docs (served by apps/docs) + architecture/ + this file
 ```
 
@@ -69,7 +75,7 @@ destructive-warning gate) lives in the
 [runbook](../operations/runbook.md#migration-hygiene-db-043).
 
 `pnpm build` runs the app builds **sequentially** (`--concurrency 1`):
-the five apps' parallel builds contend on `next/font/google` and fail
+the six apps' parallel builds contend on `next/font/google` and fail
 intermittently (ADR 0006). Do not remove the flag without re-verifying
 a full parallel build.
 
@@ -194,7 +200,7 @@ imperative, <72 chars). Never push to `main` from here, never merge,
 never open a PR unless the owner asks. The husky pre-commit hook runs
 lint + format:check + typecheck; it needs `pnpm` on PATH
 (`export PATH="$HOME/.local/bin:$PATH"`) and, since the workspace
-grew to 6 apps + 31 packages, the eslint step can OOM on the default
+grew to 6 apps + 33 packages, the eslint step can OOM on the default
 2 GB heap — commit with `NODE_OPTIONS=--max-old-space-size=4096`.
 Prettier must cover all staged files (including `git mv` renames).
 Stage by explicit paths — never `git add -A` (the untracked
@@ -219,3 +225,42 @@ Cloudflare build output trips the whole-workspace lint).
   runtime restart); dev servers + journey runs need `DATABASE_URL`
   (+ `CRON_SECRET=test-cron-secret`) passed in the exec environment,
   never written to a file.
+
+## Troubleshooting
+
+**Turbopack cache death.** After deleting or moving a route, the
+build or typecheck fails on stale generated types (`.next/types`)
+or behaves as if the old route still exists. Delete the app's
+`.next` dir (`rm -rf apps/<app>/.next`) and any stale
+`tsconfig.tsbuildinfo`, then rebuild. The same fix applies when
+errors look inconsistent with the source on disk — a stale cache,
+not the code, is usually the cause.
+
+**Missing `.env`.** The repo ships `.env.example`, not `.env`.
+Without a root `.env`, `pnpm dev` and the `db:*` scripts fail
+(dotenv-cli reports a missing env file instead of a cryptic
+`DATABASE_URL` error). Copy `.env.example` to `.env` and fill in
+`DATABASE_URL` + `BETTER_AUTH_SECRET` at minimum. In the sandbox
+there is deliberately no `.env` file — pass `DATABASE_URL` (and
+`CRON_SECRET=test-cron-secret` for journey runs) in the exec
+environment instead; never write secrets to a file.
+
+**Port conflicts.** Dev ports are fixed: marketing 3000, api 3001,
+dashboard 3002, docs 3003, updates 3004, worker 3005, admin 3006.
+If a dev server fails with `EADDRINUSE`, another process (often a
+previous `pnpm dev` that survived a restart) holds the port — find
+it (`lsof -i :3001` or `fuser 3001/tcp`) and stop it; do not change
+the port in `package.json`, because the `NEXT_PUBLIC_*` URLs and
+the auth origins assume the fixed ports.
+
+**Missing SDK bundle.** `apps/api/public/forms/v1.js` is gitignored
+build output. If the embed snippet 404s, or the SDK tests exercise
+a stale bundle, run `pnpm sdk:build` (it is part of `pnpm dev` and
+`pnpm build`, but a fresh checkout or a deleted file needs the
+explicit step). CI builds it before testing.
+
+**`pnpm: command not found`.** pnpm lives at `~/.local/bin/pnpm`
+and drops off `PATH` in fresh shells — including git-hook shells
+(the pre-commit hook fails with `pnpm: not found`). Run
+`export PATH="$HOME/.local/bin:$PATH"` first, or call the full
+path. Do not reinstall pnpm.

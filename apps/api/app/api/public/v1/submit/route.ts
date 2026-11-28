@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Parses + validates the request body: the 64 KiB size guard, the
+// Parses + validates the request body: the 64,000-byte size guard, the
 // form-data / JSON split, the malformed-JSON 400, the referer
 // pageUrl default for no-JS forms, and the Zod 422.
 async function parseSubmitBody(

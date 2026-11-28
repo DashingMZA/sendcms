@@ -133,7 +133,15 @@ async function sendViaResend(input: SendEmailInput): Promise<string> {
       }),
       signal: controller.signal,
     })
-    const body = await res.json().catch(() => ({}))
+    // `Response.json()` is `unknown` here — the Node fetch types
+    // (@types/node, undici) win over the DOM lib in app programs —
+    // so narrow the parsed body explicitly instead of relying on
+    // the DOM lib's `any`.
+    const body = (await res.json().catch(() => ({}))) as {
+      id?: unknown
+      message?: unknown
+      name?: unknown
+    }
     if (!res.ok) {
       throw new Error(
         `Resend rejected the email (${res.status}): ${body.message ?? body.name ?? "unknown error"}`

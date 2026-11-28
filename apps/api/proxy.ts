@@ -24,11 +24,9 @@ import {
 // nonce-gated `style-src` would strip its styling. `script-src`
 // stays nonce-gated and strict.
 //
-// This file exists so the workspace-root proxy.ts — the dashboard's
-// middleware, which lives at the repo root until Phase 7 moves it to
-// apps/dashboard — is not picked up as this app's proxy (Turbopack
-// resolves the proxy file from the workspace root).
-//
+// This file exists so the dashboard app's proxy
+// (`apps/dashboard/proxy.ts`) is not picked up as this app's proxy
+// (Turbopack resolves the proxy file from the workspace root).
 // Origin allowlist for state-changing /api/v1/* requests (SEC-202):
 // SameSite=Lax on the session cookie was the only CSRF defence, and a
 // cross-origin POST carrying a valid cookie succeeded. The origins

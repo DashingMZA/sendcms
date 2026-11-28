@@ -10,7 +10,9 @@ read inbox submissions, and act on them without you opening the
 dashboard. It is a second API surface over the same business logic, not
 a second product: every tool call goes through the same service
 functions the dashboard uses, so a key can never see another owner's
-data.
+data. Like the [REST API](rest-api.md#stability), the MCP surface is
+beta — it may change without a migration path, and there is no
+deprecation policy yet.
 
 Base URL: `https://YOUR_APP` (your SendCMS deployment — the api app's
 URL; in production `https://api.sendcms.bond`). One endpoint:
@@ -180,4 +182,5 @@ tool errors (`isError: true`) with a plain message, not as HTTP errors.
 Admin-side MCP controls (kill-switch, per-user settings, usage) live
 in the admin control plane — see
 [admin-control-plane/mcp-management.md](admin-control-plane/mcp-management.md)
-(`feature/admin-control-plane` branch, not deployed).
+(`feature/admin-control-plane` branch, live in production since
+2026-11-23).

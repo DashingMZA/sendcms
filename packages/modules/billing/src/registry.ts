@@ -36,11 +36,12 @@ export const BILLING_PROVIDERS: readonly BillingProviderDefinition[] = [
   {
     id: "STRIPE",
     label: "Stripe",
-    requiredEnvVars: [
-      "STRIPE_SECRET_KEY",
-      "STRIPE_PUBLISHABLE_KEY",
-      "STRIPE_WEBHOOK_SECRET",
-    ],
+    // BIL-020: the publishable key is NOT required — no server or
+    // client code reads it (pure hosted Checkout, no Stripe.js on any
+    // page). Required vars are exactly the vars the code reads
+    // (secret + webhook secret); the publishable key stays documented
+    // in .env.example for a future Stripe.js use.
+    requiredEnvVars: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
     checkoutImplemented: true,
     feeNote: "2.9% + 30¢ per successful domestic card transaction.",
     docsUrl: "https://docs.stripe.com/billing/subscriptions",
@@ -185,4 +186,60 @@ export function assertStripeKeyMode(
       `A ${mismatch.secretKeyPrefix} key must not be used in a ${mismatch.expected} environment.`,
     422
   )
+}
+
+// ─── PayPal mode validation (BIL-009) ────────────────────────────────
+// `PAYPAL_MODE` used to silently default to sandbox for ANY value
+// other than "live" — a typo ("production", "Live", "prod") presented
+// sandbox checkouts (or failed auth with live credentials as a
+// generic 502) with no diagnostic pointing at the mode value.
+
+export type PayPalMode = "sandbox" | "live"
+
+/** The effective PayPal mode: "live" only for an explicit "live"
+    (case-insensitive, trimmed); unset/blank means sandbox. Throws
+    422 naming the allowed values for anything else. */
+export function paypalMode(env: NodeJS.ProcessEnv = process.env): PayPalMode {
+  const raw = env.PAYPAL_MODE?.trim().toLowerCase()
+  if (!raw || raw === "sandbox") return "sandbox"
+  if (raw === "live") return "live"
+  throw new ApiError(
+    `Invalid PAYPAL_MODE "${env.PAYPAL_MODE?.trim()}" (expected "sandbox" or "live").`,
+    422
+  )
+}
+
+/** Throws 422 when PAYPAL_MODE names neither sandbox nor live. */
+export function assertPayPalMode(env: NodeJS.ProcessEnv = process.env): void {
+  paypalMode(env)
+}
+
+// ─── Polar environment validation (BIL-054) ──────────────────────────
+// `POLAR_ENVIRONMENT` used to silently mean sandbox for ANY value
+// other than "production" — a typo ("prodution", "live") ran sandbox
+// with a production token (or vice versa) and failed only at the
+// first real checkout, as a generic 500.
+
+export type PolarEnvironment = "sandbox" | "production"
+
+/** The effective Polar environment: "production" only for an explicit
+    "production" (case-insensitive, trimmed); unset/blank means
+    sandbox. Throws 422 naming the allowed values for anything else. */
+export function polarEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): PolarEnvironment {
+  const raw = env.POLAR_ENVIRONMENT?.trim().toLowerCase()
+  if (!raw || raw === "sandbox") return "sandbox"
+  if (raw === "production") return "production"
+  throw new ApiError(
+    `Invalid POLAR_ENVIRONMENT "${env.POLAR_ENVIRONMENT?.trim()}" (expected "sandbox" or "production").`,
+    422
+  )
+}
+
+/** Throws 422 when POLAR_ENVIRONMENT names neither sandbox nor production. */
+export function assertPolarEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): void {
+  polarEnvironment(env)
 }

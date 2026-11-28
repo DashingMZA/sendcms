@@ -272,8 +272,9 @@ describe("POST /api/public/v1/submit", () => {
     expect(mockSubmitForm).not.toHaveBeenCalled()
   })
 
-  // SRC-237: the service reports monthly quota exhaustion as 402;
-  // the route remaps it to 429, the documented vocabulary.
+  // SRC-237: the service used to report monthly quota exhaustion as
+  // 402; it now emits 429 directly, and the route remaps a 402 to 429
+  // as a backstop, the documented vocabulary.
   it("remaps a service 402 quota error to 429 with the same message (SRC-237)", async () => {
     const err = new ApiError(
       "This form's monthly submission quota is exhausted.",
@@ -289,7 +290,7 @@ describe("POST /api/public/v1/submit", () => {
     expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN)
   })
 
-  it("returns 413 when content-length exceeds 64 KB", async () => {
+  it("returns 413 when content-length exceeds 64,000 bytes", async () => {
     const res = await POST(
       jsonRequest(VALID_BODY, { "content-length": "64001" })
     )

@@ -5,8 +5,7 @@ ticket from `/dashboard/support` when they have a problem. **There
 is no ticket submission from marketing** — no public or anonymous
 form. Staff answer from the admin app.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). The user's visual check of the pages is
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). The user's visual check of the pages is
 still owed.
 
 ## Contents

@@ -12,37 +12,14 @@
 // process.env in sdk/src — the browser bundle has no env.
 
 import { build } from "esbuild"
-import { readFileSync, existsSync } from "fs"
+import { readFileSync } from "fs"
 import { resolve } from "path"
+import { loadEnvFiles } from "./src/env"
 
-function loadEnvFile(path: string) {
-  if (!existsSync(path)) return
-  const content = readFileSync(path, "utf8")
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("#")) continue
-    const eq = trimmed.indexOf("=")
-    if (eq === -1) continue
-    const key = trimmed.slice(0, eq).trim()
-    let value = trimmed.slice(eq + 1).trim()
-    // Remove surrounding quotes
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    if (process.env[key] === undefined) {
-      process.env[key] = value
-    }
-  }
-}
-
-// Load .env then .env.local (local overrides)
+// Load .env then .env.local (local overrides — SRC-309)
 const envPath = resolve(import.meta.dirname, "../../.env")
 const envLocalPath = resolve(import.meta.dirname, "../../.env.local")
-loadEnvFile(envPath)
-loadEnvFile(envLocalPath)
+loadEnvFiles(envPath, envLocalPath)
 
 const appUrl =
   process.env.NEXT_PUBLIC_API_URL ??

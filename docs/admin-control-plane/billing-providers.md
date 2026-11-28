@@ -6,8 +6,7 @@ them the provider stays disabled by default and never appears at
 checkout. Provider API keys are never shown in the admin UI — only
 whether they are set.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). No live payment test has been run yet — that
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). No live payment test has been run yet — that
 needs real Stripe test-mode keys on the owner's machine.
 
 📌 Note: this phase supersedes the Phase 4 record. The

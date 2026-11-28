@@ -24,6 +24,7 @@
     "@sendcms/observability": "workspace:*",
     "@sendcms/plans": "workspace:*",
     "@sendcms/platform-ops": "workspace:*",
+    "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "zod": "^4.6.5"
   },

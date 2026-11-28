@@ -60,6 +60,54 @@ export default function DocsIndexPage() {
             </section>
           ))}
         </div>
+
+        <section className="mt-16 border-t pt-8">
+          <h2 className="mb-1 text-step-1 font-semibold">For operators</h2>
+          <p className="mb-4 text-step-0 leading-relaxed text-muted-foreground">
+            Running SendCMS yourself? These repo docs are not served here — they
+            live on GitHub:
+          </p>
+          <ul className="list-disc space-y-2 pl-5 text-step-0 leading-relaxed text-muted-foreground">
+            <li>
+              <a
+                href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/operations/runbook.md"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                Operations runbook
+              </a>{" "}
+              — running SendCMS in production, incident steps, log retention.
+            </li>
+            <li>
+              <a
+                href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/development/monorepo.md"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                Monorepo guide
+              </a>{" "}
+              — working in the monorepo: layout, commands, dev ports,
+              troubleshooting.
+            </li>
+            <li>
+              <a
+                href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/deployment/platforms.md"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                Deployment platforms
+              </a>{" "}
+              — Vercel, Node/Docker, Render, Netlify, Railway.
+            </li>
+            <li>
+              <a
+                href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/admin-control-plane/README.md"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                Admin control plane
+              </a>{" "}
+              — the admin app and its modules, architecture, authorization, and
+              billing.
+            </li>
+          </ul>
+        </section>
       </main>
 
       <footer className="mt-auto border-t">

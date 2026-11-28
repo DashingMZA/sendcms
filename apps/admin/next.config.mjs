@@ -21,25 +21,43 @@ const nextConfig = {
   images: {
     imageSizes: [160, 320],
   },
+  // DOC-026 (Phase 16, Wave 12): regenerated from the packages this
+  // app actually imports — `@sendcms/config` is deliberately absent
+  // (eslint.config.mjs only, never bundled). Dropped as unimported
+  // (verified by import analysis, not by a build — see below):
+  // `@sendcms/analytics`, `@sendcms/api-keys`, `@sendcms/domains`,
+  // `@sendcms/email`, `@sendcms/forms`, `@sendcms/inbox`,
+  // `@sendcms/sdk` — the admin app reaches those through the api app,
+  // not direct imports. NOTE: `build:server` for this app currently
+  // fails on a PRE-EXISTING Turbopack error unrelated to this list
+  // (`packages/security/src/step-up.ts:207` `readFileSync`, pulled
+  // into the middleware bundle via the `@sendcms/security` barrel —
+  // the same error reproduces with the pre-DOC-026 list), so the drop
+  // could not be build-verified; consolidation must re-verify once
+  // that error is fixed (see DOC-024: splitting the CSP helpers out
+  // of the barrel would remove it from the bundle).
   transpilePackages: [
     "@sendcms/shared",
     "@sendcms/ui",
     "@sendcms/database",
     "@sendcms/auth",
     "@sendcms/permissions",
-    "@sendcms/email",
-    "@sendcms/api-client",
-    "@sendcms/sdk",
-    "@sendcms/domains",
-    "@sendcms/forms",
-    "@sendcms/inbox",
-    "@sendcms/notifications",
     "@sendcms/users",
-    "@sendcms/analytics",
-    "@sendcms/api-keys",
+    "@sendcms/notifications",
     "@sendcms/observability",
     "@sendcms/security",
     "@sendcms/i18n",
+    "@sendcms/ai",
+    "@sendcms/admin-users",
+    "@sendcms/ai-settings",
+    "@sendcms/billing",
+    "@sendcms/coupons",
+    "@sendcms/cron",
+    "@sendcms/mcp",
+    "@sendcms/mcp-admin",
+    "@sendcms/plans",
+    "@sendcms/platform-ops",
+    "@sendcms/support",
   ],
   turbopack: {
     root: workspaceRoot,

@@ -6,8 +6,7 @@ completion — the backend plus the admin pages that consume it. The
 React Query hooks the pages need live in
 `packages/modules/platform-ops/src/queries.ts`.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). Live verification against the real dev DB
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). Live verification against the real dev DB
 is still owed.
 
 ## Contents
@@ -70,13 +69,14 @@ apply again.
 The two system flags are seeded (disabled) by migration
 `20261125091400_wave8d_seed_platform_settings`, so they are visible
 in `/admin/features` on a fresh deploy. Phase 7 shipped the registry
-+ API with no consumer wiring, by design — the wiring landed in
-Phase 8: `ai-spam-rescore` gates `rescoreNewSubmissions` and
-`ai-digest` gates `sendDueDigests` in `@sendcms/submissions` (flag
-missing/disabled = job off). See
-[ai-byok](./ai-byok.md#wiring-the-existing-capabilities) and
-[Deployment](../deployment.md#ai-background-jobs) for the
-post-deploy enable step.
+
+- API with no consumer wiring, by design — the wiring landed in
+  Phase 8: `ai-spam-rescore` gates `rescoreNewSubmissions` and
+  `ai-digest` gates `sendDueDigests` in `@sendcms/submissions` (flag
+  missing/disabled = job off). See
+  [ai-byok](./ai-byok.md#wiring-the-existing-capabilities) and
+  [Deployment](../deployment.md#ai-background-jobs) for the
+  post-deploy enable step.
 
 ## Announcements
 

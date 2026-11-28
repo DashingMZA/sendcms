@@ -425,6 +425,8 @@ import { setProviderConfigSchema } from "@sendcms/billing/validators"
 import {
   isProviderConfigured,
   missingEnvVars,
+  paypalMode,
+  polarEnvironment,
   stripeKeyModeMismatch,
 } from "@sendcms/billing"
 
@@ -523,9 +525,10 @@ describe("provider registry — configured/unconfigured", () => {
       GUMROAD_APP_SECRET: undefined,
     })
     expect(isProviderConfigured("STRIPE")).toBe(false)
+    // BIL-020: the publishable key is not required — no code reads
+    // it — so it never appears in the missing list, even when unset.
     expect(missingEnvVars("STRIPE")).toEqual([
       "STRIPE_SECRET_KEY",
-      "STRIPE_PUBLISHABLE_KEY",
       "STRIPE_WEBHOOK_SECRET",
     ])
     expect(isProviderConfigured("GUMROAD")).toBe(false)
@@ -538,12 +541,66 @@ describe("provider registry — configured/unconfigured", () => {
   it("reports a provider configured once all its vars are set", () => {
     setEnv({
       STRIPE_SECRET_KEY: "sk_test_x",
-      STRIPE_PUBLISHABLE_KEY: "pk_test_x",
       STRIPE_WEBHOOK_SECRET: "whsec_x",
     })
     expect(isProviderConfigured("STRIPE")).toBe(true)
     expect(missingEnvVars("STRIPE")).toEqual([])
     expect(isProviderConfigured("PAYPAL")).toBe(false)
+  })
+
+  // BIL-020: Stripe is configured with only secret + webhook secret
+  // — a missing publishable key must not block enablement.
+  it("reports Stripe configured without a publishable key", () => {
+    setEnv({
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_PUBLISHABLE_KEY: undefined,
+      STRIPE_WEBHOOK_SECRET: "whsec_x",
+    })
+    expect(isProviderConfigured("STRIPE")).toBe(true)
+  })
+})
+
+describe("provider mode validation — PayPal / Polar", () => {
+  // BIL-009: PAYPAL_MODE used to silently mean sandbox for any value
+  // other than "live".
+  it("paypalMode defaults to sandbox, accepts live case-insensitively", () => {
+    expect(paypalMode({})).toBe("sandbox")
+    expect(paypalMode({ PAYPAL_MODE: "" })).toBe("sandbox")
+    expect(paypalMode({ PAYPAL_MODE: "sandbox" })).toBe("sandbox")
+    expect(paypalMode({ PAYPAL_MODE: "live" })).toBe("live")
+    expect(paypalMode({ PAYPAL_MODE: " Live " })).toBe("live")
+  })
+
+  it("paypalMode throws 422 naming the bad value", () => {
+    expect(() => paypalMode({ PAYPAL_MODE: "production" })).toThrow(
+      /Invalid PAYPAL_MODE "production" \(expected "sandbox" or "live"\)/
+    )
+    expect(() => paypalMode({ PAYPAL_MODE: "prod" })).toThrow(
+      /Invalid PAYPAL_MODE/
+    )
+  })
+
+  // BIL-054: POLAR_ENVIRONMENT used to silently mean sandbox for any
+  // value other than "production".
+  it("polarEnvironment defaults to sandbox, accepts production case-insensitively", () => {
+    expect(polarEnvironment({})).toBe("sandbox")
+    expect(polarEnvironment({ POLAR_ENVIRONMENT: "" })).toBe("sandbox")
+    expect(polarEnvironment({ POLAR_ENVIRONMENT: "sandbox" })).toBe("sandbox")
+    expect(polarEnvironment({ POLAR_ENVIRONMENT: "production" })).toBe(
+      "production"
+    )
+    expect(polarEnvironment({ POLAR_ENVIRONMENT: " Production " })).toBe(
+      "production"
+    )
+  })
+
+  it("polarEnvironment throws 422 naming the bad value", () => {
+    expect(() => polarEnvironment({ POLAR_ENVIRONMENT: "prodution" })).toThrow(
+      /Invalid POLAR_ENVIRONMENT "prodution" \(expected "sandbox" or "production"\)/
+    )
+    expect(() => polarEnvironment({ POLAR_ENVIRONMENT: "live" })).toThrow(
+      /Invalid POLAR_ENVIRONMENT/
+    )
   })
 })
 
@@ -829,6 +886,28 @@ describe("checkout refuses unavailable providers", () => {
     ).rejects.toMatchObject({
       status: 422,
       message: expect.stringContaining("not available in your country"),
+    })
+  })
+
+  // BIL-025: in production an unset dashboard URL used to silently
+  // redirect paying customers to http://localhost:3002 — now the
+  // checkout fails loudly instead.
+  it("refuses checkout in production when NEXT_PUBLIC_DASHBOARD_URL is unset", async () => {
+    seedConfig("STRIPE", true, [])
+    setEnv({
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_WEBHOOK_SECRET: "whsec_x",
+      NEXT_PUBLIC_DASHBOARD_URL: undefined,
+      NODE_ENV: "production",
+    })
+    await expect(
+      createCheckoutSession(ownerSession, {
+        planVersionId: "pv-1",
+        provider: "STRIPE",
+      })
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("NEXT_PUBLIC_DASHBOARD_URL"),
     })
   })
 })
@@ -1334,6 +1413,10 @@ describe("Stripe test/live key separation (BIL-010)", () => {
       STRIPE_SECRET_KEY: "sk_test_x",
       STRIPE_PUBLISHABLE_KEY: "pk_test_x",
       STRIPE_WEBHOOK_SECRET: "test-hook-value",
+      // BIL-025: the dashboard URL must be set in production or the
+      // checkout fails on the missing URL before reaching the
+      // Stripe key-mode check.
+      NEXT_PUBLIC_DASHBOARD_URL: "http://localhost:3002",
     })
     await expect(
       createCheckoutSession(ownerSession, {

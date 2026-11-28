@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "build:cf": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && opennextjs-cloudflare build",
+    "build:cf": "pnpm --filter @sendcms/database db:generate && opennextjs-cloudflare build",
     "build:server": "pnpm --filter @sendcms/database db:generate && next build",
     "dev": "dotenv run -f ../../.env -- next dev --turbopack --port 3003",
     "lint": "eslint .",
@@ -14,10 +14,10 @@
   },
   "dependencies": {
     "@sendcms/content": "workspace:*",
+    "@sendcms/security": "workspace:*",
     "@sendcms/shared": "workspace:*",
     "@sendcms/ui": "workspace:*",
     "next": "16.4.6",
-    "next-themes": "^0.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

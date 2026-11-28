@@ -1,32 +1,15 @@
-// Public URLs of the sibling apps. Each app runs as its own server
-// (dev: a different localhost port; production: its own public URL),
-// so links that leave this app must be absolute. The *_URL env vars
-// are the single source of truth — see .env.example. The fallbacks are
-// the dev ports, so a missing var still works locally. Mirrors
-// apps/marketing/lib/app-links.ts.
-export function marketingUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(
-    /\/$/,
-    ""
-  )
-}
-
-/**
- * Absolute URL of the Terms of Service page, which lives on the
- * marketing app — the dashboard app has no /terms route, so a
- * relative "/terms" link would resolve on the dashboard origin and
- * 404. Used by the sign-in and sign-up pages.
- */
-export function marketingTermsURL(): string {
-  return `${marketingUrl()}/terms`
-}
-
-// DSH-006: the docs site's origin, env-driven (NEXT_PUBLIC_DOCS_URL)
-// like the other sibling-app URLs. The dashboard sidebar links here
-// so a signed-in user always has an in-app path to the docs.
-export function docsUrl(): string {
-  return (process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3003").replace(
-    /\/$/,
-    ""
-  )
-}
+// Cross-app links — single source is `@sendcms/shared` (SRC-120,
+// Phase 16, Wave 12). This file re-exports it so existing
+// `@/lib/app-links` imports keep working; do not add helpers here.
+// (DSH-006: the dashboard sidebar links to `docsUrl()` so a signed-in
+// user always has an in-app path to the docs.)
+export {
+  adminUrl,
+  apiUrl,
+  dashboardUrl,
+  docsUrl,
+  marketingTermsURL,
+  marketingUrl,
+  resolveLink,
+  updatesUrl,
+} from "@sendcms/shared"

@@ -79,3 +79,44 @@ describe("markdownify (SEC-208 / SRC-317)", () => {
     expect(__html).toContain("world")
   })
 })
+
+describe("markdownify .md link rewriting (LVE-003)", () => {
+  it("rewrites a served doc slug to its extensionless /docs route", () => {
+    const { __html } = markdownify("[SDK](sdk.md)")
+    expect(__html).toContain('href="/docs/sdk"')
+    expect(__html).not.toContain(".md")
+  })
+
+  it("rewrites ./-prefixed and anchored .md links to the same route", () => {
+    const { __html } = markdownify(
+      "[REST API](./rest-api.md) and [install](sdk.md#install)"
+    )
+    expect(__html).toContain('href="/docs/rest-api"')
+    expect(__html).toContain('href="/docs/sdk#install"')
+  })
+
+  it("links a doc with no live page to its GitHub source instead of a 404", () => {
+    const { __html } = markdownify(
+      "[platforms](deployment/platforms.md) and [runbook](operations/runbook.md)"
+    )
+    expect(__html).toContain(
+      'href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/deployment/platforms.md"'
+    )
+    expect(__html).toContain(
+      'href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/operations/runbook.md"'
+    )
+  })
+
+  it("links a flat repo-only doc (architecture.md) to GitHub, not /docs", () => {
+    const { __html } = markdownify("[arch](architecture.md)")
+    expect(__html).toContain(
+      'href="https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs/architecture.md"'
+    )
+    expect(__html).not.toContain('href="/docs/architecture"')
+  })
+
+  it("leaves absolute .md URLs untouched", () => {
+    const { __html } = markdownify("[guide](https://example.com/guide.md)")
+    expect(__html).toContain('href="https://example.com/guide.md"')
+  })
+})

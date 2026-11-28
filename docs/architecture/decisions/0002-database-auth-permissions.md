@@ -2,6 +2,15 @@
 
 Date: 2026-11-18 (monorepo migration, Phase 4)
 
+> **Later changes (2026-11-27, Phase 16 Wave 12):** the counts above
+> are the Phase 4 snapshot, not current. Migrations grew 19 → 57;
+> `ci.yml` now covers `feature/**` and its Prisma-client comment
+> reads `packages/database/generated/prisma` (the fix the
+> Consequences note left to the owner is done); `better-auth` is
+> still pinned at exactly `1.7.25`; and `lib/auth.ts` was kept as a
+> one-liner re-export wrapper — Phase 7 did **not** remove it as the
+> Decision section predicted.
+
 ## Context
 
 The app owned the whole data + auth stack at the root: `prisma/` (schema,

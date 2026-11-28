@@ -27,9 +27,14 @@ function dashboardURL(): string {
 }
 
 function docsURL(): string {
-  return (process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3003").replace(
-    /\/$/,
-    ""
+  // LVE-010 (Wave 12): the docs root (https://docs.sendcms.bond/)
+  // 404s — the docs index lives at /docs — so the 404 page must link
+  // to /docs, never to the bare root.
+  return (
+    (process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3003").replace(
+      /\/$/,
+      ""
+    ) + "/docs"
   )
 }
 

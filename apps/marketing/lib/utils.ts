@@ -1,11 +1,11 @@
 // Production URL fallback for canonical SEO metadata (sitemap, robots,
 // JSON-LD). This is the live Cloudflare deployment URL (wrangler vars set
-// the same value); when the final production domain is decided, change it
-// here and in wrangler.jsonc together.
+// the same value); the production domain is decided (sendcms.bond) —
+// change it here and in wrangler.jsonc together if it ever moves.
 import type { Metadata } from "next"
 import config from "@/config/config.json"
 
-const FALLBACK_APP_URL = "https://jadoo.bond"
+const FALLBACK_APP_URL = "https://sendcms.bond"
 
 // Absolute, trailing-slash-free base URL for canonical SEO metadata
 // (sitemap, robots, JSON-LD). Falls back to the production URL when

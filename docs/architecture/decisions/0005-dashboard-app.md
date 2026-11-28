@@ -202,3 +202,20 @@ code they cover.
   root app, but the submit API lives in the api app — the SDK's API
   origin (`__APP_URL__` / the script-src origin) must point at the
   api app, not the serving app, when the marketing app moves.
+
+## Wave 12 verification (2026-11-27)
+
+- Still holds: `packages/email` as the shared mailer, the per-app
+  `lib/auth.ts` one-liners (now three apps — admin joined in the
+  Admin Control Plane; the duplication is still intentional), `Logo`
+  (with the `brand` prop) + `ThemeProvider` in `packages/ui`,
+  `ThemeToggle` + `ProductSchema` in the marketing app (moved in
+  Phase 8 as anticipated), the `(dashboard)` route group with no pages,
+  and the root tsconfig excluding `apps`/`packages`.
+- Superseded: the test suite did NOT co-locate with code in Phase 13 —
+  the owner decided tests stay at the root permanently, so the
+  "until Phase 13" note above no longer applies. The `config.json`
+  copies are still five separate files, but the admin copy now differs
+  deliberately (title/logo_text/meta_description say "SendCMS Admin")
+  while the other four are byte-identical — the "must stay in sync"
+  caution applies to the shared fields, not the branding.

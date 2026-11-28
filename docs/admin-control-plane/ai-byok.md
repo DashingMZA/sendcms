@@ -10,8 +10,7 @@ which key a call uses. Provider resolution is a single function
 (`resolveAiModelForUser`) that every AI capability calls, and it
 **never silently falls back BYOK → platform**.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). Live verification against a real provider
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). Live verification against a real provider
 is still owed.
 
 ## Contents
@@ -21,7 +20,7 @@ is still owed.
 - [Provider resolution](#provider-resolution)
 - [Wiring the existing capabilities](#wiring-the-existing-capabilities)
 - [Admin controls](#admin-controls)
-- [Audit events (AI_KEY / USER / SETTINGS)](#audit-events-ai_key--user--settings)
+- [Audit events (AI_KEY / USER / SETTINGS)](#audit-events-aikey--user--settings)
 - [What is NOT in this phase](#what-is-not-in-this-phase)
 
 Module: `packages/modules/ai-settings` (`@sendcms/ai-settings`).

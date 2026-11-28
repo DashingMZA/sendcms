@@ -65,6 +65,32 @@ Replace `YOUR_APP`, `YOUR_USER_ID`, and `YOUR_FORM_ID` with your values.
 The form's fields must match the fields configured on the form in the
 dashboard — extra field names are rejected by the API.
 
+> **Do not paste the markup into a Markdown (`.md`) content file.**
+> Hugo's default Goldmark renderer strips raw HTML (`unsafe = false`
+> by default), so a `<script>` + `<form>` pasted into `.md` silently
+> disappears — no form, no error. That is exactly why the partial /
+> shortcode paths below exist: markup in a layout or shortcode is
+> never stripped. If you insist on inline HTML in Markdown, enable
+> it explicitly in `hugo.toml` (or `config.toml`):
+>
+> ```toml
+> [markup.goldmark.renderer]
+> unsafe = true
+> ```
+>
+> The shortcode below is still the recommended path.
+
+### Turnstile
+
+If the form has Turnstile enabled, the SDK needs its site key: add
+`data-turnstile-site-key="…"` to the script tag (or to the form, or
+pass it to `SendCMS.init()`). Without the key the SDK never loads
+Turnstile and the API rejects every submission with 422
+(`"Verification is required for this form."`). The snippet copied
+from the dashboard already includes the key when Turnstile is on —
+and shows a warning instead of a snippet when no site key is
+configured. Full reference: [SDK — Turnstile](sdk.md#turnstile).
+
 ## 2. Include the partial in a page
 
 In any layout or content file, for example `layouts/page/contact.html`:

@@ -15,18 +15,19 @@ each app). There is no root `wrangler.jsonc`.
 - [Secrets per app](#secrets-per-app)
 - [Production URLs](#production-urls)
 - [Shared R2 bucket — known caveat](#shared-r2-bucket--known-caveat)
+- [Worker types (`cf-typegen`)](#worker-types-cf-typegen)
 - [What does NOT deploy here](#what-does-not-deploy-here)
 
 ## The six workers
 
-| App              | Worker name         | Cloudflare Root directory | Serves                                                              |
-| ---------------- | ------------------- | ------------------------- | ------------------------------------------------------------------- |
-| `apps/api`       | `sendcms`           | `apps/api`                | Auth handler, all `/api/*` routes, the SDK bundle                   |
-| `apps/marketing` | `sendcms-marketing` | `apps/marketing`          | Landing, terms, SEO routes                                          |
-| `apps/dashboard` | `sendcms-dashboard` | `apps/dashboard`          | Dashboard + auth pages                                              |
-| `apps/docs`      | `sendcms-docs`      | `apps/docs`               | The user docs                                                       |
-| `apps/updates`   | `sendcms-updates`   | `apps/updates`            | The changelog                                                       |
-| `apps/admin`     | `sendcms-admin`     | `apps/admin`              | Admin app (`/admin/*`) — 🚧 control-plane branch only, not deployed |
+| App              | Worker name         | Cloudflare Root directory | Serves                                                                    |
+| ---------------- | ------------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `apps/api`       | `sendcms`           | `apps/api`                | Auth handler, all `/api/*` routes, the SDK bundle                         |
+| `apps/marketing` | `sendcms-marketing` | `apps/marketing`          | Landing, terms, SEO routes                                                |
+| `apps/dashboard` | `sendcms-dashboard` | `apps/dashboard`          | Dashboard + auth pages                                                    |
+| `apps/docs`      | `sendcms-docs`      | `apps/docs`               | The user docs                                                             |
+| `apps/updates`   | `sendcms-updates`   | `apps/updates`            | The changelog                                                             |
+| `apps/admin`     | `sendcms-admin`     | `apps/admin`              | Admin app (`/admin/*`) — live on the `feature/admin-control-plane` branch |
 
 The api app keeps the existing `sendcms` worker name (and its R2
 bucket + self-reference), so the current deployment's bindings keep
@@ -98,8 +99,8 @@ For each app, create a Workers project with:
   `pnpm --filter @sendcms/<app> build:cf`, then `wrangler deploy`
   from the app directory.
 - **Vars:** the `vars` in that app's `wrangler.jsonc` (see
-  [Production URLs](#production-urls) — most still carry
-  placeholders).
+  [Production URLs](#production-urls) — all six now use
+  `sendcms.bond`).
 - **Secrets:** the list in that app's `wrangler.jsonc` comment
   (dashboard → Settings → Variables, or `wrangler secret put`).
   See [Secrets per app](#secrets-per-app).
@@ -133,24 +134,22 @@ Cloudflare dashboard (or `wrangler secret put`):
 
 📌 **The production domain is decided: `sendcms.bond`.**
 Production runs on Vercel today at `https://sendcms.bond` with the
-`api`, `dashboard`, `docs`, and `updates` subdomains (plus
-`admin.sendcms.bond` reserved for the admin app). The Cloudflare
-`vars` have not all caught up yet:
+`api`, `dashboard`, `docs`, `updates`, and `admin` subdomains. The
+Cloudflare `vars` use `sendcms.bond` in all six apps:
 
 | App              | `vars` in `wrangler.jsonc` today | Target                           |
 | ---------------- | -------------------------------- | -------------------------------- |
 | `apps/admin`     | ✅ `*.sendcms.bond`              | `https://admin.sendcms.bond`     |
-| `apps/api`       | ⚠️ `*.jadoo.bond` placeholders   | `https://api.sendcms.bond`       |
-| `apps/marketing` | ⚠️ `*.jadoo.bond` placeholders   | `https://sendcms.bond`           |
-| `apps/dashboard` | ⚠️ `*.jadoo.bond` placeholders   | `https://dashboard.sendcms.bond` |
-| `apps/docs`      | ⚠️ `*.jadoo.bond` placeholders   | `https://docs.sendcms.bond`      |
-| `apps/updates`   | ⚠️ `*.jadoo.bond` placeholders   | `https://updates.sendcms.bond`   |
+| `apps/api`       | ✅ `*.sendcms.bond`              | `https://api.sendcms.bond`       |
+| `apps/marketing` | ✅ `*.sendcms.bond`              | `https://sendcms.bond`           |
+| `apps/dashboard` | ✅ `*.sendcms.bond`              | `https://dashboard.sendcms.bond` |
+| `apps/docs`      | ✅ `*.sendcms.bond`              | `https://docs.sendcms.bond`      |
+| `apps/updates`   | ✅ `*.sendcms.bond`              | `https://updates.sendcms.bond`   |
 
-The five `jadoo.bond` files still carry their "until the production
-domain decision" comments — that decision has since been made, so
-switching their `vars` to `sendcms.bond` is an owner step (in the
-dashboard, or in the `wrangler.jsonc` files). Change the vars,
-never the code: each app reads only the URLs it links to, and
+The `vars` were switched from the `jadoo.bond` placeholders to
+`sendcms.bond` in Wave 12 (LVE-006) — the production domain
+decision (2026-11-20) is now applied in all six files. Change the
+vars, never the code: each app reads only the URLs it links to, and
 `NEXT_PUBLIC_*` values are baked into the browser bundle at build
 time, so changing one means rebuilding. The shared fallback
 (`FALLBACK_APP_URL`) follows the same rule.
@@ -165,6 +164,19 @@ routes that are never cached), so the cache is near-empty in practice —
 but identical paths across apps (e.g. `/` on marketing vs the
 dashboard's 404) share cache keys. If the cache ever matters, give
 each app its own bucket.
+
+## Worker types (`cf-typegen`)
+
+`pnpm cf-typegen` generates one `cloudflare-env.d.ts` per app
+(`apps/<app>/cloudflare-env.d.ts`), from that app's own
+`wrangler.jsonc` — not one shared file. The bindings are the same
+across apps (R2, Images, assets, self-reference), but the `vars`
+differ per app (each app's own public URLs), so a single api-only
+file would mistype the other five workers. The files are generated
+output: gitignored (and prettier-ignored) — never commit them, and
+rerun `pnpm cf-typegen` after changing any `wrangler.jsonc`. CI runs
+it in the `build-cf` job. No code imports `CloudflareEnv` yet; the
+files exist so Worker env access can be typed when it is needed.
 
 ## What does NOT deploy here
 

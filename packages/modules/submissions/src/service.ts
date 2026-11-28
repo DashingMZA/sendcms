@@ -18,6 +18,7 @@ import { createLogger } from "@sendcms/observability"
 import {
   buildPlainDigestSummary,
   generateDigest,
+  getAiProviderConfigError,
   getDigestIntervalHours,
   getSpamThreshold,
   isAiAuthFailure,
@@ -808,6 +809,15 @@ export async function rescoreNewSubmissions({
   // key. A BYOK-only deployment (no platform key) still runs its AI
   // jobs; per-owner resolution below decides which key each call uses.
   if (!isAiConfigured(env) && !(await anyByokKeyConfigured())) {
+    // AIM-024: `isAiConfigured` swallows an unknown AI_PROVIDER by
+    // design — log the misconfiguration instead of silently skipping
+    // the job forever, so the bad value surfaces in the worker logs.
+    const configError = getAiProviderConfigError(env)
+    if (configError) {
+      logger.warn("AI provider misconfigured, rescore job skipping", {
+        error: configError,
+      })
+    }
     return { checked: 0, markedSpam: 0, skipped: 0 }
   }
   const threshold = getSpamThreshold(env)

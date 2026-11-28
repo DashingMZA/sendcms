@@ -75,38 +75,108 @@ Never edit applied migrations. Create a new one.
 
 ## Existing Enums
 
-| Enum                       | Values                                                                                               | Used By                     |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------- |
-| `PlatformRole`             | PLATFORM_OWNER, PLATFORM_USER                                                                        | `User.platformRole`         |
-| `DomainStatus`             | PENDING, VERIFIED, SUSPENDED                                                                         | `Domain.status`             |
-| `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE                                                                              | `DomainVerification.method` |
-| `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED                                                                   | `DomainVerification.status` |
-| `FormFieldType`            | TEXT, EMAIL, TEXTAREA, NUMBER, SELECT, CHECKBOX, RADIO, URL, TEL, DATE                               | `FormField.type`            |
-| `SubmissionStatus`         | NEW, READ, STARRED, ARCHIVED, SPAM                                                                   | `Submission.status`         |
-| `SubmissionEventType`      | CREATED, READ, UNREAD, STARRED, UNSTARRED, ARCHIVED, RESTORED, MARKED_SPAM, EMAIL_SENT, EMAIL_FAILED | `SubmissionEvent.type`      |
-| `EmailJobType`             | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET                                          | `EmailJob.type`             |
-| `EmailJobStatus`           | PENDING, SENDING, SENT, FAILED                                                                       | `EmailJob.status`           |
-| `AuditAction`              | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE                                                  | `AuditLog.action`           |
-| `AuditResource`            | DOMAIN, FORM, SUBMISSION, USER, SETTINGS, API_KEY                                                    | `AuditLog.resourceType`     |
-| `ApiKeyScope`              | READ, FULL                                                                                           | `ApiKey.scope`              |
+| Enum | Values | Used By |
+| ---- | ------ | ------- |
+| `PlatformRole` | PLATFORM_OWNER, PLATFORM_USER | `User.platformRole` |
+| `UserStatus` | ACTIVE, SUSPENDED, DISABLED | `User.status` |
+| `AdminRole` | SUPER_ADMIN, MANAGER, SUPPORT | `User.adminRole` |
+| `DomainStatus` | PENDING, VERIFIED, SUSPENDED | `Domain.status` |
+| `DomainVerificationMethod` | DNS_TXT, META_TAG, FILE | `DomainVerification.method` |
+| `DomainVerificationStatus` | PENDING, VERIFIED, FAILED, EXPIRED | `DomainVerification.status` |
+| `FormFieldType` | TEXT, EMAIL, TEXTAREA, NUMBER, SELECT, CHECKBOX, RADIO, URL, TEL, DATE | `FormField.type` |
+| `SubmissionStatus` | NEW, READ, STARRED, ARCHIVED, SPAM | `Submission.status` |
+| `SubmissionEventType` | CREATED, READ, UNREAD, STARRED, UNSTARRED, ARCHIVED, RESTORED, MARKED_SPAM, EMAIL_SENT, EMAIL_FAILED, EMAIL_QUEUED | `SubmissionEvent.type` |
+| `EmailJobType` | SUBMISSION_NOTIFICATION, EMAIL_VERIFICATION, PASSWORD_RESET, DIGEST, SUBMISSION_REPLY, TEST_EMAIL | `EmailJob.type` |
+| `EmailJobStatus` | PENDING, SENDING, SENT, FAILED | `EmailJob.status` |
+| `EmailDeliveryStatus` | DELIVERED, BOUNCED, COMPLAINED, DELIVERY_DELAYED | `EmailJob.deliveryStatus` |
+| `SuppressionReason` | BOUNCED, COMPLAINED, UNSUBSCRIBED | `EmailSuppression.reason` |
+| `AuditAction` | CREATE, UPDATE, DELETE, VERIFY, SUSPEND, REACTIVATE, PUBLISH, MIGRATE, CANCEL, ARCHIVE, ASSIGN, STEP_UP_VERIFIED, STEP_UP_FAILED | `AuditLog.action` |
+| `AuditResource` | DOMAIN, FORM, SUBMISSION, USER, SETTINGS, API_KEY, PLAN, SUBSCRIPTION, ENTITLEMENT, AI_KEY, MCP_SETTINGS, FEATURE_FLAG, ANNOUNCEMENT, DELETION_REQUEST, BILLING_PROVIDER, SUPPORT_TICKET, COUPON | `AuditLog.resourceType` |
+| `AuditOutcome` | SUCCESS, FAILED | `AuditLog.outcome` |
+| `AnnouncementAudience` | ALL, ADMIN_ONLY | `Announcement.audience` |
+| `DeletionRequestStatus` | REQUESTED, APPROVED, REJECTED, COMPLETED | `DeletionRequest.status` |
+| `PlanKind` | FREE, PAID | `Plan.kind` |
+| `PlanStatus` | DRAFT, PUBLISHED, ARCHIVED | `Plan.status` |
+| `PlanVersionStatus` | DRAFT, PUBLISHED, SUPERSEDED, ARCHIVED | `PlanVersion.status` |
+| `BillingInterval` | MONTHLY, ANNUAL, CUSTOM, ONE_TIME | `PlanVersion.billingInterval`, `Coupon.appliesToBillingInterval` |
+| `OneTimePurchaseStatus` | ACTIVE, REFUNDED, EXPIRED | `OneTimePurchase.status` |
+| `SubscriptionStatus` | ACTIVE, TRIALING, PAST_DUE, CANCELED, EXPIRED | `Subscription.status` |
+| `SubscriptionEventType` | CREATED, MIGRATED, RENEWED, CANCELED, EXPIRED, REACTIVATED, CANCEL_SCHEDULED, PAYMENT_FAILED, REFUNDED | `SubscriptionEvent.type` |
+| `CouponDiscountType` | PERCENT, FIXED | `Coupon.discountType` |
+| `CouponStatus` | ACTIVE, DISABLED, EXPIRED | `Coupon.status` |
+| `UsageMeter` | FORMS, DOMAINS, SUBMISSIONS, API_KEYS, MCP_REQUESTS, AI_REQUESTS | `UsageLedger.meter`, `EntitlementOverride.meter` |
+| `AiProvider` | OPENAI, ANTHROPIC, GOOGLE, DEEPSEEK, OPENROUTER | `UserAiKey.provider`, `AiProviderConfig.provider`, `AiUsageRecord.provider` |
+| `AiBillingMode` | BYOK, PLATFORM, DISABLED | `AiUsageRecord.billingMode`, `UserAiSettings.billingMode` |
+| `AiUsageStatus` | SUCCESS, FAILED, RETRY | `AiUsageRecord.status` |
+| `AiKeyTestStatus` | OK, FAILED, UNTESTED | `UserAiKey.lastTestStatus` |
+| `ApiKeyScope` | READ, FULL | `ApiKey.scope` |
+| `CronJobName` | EMAIL_OUTBOX | `CronRun.jobName` |
+| `CronTrigger` | VERCEL_CRON, WORKER, MANUAL | `CronRun.trigger` |
+| `CronRunStatus` | RUNNING, SUCCESS, PARTIAL, FAILED | `CronRun.status` |
+| `McpUsageStatus` | SUCCESS, FAILED | `McpUsageRecord.status` |
+| `BillingProvider` | STRIPE, PAYPAL, GUMROAD, FREEMIUS, POLAR | `Subscription.provider`, `OneTimePurchase.provider`, `BillingProviderConfig.provider`, `BillingEvent.provider`, `CheckoutAttempt.provider` |
+| `BillingEventKind` | CHECKOUT_COMPLETED, PAYMENT_SUCCEEDED, PAYMENT_FAILED, SUBSCRIPTION_CANCELED, SUBSCRIPTION_UPDATED, PAYMENT_REFUNDED, UNMAPPED_PAYMENT, IGNORED | `BillingEvent.kind` |
+| `CheckoutAttemptStatus` | CREATED, COMPLETED, FAILED | `CheckoutAttempt.status` |
+| `TicketStatus` | OPEN, IN_PROGRESS, WAITING_ON_CUSTOMER, RESOLVED, CLOSED | `SupportTicket.status` |
+| `TicketPriority` | LOW, NORMAL, HIGH, URGENT | `SupportTicket.priority` |
+| `RateLimitScope` | ADMIN_API, AUTH, STEP_UP | `RateLimitBucket.scope` |
 
 ## Existing Models
 
-| Model                  | Relations                                                                                | Indexes                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `User`                 | has many Account, Session, Domain, Form, SubmissionEvent (as actor), AuditLog (as actor) | `email @unique`                                                                                                           |
-| `Domain`               | → User; has many DomainVerification, FormDomain                                          | `domain @unique`, `@@index([ownerId])`, `@@index([status, createdAt])`                                                    |
-| `DomainVerification`   | → Domain                                                                                 | `@@index([domainId])`, `@@index([domainId, status, createdAt])`                                                           |
-| `Form`                 | → User; has many FormField, FormDomain, Submission, NotificationSettings, EmailJob       | `@@index([ownerId])`, `@@index([ownerId, active])`                                                                        |
-| `FormDomain`           | → Form + Domain (many-to-many join)                                                      | `@@unique([formId, domainId])`, `@@index([formId])`, `@@index([domainId])`                                                |
-| `FormField`            | → Form                                                                                   | `@@unique([formId, name])`, `@@index([formId, order])`                                                                    |
-| `Submission`           | → Form; has many SubmissionEvent, EmailJob                                               | `@@unique([formId, idempotencyKey])`, `@@index([formId, status, createdAt])`, `@@index([formId, contentHash, createdAt])` |
-| `SubmissionEvent`      | → Submission; → User? (actor, SetNull)                                                   | `@@index([submissionId, createdAt])`, `@@index([submissionId, type, createdAt])`                                          |
-| `NotificationSettings` | → Form                                                                                   | `@@unique([formId, email])`, `@@index([formId])`                                                                          |
-| `EmailJob`             | → Form? + Submission? (SetNull)                                                          | `@@index([status, nextAttemptAt, createdAt])`, `@@index([type, createdAt])`                                               |
-| `AuditLog`             | → User? (actor, SetNull)                                                                 | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`                                          |
-| `ApiKey`               | → User; has one ApiKeyRateLimit?                                                         | `keyHash @unique`, `@@index([userId])`, `@@index([userId, revokedAt, createdAt])`                                         |
-| `ApiKeyRateLimit`      | → ApiKey (1:1, same id)                                                                  | `apiKeyId` is the PK                                                                                                      |
+| Model | Relations | Indexes |
+| ----- | --------- | ------- |
+| `User` | has many Account; has many Session; has many Domain; has many Form; has many Submission; has many EmailJob; has many ApiKey; has many SubmissionEvent; has many AuditLog; has many AdminNote; has many Subscription; has many OneTimePurchase; has many SubscriptionEvent; has many PlanVersion; has many UsageLedger; has many EntitlementOverride; has many UserAiKey; has many AiUsageRecord; → UserAiSettings; has many AiDailyOwnerUsage; has many BillingEvent; has many CheckoutAttempt; → McpUserSettings; has many McpUsageRecord; has many FeatureFlagOverride; has many DeletionRequest; has many Announcement; has many SupportTicket; has many TicketMessage; has many StepUpVerification; has many CronRun; has many Coupon; has many CouponRedemption | `email @unique`, `@@index([status])`, `@@index([adminRole])`, `@@index([createdAt])`, `@@index([platformRole])`, `@@index([emailVerified])` |
+| `AdminNote` | → User | `@@index([userId])`, `@@index([adminId])`, `@@index([createdAt])` |
+| `Account` | → User | `@@unique([providerId, accountId])`, `@@index([userId])` |
+| `Session` | → User | `token @unique`, `@@index([userId])` |
+| `Verification` | — | `@@index([identifier])` |
+| `Domain` | → User; has many DomainVerification; has many FormDomain | `domain @unique`, `@@index([status, createdAt])`, `@@index([ownerId, status])` |
+| `DomainVerification` | → Domain | `@@index([domainId, status, createdAt])` |
+| `Form` | → User; has many FormField; has many FormDomain; has many Submission; has many NotificationSettings; has many EmailJob; has many AiDailyUsage | `@@index([ownerId, active])`, `@@index([ownerId, deletedAt])` |
+| `FormDomain` | → Form; → Domain | `@@unique([formId, domainId])`, `@@index([domainId])` |
+| `FormField` | → Form | `@@unique([formId, name])`, `@@index([formId, order])` |
+| `Submission` | → Form; → User; has many SubmissionEvent; has many EmailJob | `@@unique([formId, idempotencyKey])`, `@@index([formId, status, createdAt])`, `@@index([formId, createdAt])`, `@@index([formId, contentHash, createdAt])`, `@@index([ownerId, createdAt])`, `@@index([ownerId, status, createdAt])`, `@@index([ipAddress, createdAt])`, `@@index([status, aiScoredAt, createdAt])`, `@@index([createdAt])` |
+| `SubmissionEvent` | → Submission; → User | `@@index([submissionId, createdAt])`, `@@index([submissionId, type, createdAt])`, `@@index([actorId])` |
+| `NotificationSettings` | → Form | `@@unique([formId, email])` |
+| `EmailJob` | → Form; → User; → Submission | `@@index([status, nextAttemptAt, createdAt])`, `@@index([status, claimedAt])`, `@@index([type, createdAt])`, `@@index([submissionId])`, `@@index([formId, createdAt])`, `@@index([ownerId, createdAt])`, `@@index([ownerId, status, createdAt])`, `@@index([providerMessageId])` |
+| `CronRun` | → User | `@@index([jobName, createdAt])`, `@@index([status, createdAt])` |
+| `EmailSuppression` | — | `@@unique([email, formId])` |
+| `AuditLog` | → User | `@@index([userId, createdAt])`, `@@index([resourceType, resourceId, createdAt])`, `@@index([createdAt])`, `@@index([correlationId])`, `@@index([outcome, createdAt])` |
+| `ApiKey` | → User; → ApiKeyRateLimit; has many McpUsageRecord | `keyHash @unique`, `@@index([userId, revokedAt, createdAt])` |
+| `ApiKeyRateLimit` | → ApiKey | — |
+| `AiDailyUsage` | → Form | `@@unique([formId, date])`, `@@index([date])` |
+| `AiDailyOwnerUsage` | → User | `@@unique([userId, date])` |
+| `Plan` | → PlanVersion; has many PlanVersion; has many Subscription; has many OneTimePurchase | `slug @unique`, `@@index([kind])`, `@@index([status, kind])`, `@@index([status, isPrivate])`, `@@index([currentVersionId])` |
+| `PlanVersion` | → Plan; → User; has many Subscription; has many OneTimePurchase; has many CheckoutAttempt; has many Plan; has many SubscriptionEvent | `@@unique([planId, version])`, `@@index([planId, status])`, `@@index([status, publishedAt])`, `@@index([createdById])` |
+| `Subscription` | → User; → Plan; → PlanVersion; has many SubscriptionEvent; has many OneTimePurchase; has many CouponRedemption | `@@index([userId, status])`, `@@index([planId])`, `@@index([planVersionId])`, `@@index([status, currentPeriodEnd])`, `@@unique([provider, providerSubscriptionId])`, `@@index([providerSubscriptionId, status, createdAt])` |
+| `OneTimePurchase` | → User; → Plan; → PlanVersion; → Subscription | `@@unique([provider, providerReference])`, `@@index([userId, status])`, `@@index([planId])`, `@@index([planVersionId])`, `@@index([subscriptionId])`, `@@index([status, accessEnd])` |
+| `SubscriptionEvent` | → Subscription; → PlanVersion; → User | `@@index([subscriptionId, createdAt])`, `@@index([subscriptionId, type, createdAt])`, `@@index([providerEventId])`, `@@index([fromPlanVersionId])`, `@@index([toPlanVersionId])`, `@@index([adminId])` |
+| `UsageLedger` | → User | `idempotencyKey @unique`, `@@index([userId, meter, period])`, `@@index([userId, meter, createdAt])`, `@@index([period])` |
+| `EntitlementOverride` | → User | `@@unique([userId, meter])`, `@@index([expiresAt])`, `@@index([adminId])` |
+| `UserAiKey` | → User | `@@unique([userId, provider])`, `@@index([provider])`, `@@index([userId, isEnabled])` |
+| `AiProviderConfig` | — | `provider @unique` |
+| `AiUsageRecord` | → User | `@@index([userId, createdAt])`, `@@index([provider, createdAt])`, `@@index([billingMode, createdAt])`, `@@index([userId, billingMode, createdAt])`, `@@index([createdAt])` |
+| `UserAiSettings` | → User | `userId @unique` |
+| `McpSettings` | — | — |
+| `McpUserSettings` | → User | `userId @unique` |
+| `McpUsageRecord` | → ApiKey; → User | `idempotencyKey @unique`, `@@index([userId, createdAt])`, `@@index([apiKeyId, createdAt])`, `@@index([tool, createdAt])`, `@@index([userId, tool, createdAt])`, `@@index([createdAt])` |
+| `FeatureFlag` | has many FeatureFlagOverride | `key @unique` |
+| `FeatureFlagOverride` | → FeatureFlag; → User | `@@unique([flagId, userId])`, `@@index([userId])`, `@@index([adminId])` |
+| `Announcement` | → User | `@@index([isActive, startsAt, endsAt])`, `@@index([audience, isActive])`, `@@index([isActive, audience, createdAt])`, `@@index([createdById])` |
+| `DeletionRequest` | → User | `@@index([userId, status])`, `@@index([status, createdAt])`, `@@index([reviewedById])` |
+| `BillingProviderConfig` | has many BillingProviderCountry | `provider @unique` |
+| `BillingEvent` | → User | `@@unique([provider, providerEventId])`, `@@index([provider, createdAt])`, `@@index([userId, createdAt])`, `@@index([kind, createdAt])` |
+| `CheckoutAttempt` | → User; → PlanVersion; has many CouponRedemption | `attemptId @unique`, `@@index([userId, createdAt])`, `@@index([planVersionId, createdAt])`, `@@index([provider, providerCheckoutId])` |
+| `Coupon` | → User; has many CouponRedemption | `code @unique`, `@@index([code])`, `@@index([status, createdAt])`, `@@index([createdById])` |
+| `CouponRedemption` | → Coupon; → User; → Subscription; → CheckoutAttempt | `@@index([couponId, createdAt])`, `@@index([userId, couponId])`, `@@index([subscriptionId])`, `@@index([checkoutAttemptId])` |
+| `SupportTicket` | → User; has many TicketMessage | `@@index([userId, status])`, `@@index([status, createdAt])`, `@@index([assignedToId])` |
+| `TicketMessage` | → SupportTicket; → User | `@@index([ticketId, createdAt])`, `@@index([authorId])` |
+| `Country` | has many BillingProviderCountry | `@@index([name])` |
+| `BillingProviderCountry` | → BillingProviderConfig; → Country | `@@unique([providerConfigId, countryCode])`, `@@index([countryCode])` |
+| `RateLimitBucket` | — | `@@unique([scope, subject])` |
+| `StepUpVerification` | → User | `@@index([userId, expiresAt])`, `@@index([userId, action, expiresAt])` |
+
+> Regenerated from `packages/database/prisma/schema.prisma` (50 models, 43 enums) — Phase 16, Wave 12. Re-run `scripts/regen-schema-tables.py` to refresh; do not hand-edit the tables.
 
 ## Anti-Patterns
 

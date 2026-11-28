@@ -219,6 +219,79 @@ export const DEFAULT_MODELS: Record<AiProviderName, string> = {
   openrouter: "openai/gpt-4o-mini",
 }
 
+/** Thrown by `resolveAiProvider` when the explicit `AI_PROVIDER`
+    names no known provider. A distinct class (not a plain Error) so
+    callers can tell a misconfiguration from a missing key: the
+    interactive resolver converts it to a 503 naming the bad value
+    (AIM-024), and the worker logs it instead of silently skipping.
+    The message names the bad value — never log the surrounding env
+    with it (it may hold keys). */
+export class UnknownAiProviderError extends Error {
+  readonly provider: string
+  constructor(provider: string) {
+    super(
+      `Unknown AI_PROVIDER "${provider}" (expected one of: ${AI_PROVIDERS.join(", ")}).`
+    )
+    this.name = "UnknownAiProviderError"
+    this.provider = provider
+  }
+}
+
+/** Thrown by `getAiModelId` when the `AI_MODEL` override clearly
+    belongs to a different provider than the one selected (AIM-027).
+    Only raised when the id matches another provider's model-id
+    prefix — an unknown id passes through untouched, so a new model
+    is never rejected for being new. The admin allowlist (per
+    provider) is the guard for genuinely unknown ids, and the
+    provider itself 404s the rest at call time. */
+export class MismatchedAiModelError extends Error {
+  readonly provider: AiProviderName
+  readonly modelId: string
+  readonly looksLike: AiProviderName
+  constructor(
+    provider: AiProviderName,
+    modelId: string,
+    looksLike: AiProviderName
+  ) {
+    super(
+      `AI_MODEL "${modelId}" looks like an ${looksLike} model, not a ${provider} model. ` +
+        `Set AI_MODEL to a ${provider} model id (default: "${DEFAULT_MODELS[provider]}") or remove the override.`
+    )
+    this.name = "MismatchedAiModelError"
+    this.provider = provider
+    this.modelId = modelId
+    this.looksLike = looksLike
+  }
+}
+
+/** Model-id prefixes that belong to each provider — the cross-provider
+    check for `AI_MODEL` (AIM-027). OpenRouter ids are `vendor/model`,
+    so any id containing `/` belongs to openrouter (empty prefix list).
+    Keep this list to unambiguous prefixes only: it must catch
+    `gpt-4o-mini` under `google`, never reject a legitimate new id. */
+const MODEL_ID_PREFIXES: Record<AiProviderName, string[]> = {
+  openai: ["gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"],
+  anthropic: ["claude-"],
+  google: ["gemini-", "gemma-"],
+  deepseek: ["deepseek-"],
+  openrouter: [],
+}
+
+/** Which provider a model id looks like, from its prefix — null when
+    it matches no provider's shape (unknown ids are not attributed). */
+function providerForModelId(modelId: string): AiProviderName | null {
+  if (modelId.includes("/")) return "openrouter"
+  const lower = modelId.toLowerCase()
+  for (const provider of AI_PROVIDERS) {
+    if (
+      MODEL_ID_PREFIXES[provider].some((prefix) => lower.startsWith(prefix))
+    ) {
+      return provider
+    }
+  }
+  return null
+}
+
 /** Resolves the configured provider. Throws on an unknown explicit
     `AI_PROVIDER` — that is a misconfiguration, not a missing key.
     The explicit name is matched case-insensitively (SRC-325:
@@ -228,8 +301,9 @@ export const DEFAULT_MODELS: Record<AiProviderName, string> = {
     the FIRST provider whose key is set wins (SRC-325: the
     precedence is documented here, not implicit). `AI_MODEL` is a
     global override for whichever provider is selected; a model id
-    for one provider is never validated against another's list —
-    the admin allowlist (per provider) is the guard for that. */
+    that clearly belongs to another provider is rejected by
+    `getAiModelId` (AIM-027) — the admin allowlist (per provider)
+    is the guard for anything else. */
 export function resolveAiProvider(
   env: NodeJS.ProcessEnv = process.env
 ): AiProvider {
@@ -238,14 +312,28 @@ export function resolveAiProvider(
     if ((AI_PROVIDERS as readonly string[]).includes(selected)) {
       return selected as AiProviderName
     }
-    throw new Error(
-      `Unknown AI_PROVIDER "${env.AI_PROVIDER?.trim()}" (expected one of: ${AI_PROVIDERS.join(", ")}).`
-    )
+    throw new UnknownAiProviderError(env.AI_PROVIDER?.trim() ?? "")
   }
   for (const provider of AI_PROVIDERS) {
     if (env[PROVIDER_ENV_VARS[provider]]) return provider
   }
   return "none"
+}
+
+/** The unknown-`AI_PROVIDER` misconfiguration, as a message, or null
+    when the explicit provider (if any) is known. `isAiConfigured`
+    swallows the throw by design (it answers "is any AI usable?"), so
+    worker jobs that skip on `!isAiConfigured` call this first and
+    log the misconfiguration instead of silently skipping (AIM-024). */
+export function getAiProviderConfigError(
+  env: NodeJS.ProcessEnv = process.env
+): string | null {
+  try {
+    resolveAiProvider(env)
+    return null
+  } catch (err) {
+    return err instanceof UnknownAiProviderError ? err.message : null
+  }
 }
 
 /** True when a provider AND its key are configured. Capabilities use
@@ -260,12 +348,24 @@ export function isAiConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /** The model id for a provider: `AI_MODEL` when set, else the
-    provider's default. */
+    provider's default. An override that clearly belongs to another
+    provider (AIM-027: `AI_MODEL=gpt-4o-mini` with
+    `AI_PROVIDER=google`) throws `MismatchedAiModelError` before any
+    model call — a wrong-provider id used to fail only when the
+    provider 404d it at call time, surfacing as a generic 500. An
+    override matching no provider's prefix passes through: the admin
+    allowlist and the provider itself are the guards for those. */
 export function getAiModelId(
   provider: AiProviderName,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  return env.AI_MODEL?.trim() || DEFAULT_MODELS[provider]
+  const override = env.AI_MODEL?.trim()
+  if (!override) return DEFAULT_MODELS[provider]
+  const looksLike = providerForModelId(override)
+  if (looksLike && looksLike !== provider) {
+    throw new MismatchedAiModelError(provider, override, looksLike)
+  }
+  return override
 }
 
 /**

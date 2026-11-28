@@ -2,7 +2,9 @@ import { generateText } from "ai"
 import type { AdminSession } from "@sendcms/auth"
 import {
   DEFAULT_MODELS,
+  MismatchedAiModelError,
   PROVIDER_ENV_VARS,
+  UnknownAiProviderError,
   decryptByokKey,
   encryptByokKey,
   getAiModelForKey,
@@ -1248,6 +1250,12 @@ function pickByokProvider(
   }
   // No provider requested: prefer the platform's configured provider
   // when the user has a key for it, else the first enabled key.
+  // AIM-024: the swallow here is deliberate — the platform provider
+  // is only a preference hint for which BYOK key to prefer, so a
+  // bogus AI_PROVIDER must not refuse a call the user's own key can
+  // serve. The loud path for a bad AI_PROVIDER is step (3) of
+  // resolveAiModelForUser (platform mode) and the rescore gate's
+  // getAiProviderConfigError log (worker).
   let platformProvider: AiProviderName | "none" = "none"
   try {
     platformProvider = resolveAiProvider(env)
@@ -1458,7 +1466,20 @@ export async function resolveAiModelForUser(
   if (!entitlements.aiPlatformAllowed) {
     throw new AiNotAvailableError("Your plan does not allow platform AI.")
   }
-  const provider = opts.provider ?? resolveAiProvider(env)
+  // AIM-024 / AIM-027: a bad AI_PROVIDER or a wrong-provider
+  // AI_MODEL is a named misconfiguration, not a generic 503 — the
+  // resolver's typed errors are converted here so the interactive
+  // caller (suggest-fields, draft-reply) reports the bad value
+  // instead of "AI is not available right now".
+  let provider: AiProviderName | "none"
+  try {
+    provider = opts.provider ?? resolveAiProvider(env)
+  } catch (err) {
+    if (err instanceof UnknownAiProviderError) {
+      throw new AiNotAvailableError(err.message)
+    }
+    throw err
+  }
   if (provider === "none") {
     throw new AiNotAvailableError(
       "No AI provider is configured. Set a provider key first."
@@ -1469,7 +1490,14 @@ export async function resolveAiModelForUser(
       `Your plan does not allow the ${provider} provider.`
     )
   }
-  return resolvePlatformModel(provider, env)
+  try {
+    return await resolvePlatformModel(provider, env)
+  } catch (err) {
+    if (err instanceof MismatchedAiModelError) {
+      throw new AiNotAvailableError(err.message)
+    }
+    throw err
+  }
 }
 
 /** The worker-safe wrapper: null on ANY resolution failure, so the

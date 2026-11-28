@@ -18,10 +18,8 @@ import {
 // (`/_next/static`, `/_next/image`, `favicon.ico`, and any path with a
 // file extension), which are not documents.
 //
-// The CSP builder lives in `@sendcms/security`, but this proxy imports
-// it by relative path: the package barrel (`src/index.ts`) is owned by
-// the in-flight rate-limit work and must not be touched by this pass.
-// Move the import to the barrel (`@sendcms/security`) at integration.
+// The CSP builder lives in `@sendcms/security` (imported from the
+// package barrel above).
 export function proxy(req: NextRequest) {
   const nonce = createCspNonce()
   // Violations report to the api app's report route (Phase 16,

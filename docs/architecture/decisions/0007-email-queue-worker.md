@@ -175,3 +175,21 @@ for the links to resolve (documented in `.env.example`).
   job. Both were fixed in the script (spawn `tsx` directly; sample
   `/health` while waiting for the DB change) and the third run was
   clean.
+
+## Wave 12 verification (2026-11-27)
+
+- Still holds: the queue functions and backoff ladder, both injections
+  removed (`createSendcmsAuth()` takes no arguments; the outbox
+  processor imports from `@sendcms/email` directly), the worker
+  factory shape and health endpoint, and the `types` field lesson
+  (Wave 12 Stream B added `"types": ["node"]` to the shared/sdk/ui
+  tsconfigs for the same reason).
+- Superseded: the cron route's outbox limit is 25, not 100 (Wave 9
+  rebuilt the cron as the `@sendcms/cron` package with per-step
+  limits). The claim now carries a 10-minute lease (`claimedAt`,
+  `STALE_CLAIM_LEASE_MINUTES = 10`, Wave 9 EML-031) — a killed
+  worker's SENDING job is reclaimed after the lease, not held forever.
+  The notification inbox link no longer falls back to the app URL in
+  production: `dashboardBaseUrl()` throws a 422 when
+  `NEXT_PUBLIC_DASHBOARD_URL` is unset in production (Wave 12,
+  BIL-025); the localhost fallback is dev/test only.

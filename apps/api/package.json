@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@sendcms/admin-users": "workspace:*",
     "@sendcms/ai": "workspace:*",
     "@sendcms/ai-settings": "workspace:*",
@@ -37,6 +38,7 @@
     "@sendcms/security": "workspace:*",
     "@sendcms/submissions": "workspace:*",
     "@sendcms/support": "workspace:*",
+    "@sendcms/users": "workspace:*",
     "better-auth": "1.7.25",
     "next": "16.4.6",
     "react": "^19.3.1",

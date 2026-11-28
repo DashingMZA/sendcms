@@ -22,11 +22,30 @@ packages/modules/<name>/src/validators.ts →  Zod schemas (shared by routes + s
 @sendcms/api-client →  response.ts (ok, created, noContent) + error.ts (handleApiError; ApiError lives in @sendcms/shared, re-exported) + cors.ts (getEffectiveOrigin, normalizeOrigin, corsHeaders)
 @sendcms/email      →  platform email: provider + auth mailer + notification deps (imported directly by the auth factory and the notifications module — no injection since Phase 9)
 @sendcms/queue      →  email outbox queue: EmailJob claim + retry state machine (imported by the notifications module)
-@sendcms/security   →  shared security headers (`securityHeaders()` / `renderHeadersFile()`) + the one `logAudit()` writer (imported by services; the audit writer is the documented exception to "only services import @sendcms/database" — like @sendcms/auth is for auth)
+@sendcms/security   →  shared security headers (`securityHeaders()` / `renderHeadersFile()`) + the one `logAudit()` writer (imported by services; the audit writer, the rate limiter, and step-up re-auth are documented exceptions to "only services import @sendcms/database" — like @sendcms/auth is for auth; the full exception list lives in `tests/architecture-db-imports.test.ts`, which fails CI on any unlisted importer)
 @sendcms/observability →  structured logging: `createLogger(scope)` writes JSON lines (imported by server code that used to console.log/console.error)
 ```
 
 Route handlers must NOT import `@sendcms/database` directly. Services must NOT import from `next/*`.
+
+The `db` value may be imported only from module services
+(`packages/modules/*/src/**`, never their `queries.ts` / `validators.ts`)
+and from the documented infrastructure exceptions — `@sendcms/auth` (the
+auth factory), `@sendcms/security` (the audit writer, the rate limiter,
+step-up re-auth), `@sendcms/mcp` (`access` / `rate-limit` / `usage`),
+`@sendcms/queue` (the email-outbox claim/retry state machine), the
+`@sendcms/permissions/target-user` subpath only (`getTargetUserOrThrow`;
+the permissions root stays dependency-free so proxies and client
+components can import `platformCan` / `adminCan` without pulling the
+Prisma client into an edge or browser bundle), and the api app's
+Node-only boot check (`apps/api/instrumentation-node.ts` — the Turnstile
+startup check; not a route handler, never Edge/client code). These
+packages are single-purpose infrastructure, like the rate limiter —
+routing their DB access through a service layer would be a fake
+abstraction.
+`tests/architecture-db-imports.test.ts` asserts the exact importer set,
+so a new direct `db` import fails CI until it is added to the list
+here with a reason.
 
 Server code logs through `createLogger(scope)` from `@sendcms/observability`, not `console` — except the auth mailer's dev verification-link line (its exact `[auth-email]` format is greppable and the journey depends on it) and the seed script (a CLI script).
 

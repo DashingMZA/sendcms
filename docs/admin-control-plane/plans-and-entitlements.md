@@ -8,8 +8,7 @@ hardcoded limits exactly (API keys 10, AI 100 calls/day, MCP 120/min +
 2000/hour, everything else unlimited), so creating it changes nothing
 for current users; limits are admin-configurable from here on.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed).
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`).
 
 ## Contents
 

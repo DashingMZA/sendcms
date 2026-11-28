@@ -132,8 +132,10 @@ describe("PRF-033 — parseDoc: first paragraph, not first line", () => {
       expect(doc.description).not.toContain("YOUR_APP")
       expect(doc.description.endsWith(".")).toBe(true)
     }
-    expect(listDocs()).toHaveLength(12)
-    expect(DOC_SLUGS).toHaveLength(12)
+    // DOC-049 (Phase 16, Wave 12): four user guides added (billing,
+    // ai-byok, support-tickets, analytics) — 12 → 16 served docs.
+    expect(listDocs()).toHaveLength(16)
+    expect(DOC_SLUGS).toHaveLength(16)
   })
 })
 

@@ -1,8 +1,12 @@
-# Local preview secrets for `pnpm preview:cf` (wrangler dev / preview).
+# Local secrets for `wrangler dev` (Cloudflare local preview).
 # Copy to `.dev.vars` (gitignored) and fill in real values — never commit them.
+# Build first: `pnpm --filter @sendcms/api build:cf`, then `wrangler dev`
+# from the app directory. There is no `pnpm preview:cf` script.
 # Production secrets live in the Cloudflare dashboard / `wrangler secret put`.
 DATABASE_URL="postgresql://user:pass@host:5432/db"
-AUTH_SECRET=""
+BETTER_AUTH_SECRET=""
+BETTER_AUTH_URL="http://localhost:3001"
+TRUSTED_ORIGINS="http://localhost:3002,http://localhost:3006"
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 NEXT_PUBLIC_APP_URL="http://localhost:3000"

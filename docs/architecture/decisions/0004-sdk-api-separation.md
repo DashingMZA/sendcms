@@ -111,3 +111,17 @@ Two monorepo gotchas, both fixed in the skeleton (not worked around):
   journey 43/43 (first run 38/43 — the dev server had been started
   without `CRON_SECRET`, so the cron route correctly refused with 503;
   re-ran with the secret set, 43/43).
+
+## Wave 12 verification (2026-11-27)
+
+- Still holds: the SDK package builds to `apps/api/public/forms/`
+  (the serving app moved from the root app to the api app in Phase 8,
+  as this ADR anticipated), `HONEYPOT_FIELD` lives once in
+  `@sendcms/shared/src/constants.ts`, the `@sendcms/sdk/snippet`
+  subpath, `@sendcms/api-client` (`cors`/`response`/`error`, plus a
+  later `validation.ts`), and `turbopack.root` = workspace root.
+- Superseded: `apps/api/proxy.ts` is no longer the no-op this ADR
+  describes — it now attaches the shared enforcing CSP, enforces the
+  v1 origin allowlist (SEC-202), and rejects non-POST/OPTIONS methods
+  on the public submit endpoint (Phase 16, SEC-303 / PRF-005). It still
+  exists so the dashboard's proxy is not picked up as the api app's.

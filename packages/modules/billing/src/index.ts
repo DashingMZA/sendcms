@@ -1,17 +1,23 @@
 export {
   BILLING_PROVIDERS,
   BILLING_PROVIDER_IDS,
+  assertPayPalMode,
+  assertPolarEnvironment,
   assertStripeKeyMode,
   expectedStripeMode,
   getBillingProviderDefinition,
   isProviderConfigured,
   missingEnvVars,
+  paypalMode,
+  polarEnvironment,
   stripeKeyModeMismatch,
   stripeSecretKeyMode,
 } from "./registry"
 export type {
   BillingProviderDefinition,
   BillingProviderId,
+  PayPalMode,
+  PolarEnvironment,
   StripeKeyMode,
 } from "./registry"
 export {

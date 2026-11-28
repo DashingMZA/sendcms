@@ -33,13 +33,81 @@ marked.use({
   walkTokens(token) {
     if (token.type === "html") {
       token.text = ""
-    } else if (token.type === "link" && !isSafeHref(token.href)) {
-      token.href = "#"
+    } else if (token.type === "link") {
+      if (!isSafeHref(token.href)) {
+        token.href = "#"
+      } else {
+        // LVE-003: rewrite relative `.md` links (see below).
+        token.href = rewriteDocLink(token.href) ?? token.href
+      }
     } else if (token.type === "image" && !isSafeHref(token.href)) {
       token.href = ""
     }
   },
 })
+
+// LVE-003 (Phase 16, Wave 12): the docs app renders repo Markdown
+// verbatim, so a relative `.md` link in a doc passed through as a
+// real anchor pointing at a `.md` URL that 404s (`/docs/sdk.md`)
+// while the extensionless sibling (`/docs/sdk`) returns 200 — 19 of
+// the 35 unique links on the live docs/updates pages were dead.
+// Rewrite relative `.md` hrefs at render time:
+// - a flat `<slug>.md` the docs app serves → `/docs/<slug>`;
+// - anything else (`deployment/platforms.md`, `operations/runbook.md`,
+//   `admin-control-plane/*.md`, `architecture.md`) has no live docs
+//   page, so link to its source on GitHub (live branch) instead of
+//   to a 404.
+// Anchors (`#…`) and query strings survive the rewrite. Absolute
+// URLs, `mailto:`/`tel:`, and `#` anchors are never touched.
+// The served-slug list mirrors `DOC_SLUGS` in
+// `apps/docs/lib/docs.ts` — keep the two in sync when a doc is added
+// or removed; a slug missing here falls through to the GitHub link.
+const SERVED_DOC_SLUGS = [
+  "getting-started",
+  "sdk",
+  "rest-api",
+  "mcp",
+  "billing",
+  "ai-byok",
+  "support-tickets",
+  "analytics",
+  "embed-html",
+  "embed-nextjs",
+  "embed-astro",
+  "embed-hugo",
+  "email-notifications",
+  "security",
+  "troubleshooting",
+  "deployment",
+] as const
+
+const GITHUB_DOCS_BASE =
+  "https://github.com/DashingMZA/sendcms/blob/feature/admin-control-plane/docs"
+
+function rewriteDocLink(href: string): string | null {
+  const match = href.match(/^([^#?]*\.md)([#?].*)?$/)
+  if (!match) return null
+  const [, path, suffix = ""] = match
+  // Absolute URLs (any scheme) are never rewritten, even if they end
+  // in `.md`.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null
+  // Normalise: strip leading `./`, `../`, `/`, and a `docs/` prefix —
+  // the links in the served docs are written relative to the docs/
+  // root, so `sdk.md`, `./sdk.md`, and `docs/sdk.md` all mean the
+  // same file.
+  const normalized = path
+    .replace(/^(?:\.\.\/|\.\/|\/)+/, "")
+    .replace(/^docs\//, "")
+  const withoutExt = normalized.slice(0, -".md".length)
+  const isServedSlug =
+    !withoutExt.includes("/") &&
+    (SERVED_DOC_SLUGS as readonly string[]).includes(withoutExt)
+  if (isServedSlug) {
+    return `/docs/${withoutExt}${suffix}`
+  }
+  if (withoutExt.length === 0) return null
+  return `${GITHUB_DOCS_BASE}/${normalized}${suffix}`
+}
 
 // slugify
 export const slugify = (content: string) => {

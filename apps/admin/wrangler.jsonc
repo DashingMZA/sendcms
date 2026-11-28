@@ -11,7 +11,7 @@
   // the decided production domain (sendcms.bond) — change the vars,
   // never the code.
   "build": {
-    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+    "command": "pnpm --filter @sendcms/database db:generate && npx @opennextjs/cloudflare build",
   },
   // Dynamic Next.js App Router app (SSR + API routes + Prisma +
   // Better Auth), so it cannot run as plain static assets — the

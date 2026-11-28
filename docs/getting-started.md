@@ -116,14 +116,14 @@ until it is unlinked.
    linked.
 4. Optional settings on the form detail page:
 
-   | Setting                 | What it does                                                                                                                                               |
-   | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | **Success message**     | Shown after a successful submit.                                                                                                                           |
-   | **Redirect URL**        | Where the visitor goes after submitting (SDK and no-JS fallback follow it; the REST API returns it in the response).                                       |
-   | **Daily limit**         | Maximum submissions per day (empty = unlimited).                                                                                                           |
-   | **Honeypot**            | On by default; an invisible trap field catches bots.                                                                                                       |
-   | **Turnstile**           | Cloudflare Turnstile challenge; needs `TURNSTILE_SECRET_KEY` (and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` for the SDK). Turnstile failures reject the submission. |
-   | **Notification emails** | One or more addresses that receive an email per submission. Each address can be enabled or disabled.                                                       |
+   | Setting                 | What it does                                                                                                                                                                                    |
+   | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | **Success message**     | Shown after a successful submit.                                                                                                                                                                |
+   | **Redirect URL**        | Where the visitor goes after submitting (SDK and no-JS fallback follow it; the REST API returns it in the response).                                                                            |
+   | **Daily limit**         | Maximum submissions per day (empty = unlimited).                                                                                                                                                |
+   | **Honeypot**            | On by default; an invisible trap field catches bots.                                                                                                                                            |
+   | **Turnstile**           | Cloudflare Turnstile challenge; needs `TURNSTILE_SECRET_KEY` (and `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, which the dashboard puts into the embed snippet). Turnstile failures reject the submission. |
+   | **Notification emails** | One or more addresses that receive an email per submission. Each address can be enabled or disabled.                                                                                            |
 
 5. Note the form's **formId** and your **userId** on the form detail page
    (the "Embed on your site" section shows a ready-made snippet). Both
@@ -178,8 +178,11 @@ delivery log.
 
 ## What SendCMS does not do
 
-- No API keys. A submission is accepted only when its `Origin` is a
-  verified domain linked to the form.
+- No API keys for your visitors. A submission is accepted only when
+  its `Origin` is a verified domain linked to the form — your
+  visitors never need a key. (Owner API keys for MCP exist
+  separately: create them at `/dashboard/api-keys`; see
+  [MCP](mcp.md).)
 - No per-site SMTP setup. Notifications use one platform provider
   (Resend, or SMTP as a fallback).
 - No accounts for your visitors. Your visitors never sign in — only you

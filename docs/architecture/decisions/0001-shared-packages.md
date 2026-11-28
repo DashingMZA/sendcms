@@ -51,3 +51,18 @@ class-name helper, and the same TS/ESLint settings — without copying files.
 - The root `tsconfig.json` `include` (`**/*.ts`) still covers the packages,
   so the app's `tsc --noEmit` typechecks them too; each package also has
   its own tsconfig for standalone `turbo run typecheck`.
+
+## Wave 12 verification (2026-11-27)
+
+- Still holds: `packages/config` (tsconfig/base.json + eslint/base.mjs),
+  `cn()` in `@sendcms/shared`, `getBaseUrl()` app-local only, the 34
+  components in `packages/ui` (grown from 22) + `useIsMobile`,
+  `react`/`react-dom` peerDeps, `transpilePackages` in all six apps,
+  the `components.json` aliases, and no CSS in the ui package.
+- Superseded: the root tsconfig no longer typechecks the packages — it
+  excludes `apps` and `packages` (ADR 0005 records the split; SRC-401).
+  Each app/package is typechecked by its own config (`pnpm typecheck`
+  runs 39/39). The design-tokens condition has also been met: tokens now
+  live as per-app `styles/design-tokens.css` files in five apps (Wave 10
+  UX-203), still duplicated per app rather than shared — no shared
+  tokens package exists yet.

@@ -96,7 +96,12 @@ translated.
   still SENDING more than 10 minutes after its claim is treated as
   stuck (its processor died mid-send) and is automatically reclaimed
   by the next drain — or requeued manually from the SENDING tab once
-  it is past the lease.
+  it is past the lease. Effective retry timing follows the drain, not
+  the ladder alone: on the Hobby once-daily cron a failed job's
+  `nextAttemptAt` passes hours before the next invocation, so attempts
+  happen on consecutive days and the job goes terminal FAILED after 6
+  days. With the standalone worker running (every 30 s) or a
+  5-minute cron, the ladder paces as written.
 - `providerMessageId` records the Resend/SMTP message id for
   delivery tracking. `SENT` means only "provider accepted": the
   signed Resend webhook (`POST /api/webhooks/resend`,
@@ -139,11 +144,12 @@ change the schedule to `*/5 * * * *` when the plan allows it.
 }
 ```
 
-⚠️ **Vercel Cron cannot send custom headers.** The cron route needs
-`Authorization: Bearer <CRON_SECRET>`, so call it from an external
-scheduler that can send the header, or front it with a small proxy
-that adds the header. Set `CRON_SECRET` in the project env vars.
-See [Deployment](deployment.md#email-outbox-cron).
+⚠️ **Vercel Cron sends the header for you.** When `CRON_SECRET` is
+set, Vercel automatically sends `Authorization: Bearer <CRON_SECRET>`
+on cron invocations — no proxy is needed. An external scheduler must
+send the header itself; a Cloudflare Cron Trigger invokes directly
+with no HTTP (and therefore no header). Set `CRON_SECRET` in the
+project env vars. See [Deployment](deployment.md#email-outbox-cron).
 
 ## Standalone worker
 

@@ -4,8 +4,7 @@ Admin controls for the MCP endpoint (`POST /api/mcp`), enforced by the
 MCP service itself — not only by the admin UI. Every control changed
 in the admin app takes effect on the next MCP request.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). No live verification against a real MCP
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). No live verification against a real MCP
 client yet — the tests use an in-memory transport with mocked
 services.
 
@@ -26,12 +25,12 @@ services.
 
 ## What exists
 
-| Control                                                     | Where                                                                      | Capability                           |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
-| Global kill-switch (`globalEnabled`)                        | `GET/POST /api/v1/admin/mcp/settings`                                      | read `VIEW_MCP`, write `MANAGE_MCP`  |
-| Per-user controls (enable, tool allowlist, quota overrides) | `GET/POST /api/v1/admin/mcp/users/[userId]/settings`                       | read `VIEW_MCP`, write `MANAGE_MCP`  |
-| Usage history + summary                                     | `GET /api/v1/admin/mcp/usage`, `GET /api/v1/admin/mcp/usage/summary`       | `VIEW_MCP`                           |
-| Keys list + revoke                                          | `GET /api/v1/admin/mcp/keys`, `POST /api/v1/admin/mcp/keys/[keyId]/revoke` | read `VIEW_MCP`, revoke `MANAGE_MCP` |
+| Control                                                     | Where                                                                                                                                          | Capability                           |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Global kill-switch (`globalEnabled`)                        | `GET/POST /api/v1/admin/mcp/settings`                                                                                                          | read `VIEW_MCP`, write `MANAGE_MCP`  |
+| Per-user controls (enable, tool allowlist, quota overrides) | `GET/POST /api/v1/admin/mcp/users/[userId]/settings`                                                                                           | read `VIEW_MCP`, write `MANAGE_MCP`  |
+| Usage history + summary                                     | `GET /api/v1/admin/mcp/usage`, `GET /api/v1/admin/mcp/usage/summary` — rendered on `/admin/mcp` (there is no separate `/admin/mcp/usage` page) | `VIEW_MCP`                           |
+| Keys list + revoke                                          | `GET /api/v1/admin/mcp/keys`, `POST /api/v1/admin/mcp/keys/[keyId]/revoke`                                                                     | read `VIEW_MCP`, revoke `MANAGE_MCP` |
 
 Service module: `packages/modules/mcp-admin/` (`@sendcms/mcp-admin`) —
 `src/service.ts`, `src/validators.ts`, `src/queries.ts` (React Query

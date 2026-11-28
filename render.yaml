@@ -3,8 +3,8 @@
 # Create it from the Render dashboard: New → Blueprint → this repo.
 # Render provisions all 6 web services + the email worker + Postgres.
 #
-# Branch: the monorepo code lives on the feature branch until it is
-# merged — change `branch` to `main` after the merge.
+# Branch: the admin control plane lives on feature/admin-control-plane
+# until it is merged — change `branch` to `main` after the merge.
 # Region: singapore is the closest Render region to Pakistan; change it
 # if you prefer another one (the database must stay in the same region).
 # Plan: `free` everywhere so the Blueprint deploys with no card. Free
@@ -30,7 +30,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/marketing build:server
     startCommand: pnpm --filter @sendcms/marketing start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /
@@ -43,6 +43,8 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
@@ -53,7 +55,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/api build:server
     startCommand: pnpm --filter @sendcms/api start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /api/health/deep
@@ -82,6 +84,8 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
@@ -114,13 +118,61 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_BYOK_MASTER_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: POLAR_ENVIRONMENT
+        sync: false
+      - key: FREEMIUS_PRODUCT_ID
+        sync: false
+      - key: FREEMIUS_API_KEY
+        sync: false
+      - key: FREEMIUS_SECRET_KEY
+        sync: false
+      - key: FREEMIUS_PUBLIC_KEY
+        sync: false
+      - key: FREEMIUS_SANDBOX
+        sync: false
+      - key: GUMROAD_APP_ID
+        sync: false
+      - key: GUMROAD_APP_SECRET
+        sync: false
 
   - type: web
     name: sendcms-dashboard
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/dashboard build:server
     startCommand: pnpm --filter @sendcms/dashboard start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /sign-in
@@ -148,17 +200,87 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
         value: https://sendcms-updates.onrender.com
+      # Build-time: inlined into the dashboard's embed snippet
+      # (NEXT_PUBLIC_TURNSTILE_SITE_KEY). Empty = Turnstile off on forms.
+      - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY
+        sync: false
+      # Not read by the dashboard — the OAuth flow runs on the api app,
+      # AI + billing run on api/worker, Turnstile is verified on api.
+      # Listed so a full env list does not look incomplete; setting
+      # them here changes nothing.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: FACEBOOK_CLIENT_ID
+        sync: false
+      - key: FACEBOOK_CLIENT_SECRET
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_BYOK_MASTER_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: POLAR_ENVIRONMENT
+        sync: false
+      - key: FREEMIUS_PRODUCT_ID
+        sync: false
+      - key: FREEMIUS_API_KEY
+        sync: false
+      - key: FREEMIUS_SECRET_KEY
+        sync: false
+      - key: FREEMIUS_PUBLIC_KEY
+        sync: false
+      - key: FREEMIUS_SANDBOX
+        sync: false
+      - key: GUMROAD_APP_ID
+        sync: false
+      - key: GUMROAD_APP_SECRET
+        sync: false
 
   - type: web
     name: sendcms-admin
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/admin build:server
     startCommand: pnpm --filter @sendcms/admin start -- -H 0.0.0.0 -p $PORT
     # No healthCheckPath: /admin 307-redirects unauthenticated requests
@@ -193,13 +315,77 @@ services:
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
         value: https://sendcms-updates.onrender.com
+      # Not read by the admin app — the OAuth flow runs on the api app,
+      # AI + billing run on api/worker, Turnstile is verified on api.
+      # Listed so a full env list does not look incomplete; setting
+      # them here changes nothing.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: FACEBOOK_CLIENT_ID
+        sync: false
+      - key: FACEBOOK_CLIENT_SECRET
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_BYOK_MASTER_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: POLAR_ENVIRONMENT
+        sync: false
+      - key: FREEMIUS_PRODUCT_ID
+        sync: false
+      - key: FREEMIUS_API_KEY
+        sync: false
+      - key: FREEMIUS_SECRET_KEY
+        sync: false
+      - key: FREEMIUS_PUBLIC_KEY
+        sync: false
+      - key: FREEMIUS_SANDBOX
+        sync: false
+      - key: GUMROAD_APP_ID
+        sync: false
+      - key: GUMROAD_APP_SECRET
+        sync: false
 
   - type: web
     name: sendcms-docs
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/docs build:server
     startCommand: pnpm --filter @sendcms/docs start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /docs
@@ -212,6 +398,8 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
@@ -222,7 +410,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
+    branch: feature/admin-control-plane
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/updates build:server
     startCommand: pnpm --filter @sendcms/updates start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /changelog
@@ -235,6 +423,8 @@ services:
         value: https://sendcms-api.onrender.com
       - key: NEXT_PUBLIC_DASHBOARD_URL
         value: https://sendcms-dashboard.onrender.com
+      - key: NEXT_PUBLIC_ADMIN_URL
+        value: https://sendcms-admin.onrender.com
       - key: NEXT_PUBLIC_DOCS_URL
         value: https://sendcms-docs.onrender.com
       - key: NEXT_PUBLIC_UPDATES_URL
@@ -245,8 +435,8 @@ services:
     runtime: node
     region: singapore
     plan: free
-    branch: feature/monorepo-architecture-migration
-    buildCommand: pnpm install --frozen-lockfile
+    branch: feature/admin-control-plane
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @sendcms/database db:generate
     startCommand: pnpm --filter @sendcms/email-worker start
     envVars:
       - key: NODE_VERSION
@@ -272,6 +462,21 @@ services:
       - key: SMTP_PASS
         sync: false
       - key: SMTP_FROM
+        sync: false
+      # AI — spam re-scoring + digests run here as well as on the api app.
+      - key: AI_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_BYOK_MASTER_KEY
         sync: false
 
 databases:

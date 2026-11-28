@@ -1259,7 +1259,14 @@ describe("checkout — Polar + Freemius + Gumroad (BIL-048 / BIL-050 / BIL-056 /
 
   it("creates a Freemius production checkout when FREEMIUS_SANDBOX=false", async () => {
     freemiusEnv()
-    setEnv({ FREEMIUS_SANDBOX: "false", NODE_ENV: "production" })
+    // BIL-025 (Wave 12): production checkout fails loudly when
+    // NEXT_PUBLIC_DASHBOARD_URL is unset, so a production checkout test
+    // must supply it — the localhost fallback applies to dev/test only.
+    setEnv({
+      FREEMIUS_SANDBOX: "false",
+      NODE_ENV: "production",
+      NEXT_PUBLIC_DASHBOARD_URL: "https://dashboard.sendcms.bond",
+    })
     seedVersion()
     seedConfig("FREEMIUS", true, [])
     await createCheckoutSession(customerSession, {

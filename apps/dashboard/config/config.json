@@ -1,14 +1,4 @@
 {
-  "branding": {
-    "enable": false,
-    "powered_by_html": "Powered by <a href=\"https://github.com/DashingMZA/sendcms\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"z-footer-link\">SendCMS</a>"
-  },
-  "email": {
-    "defaultAccentColor": "#0891b2",
-    "defaultFooterText": "You're receiving this because you get notifications for this form.",
-    "defaultSubjectPrefix": "[New Submission]",
-    "fromName": "SendCMS"
-  },
   "metadata": {
     "meta_author": "SendCMS",
     "meta_description": "SendCMS - a contact-form backend for static and modern websites. Add one script tag and every form submission lands in a dashboard inbox.",

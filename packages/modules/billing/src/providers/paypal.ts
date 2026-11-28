@@ -1,5 +1,6 @@
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
+import { paypalMode } from "../registry"
 import type {
   CheckoutArgs,
   CheckoutResult,
@@ -20,10 +21,21 @@ const log = createLogger("billing:paypal")
 // has no catalog controller, so products and billing plans cannot be
 // created through it. Same endpoints the SDK would call, same shape.
 // PAYPAL_MODE is sandbox by default — live only when the admin sets
-// it to "live" with live credentials.
+// it to "live" with live credentials. Any other value is a
+// misconfiguration: `paypalMode()` throws a 422 naming it (BIL-009)
+// instead of silently running sandbox.
+
+// BIL-009: log the effective mode once per process, so a sandbox
+// deploy is visible in the logs instead of discovered at checkout.
+let loggedPayPalMode = false
 
 function baseUrl(): string {
-  return process.env.PAYPAL_MODE === "live"
+  const mode = paypalMode()
+  if (!loggedPayPalMode) {
+    loggedPayPalMode = true
+    log.info("PayPal mode", { mode })
+  }
+  return mode === "live"
     ? "https://api-m.paypal.com"
     : "https://api-m.sandbox.paypal.com"
 }

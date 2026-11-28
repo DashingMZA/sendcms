@@ -36,7 +36,13 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    // `Response.json()` is `unknown` here — the Node fetch types
+    // (@types/node, undici) win over the DOM lib in app programs —
+    // so narrow the parsed body explicitly instead of relying on
+    // the DOM lib's `any`.
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: unknown
+    }
     const message =
       typeof body.error === "string" ? body.error : "Request failed"
     throw new ApiClientError(message, res.status, body.error)
@@ -45,5 +51,5 @@ export async function apiFetch<T>(
   if (res.status === 204) return undefined as T
   return res.json().catch(() => {
     throw new ApiClientError("Invalid response", res.status)
-  })
+  }) as Promise<T>
 }

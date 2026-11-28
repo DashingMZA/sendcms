@@ -1,7 +1,7 @@
 # Multi-platform deployment
 
-SendCMS runs on any host that can run Node.js. The five Next.js apps
-(marketing, api, dashboard, docs, updates) plus the standalone email
+SendCMS runs on any host that can run Node.js. The six Next.js apps
+(marketing, api, dashboard, docs, updates, admin) plus the standalone email
 worker each deploy independently — one host per app on the serverless
 platforms, or all of them together in one Docker Compose stack on a
 single server. Cloudflare Workers is the original path (see
@@ -10,8 +10,9 @@ single server. Cloudflare Workers is the original path (see
 📌 **Production domain: `sendcms.bond`** (decided 2026-11-20).
 Marketing `https://sendcms.bond`, api `https://api.sendcms.bond`,
 dashboard `https://dashboard.sendcms.bond`, docs
-`https://docs.sendcms.bond`, updates `https://updates.sendcms.bond`.
-The `feature/ai` branch is deployed to production on all five Vercel
+`https://docs.sendcms.bond`, updates `https://updates.sendcms.bond`,
+admin `https://admin.sendcms.bond`.
+The `feature/admin-control-plane` branch is deployed to production on all six Vercel
 projects. Deploys are **manual only** (Ignored Build Step).
 
 ## Contents
@@ -70,13 +71,13 @@ dashboard and admin apps' public URLs. Full variable table:
 
 ## Platform × app matrix
 
-| Platform      | marketing          | api                   | dashboard                   | docs                   | updates                   | email worker                       |
-| ------------- | ------------------ | --------------------- | --------------------------- | ---------------------- | ------------------------- | ---------------------------------- |
-| Vercel        | project `sendcms`  | project `sendcms-api` | project `sendcms-dashboard` | project `sendcms-docs` | project `sendcms-updates` | cron route (no long-lived process) |
-| Node / Docker | compose service    | compose service       | compose service             | compose service        | compose service           | compose service                    |
-| Render        | Blueprint service  | Blueprint service     | Blueprint service           | Blueprint service      | Blueprint service         | Blueprint worker                   |
-| Netlify       | site               | site                  | site                        | site                   | site                      | cron route (no long-lived process) |
-| Railway       | Dockerfile service | Dockerfile service    | Dockerfile service          | Dockerfile service     | Dockerfile service        | Dockerfile service                 |
+| Platform      | marketing          | api                   | dashboard                   | docs                   | updates                   | admin                   | email worker                       |
+| ------------- | ------------------ | --------------------- | --------------------------- | ---------------------- | ------------------------- | ----------------------- | ---------------------------------- |
+| Vercel        | project `sendcms`  | project `sendcms-api` | project `sendcms-dashboard` | project `sendcms-docs` | project `sendcms-updates` | project `sendcms-admin` | cron route (no long-lived process) |
+| Node / Docker | compose service    | compose service       | compose service             | compose service        | compose service           | compose service         | compose service                    |
+| Render        | Blueprint service  | Blueprint service     | Blueprint service           | Blueprint service      | Blueprint service         | Blueprint service       | Blueprint worker                   |
+| Netlify       | site               | site                  | site                        | site                   | site                      | site                    | cron route (no long-lived process) |
+| Railway       | Dockerfile service | Dockerfile service    | Dockerfile service          | Dockerfile service     | Dockerfile service        | Dockerfile service      | Dockerfile service                 |
 
 The email worker is a long-running Node process (`tsx
 services/email-worker/src/index.ts`, `/health` on `PORT` else
@@ -96,24 +97,21 @@ One project per app (all in the same team, all linked to
 
 | Project             | Build command                                   | Output directory       | Production domain        |
 | ------------------- | ----------------------------------------------- | ---------------------- | ------------------------ |
-| `sendcms`           | `pnpm --filter @sendcms/marketing build`        | `apps/marketing/.next` | `sendcms.bond`           |
+| `sendcms`           | `pnpm --filter @sendcms/marketing build:server` | `apps/marketing/.next` | `sendcms.bond`           |
 | `sendcms-api`       | `pnpm --filter @sendcms/api build:server`       | `apps/api/.next`       | `api.sendcms.bond`       |
 | `sendcms-dashboard` | `pnpm --filter @sendcms/dashboard build:server` | `apps/dashboard/.next` | `dashboard.sendcms.bond` |
 | `sendcms-docs`      | `pnpm --filter @sendcms/docs build:server`      | `apps/docs/.next`      | `docs.sendcms.bond`      |
 | `sendcms-updates`   | `pnpm --filter @sendcms/updates build:server`   | `apps/updates/.next`   | `updates.sendcms.bond`   |
 | `sendcms-admin`     | `pnpm --filter @sendcms/admin build:server`     | `apps/admin/.next`     | `admin.sendcms.bond`     |
 
-(The marketing project predates `build:server` and still uses plain
-`next build` — marketing needs no Prisma generate, so the two are
-equivalent there; switching it to `build:server` is a no-op.)
-
 Deploys are **manual only**: the Ignored Build Step ("Don't build
 anything") cancels git-triggered deploys, so pushing to `main` triggers
 nothing. Deploy from the dashboard (or via the agent) when tested and
-ready. The `feature/ai` branch is deployed to production on the five
-original projects; the admin project is new — deploy the
-`feature/admin-control-plane` branch on it until the branches merge.
-Set the env vars in each project's dashboard before the
+ready — follow the [deployment checklist](../operations/deployment-checklist.md),
+which names all six projects and verifies each one serves the same
+commit. All six projects deploy the `feature/admin-control-plane`
+branch — the live branch (see [Deployment](../deployment.md) for the
+live state). Set the env vars in each project's dashboard before the
 first deploy — the `NEXT_PUBLIC_*_URL` vars must be that project's
 siblings' public URLs (see the env table in
 [Deployment](../deployment.md#environment-variables)), and `DATABASE_URL` /
@@ -122,10 +120,19 @@ per project (they are not shared between projects). Preview
 deployments are behind the team's SSO protection; custom domains are
 exempt.
 
+- **LVE-011 (owner step):** `www.sendcms.bond` is not configured on
+  any project — it resolves in DNS but serves nothing (no domain, no
+  certificate). Add `www.sendcms.bond` as a redirect domain on the
+  marketing project (→ `https://sendcms.bond/`, 308) or decide it is
+  unsupported and remove the DNS record. The checklist verifies it.
+- **Rollback:** if a deploy goes bad, see the
+  [rollback procedure](../deployment.md#rollback) — Vercel Instant
+  Rollback, per project.
+
 ## Node server / Docker
 
 `Dockerfile` (repo root, parameterized by build arg `APP`) +
-`docker-compose.yml` (all 5 apps + worker + Postgres) +
+`docker-compose.yml` (all 6 apps + worker + Postgres) +
 `.dockerignore`.
 
 ```bash
@@ -140,7 +147,7 @@ docker compose up -d
 One image per service, built from the same Dockerfile with a
 different `APP` arg (`@sendcms/marketing`, `@sendcms/api`,
 `@sendcms/dashboard`, `@sendcms/docs`, `@sendcms/updates`,
-`@sendcms/email-worker`). The build stage installs the workspace,
+`@sendcms/admin`, `@sendcms/email-worker`). The build stage installs the workspace,
 generates the Prisma client, and runs `build:server` for the selected
 app (the worker has no build step — it runs from TypeScript source via
 `tsx`, which is a production dependency of the worker package for
@@ -176,10 +183,9 @@ the verification step for this path.
 6 web services + the email worker + managed Postgres. Create it from
 the dashboard: New → Blueprint → this repo.
 
-- ⚠️ `branch: feature/monorepo-architecture-migration` — the
-  monorepo code lived there until it was merged; the file still says
-  that branch. Change it to the branch you deploy from before using
-  the Blueprint.
+- The file pins `branch: feature/admin-control-plane` on all 7
+  services — the live branch. If the live branch ever changes,
+  update the pin before using the Blueprint.
 - `region: singapore` — the closest Render region to Pakistan; the
   database must stay in the same region as the services.
 - `plan: free` everywhere, so the Blueprint deploys with no card.
@@ -247,9 +253,8 @@ and new services cannot opt into it — do not add those files. The
 supported path is the Dockerfile:
 
 1. One Railway project, one service per app + one for the worker,
-   all from this repo (⚠️ the Railway notes still name the old
-   `feature/monorepo-architecture-migration` branch — use the branch
-   you deploy from).
+   all from this repo (deploy the `feature/admin-control-plane`
+   branch — the live branch).
 2. Keep each service's source root at the **repository root** — the
    Dockerfile needs the lockfile and the whole workspace as its build
    context.
@@ -279,17 +284,20 @@ Dockerfile's CMD does this). The worker binds `$PORT` when set, else
 - **Docker images** have never been built in this repo's sandbox (no
   Docker here). The Dockerfile, compose file, and `.dockerignore` are
   statically validated (YAML/TOML parse, resolved anchors, every
-  referenced path/script exists, `build:server` proven by a real
-  build). The first `docker build` + `docker compose up` is the
-  remaining verification for that path.
+  referenced path/script exists). The `build:server` steps are
+  exercised by CI's main `pnpm build` job (`db:generate` +
+  `sdk:build` for the api app + `next build` for all six apps — the
+  same steps `build:server` runs), and `build:cf` + `cf-typegen` run
+  in CI's `build-cf` job (TST-012, Wave 12). The first `docker build`
+  + `docker compose up` is the remaining verification for that path.
 - **Render / Netlify / Railway live deploys** need the owner's
   accounts (none are connected here). The configs in this repo are the
   complete setup; the dashboard steps above are what the owner does
   once. Vercel is the only platform with a live deployment proven
-  from this repo so far (the `feature/ai` branch on all five projects,
+  from this repo so far (the `feature/admin-control-plane` branch on all six projects,
   at `sendcms.bond`).
-- **The Cloudflare `vars` still point at `jadoo.bond` placeholders**
-  for the five original apps (only the admin app's `wrangler.jsonc`
-  uses `sendcms.bond`). When the Cloudflare path is next deployed,
-  update them together — see
-  [Deployment](../deployment.md#cloudflare-notes-phase-10--five-workers-one-per-app).
+- **The Cloudflare `vars` now use `sendcms.bond` in all six apps**
+  (fixed in Wave 12, LVE-006 — the five original apps' `wrangler.jsonc`
+  files carried `jadoo.bond` placeholders until then). If the
+  Cloudflare path is next deployed, the vars are already correct — see
+  [Deployment](../deployment.md#cloudflare-notes-phase-10--six-workers-one-per-app).

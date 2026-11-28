@@ -21,7 +21,10 @@ const nextConfig = {
   images: {
     imageSizes: [160, 320],
   },
-  transpilePackages: ["@sendcms/shared", "@sendcms/ui", "@sendcms/content"],
+  // DOC-026 (Phase 16, Wave 12): regenerated from the packages this
+  // app actually imports — `@sendcms/config` is deliberately absent
+  // (eslint.config.mjs only, never bundled).
+  transpilePackages: ["@sendcms/shared", "@sendcms/ui", "@sendcms/content", "@sendcms/security"],
   turbopack: {
     root: workspaceRoot,
   },

@@ -1,6 +1,9 @@
-# ADR 0010 — AI platform design (design only, not built)
+# ADR 0010 — AI platform design (built, Phase 12)
 
-- Status: proposed (2026-11-19, Phase 12) — design only, **not implemented**
+- Status: **accepted and built** (2026-11-19, Phase 12, branch
+  `feature/ai`) — all four capabilities are implemented as described
+  in the Build status note below. The "design only, not built" note
+  from the original 2026-11-19 draft no longer applies.
 - Build status (2026-11-20): Step 1 (per-form opt-in) and Step 1b
   (provider plumbing) are BUILT on branch `feature/ai`. Step 1:
   `Form.aiEnabled` + dashboard toggle. Step 1b: `packages/ai`
@@ -44,10 +47,10 @@
   provider key exists).**
 - Context: the audit's Phase 12 ("AI foundation") and the owner's
   2026-11-18 decision to defer MCP/AI entirely. The owner asked for the
-  design document now (2026-11-19) and will decide separately when — or
-  whether — to build it. This record is the Phase 12 deliverable. **No
-  code was written for it: no `packages/ai`, no provider, no keys, no
-  endpoints, no worker changes, no schema change.**
+  design document now (2026-11-19) and would decide separately when — or
+  whether — to build it. This record is the Phase 12 deliverable. The
+  design was subsequently built (Phase 12, branch `feature/ai`) — all
+  four capabilities, per the Build status note above.
 
 ## What AI would be for SendCMS
 
@@ -89,10 +92,11 @@ unpaid. So:
 
 ## Decision 2 — Integration shape: Vercel AI SDK, provider at build time
 
-The integration layer is the Vercel AI SDK (`ai` **7.0.177**, latest
-stable, verified live via `npm view` 2026-11-19). It is **not** added
-to any `package.json` in this docs-only phase — pin it at build time,
-when the then-latest stable is checked again.
+The integration layer is the Vercel AI SDK (`ai` **7.0.178**, exact
+pin — the then-latest stable, checked again at build time as this
+decision required; 7.0.177 was the version verified live via
+`npm view` 2026-11-19). It is pinned in `packages/ai/package.json`
+and `packages/modules/ai-settings/package.json`.
 
 No provider is picked now, and no provider key exists. The provider
 (model + key + billing) is chosen at build time, against the privacy

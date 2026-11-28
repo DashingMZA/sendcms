@@ -80,9 +80,11 @@ dashboard. Extra fields are rejected by the API (422).
 - The submit button is disabled while sending, with a "Sending…"
   label; a status message appears under the button (success text comes
   from the form's success message when set).
-- On success the form resets (unless a redirect is configured) and
-  `onSuccess` fires. On failure the server's error message is shown
-  and `onError` fires.
+- On success the form resets when `resetOnSuccess` is true — the
+  reset runs **before** any redirect, so a redirecting form is reset
+  and then navigated away (the reset is invisible in practice, but
+  it is not skipped) — and `onSuccess` fires. On failure the server's
+  error message is shown and `onError` fires.
 - A second submit while one is in flight is ignored.
 - A hidden honeypot input (`_sendcms_honeypot`) is added to every
   form; bots that fill it get a fake success and nothing is saved.
@@ -98,13 +100,23 @@ dashboard. Extra fields are rejected by the API (422).
   SDK package version at build time). It is diagnostic only — nothing
   gates on it.
 - Submissions are only accepted from domains that are **verified and
-  linked to the form** (the API enforces this by the page's Origin).
+  linked to the form** (the API enforces this by the request's
+  `Origin` header, falling back to the `Referer` origin when `Origin`
+  is absent — a request with neither is rejected even when `pageUrl`
+  names a verified domain; `pageUrl` never authorizes a request).
   Link domains in the dashboard first, or every submit returns 403.
 
 Config resolution (highest priority first): form data attributes >
-`init()` options > script tag data attributes. The API origin resolves
-from the script `src` origin first, then the build-time `__APP_URL__`.
-`init()` ignores `undefined`-valued keys, so a later `init()` can
+`init()` options > script tag data attributes. That ladder applies
+only to `userId`, `formId`, and `turnstileSiteKey` — the script tag's
+Turnstile key reaches the config through `init()` (auto-init passes
+the tag's data attributes in). `apiUrl` has no form/script-data
+layer: it resolves from `init()` options, then the script `src`
+origin, then the build-time `__APP_URL__`. `redirectUrl`,
+`messages`, `resetOnSuccess`, and `honeypot` are `init()`-only —
+there is no form or script-tag attribute for them. (The redirect URL
+saved on the form in the dashboard, returned by the API, wins over
+`init()`'s `redirectUrl`.) `init()` ignores `undefined`-valued keys, so a later `init()` can
 never wipe values set by an earlier one, and `enhance()` on an
 already-enhanced form refreshes its config instead of ignoring the
 new options. When the bundle is hosted somewhere other than the API
@@ -180,8 +192,8 @@ const result = await SendCMS.submit(formElement, {
 | `userId` / `formId`                  | script tag's `data-user-id` / `data-form-id` | A form's own `data-*` attributes win                                                                                 |
 | `apiUrl`                             | origin of the `<script>` tag                 | Override only when the bundle is hosted elsewhere (CDN / npm import — otherwise the SDK warns and `submit()` throws) |
 | `turnstileSiteKey`                   | —                                            | Set when the form has Turnstile on (see below)                                                                       |
-| `redirectUrl`                        | —                                            | The form's own redirectUrl wins when set                                                                             |
-| `resetOnSuccess`                     | `true`                                       | Skipped when redirecting                                                                                             |
+| `redirectUrl`                        | —                                            | The redirect URL saved on the form in the dashboard (returned by the API) wins over this when set                    |
+| `resetOnSuccess`                     | `true`                                       | Runs on success whenever true — before any redirect, not skipped when redirecting                                    |
 | `honeypot`                           | `true`                                       | Adds the hidden trap input                                                                                           |
 | `messages`                           | see code                                     | `sending`, `verifying`, `success`, `error`                                                                           |
 | `onSuccess` / `onError` / `onSubmit` | —                                            | Errors in callbacks never break the flow                                                                             |
@@ -234,15 +246,21 @@ Content-Type: application/json
 }
 ```
 
-| Status | Meaning                                                                                       |
-| ------ | --------------------------------------------------------------------------------------------- |
-| 201    | Saved. Body: `{ ok, id, message, redirectUrl }`                                               |
-| 200    | Duplicate — same idempotency key, or same content within 10 minutes. Same body, original `id` |
-| 403    | Origin not allowed (domain not verified/linked), form paused, or Turnstile failed             |
-| 413    | Payload over 64 KB                                                                            |
-| 422    | Validation failed (unknown field, bad email, missing required, …)                             |
-| 429    | Daily form limit, or per-IP 10/min / 100/hour                                                 |
-| 503    | Turnstile is enabled but the server has no secret configured                                  |
+| Status | Meaning                                                                                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 201    | Saved. Body: `{ ok, id, message, redirectUrl }`                                                                                                                                                                                                                     |
+| 200    | Duplicate — same idempotency key, or same content within 10 minutes. Same body, original `id`                                                                                                                                                                       |
+| 400    | Malformed JSON body (`"Malformed JSON body."`) — the request never reaches validation                                                                                                                                                                              |
+| 403    | Origin not allowed (domain not verified/linked), form paused, or Turnstile failed. A request with no `Origin` but a `Referer` from a verified domain linked to the form is accepted; a request with neither is rejected even when `pageUrl` names a verified domain |
+| 404    | Form not found — unknown `formId` (or a `formId` that does not belong to `userId`)                                                                                                                                                                                 |
+| 405    | Wrong method — only `POST` and `OPTIONS` are allowed; the response is a JSON `{"error": "Method not allowed"}` with an `Allow: POST, OPTIONS` header                                                                                                               |
+| 413    | Payload over 64,000 bytes (the route rejects a `Content-Length` above 64,000; the service also rejects sanitized field data whose JSON is over 64,000 bytes)                                                                                                        |
+| 422    | Validation failed (unknown field, bad email, missing required, …) — or Turnstile is enabled on the form and no `turnstileToken` was sent (`"Verification is required for this form."`)                                                                              |
+| 429    | Daily form limit, the owner's monthly submission quota exhausted, or per-IP 10/min / 100/hour                                                                                                                                                                       |
+| 503    | Turnstile is enabled but the server has no secret configured                                                                                                                                                                                                        |
+
+There is no 402: monthly quota exhaustion is a 429 (with a
+`Retry-After` until the next UTC month).
 
 The honeypot field (`_sendcms_honeypot`) returns 201 with a fake id
 and saves nothing. CORS headers are only echoed for allowed origins.
@@ -268,4 +286,8 @@ On success the browser is redirected (303) to the form's
 `redirectUrl`, or back to the referring page with
 `?cms_submitted=1`. On failure it goes back with
 `?cms_error=<message>`. Checkbox groups (same name twice) arrive as
-arrays; file inputs are ignored.
+arrays; file inputs are ignored. To show that result on the page,
+read the params on load with the snippet in
+[Embedding in plain HTML](embed-html.md) (and
+[REST API](rest-api.md)) — the API writes the params, it does not
+render them.

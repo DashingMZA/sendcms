@@ -50,6 +50,11 @@ gives TypeScript the shapes for the package barrel and the tests.
 No CSP, by the existing documented decision (Next.js inlines
 scripts/styles, so a CSP needs `unsafe-inline` and adds nothing).
 
+> **Superseded (Phase 9, 2026-11-22 — Wave 12 note):** a nonce-based
+> CSP is now **enforcing on all six page apps** — see
+> `docs/admin-control-plane/csp.md`. The "no CSP" decision above is
+> historical; it no longer describes the live posture.
+
 ### 2. One audit writer: `logAudit()` in `packages/security`
 
 Replaces the three per-service wrappers. Signature mirrors the
@@ -77,6 +82,10 @@ is called only from services.
 
 No admin UI for reading the log — out of scope (the audit §6 notes
 none reads it today; Phase 10 doesn't build one).
+
+> **Superseded (Phase 9 — Wave 12 note):** the audit-log UI exists —
+> `/admin/audit-logs` in the admin app, live in production since
+> 2026-11-23 — see `docs/admin-control-plane/admin-audit-trail.md`.
 
 ### 3. Structured logging in `packages/observability`
 
@@ -151,6 +160,13 @@ The public submit is already DB-backed limited (per-IP 10/min +
 REST API and auth routes have none, but a limiter is not in this
 phase's exit criteria, and a wrong one locks the owner out of their
 own dashboard. Recorded here as the next security item, not built.
+
+> **Superseded (Phase 9, 2026-11-22 — Wave 12 note):** admin-API +
+> auth sign-in rate limiting is **built** (admin API 600/min +
+> 10,000/hour per user; sign-in 20/min per IP + 10/min per email —
+> `packages/security/src/rate-limit.ts`) — see
+> `docs/admin-control-plane/rate-limiting.md`, which records this as
+> closing this section.
 
 ## Verification (2026-11-18)
 

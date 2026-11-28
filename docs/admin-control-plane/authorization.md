@@ -214,22 +214,42 @@ OUT of scope, not gaps: step-up is for actions that cannot be
 undone or that change who can administer the platform, not for
 every privileged write.
 
-| Action                                   | Function                                                       | Step-up                                                                 |
-| ---------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Disable a user                           | `disableUser` (`@sendcms/admin-users`)                         | ✓                                                                       |
-| Change a user's admin role               | `setAdminRole` (`@sendcms/admin-users`)                        | ✓                                                                       |
-| Toggle the MCP kill-switch               | `setMcpSettings` (`@sendcms/mcp-admin`)                        | ✓                                                                       |
-| Revoke an MCP key                        | `revokeMcpKey` (`@sendcms/mcp-admin`)                          | ✓                                                                       |
-| Review a deletion request (approve only) | `reviewDeletionRequest` (`@sendcms/platform-ops`)              | ✓ (approve only — a reject needs no step-up)                            |
-| Execute the erasure                      | `executeErasure` (`@sendcms/platform-ops`)                     | ✓                                                                       |
-| Suspend a user                           | `suspendUser`                                                  | — (reversible; reactivation restores access)                            |
-| Reactivate / restore a user              | `reactivateUser` / `restoreUser`                               | —                                                                       |
-| Revoke a user's API keys                 | `revokeUserApiKeys` (`@sendcms/admin-users`)                   | ✓ (SEC-103 / ADM-009 — destructive, account-wide)                       |
-| Revoke a user's sessions                 | `revokeUserSessions` (`@sendcms/admin-users`)                  | — (reversible by signing in again)                                      |
-| Migrate a subscription to another plan   | `executeMigration` (`@sendcms/plans`)                          | — (reversible by migrating back; no data destroyed)                     |
-| Publish / archive a plan version         | `publishPlanVersion` / `archivePlan` (`@sendcms/plans`)        | — (archive is reversible; publish is a capability-gated content change) |
-| Assign / cancel a subscription           | `assignSubscription` / `cancelSubscription` (`@sendcms/plans`) | — (reversible by assigning again; no data destroyed)                    |
-| Change a billing provider's config       | `setProviderConfig` (`@sendcms/billing`)                       | — (reversible; a provider can be re-enabled)                            |
+| Action                                   | Function                                                       | Step-up                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Disable a user                           | `disableUser` (`@sendcms/admin-users`)                         | ✓                                                                                |
+| Change a user's admin role               | `setAdminRole` (`@sendcms/admin-users`)                        | ✓                                                                                |
+| Toggle the MCP kill-switch               | `setMcpSettings` (`@sendcms/mcp-admin`)                        | ✓                                                                                |
+| Revoke an MCP key                        | `revokeMcpKey` (`@sendcms/mcp-admin`)                          | ✓                                                                                |
+| Review a deletion request (approve only) | `reviewDeletionRequest` (`@sendcms/platform-ops`)              | ✓ (approve only — a reject needs no step-up)                                     |
+| Execute the erasure                      | `executeErasure` (`@sendcms/platform-ops`)                     | ✓                                                                                |
+| Suspend a user                           | `suspendUser`                                                  | — (reversible; reactivation restores access)                                     |
+| Reactivate / restore a user              | `reactivateUser` / `restoreUser`                               | —                                                                                |
+| Revoke a user's API keys                 | `revokeUserApiKeys` (`@sendcms/admin-users`)                   | ✓ (SEC-103 / ADM-009 — destructive, account-wide)                                |
+| Revoke a user's sessions                 | `revokeUserSessions` (`@sendcms/admin-users`)                  | — (reversible by signing in again)                                               |
+| Migrate a subscription to another plan   | `executeMigration` (`@sendcms/plans`)                          | — (reversible by migrating back; no data destroyed)                              |
+| Publish / archive a plan version         | `publishPlanVersion` / `archivePlan` (`@sendcms/plans`)        | — (archive is reversible; publish is a capability-gated content change)          |
+| Assign / cancel a subscription           | `assignSubscription` / `cancelSubscription` (`@sendcms/plans`) | — (reversible by assigning again; no data destroyed)                             |
+| Change a billing provider's config       | `setProviderConfig` (`@sendcms/billing`)                       | — (reversible; a provider can be re-enabled)                                     |
+| Requeue an email job (admin)             | `requeueEmailJobForAdmin` (`@sendcms/notifications`)           | ✓ (MANAGE_JOBS + step-up — one password entry authorizes exactly one requeue)    |
+| Run the email-outbox cron manually       | `runManualEmailOutboxCron` (`@sendcms/cron`)                   | ✓ (MANAGE_JOBS + step-up — one password entry authorizes exactly one manual run) |
+
+**Wave 12 addendum (Phase C, 7 admin pages — Jobs page, 2026-11-27):**
+the scope above was extended with the last two rows. The Wave 2
+confirmation ("no extension", SEC-104) predates Phase C; the Jobs
+page added email-job requeue and the manual cron run as step-up
+actions because both send customer email / mutate the outbox on an
+operator's say-so — the same "cannot be undone" shape as the
+original scope. Both are gated on MANAGE_JOBS (Q9: SUPER_ADMIN +
+owner — MANAGER views Jobs but never requeues or triggers a run;
+SUPPORT never mutates it) + step-up re-auth, checked last, after
+every cheap guard, immediately before the write/run (single-use).
+The owner-scoped requeue (`requeueEmailJob`, no step-up) is
+unchanged — step-up applies to the admin variant only. Proven by
+`requeueEmailJobForAdmin` (`packages/modules/notifications/src/service.ts:1175`,
+`requireStepUp` at :1189) and `runManualEmailOutboxCron`
+(`packages/modules/cron/src/service.ts:634`, `requireStepUp` at
+:648); the Jobs page (`apps/admin/app/admin/jobs/page.tsx`) opens
+the step-up dialog before either write.
 
 The verify endpoint is `POST /api/v1/admin/step-up/verify`
 (`apps/api/app/api/v1/admin/step-up/verify/route.ts`). The

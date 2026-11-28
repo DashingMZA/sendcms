@@ -11,6 +11,12 @@
 
 ## Checklist
 
-- [ ] Code typechecks (`pnpm build:api` and `tsc --noEmit` in app)
-- [ ] Formatted with Prettier
-- [ ] Tested locally
+<!-- Every command below exists in the root package.json and runs in
+CI (see .github/workflows/ci.yml) — run them locally before pushing. -->
+
+- [ ] Code typechecks (`pnpm typecheck` — turbo per-app typechecks + root `tsc --noEmit` + the workspace-import check)
+- [ ] Lint is clean (`pnpm lint`)
+- [ ] Formatted with Prettier (`pnpm format:check`)
+- [ ] Translations validate (`pnpm validate:i18n`)
+- [ ] Tests pass (`pnpm test`)
+- [ ] Builds (`pnpm build`)

@@ -7,9 +7,11 @@ day-to-day operating picture: what runs where, what the env vars do,
 and what to check when something is wrong.
 
 📌 **Production is `sendcms.bond`** (decided 2026-11-20), running the
-`feature/ai` branch on Vercel. The `feature/admin-control-plane`
-branch (this branch) is **not deployed** — the ✅ items marked
-"on this branch" below exist in code here, not in production.
+`feature/admin-control-plane` branch on Vercel — live since
+2026-11-23 (see the live-commit table in
+[production-readiness/live-sites-audit.md](../production-readiness/live-sites-audit.md);
+`feature/ai` was the previous live branch). Deployments follow the
+[production deployment checklist](deployment-checklist.md).
 
 ## Contents
 
@@ -25,7 +27,7 @@ branch (this branch) is **not deployed** — the ✅ items marked
 
 ## What runs where
 
-Five Cloudflare Workers, one per app (Phase 10). Each app owns its
+Six Cloudflare Workers, one per app (Phase 10). Each app owns its
 `wrangler.jsonc` + `open-next.config.ts`; the shared OpenNext config
 (R2 incremental cache) lives in `infrastructure/cloudflare/`.
 
@@ -36,8 +38,9 @@ Five Cloudflare Workers, one per app (Phase 10). Each app owns its
 | dashboard | `sendcms-dashboard` | Auth pages + dashboard                          |
 | docs      | `sendcms-docs`      | User docs                                       |
 | updates   | `sendcms-updates`   | Changelog                                       |
+| admin     | `sendcms-admin`     | Admin app (`/admin/*`)                          |
 
-All five share one R2 bucket (`open-remark-opennext-cache`) for the
+All six share one R2 bucket (`open-remark-opennext-cache`) for the
 incremental cache — it is a real Cloudflare resource, so renaming it
 needs a new bucket created in the dashboard first. The workers also
 share the Images binding and the self-reference service binding
@@ -45,26 +48,30 @@ share the Images binding and the self-reference service binding
 
 The **email worker** (`services/email-worker`) does **not** deploy to
 Cloudflare Workers — it is a long-running Node process (`GET /health`
-on `WORKER_PORT`, default 3005; polls the outbox every
+on `WORKER_PORT`, default 3005 — the worker's own health endpoint, not
+the api app's `GET /api/health` — see
+[Deployment](../deployment.md#health-checks) for all three health
+endpoints. It polls the outbox every
 `WORKER_POLL_INTERVAL_MS`, default 30 s; graceful SIGTERM/SIGINT
 shutdown). Its production hosting is a separate decision. Until it is
 hosted, the cron route (`GET /api/cron/email-outbox`) is the hosted
-drain for failed deliveries — schedule it every 5 minutes with a
-`Bearer <CRON_SECRET>` header (on Vercel Hobby it currently runs once
-daily; see [Deployment](../deployment.md#email-outbox-cron)).
+drain for failed deliveries — on Vercel Hobby it runs **once daily**
+(`0 0 * * *`); the every-5-minutes schedule (`*/5 * * * *`) is the
+target when the plan allows it (see
+[Deployment](../deployment.md#email-outbox-cron)). On Vercel the
+`Authorization: Bearer <CRON_SECRET>` header is sent automatically
+when `CRON_SECRET` is set — no proxy needed; an external scheduler
+must send the header itself.
 
-The **admin app** (`apps/admin`, :3006, `admin.sendcms.bond`) exists
-only on the `feature/admin-control-plane` branch — it is not deployed
-and not part of the five-worker Cloudflare set above. Its own
-`wrangler.jsonc` already uses `sendcms.bond` vars.
+The **admin app** (`apps/admin`, :3006, `admin.sendcms.bond`) is
+live on the `feature/admin-control-plane` branch (deployed
+2026-11-23) and is the sixth worker in the Cloudflare set above.
+Its `wrangler.jsonc` uses `sendcms.bond` vars.
 
-⚠️ The five original apps' `wrangler.jsonc` `vars` still use
-`jadoo.bond` hosts as placeholders (`https://jadoo.bond`,
-`https://api.jadoo.bond`, `https://dashboard.jadoo.bond`, …) even
-though the production domain is decided. When the domain is decided
-for the Cloudflare path, change the `vars` in all five
-`wrangler.jsonc` files together — and the `FALLBACK_APP_URL` in the
-per-app `lib/utils.ts` files, which uses the same placeholder.
+✅ The six apps' `wrangler.jsonc` `vars` now use `sendcms.bond`
+(fixed in Wave 12, LVE-006), and so does the `FALLBACK_APP_URL` in
+the per-app `lib/utils.ts` files (LVE-012) — the production domain
+decided 2026-11-20.
 
 ## Environment variables (per app)
 
@@ -73,29 +80,29 @@ file. `wrangler.jsonc` holds only non-secret `vars` (plus a comment
 listing the secrets each worker needs). The full table with
 descriptions is in [Deployment](../deployment.md#environment-variables).
 
-| Variable                                                  | Where                            | Notes                                                                                      |
-| --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`                                            | api, dashboard, admin            | Postgres connection string (`?sslmode=verify-full` for Prisma Postgres).                   |
-| `BETTER_AUTH_SECRET`                                      | api, dashboard, admin            | Random 32+ char secret. No fallback — auth refuses to start without it.                    |
-| `BETTER_AUTH_URL`                                         | api                              | The api app's public URL (the auth handler lives there).                                   |
-| `TRUSTED_ORIGINS`                                         | api                              | Comma-separated origins allowed to call auth (the dashboard and admin apps' URLs).         |
-| `NEXT_PUBLIC_APP_URL`                                     | all six                          | The marketing app's public URL.                                                            |
-| `NEXT_PUBLIC_API_URL`                                     | marketing, dashboard, api, admin | The api app's public URL (SDK bundle origin + submit API).                                 |
-| `NEXT_PUBLIC_DASHBOARD_URL`                               | marketing, dashboard, api, admin | The dashboard app's public URL (auth callback + inbox links).                              |
-| `NEXT_PUBLIC_DOCS_URL`                                    | marketing, docs                  | The docs app's public URL.                                                                 |
-| `NEXT_PUBLIC_UPDATES_URL`                                 | marketing, updates               | The updates app's public URL.                                                              |
-| `NEXT_PUBLIC_AUTH_URL`                                    | dashboard, admin                 | The api app's public URL (the auth client talks to it).                                    |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | api                              | Google OAuth. Redirect URI: `<API_URL>/api/auth/callback/google`.                          |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | api                              | GitHub OAuth (only offered when set).                                                      |
-| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`           | api                              | Facebook OAuth (only offered when set).                                                    |
-| `RESEND_API_KEY`                                          | api                              | Resend API key (set separately in deployment env).                                         |
-| `RESEND_FROM`                                             | api                              | A sending address on a verified Resend domain.                                             |
-| `SMTP_*`                                                  | api                              | SMTP fallback when no Resend key is set.                                                   |
-| `CRON_SECRET`                                             | api                              | Bearer token for the email-outbox cron.                                                    |
-| `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | api                              | Cloudflare Turnstile (forms that enable it answer 503 without the secret).                 |
-| `COOKIE_DOMAIN`                                           | api, dashboard, admin            | Production only, when the apps run on subdomains of one domain. Unset = host-only cookies. |
-| `LOG_LEVEL`                                               | all                              | `info` / `warn` / `error` (default `info`).                                                |
-| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                 | email worker                     | Defaults 3005 / 30000.                                                                     |
+| Variable                                                  | Where                                           | Notes                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                            | api, dashboard, admin                           | Postgres connection string (`?sslmode=verify-full` for Prisma Postgres).                                                                                                                                                                            |
+| `BETTER_AUTH_SECRET`                                      | api, dashboard, admin                           | Random 32+ char secret. No fallback — auth refuses to start without it.                                                                                                                                                                             |
+| `BETTER_AUTH_URL`                                         | api                                             | The api app's public URL (the auth handler lives there).                                                                                                                                                                                            |
+| `TRUSTED_ORIGINS`                                         | api                                             | Comma-separated origins allowed to call auth (the dashboard and admin apps' URLs).                                                                                                                                                                  |
+| `NEXT_PUBLIC_APP_URL`                                     | all six                                         | The marketing app's public URL.                                                                                                                                                                                                                     |
+| `NEXT_PUBLIC_API_URL`                                     | marketing, dashboard, api, admin                | The api app's public URL (SDK bundle origin + submit API).                                                                                                                                                                                          |
+| `NEXT_PUBLIC_DASHBOARD_URL`                               | marketing, dashboard, api, admin                | The dashboard app's public URL (auth callback + inbox links).                                                                                                                                                                                       |
+| `NEXT_PUBLIC_DOCS_URL`                                    | marketing, docs                                 | The docs app's public URL.                                                                                                                                                                                                                          |
+| `NEXT_PUBLIC_UPDATES_URL`                                 | marketing, updates                              | The updates app's public URL.                                                                                                                                                                                                                       |
+| `NEXT_PUBLIC_AUTH_URL`                                    | dashboard, admin                                | The api app's public URL (the auth client talks to it).                                                                                                                                                                                             |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | api                                             | Google OAuth. Redirect URI: `<API_URL>/api/auth/callback/google`.                                                                                                                                                                                   |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | api                                             | GitHub OAuth (only offered when set).                                                                                                                                                                                                               |
+| `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`           | api                                             | Facebook OAuth (only offered when set).                                                                                                                                                                                                             |
+| `RESEND_API_KEY`                                          | api                                             | Resend API key (set separately in deployment env).                                                                                                                                                                                                  |
+| `RESEND_FROM`                                             | api                                             | A sending address on a verified Resend domain.                                                                                                                                                                                                      |
+| `SMTP_*`                                                  | api                                             | SMTP fallback when no Resend key is set.                                                                                                                                                                                                            |
+| `CRON_SECRET`                                             | api                                             | Bearer token for the email-outbox cron.                                                                                                                                                                                                             |
+| `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | api (secret) / dashboard (site key, build time) | Cloudflare Turnstile: the secret is verified server-side by the api app (forms that enable it answer 503 without the secret); the site key is read by the dashboard at build time and injected into the embed snippet as `data-turnstile-site-key`. |
+| `COOKIE_DOMAIN`                                           | api, dashboard, admin                           | Production only, when the apps run on subdomains of one domain. Unset = host-only cookies.                                                                                                                                                          |
+| `LOG_LEVEL`                                               | all                                             | `info` / `warn` / `error` (default `info`).                                                                                                                                                                                                         |
+| `WORKER_PORT` / `WORKER_POLL_INTERVAL_MS`                 | email worker                                    | Defaults 3005 / 30000.                                                                                                                                                                                                                              |
 
 ## The email outbox (how notifications actually flow)
 
@@ -122,16 +129,27 @@ flowchart TB
    incremented), sent via Resend → SMTP → none, then marked `SENT`
    or, on failure, `FAILED` with a backoff (1m / 5m / 15m / 1h / 4h,
    6 attempts). A job whose send fails with no provider configured
-   stays `PENDING` — the send is retried, never lost.
+   fails each attempt with a backoff and becomes `FAILED` after the
+   6th attempt — `FAILED` is terminal, with no automatic requeue:
+   fix the config, then requeue the job manually from the delivery
+   log (Requeue button on the FAILED tab). It is not "never lost"
+   without that human step.
 3. The cron route and the email worker both drain the same outbox
    (`processEmailOutbox({ limit })`); the worker polls every 30 s,
-   the cron every 5 min. Either can run alone; running both is safe
-   (claiming is atomic). On the Hobby plan the cron runs only once
-   daily (`0 0 * * *`, owner decision 2026-11-20) — it is the
-   _fallback_ drain, not the prompt path: with the worker running, a
-   job is normally sent within one poll interval, and the cron only
-   catches what the worker missed (EML-013). When the plan allows
-   it, the schedule goes back to `*/5 * * * *`.
+   the cron once daily on Hobby (every 5 min when the plan allows
+   it). Either can run alone;
+   running both is safe (claiming is atomic). On the Hobby plan the
+   cron runs only once daily (`0 0 * * *`, owner decision
+   2026-11-20) — it is the _fallback_ drain, not the prompt path:
+   with the worker running, a job is normally sent within one poll
+   interval, and the cron only catches what the worker missed
+   (EML-013). When the plan allows it, the schedule goes back to
+   `*/5 * * * *`. Effective retry timing follows the drain, not the
+   ladder alone: on the daily cron a failed job is retried on
+   consecutive days (its `nextAttemptAt` passes hours before the
+   next drain), so it goes terminal `FAILED` after 6 days; with the
+   worker running (or a 5-minute cron) the 1m / 5m / 15m / 1h / 4h
+   ladder paces as written.
 4. The same cron hit (and the worker) also runs the AI background
    jobs — spam re-scoring (`rescoreNewSubmissions`) and the inbox
    digest (`sendDueDigests`). Both are gated on the `ai-spam-rescore`
@@ -318,45 +336,67 @@ fresh-DB test only, no shadow DB).
   submission, and user actions (CREATE/UPDATE/DELETE/VERIFY/SUSPEND/
   REACTIVATE) via the one `logAudit()` writer in `@sendcms/security`.
   It never blocks the action it records (best-effort, never throws)
-  and never records submission content. There is no admin UI for
-  reading it — query the table directly. (On the
-  `feature/admin-control-plane` branch there is an audit explorer at
-  `/admin/audit-logs` — see
-  [admin-control-plane/admin-audit-trail.md](../admin-control-plane/admin-audit-trail.md).)
+  and never records submission content. Read it in the audit
+  explorer at `/admin/audit-logs` (live on the admin app) — see
+  [admin-control-plane/admin-audit-trail.md](../admin-control-plane/admin-audit-trail.md).
+  The table itself has no expiry; it is the durable record when the
+  platform logs below have already rolled off (see "Log retention").
 - What to check first when something is wrong: the api worker's logs
   for `scope: "api"` errors (unhandled API errors) and
   `scope: "submissions"` errors (failed notification enqueue); the
   worker's logs for `scope: "email-worker"` poll failures; and the
   `EmailJob` table for stuck `PENDING` jobs (a job stuck past its
-  5th attempt is `FAILED` — terminal, needs a human look).
+  6th attempt is `FAILED` — terminal, needs a human look).
+
+### Log retention (LVE-017 — added Phase 16, Wave 12)
+
+Platform (stdout/stderr) logs are short-lived everywhere — an
+incident older than the platform's retention cannot be investigated
+from logs. The `AuditLog` table (above) is the only log with no
+expiry; for anything else, capture the logs while they exist.
+
+| Platform                           | Retention (platform default, as of 2026-11-27)                                                                              | Longer retention                                                                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel (live path, **Hobby** team) | Runtime logs **1 hour**; Pro 1 day, Enterprise 3 days, 30 days with Observability Plus. Build logs are kept per deployment. | Log drains are Pro+ only — on Hobby there is no drain. To keep logs past an hour, upgrade the plan (or add Observability Plus) and set a drain. |
+| Render                             | 7 days (Hobby), 14 days (Pro), 30 days (Scale).                                                                             | Log Streams (syslog / HTTPS) on all plans — forward to an external store.                                                                       |
+| Cloudflare Workers                 | Workers Logs 3 days (Free), 7 days (Paid); `observability.enabled: true` is set in all six `wrangler.jsonc` files.          | Logpush (Paid plan) to R2 / S3 / an external provider, or OpenTelemetry export — the destination's own retention then applies.                  |
+| Node / Docker, Railway             | The host's — no retention is stated in this repo.                                                                           | Set the host's log rotation / retention (or a forwarder) when the host is chosen; record it here.                                               |
+
+Practical rule on the live (Vercel Hobby) path: a runtime error is
+gone an hour after it was written. During an incident, copy the
+relevant log lines into the incident note immediately (see
+[Incidents](#incidents)) — do not assume they will still be there
+tomorrow. The `AuditLog` table and the `EmailJob` / `Submission`
+tables are the durable evidence; the platform log is the ephemeral
+one.
 
 ## Security posture (what is and isn't in place)
 
 - Security headers come from one shared definition in
   `@sendcms/security` (each app's `next.config.mjs` `headers()` +
-  that app's `public/_headers`). ✅ On this branch (Phase 9) a
-  nonce-based Content-Security-Policy is **enforcing** on all five
+  that app's `public/_headers`). ✅ Since Phase 9 a
+  nonce-based Content-Security-Policy is **enforcing** on all six
   page apps — see
   [admin-control-plane/csp.md](../admin-control-plane/csp.md). It is
-  **not deployed** (this branch is unmerged); production still has
-  no CSP.
-- ✅ On this branch (Phase 9) the admin REST API and the auth routes
+  **live** on the `feature/admin-control-plane` branch (deployed
+  2026-11-23).
+- ✅ Since Phase 9 the admin REST API and the auth routes
   **are rate limited** (admin API 600/min + 10,000/hour per user;
   sign-in 20/min per IP + 10/min per email) — see
   [admin-control-plane/rate-limiting.md](../admin-control-plane/rate-limiting.md).
-  In production (the `feature/ai` branch) the gap from ADR 0008 still
-  stands: the public submit API is the only rate-limited surface
-  (DB-backed: 10/min + 100/hour per IP, per-form daily cap).
+  The gap from ADR 0008 is closed on the live branch. The public
+  submit API is also rate-limited (DB-backed: 10/min + 100/hour per
+  IP, per-form daily cap).
 - Registration is enable/disable-able from dashboard settings; new
   users are never auto-approved (the admin manually approves each
   account); email verification after registration is mandatory.
   Sensitive profile actions (password/email changes, 2FA changes)
   require email-OTP verification on top of password confirmation.
-- ✅ On this branch there **is** an MCP server (`POST /api/mcp`,
+- ✅ There **is** an MCP server (`POST /api/mcp`,
   19 tools, bearer API keys — see [MCP](../mcp.md)) and AI features
   (`packages/ai`: spam re-scoring, digest, form-builder, reply
-  drafts). Both are live on the `feature/ai` production branch; the
-  admin-side MCP controls live on this branch only.
+  drafts). Both are live on the `feature/admin-control-plane`
+  production branch, including the admin-side MCP controls.
 
 ## When something is wrong
 

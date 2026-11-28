@@ -7,35 +7,20 @@
 // through the root node_modules. This script is the real detector —
 // it is chained into the root `typecheck` script.
 //
-// Known violations that belong to later waves are allowlisted below
-// with their finding IDs. A violation NOT on the list fails the gate.
-// When a wave fixes an allowlisted import, remove its entry here.
-//
-// Allowlist (Wave 12 — SRC-403/404/408):
-// - apps/api -> @sendcms/users (SRC-403)
-// - packages/modules/submissions -> @sendcms/security (SRC-404)
-// - apps/dashboard -> @sendcms/plans, @sendcms/ai (SRC-408)
-// - apps/*/proxy.ts -> @sendcms/security (proxies; SRC-408 family)
+// No allowlist entries: every `@sendcms/*` import in the repo is
+// declared in its member's package.json (the Wave 12 SRC-403/404/408
+// violations — api -> @sendcms/users, submissions -> @sendcms/security,
+// dashboard -> @sendcms/plans/@sendcms/ai, and the five proxies plus
+// admin/dashboard type imports -> @sendcms/security/@sendcms/database/
+// @sendcms/ai — were all fixed and their entries removed here). A
+// violation fails the gate; do not re-add an allowlist entry without
+// a finding ID and a wave that owns the fix.
 import { readdirSync, readFileSync, existsSync } from "node:fs"
 import { join, relative, dirname } from "node:path"
 
 const ROOT = join(dirname(new URL(import.meta.url).pathname), "..")
 
-const ALLOWLIST = {
-  "apps/api": ["@sendcms/users"],
-  "packages/modules/submissions": ["@sendcms/security"],
-  "apps/dashboard": ["@sendcms/plans", "@sendcms/ai", "@sendcms/security"],
-  "apps/marketing": ["@sendcms/security"],
-  "apps/docs": ["@sendcms/security"],
-  "apps/updates": ["@sendcms/security"],
-  "apps/admin": [
-    "@sendcms/security",
-    // Type-only enum imports (AiBillingMode, BillingProvider,
-    // TicketPriority/TicketStatus) + `import type { AiProviderName }`.
-    "@sendcms/database",
-    "@sendcms/ai",
-  ],
-}
+const ALLOWLIST = {}
 
 const IGNORE_DIRS = new Set([
   "node_modules",

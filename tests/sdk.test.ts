@@ -142,6 +142,38 @@ describe("SDK bundle", () => {
     ).toBe(false)
   })
 
+  it("resets the form before redirecting on success (SDK-012/SDK-027)", async () => {
+    const api = loadSdk()
+    // onSuccess runs after the reset and before the redirect, so the
+    // value it sees pins the reset-before-redirect order. (jsdom's
+    // location.assign cannot be stubbed — it is non-configurable — so
+    // the redirect itself is asserted through the result, not a spy;
+    // jsdom logs the unimplemented navigation and stays on the page.)
+    let valueAtSuccess: string | undefined
+    let redirectAtSuccess: string | null | undefined
+    api.init({
+      onSuccess: (result) => {
+        valueAtSuccess = (
+          document.querySelector('[name="name"]') as HTMLInputElement
+        ).value
+        redirectAtSuccess = result.redirectUrl
+      },
+    })
+    mockFetch(201, {
+      ok: true,
+      id: "sub-1",
+      message: "Thanks!",
+      redirectUrl: "https://example.com/thanks",
+    })
+    const form = document.querySelector("form")!
+    ;(form.querySelector('[name="name"]') as HTMLInputElement).value = "Bob"
+
+    submitForm(form)
+    await tick(50)
+    expect(valueAtSuccess).toBe("Ali")
+    expect(redirectAtSuccess).toBe("https://example.com/thanks")
+  })
+
   it("shows the server error and calls onError", async () => {
     const onError = vi.fn()
     const api = loadSdk()

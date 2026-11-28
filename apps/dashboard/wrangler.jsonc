@@ -7,10 +7,10 @@
   // The Cloudflare dashboard's Root directory for this project
   // must be apps/dashboard — the build command runs there (see
   // infrastructure/cloudflare/README.md). The public URLs
-  // below are PLACEHOLDERS on jadoo.bond until the production
-  // domain decision — change the vars, never the code.
+  // below use the decided production domain (sendcms.bond) —
+  // change the vars, never the code.
   "build": {
-    "command": "pnpm --filter @sendcms/database db:generate && pnpm -w run sdk:build && npx @opennextjs/cloudflare build",
+    "command": "pnpm --filter @sendcms/database db:generate && npx @opennextjs/cloudflare build",
   },
   // Dynamic Next.js App Router app (SSR + API routes + Prisma +
   // Better Auth), so it cannot run as plain static assets — the
@@ -51,12 +51,12 @@
     "enabled": true,
   },
   "vars": {
-    "BETTER_AUTH_URL": "https://api.jadoo.bond",
-    "TRUSTED_ORIGINS": "https://dashboard.jadoo.bond,https://admin.jadoo.bond",
-    "NEXT_PUBLIC_APP_URL": "https://jadoo.bond",
-    "NEXT_PUBLIC_DASHBOARD_URL": "https://dashboard.jadoo.bond",
-    "NEXT_PUBLIC_AUTH_URL": "https://api.jadoo.bond",
-    "NEXT_PUBLIC_API_URL": "https://api.jadoo.bond",
+    "BETTER_AUTH_URL": "https://api.sendcms.bond",
+    "TRUSTED_ORIGINS": "https://dashboard.sendcms.bond,https://admin.sendcms.bond",
+    "NEXT_PUBLIC_APP_URL": "https://sendcms.bond",
+    "NEXT_PUBLIC_DASHBOARD_URL": "https://dashboard.sendcms.bond",
+    "NEXT_PUBLIC_AUTH_URL": "https://api.sendcms.bond",
+    "NEXT_PUBLIC_API_URL": "https://api.sendcms.bond",
   },
   // Secrets are NOT stored here. Set them in the Cloudflare
   // dashboard (or `wrangler secret put`): DATABASE_URL, BETTER_AUTH_SECRET (its lib/auth creates a Better Auth instance and its layouts call auth()).

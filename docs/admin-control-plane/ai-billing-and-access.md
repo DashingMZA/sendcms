@@ -8,8 +8,7 @@ every model call is recorded with its attribution — BYOK usage
 never consumes platform credits and platform usage is never
 attributed to BYOK.
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). Live verification against a real provider
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). Live verification against a real provider
 is still owed.
 
 ## Contents
@@ -115,11 +114,18 @@ Every model call records an `AiUsageRecord`:
   enable/disable each provider, set the model allowlist and the
   default model for the platform key. Missing rows are auto-created
   with defaults on first read.
-- **Provider health** (`/admin/ai/providers/health`, MANAGE_AI):
-  enabled?, platform key configured?, last-24h calls/failed/error
-  rate.
-- **Usage reporting** (`/admin/ai/usage`, `/admin/ai/usage/summary`,
-  VIEW_AI_USAGE): filtered lists + the BYOK-vs-platform summary.
+- **Provider health** (shown on `/admin/ai/providers` and `/admin/ai`,
+  MANAGE_AI): enabled?, platform key configured?, last-24h
+  calls/failed/error rate. There is no separate
+  `/admin/ai/providers/health` page — the UI reads
+  `GET /api/v1/admin/ai/providers/health` and renders one health row
+  per provider on the providers page (and a summary on the AI
+  overview).
+- **Usage reporting** (`/admin/ai/usage`, VIEW_AI_USAGE): filtered
+  lists + the BYOK-vs-platform summary, rendered as summary cards
+  on the usage page itself (there is no separate
+  `/admin/ai/usage/summary` page — the cards read
+  `GET /api/v1/admin/ai/usage/summary`).
 - **Per-user controls** (MANAGE_AI): view a user's key metadata
   (`listUserAiKeysForAdmin` — metadata only), set a user's billing
   mode (`setUserAiBillingModeForAdmin`).

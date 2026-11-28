@@ -5,3 +5,11 @@ node_modules/
 coverage/
 pnpm-lock.yaml
 .pnpm-store/
+# Generated output — mirrors .gitignore; prettier must not reformat
+# build artifacts (the Wave 11 gate ran `format:check` on them).
+.open-next/
+public/forms/
+packages/database/generated/
+*.tsbuildinfo
+next-env.d.ts
+cloudflare-env.d.ts

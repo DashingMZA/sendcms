@@ -7,11 +7,18 @@ import { getListPage } from "@sendcms/content"
 // docs (architecture.md, the transformation plan, the final report,
 // architecture/, archive/) — those are NOT listed here and are never
 // served by this app.
+// LVE-003: this list is mirrored as SERVED_DOC_SLUGS in
+// packages/content/src/text-converter.ts (the `.md` link rewrite) —
+// keep the two in sync when a doc is added or removed.
 export const DOC_SLUGS = [
   "getting-started",
   "sdk",
   "rest-api",
   "mcp",
+  "billing",
+  "ai-byok",
+  "support-tickets",
+  "analytics",
   "embed-html",
   "embed-nextjs",
   "embed-astro",

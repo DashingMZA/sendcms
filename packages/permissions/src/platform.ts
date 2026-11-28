@@ -94,10 +94,10 @@ export const platformCan = (
 // The platform owner stays the highest authority (every capability).
 // Staff roles are the admin app's roles; the owner assigns them in Phase 3.
 //
-// NOTE: the `User.adminRole` database field does NOT exist yet (it lands in
-// Phase 3 with the role-assignment UI). Until then the admin proxy can only
-// enforce PLATFORM_OWNER — staff-role enforcement activates in Phase 3
-// when the field exists and the session carries it.
+// NOTE: the `User.adminRole` database field exists (schema.prisma,
+// `adminRole AdminRole?`, landed in Phase 3 with the role-assignment
+// UI) and the session carries it (auth.ts), so the admin proxy
+// enforces staff roles through `adminCan` — not PLATFORM_OWNER only.
 export type AdminRole = "SUPER_ADMIN" | "MANAGER" | "SUPPORT"
 
 // The admin capabilities (everything except the three legacy

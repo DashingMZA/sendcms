@@ -1,8 +1,15 @@
-// The marketing app's URL — the changelog page's "home" links point
-// back at the public site, which lives in the marketing app.
-export function marketingUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(
-    /\/$/,
-    ""
-  )
-}
+// Cross-app links — single source is `@sendcms/shared` (SRC-120,
+// Phase 16, Wave 12). This file re-exports it so existing
+// `@/lib/app-links` imports keep working; do not add helpers here.
+// The changelog page's "home" links point back at the public site,
+// which lives in the marketing app.
+export {
+  adminUrl,
+  apiUrl,
+  dashboardUrl,
+  docsUrl,
+  marketingTermsURL,
+  marketingUrl,
+  resolveLink,
+  updatesUrl,
+} from "@sendcms/shared"

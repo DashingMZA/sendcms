@@ -52,6 +52,23 @@ import {
   resetPayPalTokenCache,
 } from "../packages/modules/billing/src/providers/paypal"
 
+// BIL-054: the Polar SDK is mocked at the module level — no test
+// hits Polar's API. Only createPolar + webhooks are value imports
+// in the provider (Environment/models are types, erased).
+const polarMocks = vi.hoisted(() => ({
+  productsCreate: vi.fn(),
+  checkoutsCreate: vi.fn(),
+}))
+vi.mock("@polar-sh/sdk/2026-10", () => ({
+  createPolar: () => ({
+    products: { create: polarMocks.productsCreate },
+    checkouts: { create: polarMocks.checkoutsCreate },
+    subscriptions: { update: vi.fn(), revoke: vi.fn() },
+  }),
+  webhooks: { validateEvent: vi.fn() },
+}))
+import { createPolarCheckoutSession } from "../packages/modules/billing/src/providers/polar"
+
 const version = {
   id: "pv-1",
   planId: "plan-1",
@@ -222,5 +239,98 @@ describe("PayPal checkout idempotency keys", () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+// BIL-009: PAYPAL_MODE used to silently mean sandbox for any value
+// other than "live" — now an invalid value is a 422 naming it, and
+// "live" is matched case-insensitively.
+describe("PayPal mode validation (BIL-009)", () => {
+  function stubPayPalTokenOnly() {
+    const urls: string[] = []
+    const fetchMock = vi.fn(async (url: string) => {
+      urls.push(url)
+      if (url.endsWith("/v1/oauth2/token")) {
+        return { ok: true, json: async () => ({ access_token: "tok" }) }
+      }
+      throw new Error(`unexpected PayPal URL: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return urls
+  }
+
+  it("throws 422 naming an invalid PAYPAL_MODE before any request", async () => {
+    process.env.PAYPAL_MODE = "production"
+    try {
+      await expect(createPayPalCheckoutSession(args)).rejects.toMatchObject({
+        status: 422,
+        message: expect.stringContaining('Invalid PAYPAL_MODE "production"'),
+      })
+    } finally {
+      delete process.env.PAYPAL_MODE
+    }
+  })
+
+  it("treats 'Live' as live (case-insensitive, trimmed)", async () => {
+    process.env.PAYPAL_MODE = " Live "
+    const urls = stubPayPalTokenOnly()
+    try {
+      await expect(createPayPalCheckoutSession(args)).rejects.toThrow(
+        /unexpected PayPal URL/
+      )
+      expect(urls[0]).toBe("https://api-m.paypal.com/v1/oauth2/token")
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.PAYPAL_MODE
+    }
+  })
+})
+
+// BIL-054: POLAR_ENVIRONMENT used to silently mean sandbox for any
+// value other than "production" — now an invalid value is a 422, and
+// a token/environment mismatch surfaces as a clear 502.
+describe("Polar environment validation (BIL-054)", () => {
+  beforeEach(() => {
+    polarMocks.productsCreate.mockReset()
+    polarMocks.checkoutsCreate.mockReset()
+    process.env.POLAR_ACCESS_TOKEN = "polar_test_token"
+    delete process.env.POLAR_ENVIRONMENT
+  })
+
+  it("throws 422 naming an invalid POLAR_ENVIRONMENT before any SDK call", async () => {
+    process.env.POLAR_ENVIRONMENT = "prodution"
+    try {
+      await expect(createPolarCheckoutSession(args)).rejects.toMatchObject({
+        status: 422,
+        message: expect.stringContaining(
+          'Invalid POLAR_ENVIRONMENT "prodution"'
+        ),
+      })
+      expect(polarMocks.productsCreate).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.POLAR_ENVIRONMENT
+    }
+  })
+
+  it("maps an SDK auth failure to a 502 naming the token/environment mismatch", async () => {
+    polarMocks.productsCreate.mockRejectedValue(
+      Object.assign(new Error("Unauthorized"), { status: 401 })
+    )
+    await expect(createPolarCheckoutSession(args)).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining("matches POLAR_ENVIRONMENT"),
+    })
+  })
+
+  it("creates the product and checkout on the happy path", async () => {
+    polarMocks.productsCreate.mockResolvedValue({ id: "prod_1" })
+    polarMocks.checkoutsCreate.mockResolvedValue({
+      id: "co_1",
+      url: "https://polar.test/checkout",
+    })
+    const result = await createPolarCheckoutSession(args)
+    expect(result.checkoutUrl).toBe("https://polar.test/checkout")
+    expect(result.providerCheckoutId).toBe("co_1")
+    expect(result.catalog).toEqual({ polarProductId: "prod_1" })
   })
 })

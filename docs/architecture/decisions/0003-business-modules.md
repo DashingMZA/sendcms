@@ -5,6 +5,14 @@
   their validators and queries into domain modules, so each business
   capability owns its service + schemas + client hooks in one place.
 
+> **Later changes (2026-11-27, Phase 16 Wave 12):** the module count
+> grew 7 → 17. Added after Phase 5: `api-keys` (Phase 11),
+> `mcp-admin` (Phase 11), `ai-settings` (Phase 12), `plans`,
+> `billing`, `platform-ops`, `admin-users`, `support`, `coupons`
+> and `cron` (Phase 16). The seven-package table below is the Phase 5
+> snapshot; the current list is in
+> `folder-structure.md`.
+
 ## Decision
 
 Seven packages under `packages/modules/`, one per business capability

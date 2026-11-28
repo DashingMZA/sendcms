@@ -1,11 +1,10 @@
 // Production URL fallback for canonical SEO metadata (sitemap, robots).
-// The docs app's production URL is decided in Phase 10 (deployment);
-// until then this falls back to the same placeholder as the marketing
-// app. When the per-app production URLs are decided, change it here.
+// The docs app's production URL is https://docs.sendcms.bond (decided
+// production domain); it matches the wrangler vars.
 import type { Metadata } from "next"
 import config from "@/config/config.json"
 
-const FALLBACK_APP_URL = "https://jadoo.bond"
+const FALLBACK_APP_URL = "https://docs.sendcms.bond"
 
 // Absolute, trailing-slash-free base URL for canonical SEO metadata.
 // Falls back to the production URL when NEXT_PUBLIC_DOCS_URL is unset.

@@ -63,7 +63,6 @@ services:
       args:
         APP: "@sendcms/api"
         <<: *next-public
-        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     ports:
       - "3001:3001"
     environment:
@@ -80,6 +79,41 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # OAuth — the api app serves the Better Auth handler; the OAuth
+      # flow runs here, not on dashboard/admin.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
+      # Turnstile server secret (verification runs here).
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # AI — spam re-scoring + digests run here and in the worker.
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AI_BYOK_MASTER_KEY: ${AI_BYOK_MASTER_KEY:-}
+      # Billing providers — checkout + webhooks run here.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_ENVIRONMENT: ${POLAR_ENVIRONMENT:-sandbox}
+      FREEMIUS_PRODUCT_ID: ${FREEMIUS_PRODUCT_ID:-}
+      FREEMIUS_API_KEY: ${FREEMIUS_API_KEY:-}
+      FREEMIUS_SECRET_KEY: ${FREEMIUS_SECRET_KEY:-}
+      FREEMIUS_PUBLIC_KEY: ${FREEMIUS_PUBLIC_KEY:-}
+      FREEMIUS_SANDBOX: ${FREEMIUS_SANDBOX:-}
+      GUMROAD_APP_ID: ${GUMROAD_APP_ID:-}
+      GUMROAD_APP_SECRET: ${GUMROAD_APP_SECRET:-}
       <<: *next-public
     depends_on:
       postgres:
@@ -105,6 +139,9 @@ services:
       args:
         APP: "@sendcms/dashboard"
         <<: *next-public
+        # DOC-021: the dashboard (not the api) reads this at build time
+        # and injects it into the embed snippet as data-turnstile-site-key.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     ports:
       - "3002:3002"
     environment:
@@ -113,6 +150,40 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002,http://localhost:3006}
+      # Not read by the dashboard — the OAuth flow runs on the api app,
+      # AI + billing run on api/worker, Turnstile is verified on api.
+      # Listed empty so a full env list does not look incomplete;
+      # setting them here changes nothing.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AI_BYOK_MASTER_KEY: ${AI_BYOK_MASTER_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_ENVIRONMENT: ${POLAR_ENVIRONMENT:-sandbox}
+      FREEMIUS_PRODUCT_ID: ${FREEMIUS_PRODUCT_ID:-}
+      FREEMIUS_API_KEY: ${FREEMIUS_API_KEY:-}
+      FREEMIUS_SECRET_KEY: ${FREEMIUS_SECRET_KEY:-}
+      FREEMIUS_PUBLIC_KEY: ${FREEMIUS_PUBLIC_KEY:-}
+      FREEMIUS_SANDBOX: ${FREEMIUS_SANDBOX:-}
+      GUMROAD_APP_ID: ${GUMROAD_APP_ID:-}
+      GUMROAD_APP_SECRET: ${GUMROAD_APP_SECRET:-}
       <<: *next-public
     depends_on:
       postgres:
@@ -146,6 +217,40 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env - generate with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3002,http://localhost:3006}
+      # Not read by the admin app — the OAuth flow runs on the api app,
+      # AI + billing run on api/worker, Turnstile is verified on api.
+      # Listed empty so a full env list does not look incomplete;
+      # setting them here changes nothing.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AI_BYOK_MASTER_KEY: ${AI_BYOK_MASTER_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_ENVIRONMENT: ${POLAR_ENVIRONMENT:-sandbox}
+      FREEMIUS_PRODUCT_ID: ${FREEMIUS_PRODUCT_ID:-}
+      FREEMIUS_API_KEY: ${FREEMIUS_API_KEY:-}
+      FREEMIUS_SECRET_KEY: ${FREEMIUS_SECRET_KEY:-}
+      FREEMIUS_PUBLIC_KEY: ${FREEMIUS_PUBLIC_KEY:-}
+      FREEMIUS_SANDBOX: ${FREEMIUS_SANDBOX:-}
+      GUMROAD_APP_ID: ${GUMROAD_APP_ID:-}
+      GUMROAD_APP_SECRET: ${GUMROAD_APP_SECRET:-}
       <<: *next-public
     depends_on:
       postgres:
@@ -225,6 +330,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # AI — spam re-scoring + digests run here as well as on the api app.
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AI_BYOK_MASTER_KEY: ${AI_BYOK_MASTER_KEY:-}
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-30000}
     depends_on:
       postgres:

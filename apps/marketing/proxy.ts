@@ -22,10 +22,8 @@ import {
 // `<style>`/`<script>`; it was deleted in Wave 11 (PRF-035) and 301s
 // to the Next route, so the exclusion no longer has a demo to cover.)
 //
-// The CSP builder lives in `@sendcms/security`, but this proxy imports
-// it by relative path: the package barrel (`src/index.ts`) is owned by
-// the in-flight rate-limit work and must not be touched by this pass.
-// Move the import to the barrel (`@sendcms/security`) at integration.
+// The CSP builder lives in `@sendcms/security` (imported from the
+// package barrel above).
 export function proxy(req: NextRequest) {
   const nonce = createCspNonce()
   // The demo page loads the SDK script from the api origin and its

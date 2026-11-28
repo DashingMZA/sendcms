@@ -21,9 +21,12 @@
  * behavior (dev chunks would be cached). The asset layer is
  * production-only, so the file is the right place for it.
  *
- * No Content-Security-Policy here on purpose: Next.js inlines
- * scripts/styles, so a CSP needs `unsafe-inline` to work at all and
- * adds nothing then — a real CSP is a separate, tested pass.
+ * No Content-Security-Policy here on purpose: the CSP is per-request
+ * (it carries a fresh nonce — see `packages/security/src/csp.ts`,
+ * `buildCsp` / `createCspNonce`), so it cannot live in this static
+ * header list. Each app's proxy attaches it to every document
+ * response (Admin Control Plane Phase 9); it ships enforcing
+ * (`CSP_REPORT_ONLY = false`).
  */
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -65,7 +68,7 @@ export function securityHeaders() {
 export function renderHeadersFile() {
   const lines = [
     "# Security headers — generated from @sendcms/security (src/headers.mjs).",
-    "# No Content-Security-Policy here on purpose: Next.js inlines scripts/styles, so a CSP needs `unsafe-inline` to work at all and adds nothing then — a real CSP is a separate, tested pass.",
+    "# No Content-Security-Policy here: the CSP is per-request (fresh nonce — see src/csp.ts) and each app's proxy attaches it; it ships enforcing.",
     "/*",
     ...SECURITY_HEADERS.map((h) => `  ${h.key}: ${h.value}`),
     "",

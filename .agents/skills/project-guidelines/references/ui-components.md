@@ -20,12 +20,13 @@
 | Charts      | `fill-chart-1` … `fill-chart-5` (or `var(--chart-N)`)                 | Recharts series — never pick ad-hoc hex |
 | Radius      | `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl`             | All corners (scale off `--radius`)      |
 | Shadow      | `shadow-xs` … `shadow-2xl`                                            | Elevation                               |
-| Type scale  | `text-step--2` … `text-step-5`                                        | Fluid headings/body (Utopia scale)      |
+| Type scale  | `text-step--2` … `text-step-5`                                        | Fluid headings/body (Utopia scale) — marketing + docs + updates + legal pages ONLY (see rule below) |
 | Tracking    | `tracking-tight` / `tracking-normal` / `tracking-wide`                | Letter-spacing                          |
 
 **Rules:**
 
 - Never hardcode a color (`#0f172a`, `oklch(...)`, `rgb(...)`) or arbitrary class (`bg-[#...]`, `text-[14px]`). Reach for the token utility instead.
+- `text-step-*` is scoped to marketing, docs, updates, and the legal pages (terms/privacy, which live in the marketing app). Do NOT use it in the dashboard or admin apps (UX-108, Wave 10: the dashboard's domain title uses `text-base`, and app UI sizes come from the `text-xs`/`text-sm`/`text-base`/`text-lg` scale). The utilities are still _defined_ in every app's `globals.css` (shared token file), so a stray use compiles — grep for it instead of trusting the build: `rg "text-step-" apps/dashboard apps/admin` must return nothing.
 - Need a value with no utility? Reference the CSS var directly: `style={{ color: "var(--primary)" }}` or `className="bg-[var(--accent)]"` — don't reinvent the value.
 - Tokens flip automatically in `.dark`. Write light-mode classes; dark mode follows. Don't add `dark:` overrides for colors that are already tokenized.
 - Missing a token you genuinely need? Add it to `styles/design-tokens.css` (both `:root` and `.dark`, plus the `@theme inline` map) — don't inline a one-off.

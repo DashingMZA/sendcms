@@ -28,20 +28,20 @@ without migration paths.
 
 ## Status
 
-| Item                | State                                                                                                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Production          | ✅ `feature/ai` deployed — `https://sendcms.bond` (api, dashboard, docs, updates subdomains)                                                                                                    |
-| Admin Control Plane | 🚧 Phases 1–9 done on `feature/admin-control-plane` (`a331cc6`), pushed — not merged, not deployed                                                                                              |
-| CI                  | ✅ `.github/workflows/ci.yml` — typecheck, lint, tests, build on `main`, `feat/**`, `feature/**`                                                                                                |
-| Cloudflare vars     | ⚠️ Only the admin worker uses `sendcms.bond` vars so far; the other five still carry `jadoo.bond` placeholders — see [infrastructure/cloudflare/README.md](infrastructure/cloudflare/README.md) |
-| i18n                | ✅ English + Urdu complete; the other 8 locales are coming-soon — see [packages/i18n/README.md](packages/i18n/README.md)                                                                        |
+| Item                | State                                                                                                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production          | ✅ `feature/admin-control-plane` deployed — `https://sendcms.bond` (api, dashboard, docs, updates, admin subdomains)                                                                                                             |
+| Admin Control Plane | ✅ Live in production on `feature/admin-control-plane` (deployed 2026-11-23 — see the live-commit table in [docs/production-readiness/live-sites-audit.md](docs/production-readiness/live-sites-audit.md)); not merged to `main` |
+| CI                  | ✅ `.github/workflows/ci.yml` — typecheck, lint, tests, build on `main`, `feat/**`, `feature/**`                                                                                                                                 |
+| Cloudflare vars     | ✅ All six workers use `sendcms.bond` vars (fixed in Wave 12, LVE-006) — see [infrastructure/cloudflare/README.md](infrastructure/cloudflare/README.md)                                                                          |
+| i18n                | ✅ English + Urdu complete; the other 8 locales are coming-soon — see [packages/i18n/README.md](packages/i18n/README.md)                                                                                                         |
 
 ## Features
 
 | Area                 | What it does                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Domains              | Ownership verification via DNS TXT, meta tag, or file; one domain can feed many forms                                          |
-| Forms + SDK          | Configurable fields; dependency-free vanilla-TS SDK (~7 KB minified) + no-JS fallback                                          |
+| Forms + SDK          | Configurable fields; dependency-free vanilla-TS SDK (~10 KB minified) + no-JS fallback                                         |
 | Submissions + inbox  | Search, filters, bulk actions, statuses (`NEW`, `READ`, `STARRED`, `ARCHIVED`, `SPAM`)                                         |
 | Spam protection      | Origin allowlist, honeypot, Cloudflare Turnstile, rate limits, idempotency keys                                                |
 | Email notifications  | Outbox with retries (Resend, SMTP fallback), drained by cron or the standalone worker                                          |
@@ -89,7 +89,7 @@ flowchart TB
 | App                     | Port | Serves                                                              |
 | ----------------------- | ---- | ------------------------------------------------------------------- |
 | `apps/marketing`        | 3000 | Public site, `/pricing`, `/demo/*`, `/contact`                      |
-| `apps/api`              | 3001 | All REST routes (`/api/v1/*`, `/api/public/v1/*`, `/api/mcp`, auth) |
+| `apps/api`              | 3001 | All REST routes (`/api/v1/*`, `/api/public/v1/*`, `/api/mcp`, auth) + cron (`/api/cron/*`) + health (`/api/health`, `/api/health/deep`) + the SDK bundle (`/forms/v1.js`) |
 | `apps/dashboard`        | 3002 | Customer app (`/dashboard/*`, `/sign-in`)                           |
 | `apps/docs`             | 3003 | Documentation                                                       |
 | `apps/updates`          | 3004 | Changelog                                                           |
@@ -166,6 +166,10 @@ Framework guides:
 | [Getting started](docs/getting-started.md)                            | Account, domains, forms, inbox                                         |
 | [SDK](docs/sdk.md)                                                    | JavaScript SDK reference                                               |
 | [REST API](docs/rest-api.md)                                          | Direct submit endpoint + no-JS fallback                                |
+| [Billing](docs/billing.md)                                            | Plans, checkout, subscriptions, usage, payment history, cancellation   |
+| [AI & BYOK](docs/ai-byok.md)                                          | Per-form AI, platform key vs your own key, key storage, testing        |
+| [Support tickets](docs/support-tickets.md)                            | Opening and tracking support tickets                                   |
+| [Analytics](docs/analytics.md)                                        | Submission totals, per-form counts, status split                       |
 | [Email notifications](docs/email-notifications.md)                    | Providers, outbox, cron                                                |
 | [Security](docs/security.md)                                          | Threat model and mitigations                                           |
 | [Deployment](docs/deployment.md)                                      | Env vars, database, cron, Vercel/Cloudflare                            |
@@ -192,7 +196,7 @@ Framework guides:
 | Email      | Resend (or SMTP fallback)                                       |
 | UI         | shadcn/ui + Tailwind v4                                         |
 | Validation | Zod                                                             |
-| SDK        | Vanilla TS → esbuild (~7 KB minified)                           |
+| SDK        | Vanilla TS → esbuild (~10 KB minified)                          |
 | Tests      | Vitest (`tests/` at the repo root, by owner decision)           |
 
 ## Environment variables
@@ -238,8 +242,8 @@ every start. The bundle is gitignored; CI builds it before testing.
 ## Deployment
 
 - **Production (Vercel):** `https://sendcms.bond` with `api`, `dashboard`,
-  `docs`, and `updates` subdomains; `admin.sendcms.bond` is reserved
-  for the admin app once the control-plane branch merges.
+  `docs`, `updates`, and `admin` subdomains — all live on the
+  `feature/admin-control-plane` branch (see [Deployment](docs/deployment.md)).
 - **Cloudflare (alternative):** one Worker per app — see
   [infrastructure/cloudflare/README.md](infrastructure/cloudflare/README.md).
 - **Docker / other platforms:** shared `Dockerfile` (`APP` build arg)

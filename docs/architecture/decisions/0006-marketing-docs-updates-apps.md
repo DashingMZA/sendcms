@@ -5,6 +5,12 @@ Implements audit §9 (marketing/docs/updates rows) + §10 Phase 8 exit
 criteria: "Landing, changelog, terms, docs render; SEO routes
 (sitemap/robots) keep working".
 
+> **Snapshot note (Wave 12):** the app counts in this ADR ("all five
+> apps' dev servers", "build passes 6/6 (5 apps + the SDK)") describe
+> Phase 8, when there were five apps. The repo now has six apps
+> (admin arrived on `feature/admin-control-plane`) — the counts above
+> are historical, not current.
+
 ## What moved
 
 - `app/` (landing, terms, robots, sitemap, layout, globals.css) →
@@ -131,6 +137,12 @@ is the submit API's origin — no SDK code change was needed.
   SDK bundle, the apps' build output). The apps' own `eslint .`
   (turbo run lint) was clean throughout — the problem was only the
   root's traversal.
+
+  > **Later change (2026-11-27):** "pure workspace root" above means
+  > the root holds no app code — it does not mean the root is bare.
+  > The root also carries workspace config, the repo-wide test suite
+  > (`tests/`), the docs (`docs/`), and shared tooling such as
+  > `postcss.config.mjs` and `render.yaml`.
 
 ## Parallel-build font contention (real failure, fixed)
 

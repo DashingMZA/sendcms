@@ -107,7 +107,11 @@ never run. See [Deployment](deployment.md#email-outbox-cron) and
 Open the browser console. The common causes: the script tag's
 `src` is wrong (check `/forms/v1.js` loads), `data-user-id` /
 `data-form-id` are wrong, or the form is missing `data-cms-form`.
-The SDK also logs a warning when it cannot find any form to enhance.
+When the SDK finds a form but it has no `userId` / `formId`, it logs
+a warning naming the missing id ("not enhancing form — missing ….
+Without them the form submits natively and nothing arrives"). When
+the page has no `data-cms-form` form at all, the SDK logs nothing —
+check the form carries `data-cms-form`.
 
 **"Turnstile failed to load" and the form never submits.**
 Turnstile is fail-closed by design: if its script cannot load, the

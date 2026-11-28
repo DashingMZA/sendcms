@@ -11,8 +11,7 @@ by design: admins cannot silently edit or delete historical audit
 records through any interface this module offers (the test suite
 proves the module exports no `AuditLog` mutation).
 
-Branch: `feature/admin-control-plane` (pushed, not merged to
-`main`, not deployed). Live verification against the real dev DB
+Branch: `feature/admin-control-plane` (live in production since 2026-11-23; not merged to `main`). Live verification against the real dev DB
 is still owed.
 
 ## Contents
