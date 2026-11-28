@@ -55,10 +55,53 @@ jobs:
       - run: pnpm sdk:build
       - run: pnpm typecheck
       - run: pnpm lint
+      # SRC-409 / TST-009 (Phase 16, Wave 12): formatting and the i18n
+      # completeness check ran only in the pre-commit hook, which is
+      # bypassable with --no-verify — so a badly formatted commit (or a
+      # translation regression) merged green. Both run here now, so CI
+      # enforces what the hook enforces.
+      - run: pnpm format:check
+      - run: pnpm validate:i18n
       - run: pnpm test
+      # TST-002 (Phase 16, Wave 12): coverage gate — `test:coverage`
+      # runs the suite under @vitest/coverage-v8 with the thresholds in
+      # vitest.config.ts; a coverage regression fails the run.
+      - run: pnpm test:coverage
       - run: pnpm build
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/sendcms?sslmode=require
+          BETTER_AUTH_SECRET: dummy-build-secret-32-chars-long-xxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          GOOGLE_CLIENT_ID: dummy
+          GOOGLE_CLIENT_SECRET: dummy
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+  # TST-012 (Phase 16, Wave 12): the Cloudflare build path
+  # (`build:cf` + `cf-typegen`) was never exercised in CI — only
+  # `pnpm build` (plain `next build`) ran, so stale wrangler configs
+  # and OpenNext breakage were found by audit review, not automation.
+  # The api app is the one that serves the SDK bundle and the worker
+  # entry, so it is the build covered here (verified locally:
+  # `pnpm --filter @sendcms/api build:cf` exits 0 with dummy env and
+  # no live database). `build:server` needs no separate job: its steps
+  # are exactly the main job's `db:generate` + `next build` (+
+  # `sdk:build` for the api app), so `pnpm build` already covers it.
+  build-cf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.19.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm cf-typegen
+      - run: pnpm --filter @sendcms/api build:cf
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/sendcms?sslmode=disable
           BETTER_AUTH_SECRET: dummy-build-secret-32-chars-long-xxxx
           BETTER_AUTH_URL: http://localhost:3000
           GOOGLE_CLIENT_ID: dummy
