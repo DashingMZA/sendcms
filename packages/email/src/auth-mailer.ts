@@ -1,5 +1,6 @@
 import { render } from "@react-email/render"
 import { resolveEmailProvider, sendPlatformEmail } from "./provider"
+import { AccountApproved } from "./templates/account-approved"
 import { VerifyEmail } from "./templates/verify-email"
 import { ResetPasswordEmail } from "./templates/reset-password"
 import { getEmailTranslator } from "./email-i18n"
@@ -193,4 +194,30 @@ export async function sendPasswordResetEmail({
     url,
     onSendFailure,
   })
+}
+
+/** DOC-003: renders the account-approved mail (no direct send — the
+    notifications outbox owns delivery, like the auth-mail fallback).
+    `locale` is the recipient's stored locale ("en" | "ur"); the
+    caller resolves it from the user row and passes it through. */
+export async function renderAccountApprovedEmail({
+  user,
+  url,
+  locale,
+}: {
+  user: AuthEmailUser
+  url: string
+  locale?: string
+}): Promise<{ html: string; subject: string }> {
+  const t = getEmailTranslator(locale ?? "en")
+  const html = await render(
+    AccountApproved({
+      userName: user.name,
+      url,
+      accentColor: ACCENT_COLOR,
+      footerText: t("authFooter"),
+      locale,
+    })
+  )
+  return { html, subject: t("accountApprovedSubject") }
 }

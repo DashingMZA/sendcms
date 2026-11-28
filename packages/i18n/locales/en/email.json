@@ -1,4 +1,8 @@
 {
+  "accountApprovedButton": "Sign in to your dashboard",
+  "accountApprovedIntro": "Your SendCMS account has been approved. You can now sign in to your dashboard.",
+  "accountApprovedPreview": "Your SendCMS account is approved",
+  "accountApprovedSubject": "Your SendCMS account is approved",
   "authFooter": "You're receiving this because you have a SendCMS account.",
   "authVerifyButton": "Verify email address",
   "authVerifyIntro": "Click the button below to verify your email address and activate your SendCMS account. The link expires in 24 hours.",

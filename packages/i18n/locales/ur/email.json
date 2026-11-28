@@ -1,4 +1,8 @@
 {
+  "accountApprovedButton": "ڈیش بورڈ میں سائن ان کریں",
+  "accountApprovedIntro": "آپ کا SendCMS اکاؤنٹ منظور ہو گیا ہے۔ اب آپ اپنے ڈیش بورڈ میں سائن ان کر سکتے ہیں۔",
+  "accountApprovedPreview": "آپ کا SendCMS اکاؤنٹ منظور ہو گیا ہے",
+  "accountApprovedSubject": "آپ کا SendCMS اکاؤنٹ منظور ہو گیا ہے",
   "authFooter": "آپ کو یہ ای میل اس لیے موصول ہو رہی ہے کیونکہ آپ کا SendCMS اکاؤنٹ ہے۔",
   "authVerifyButton": "ای میل کی تصدیق کریں",
   "authVerifyIntro": "اپنا ای میل پتہ تصدیق کرنے اور اپنا SendCMS اکاؤنٹ فعال کرنے کے لیے نیچے دیے گئے بٹن پر کلک کریں۔ یہ لنک 24 گھنٹے میں ختم ہو جائے گا۔",

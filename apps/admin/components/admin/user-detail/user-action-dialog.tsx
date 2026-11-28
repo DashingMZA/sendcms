@@ -80,6 +80,18 @@ export function UserActionDialog({
       confirm: t("confirmRestore"),
       destructive: false,
     },
+    approve: {
+      title: t("approveConfirmTitle"),
+      description: t("approveConfirmBody"),
+      confirm: t("confirmApprove"),
+      destructive: false,
+    },
+    reject: {
+      title: t("rejectConfirmTitle"),
+      description: t("rejectConfirmBody"),
+      confirm: t("confirmReject"),
+      destructive: true,
+    },
     role: {
       title: t("changeRoleTitle"),
       description: t("changeRoleDescription"),
@@ -119,8 +131,12 @@ export function UserActionDialog({
   }
 
   const reasonRequired =
-    action === "suspend" || action === "disable" || action === "requestDeletion"
-  const reasonOptional = action === "reactivate" || action === "restore"
+    action === "suspend" ||
+    action === "disable" ||
+    action === "reject" ||
+    action === "requestDeletion"
+  const reasonOptional =
+    action === "reactivate" || action === "restore" || action === "approve"
 
   return (
     <Dialog

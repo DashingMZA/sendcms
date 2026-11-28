@@ -15,9 +15,11 @@ import {
 } from "@sendcms/permissions"
 import {
   useAdminUser,
+  useApproveUser,
   useDisableUser,
   useExportUserData,
   useReactivateUser,
+  useRejectUser,
   useRequestDeletion,
   useRequireEmailVerification,
   useRestoreUser,
@@ -97,6 +99,10 @@ export function UserDetail({
   const reactivate = useReactivateUser(userId)
   const disable = useDisableUser(userId)
   const restore = useRestoreUser(userId)
+  // DOC-003: approval queue actions (Stream B hooks, plan §5.7 — POST
+  // to the approve/reject routes, invalidate onSettled).
+  const approve = useApproveUser(userId)
+  const rejectUser = useRejectUser(userId)
   const setRole = useSetAdminRole(userId)
   const revokeKeys = useRevokeUserApiKeys(userId)
   const revokeSessions = useRevokeUserSessions(userId)
@@ -116,6 +122,11 @@ export function UserDetail({
   const canChangeRole =
     canManage && actorRole !== "MANAGER" && !isOwnerTarget && !isSelf
   const canSuspend = canManage && !isOwnerTarget && !isSelf
+  // DOC-003: approve/reject need MANAGE_USERS plus the same owner/self
+  // guards as suspend — a pending PLATFORM_OWNER cannot exist (§5.1),
+  // but the guard stays for symmetry. No step-up (D10): approval is
+  // reversible via suspend, rejection via restore.
+  const canApproveReject = canSuspend
   const canRevokeSessions = canManage && !isSelf
 
   function openAction(kind: UserDetailActionKind) {
@@ -129,6 +140,8 @@ export function UserDetail({
     (action === "reactivate" && reactivate.isPending) ||
     (action === "disable" && disable.isPending) ||
     (action === "restore" && restore.isPending) ||
+    (action === "approve" && approve.isPending) ||
+    (action === "reject" && rejectUser.isPending) ||
     (action === "role" && setRole.isPending) ||
     (action === "revokeKeys" && revokeKeys.isPending) ||
     (action === "revokeSessions" && revokeSessions.isPending) ||
@@ -137,7 +150,10 @@ export function UserDetail({
     (action === "requestDeletion" && requestDeletion.isPending)
 
   const reasonRequired =
-    action === "suspend" || action === "disable" || action === "requestDeletion"
+    action === "suspend" ||
+    action === "disable" ||
+    action === "reject" ||
+    action === "requestDeletion"
   const confirmDisabled =
     confirmPending || (reasonRequired && reason.trim() === "")
 
@@ -175,6 +191,16 @@ export function UserDetail({
             reason.trim() ? { reason: reason.trim() } : {}
           )
           toast.success(t("toastRestored"))
+          break
+        case "approve":
+          await approve.mutateAsync(
+            reason.trim() ? { reason: reason.trim() } : {}
+          )
+          toast.success(t("toastApproved"))
+          break
+        case "reject":
+          await rejectUser.mutateAsync({ reason: reason.trim() })
+          toast.success(t("toastRejected"))
           break
         case "role":
           await setRole.mutateAsync({
@@ -225,6 +251,7 @@ export function UserDetail({
 
   const statusLabels = {
     active: t("statusActive"),
+    pending: t("statusPendingApproval"),
     suspended: t("statusSuspended"),
     disabled: t("statusDisabled"),
   }
@@ -266,6 +293,7 @@ export function UserDetail({
               detail={detail}
               canSuspend={canSuspend}
               canManage={canManage}
+              canApproveReject={canApproveReject}
               canChangeRole={canChangeRole}
               canRevokeSessions={canRevokeSessions}
               canExport={canExport}

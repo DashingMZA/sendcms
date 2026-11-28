@@ -44,6 +44,25 @@ export default async function AdminUsersPage({
     : AdminUserListQuerySchema.parse({})
   const initialData = await listUsers(session, filters)
 
+  // DOC-003: pending-approval queue count for the banner above the
+  // table. When the list is already filtered to PENDING_APPROVAL the
+  // filtered total IS the count; otherwise one extra listUsers call
+  // with the pending filter (page 1, perPage 1 — only the total is
+  // read). The filter is parsed through the schema (SRC-119) so a
+  // tree where the validator does not know PENDING_APPROVAL yet
+  // degrades to 0 instead of throwing. No new endpoint.
+  const pendingFilter = AdminUserListQuerySchema.safeParse({
+    status: "PENDING_APPROVAL",
+    page: 1,
+    perPage: 1,
+  })
+  const pendingCount =
+    filters.status === "PENDING_APPROVAL"
+      ? initialData.total
+      : pendingFilter.success
+        ? (await listUsers(session, pendingFilter.data)).total
+        : 0
+
   const locale = await getRequestLocale(session.user.id)
   const t = await getTranslator(locale, "users")
 
@@ -51,7 +70,11 @@ export default async function AdminUsersPage({
     <div>
       <PageHeader title={t("title")} description={t("description")} />
       <div tabIndex={-1} className="flex flex-col gap-6 p-6">
-        <UsersTable initialData={initialData} filters={filters} />
+        <UsersTable
+          initialData={initialData}
+          filters={filters}
+          pendingCount={pendingCount}
+        />
       </div>
     </div>
   )

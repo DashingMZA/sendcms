@@ -26,6 +26,7 @@
   "statusArchived": "محفوظ شدہ",
   "statusDisabled": "غیر فعال",
   "statusNew": "نئی",
+  "statusPendingApproval": "منظوری کا منتظر",
   "statusRead": "پڑھی گئی",
   "statusSpam": "اسپام",
   "statusStarred": "ستارہ دار",

@@ -57,6 +57,10 @@ const STATUS_KEYS = {
 
 const USER_STATUS_KEYS = {
   ACTIVE: "statusActive",
+  // DOC-003: pending users appear in the byStatus split once the
+  // first PENDING_APPROVAL row exists — the key must exist or the
+  // lookup throws at render time.
+  PENDING_APPROVAL: "statusPendingApproval",
   SUSPENDED: "statusSuspended",
   DISABLED: "statusDisabled",
 } as const

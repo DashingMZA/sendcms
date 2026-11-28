@@ -45,6 +45,8 @@ const TYPE_LABEL_KEYS: Record<AdminEmailJobRow["type"], string> = {
   PASSWORD_RESET: "typePasswordReset",
   DIGEST: "typeDigest",
   SUBMISSION_REPLY: "typeSubmissionReply",
+  // DOC-003: the approval email — same key as the queue table.
+  ACCOUNT_APPROVED: "typeAccountApproved",
   TEST_EMAIL: "typeTestEmail",
 }
 

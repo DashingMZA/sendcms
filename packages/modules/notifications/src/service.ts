@@ -24,6 +24,7 @@ import {
   getEmailTranslator,
   notificationDeps,
   parseResendWebhookEvent,
+  renderAccountApprovedEmail,
   resendEventToDeliveryStatus,
   verifyResendWebhookSignature,
   type DigestProps,
@@ -355,6 +356,49 @@ export async function enqueueAuthEmailJob(
   ])
 }
 
+/** DOC-003: creates one PENDING ACCOUNT_APPROVED job for a user
+    whose registration was just approved. The HTML is rendered at
+    enqueue time, in the recipient's stored locale (resolved from the
+    user row when the caller does not pass one), and stored on the
+    payload — so the send path needs no user row and never re-renders,
+    the same shape as `enqueueAuthEmailJob`. The job is due
+    immediately (`nextAttemptAt` null), so the next drain retries it.
+    The ownerId is the user the mail is for. */
+export async function enqueueAccountApprovedEmail({
+  userId,
+  to,
+  name,
+  locale,
+}: {
+  userId: string
+  to: string
+  name: string
+  locale?: string
+}): Promise<number> {
+  const resolvedLocale = locale ?? (await ownerLocale(userId)) ?? "en"
+  const url = `${dashboardUrl()}/sign-in`
+  const { html, subject } = await renderAccountApprovedEmail({
+    user: { name, email: to },
+    url,
+    locale: resolvedLocale,
+  })
+  return enqueueEmailJobs([
+    {
+      type: EmailJobType.ACCOUNT_APPROVED,
+      to,
+      subject,
+      // Account mail belongs to no form — null, never an empty string
+      // (the delivery-log audit treats a set formId as a form link).
+      formId: null,
+      ownerId: userId,
+      payload: {
+        html,
+        url,
+      } as unknown as Prisma.InputJsonValue,
+    },
+  ])
+}
+
 /** The payload an auth job (EMAIL_VERIFICATION / PASSWORD_RESET)
     carries. Written by enqueueAuthEmailJob, read by the send path —
     a malformed one fails the job terminally, it never sends a
@@ -668,6 +712,24 @@ async function processOneJob(
         to: job.to,
         subject: job.subject,
         html: auth.html,
+      })
+      await markEmailJobSent(job.id, messageId)
+      return "sent"
+    }
+    // DOC-003: account-approved jobs carry their rendered HTML on
+    // the payload, like auth jobs — send it directly, no re-render.
+    // No suppression check (account-critical mail, like auth jobs).
+    if (job.type === EmailJobType.ACCOUNT_APPROVED) {
+      const approved = parseAuthEmailPayload(job.payload)
+      if (!approved) {
+        throw new TerminalJobError(
+          "Account-approved email payload is missing or malformed."
+        )
+      }
+      const { messageId } = await notificationDeps.sendEmail({
+        to: job.to,
+        subject: job.subject,
+        html: approved.html,
       })
       await markEmailJobSent(job.id, messageId)
       return "sent"

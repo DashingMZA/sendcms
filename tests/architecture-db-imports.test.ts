@@ -16,6 +16,9 @@ const ROOT = join(import.meta.dirname, "..")
 const EXCEPTIONS = new Set([
   "apps/api/instrumentation-node.ts",
   "packages/auth/src/auth.ts",
+  // DOC-003 (D14): the registration-flag reader next to the auth
+  // factory — same documented exception as auth.ts.
+  "packages/auth/src/registration.ts",
   "packages/mcp/src/access.ts",
   "packages/mcp/src/rate-limit.ts",
   "packages/mcp/src/usage.ts",

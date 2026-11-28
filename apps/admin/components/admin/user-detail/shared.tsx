@@ -8,6 +8,8 @@ export type UserDetailActionKind =
   | "reactivate"
   | "disable"
   | "restore"
+  | "approve"
+  | "reject"
   | "role"
   | "revokeKeys"
   | "revokeSessions"

@@ -66,7 +66,11 @@ const FLAG_KEY_PATTERN = /^[a-z0-9][a-z0-9-]*$/
     disable its live job, so the service refuses with a 422 and the
     UI shows a Built-in badge instead of a delete button. The
     wave5-stream-c locale test asserts the two lists still match. */
-const SYSTEM_FLAG_KEYS = ["ai-spam-rescore", "ai-digest"] as const
+const SYSTEM_FLAG_KEYS = [
+  "ai-spam-rescore",
+  "ai-digest",
+  "registration",
+] as const
 
 function isSystemFlag(key: string): boolean {
   return (SYSTEM_FLAG_KEYS as readonly string[]).includes(key)

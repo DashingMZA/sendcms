@@ -16,12 +16,16 @@ enum PlatformRole {
 
 // Admin Control Plane (Phase 3) — account status. SUSPENDED is a temporary
 // block (reversible via reactivate); DISABLED is an admin-closed account
-// (reversible via restore). Deletion/erasure is a separate soft flow
+// (reversible via restore). PENDING_APPROVAL is a newly registered user
+// awaiting admin approval (never auto-approved; sign-in refused like
+// SUSPENDED/DISABLED; reversible via approve to ACTIVE or reject to
+// DISABLED). Deletion/erasure is a separate soft flow
 // (deletion requests, Phase 7) — never a hard delete. A non-ACTIVE user
 // cannot sign in or use any session-gated route; their public forms keep
 // accepting submissions (never silently drop customer submissions).
 enum UserStatus {
   ACTIVE
+  PENDING_APPROVAL
   SUSPENDED
   DISABLED
 }
@@ -106,6 +110,11 @@ enum EmailJobType {
   // reply to one submission, emailed to the submitter. The body is
   // stored in EmailJob.payload.
   SUBMISSION_REPLY
+  // Phase 16 (DOC-003): the "your account is approved" email sent when
+  // an admin approves a PENDING_APPROVAL user. Account-critical mail,
+  // like the auth jobs — sent pre-rendered from the outbox payload,
+  // no suppression check.
+  ACCOUNT_APPROVED
   // Phase 16 (EML-096): a test notification sent from a form's
   // detail page. Recorded as a SENT row (never PENDING) so the
   // delivery log shows test sends alongside real ones — the send

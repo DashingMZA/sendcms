@@ -23,6 +23,7 @@ import type {
   AiKeyTestStatus,
   AiProvider,
   AiUsageStatus,
+  UserStatus,
 } from "@sendcms/database"
 import { createLogger } from "@sendcms/observability"
 import { requireAdmin } from "@sendcms/permissions"
@@ -171,7 +172,11 @@ function toUserAiKeyMeta(row: UserAiKeyMetaRow): UserAiKeyMeta {
 
 async function getUserOrThrow(userId: string): Promise<{
   id: string
-  status: "ACTIVE" | "SUSPENDED" | "DISABLED"
+  // DOC-003: the Prisma UserStatus type, not a hardcoded union — the
+  // enum gained PENDING_APPROVAL and a literal union would break on
+  // every future value. A pending user cannot reach here anyway (no
+  // session is ever minted for a non-ACTIVE account).
+  status: UserStatus
 }> {
   const user = await db.user.findUnique({
     where: { id: userId },

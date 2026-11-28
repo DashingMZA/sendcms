@@ -42,6 +42,9 @@ export const AdminEmailJobListQuerySchema = z.object({
       "PASSWORD_RESET",
       "DIGEST",
       "SUBMISSION_REPLY",
+      // DOC-003: the approval email — the Jobs queue filter must
+      // accept it, or an approval job can never be filtered to.
+      "ACCOUNT_APPROVED",
       "TEST_EMAIL",
     ])
     .optional(),

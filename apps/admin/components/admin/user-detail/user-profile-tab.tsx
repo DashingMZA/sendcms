@@ -25,6 +25,7 @@ type Props = {
   detail: AdminUserDetail
   canSuspend: boolean
   canManage: boolean
+  canApproveReject: boolean
   canChangeRole: boolean
   canRevokeSessions: boolean
   canExport: boolean
@@ -37,6 +38,7 @@ export function UserProfileTab({
   detail,
   canSuspend,
   canManage,
+  canApproveReject,
   canChangeRole,
   canRevokeSessions,
   canExport,
@@ -50,6 +52,7 @@ export function UserProfileTab({
 
   const statusLabels = {
     active: t("statusActive"),
+    pending: t("statusPendingApproval"),
     suspended: t("statusSuspended"),
     disabled: t("statusDisabled"),
   }
@@ -159,6 +162,26 @@ export function UserProfileTab({
               onClick={() => onAction("restore")}
             >
               {t("restore")}
+            </Button>
+          )}
+          {/* DOC-003: approval queue actions — detail page only (Q9),
+              shown only while the account awaits approval. */}
+          {canApproveReject && profile.status === "PENDING_APPROVAL" && (
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => onAction("approve")}
+            >
+              {t("approve")}
+            </Button>
+          )}
+          {canApproveReject && profile.status === "PENDING_APPROVAL" && (
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => onAction("reject")}
+            >
+              {t("reject")}
             </Button>
           )}
           {canChangeRole && (

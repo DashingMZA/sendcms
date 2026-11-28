@@ -4,6 +4,7 @@ import type { AdminRole, PlatformRole, UserStatus } from "@sendcms/database"
 import { getEffectiveRole, requireAdmin } from "@sendcms/permissions"
 import { getTargetUserOrThrow } from "@sendcms/permissions/target-user"
 import { logAudit, requireStepUp } from "@sendcms/security"
+import { enqueueAccountApprovedEmail } from "@sendcms/notifications"
 import { ApiError } from "@sendcms/shared"
 import { createLogger } from "@sendcms/observability"
 import type { AdminUserListQuery } from "./validators"
@@ -653,6 +654,106 @@ export async function restoreUser(
       event: "user-restored",
       ...(input.reason ? { reason: input.reason } : {}),
     },
+  })
+  return updated
+}
+
+// DOC-003: approve / reject mirror `suspendUser` (D8), minus step-up
+// (D10 — both are reversible, so no `requireStepUp` here). No session
+// wipe in either: a pending user holds no session.
+export async function approveUser(
+  actor: AdminSession,
+  userId: string,
+  input: { reason?: string }
+) {
+  requireAdmin(actor, "MANAGE_USERS")
+  const target = await getTargetUserOrThrow(userId)
+  forbidOwnerTarget(target, "approved")
+  forbidSelfTarget(actor, userId, "approve")
+  // A rejected user is DISABLED with the rejection reason on the row —
+  // they come back via `restoreUser`, never via approve.
+  if (target.status === "DISABLED" && target.statusReason) {
+    throw new ApiError(
+      "This user was rejected. Restore the account instead of approving it.",
+      409
+    )
+  }
+  if (target.status !== "PENDING_APPROVAL") {
+    throw new ApiError("Only a user awaiting approval can be approved.", 409)
+  }
+  const now = new Date()
+  const updated = await transitionUserStatus(
+    userId,
+    "PENDING_APPROVAL",
+    { status: "ACTIVE", statusReason: null, statusChangedAt: now },
+    false
+  )
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.USER,
+    resourceId: userId,
+    detail: {
+      event: "user-approved",
+      ...(input.reason ? { reason: input.reason } : {}),
+    },
+  })
+  // Best-effort, AFTER the status write + audit: a mail failure never
+  // rolls back an approval (the outbox retry covers it).
+  try {
+    const localeRow = await db.user.findUnique({
+      where: { id: userId },
+      select: { locale: true },
+    })
+    await enqueueAccountApprovedEmail({
+      userId,
+      to: target.email,
+      name: target.name,
+      locale: localeRow?.locale ?? undefined,
+    })
+  } catch (err) {
+    logger.error("approval email enqueue failed after approval", {
+      error: err,
+      userId,
+    })
+  }
+  return updated
+}
+
+export async function rejectUser(
+  actor: AdminSession,
+  userId: string,
+  input: { reason: string }
+) {
+  requireAdmin(actor, "MANAGE_USERS")
+  // The reason is required (also enforced by the Zod schema at the
+  // route) — a rejection without a recorded reason is not auditable.
+  if (!input.reason.trim()) {
+    throw new ApiError("Reason is required", 400)
+  }
+  const target = await getTargetUserOrThrow(userId)
+  forbidOwnerTarget(target, "rejected")
+  forbidSelfTarget(actor, userId, "reject")
+  if (target.status !== "PENDING_APPROVAL") {
+    throw new ApiError("Only a user awaiting approval can be rejected.", 409)
+  }
+  const now = new Date()
+  const updated = await transitionUserStatus(
+    userId,
+    "PENDING_APPROVAL",
+    {
+      status: "DISABLED",
+      statusReason: input.reason,
+      statusChangedAt: now,
+    },
+    false
+  )
+  await logAudit({
+    userId: actor.user.id,
+    action: AuditAction.UPDATE,
+    resourceType: AuditResource.USER,
+    resourceId: userId,
+    detail: { event: "user-rejected", reason: input.reason },
   })
   return updated
 }

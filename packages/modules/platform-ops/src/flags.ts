@@ -26,9 +26,11 @@ import {
 // registry and it is not toggled from here.
 //
 // Precedence: per-user override → global flag → default (off). An
-// unknown key is OFF — fail-closed. Two features read flags:
-// `ai-spam-rescore` guards submission re-scoring and `ai-digest`
-// guards the digest job; an unknown or disabled flag keeps its job
+// unknown key is OFF — fail-closed. Three features read flags:
+// `ai-spam-rescore` guards submission re-scoring, `ai-digest`
+// guards the digest job, and `registration` (read by
+// `isRegistrationEnabled` in @sendcms/auth, not via this module)
+// gates new sign-ups; an unknown or disabled flag keeps its job
 // off. (ADM-091: the old note claiming no feature read a flag was
 // stale since Phase 8 wired those two gates.)
 
@@ -39,7 +41,13 @@ const logger = createLogger("platform-ops:flags")
 // guards sendDueDigests). Deleting one would silently disable its
 // job, so deleteFlag refuses them with a 422 — disable the flag
 // instead. The UI hides the delete button for these keys.
-export const SYSTEM_FLAGS = ["ai-spam-rescore", "ai-digest"] as const
+// DOC-003: `registration` joins them — deleting it would silently
+// close registration, because an unknown key is fail-closed OFF.
+export const SYSTEM_FLAGS = [
+  "ai-spam-rescore",
+  "ai-digest",
+  "registration",
+] as const
 
 export type SystemFlagKey = (typeof SYSTEM_FLAGS)[number]
 

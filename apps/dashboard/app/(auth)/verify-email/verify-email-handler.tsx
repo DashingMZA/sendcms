@@ -29,6 +29,10 @@ export function VerifyEmailHandler({
   const [error, setError] = useState<string | null>(
     token ? null : "This verification link is missing its token."
   )
+  // DOC-003: a pending user verifies their email, but the auto-sign-in
+  // is refused (FAILED_TO_CREATE_SESSION) — the email IS verified,
+  // only the admin approval is outstanding.
+  const [pendingApproval, setPendingApproval] = useState(false)
   const [email, setEmail] = useState("")
   const [resent, setResent] = useState(false)
   const [resending, setResending] = useState(false)
@@ -42,6 +46,14 @@ export function VerifyEmailHandler({
         if (error) {
           const code = (error as { code?: string }).code
           if (code === "EMAIL_ALREADY_VERIFIED") {
+            setStatus("success")
+            return
+          }
+          // DOC-003: the email is verified at this point — only the
+          // admin approval is outstanding. Show the pending-aware
+          // success state instead of the error state, with no redirect.
+          if (code === "FAILED_TO_CREATE_SESSION") {
+            setPendingApproval(true)
             setStatus("success")
             return
           }
@@ -100,6 +112,19 @@ export function VerifyEmailHandler({
   }
 
   if (status === "success") {
+    // DOC-003: pending-aware success — no redirect, and the
+    // "Taking you to your dashboard…" line is replaced.
+    if (pendingApproval) {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Your email is verified.</p>
+          <p className="text-sm text-muted-foreground">
+            An admin will review your registration — you&apos;ll be able to sign
+            in once you&apos;re approved.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="space-y-2">
         <p className="text-sm font-medium">Your email is verified.</p>

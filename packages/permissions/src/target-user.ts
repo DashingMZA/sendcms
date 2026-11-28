@@ -3,7 +3,8 @@
 // (platform-ops, admin-users, mcp-admin) with different selects;
 // this is the superset of the fields any caller needs (the guards
 // need `platformRole`, the mailers need `email`, the detail views
-// need `name`).
+// need `name`, the DOC-003 approve guard needs `statusReason` to tell
+// a rejected user from any other disabled one).
 //
 // This lives in its own subpath entry (`@sendcms/permissions/target-user`)
 // instead of the package root on purpose: it imports `@sendcms/database`,
@@ -25,6 +26,7 @@ export async function getTargetUserOrThrow(userId: string) {
       platformRole: true,
       adminRole: true,
       status: true,
+      statusReason: true,
     },
   })
   if (!target) throw new ApiError("User not found", 404)

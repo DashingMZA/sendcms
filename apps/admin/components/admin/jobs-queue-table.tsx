@@ -68,6 +68,9 @@ export type EmailJobTypeValue =
   | "PASSWORD_RESET"
   | "DIGEST"
   | "SUBMISSION_REPLY"
+  // DOC-003: the approval email enqueued when an admin approves a
+  // PENDING_APPROVAL user — it shows in this queue like any other job.
+  | "ACCOUNT_APPROVED"
   | "TEST_EMAIL"
 
 export type EmailJobStatusValue = "PENDING" | "SENDING" | "SENT" | "FAILED"
@@ -137,6 +140,7 @@ const TYPE_VALUES: EmailJobTypeValue[] = [
   "PASSWORD_RESET",
   "DIGEST",
   "SUBMISSION_REPLY",
+  "ACCOUNT_APPROVED",
   "TEST_EMAIL",
 ]
 
@@ -146,6 +150,7 @@ const TYPE_LABEL_KEYS: Record<EmailJobTypeValue, string> = {
   PASSWORD_RESET: "typePasswordReset",
   DIGEST: "typeDigest",
   SUBMISSION_REPLY: "typeSubmissionReply",
+  ACCOUNT_APPROVED: "typeAccountApproved",
   TEST_EMAIL: "typeTestEmail",
 }
 

@@ -37,9 +37,13 @@ const DEBOUNCE_MS = 300
 type Props = {
   initialData: AdminUsersListResponse
   filters: AdminUserListQuery
+  // DOC-003: accounts awaiting approval (from the server component —
+  // the filtered total when ?status=PENDING_APPROVAL is active, else
+  // one extra listUsers call). The banner shows only when this is > 0.
+  pendingCount: number
 }
 
-export function UsersTable({ initialData, filters }: Props) {
+export function UsersTable({ initialData, filters, pendingCount }: Props) {
   const { t } = useTranslation("users")
   const locale = useLocale()
   const router = useRouter()
@@ -89,6 +93,12 @@ export function UsersTable({ initialData, filters }: Props) {
     filters.emailVerified !== undefined
   )
 
+  // DOC-003: the queue link — the pending filter on this same page.
+  const pendingParams = new URLSearchParams(searchParams.toString())
+  pendingParams.set("status", "PENDING_APPROVAL")
+  pendingParams.delete("page")
+  const pendingHref = `${pathname}?${pendingParams.toString()}`
+
   return (
     <div className="flex flex-col gap-4">
       {/* UX-011: section heading for the outline — see plans-table. */}
@@ -109,6 +119,9 @@ export function UsersTable({ initialData, filters }: Props) {
             <SelectContent>
               <SelectItem value="all">{t("statusAll")}</SelectItem>
               <SelectItem value="ACTIVE">{t("statusActive")}</SelectItem>
+              <SelectItem value="PENDING_APPROVAL">
+                {t("statusPendingApproval")}
+              </SelectItem>
               <SelectItem value="SUSPENDED">{t("statusSuspended")}</SelectItem>
               <SelectItem value="DISABLED">{t("statusDisabled")}</SelectItem>
             </SelectContent>
@@ -235,6 +248,21 @@ export function UsersTable({ initialData, filters }: Props) {
         </div>
       )}
 
+      {/* DOC-003: pending-approval queue banner — shown only when
+          accounts are awaiting approval; the link filters the list
+          to the queue (?status=PENDING_APPROVAL). */}
+      {pendingCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm">
+          <span>{t("pendingCount", { count: pendingCount })}</span>
+          <Link
+            href={pendingHref}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            {t("view")}
+          </Link>
+        </div>
+      )}
+
       {list.total === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20 text-center">
           <RiUserLine
@@ -281,6 +309,7 @@ export function UsersTable({ initialData, filters }: Props) {
                         status={user.status}
                         labels={{
                           active: t("statusActive"),
+                          pending: t("statusPendingApproval"),
                           suspended: t("statusSuspended"),
                           disabled: t("statusDisabled"),
                         }}

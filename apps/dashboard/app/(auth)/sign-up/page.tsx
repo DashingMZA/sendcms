@@ -2,7 +2,10 @@ import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { getConfiguredOAuthProviders } from "@sendcms/auth"
+import {
+  getConfiguredOAuthProviders,
+  isRegistrationEnabled,
+} from "@sendcms/auth"
 
 import { AuthShell } from "../auth-shell"
 import { SocialSignInButtons } from "../social-sign-in-buttons"
@@ -19,6 +22,29 @@ export const metadata: Metadata = {
 export default async function SignUpPage() {
   const session = await auth()
   if (session) redirect("/dashboard")
+  // DOC-003: when registration is closed, offer neither the form nor
+  // the OAuth sign-up buttons (the hook would refuse both) — render
+  // the closed state instead, with a link to sign-in. The title
+  // stays "Create your account".
+  if (!(await isRegistrationEnabled())) {
+    return (
+      <AuthShell title="Create your account" description="">
+        <p className="text-sm text-muted-foreground">
+          Registration is currently closed. Please check back later.
+        </p>
+
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link
+            href="/sign-in"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Sign in
+          </Link>
+        </p>
+      </AuthShell>
+    )
+  }
   const providers = getConfiguredOAuthProviders()
 
   return (

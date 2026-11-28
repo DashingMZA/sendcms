@@ -38,7 +38,21 @@ export function SignUpForm() {
     })
     setLoading(false)
     if (error) {
-      setError(error.message ?? "Couldn't create the account.")
+      // DOC-003 §7.1 fallback: when the `registration` flag is OFF the
+      // `user.create.before` hook returns false, and Better Auth
+      // surfaces that as a generic 400 FAILED_TO_CREATE_USER ("Failed
+      // to create user") — the plan's exact copy is shown instead. The
+      // code can only arise here from the hook refusing (a duplicate
+      // email returns the generic success response), so the mapping is
+      // not masking any other failure. The closed state on the sign-up
+      // page covers the flag-OFF case at load; this covers a toggle
+      // flipped mid-flight, between load and submit.
+      const code = (error as { code?: string }).code
+      if (code === "FAILED_TO_CREATE_USER") {
+        setError("Registration is currently closed.")
+      } else {
+        setError(error.message ?? "Couldn't create the account.")
+      }
       return
     }
     setSent(true)
@@ -51,7 +65,9 @@ export function SignUpForm() {
         <p className="text-sm text-muted-foreground">
           We sent a verification link to{" "}
           <span className="font-medium text-foreground">{email}</span>. Click it
-          to activate your account, then sign in. The link expires in 24 hours.
+          to verify your account — then an admin will review your registration.
+          You&apos;ll be able to sign in once you&apos;re approved. The link
+          expires in 24 hours.
         </p>
       </div>
     )

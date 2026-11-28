@@ -130,11 +130,16 @@ export function useAdminUserSubmission(
 
 function useAdminUserMutation(userId: string) {
   const qc = useQueryClient()
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["admin-users"] })
+    qc.invalidateQueries({ queryKey: adminUserKeys.detail(userId) })
+  }
   return {
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-users"] })
-      qc.invalidateQueries({ queryKey: adminUserKeys.detail(userId) })
-    },
+    onSuccess: invalidate,
+    // DOC-003 approve/reject invalidate onSettled (not just on
+    // success) — the status transition is server-authoritative and
+    // the list must refetch even when the mutation fails.
+    onSettled: invalidate,
   }
 }
 
@@ -183,6 +188,33 @@ export function useRestoreUser(userId: string) {
         body: JSON.stringify(body),
       }),
     onSuccess,
+  })
+}
+
+// DOC-003: approve / reject a user awaiting approval. No optimistic
+// update — status transitions are server-authoritative; the list
+// refetches onSettled.
+export function useApproveUser(userId: string) {
+  const { onSettled } = useAdminUserMutation(userId)
+  return useMutation({
+    mutationFn: (body: { reason?: string }) =>
+      apiFetch(`/api/v1/admin/users/${userId}/approve`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSettled,
+  })
+}
+
+export function useRejectUser(userId: string) {
+  const { onSettled } = useAdminUserMutation(userId)
+  return useMutation({
+    mutationFn: (body: { reason: string }) =>
+      apiFetch(`/api/v1/admin/users/${userId}/reject`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSettled,
   })
 }
 

@@ -21,7 +21,7 @@ function read(rel: string): string {
 // ─── SRC-105: every admin API handler is route-gated ──────────────────────
 
 // "METHOD path" → the capability requireAdminApi must assert before
-// the service runs. This is the whole 93-route / 108-handler map,
+// the service runs. This is the whole 95-route / 110-handler map,
 // derived from the wired routes (see the Stream B working paper).
 const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
   "GET activity": "VIEW_AUDIT_LOGS",
@@ -111,6 +111,7 @@ const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
   "GET translations/[locale]/export": "MANAGE_TRANSLATIONS",
   "GET translations": "MANAGE_TRANSLATIONS",
   "GET usage": "MANAGE_USAGE",
+  "POST users/[userId]/approve": "MANAGE_USERS",
   "POST users/[userId]/deletion-request": "MANAGE_USERS",
   "POST users/[userId]/disable": "MANAGE_USERS",
   "GET users/[userId]/export": "VIEW_CUSTOMER_DATA",
@@ -121,6 +122,7 @@ const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
   "POST users/[userId]/overrides": "MANAGE_USAGE",
   "POST users/[userId]/password-reset": "MANAGE_USERS",
   "POST users/[userId]/reactivate": "MANAGE_USERS",
+  "POST users/[userId]/reject": "MANAGE_USERS",
   "POST users/[userId]/require-verification": "MANAGE_USERS",
   "POST users/[userId]/restore": "MANAGE_USERS",
   "POST users/[userId]/revoke-keys": "MANAGE_USERS",
@@ -135,14 +137,14 @@ const ADMIN_ROUTE_CAPABILITIES: Record<string, string> = {
 }
 
 describe("SRC-105 admin route capabilities", () => {
-  it("pins all 108 handlers across the 93 admin routes", () => {
-    expect(Object.keys(ADMIN_ROUTE_CAPABILITIES)).toHaveLength(108)
+  it("pins all 110 handlers across the 95 admin routes", () => {
+    expect(Object.keys(ADMIN_ROUTE_CAPABILITIES)).toHaveLength(110)
     const files = new Set(
       Object.keys(ADMIN_ROUTE_CAPABILITIES).map((k) =>
         k.slice(k.indexOf(" ") + 1)
       )
     )
-    expect(files.size).toBe(93)
+    expect(files.size).toBe(95)
     for (const [key, cap] of Object.entries(ADMIN_ROUTE_CAPABILITIES)) {
       const [method, route] = [
         key.slice(0, key.indexOf(" ")),

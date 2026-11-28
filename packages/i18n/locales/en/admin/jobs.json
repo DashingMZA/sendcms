@@ -124,6 +124,7 @@
   "triggerVercelCron": "Vercel cron",
   "triggerWorker": "Worker",
   "triggeredBy": "By {name}",
+  "typeAccountApproved": "Account approved",
   "typeAll": "All types",
   "typeDigest": "Digest",
   "typeEmailVerification": "Email verification",

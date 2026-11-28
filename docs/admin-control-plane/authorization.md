@@ -224,6 +224,8 @@ every privileged write.
 | Execute the erasure                      | `executeErasure` (`@sendcms/platform-ops`)                     | ✓                                                                                |
 | Suspend a user                           | `suspendUser`                                                  | — (reversible; reactivation restores access)                                     |
 | Reactivate / restore a user              | `reactivateUser` / `restoreUser`                               | —                                                                                |
+| Approve a user                           | `approveUser` (`@sendcms/admin-users`)                         | — (reversible; approval is undone by suspending)                                 |
+| Reject a user                            | `rejectUser` (`@sendcms/admin-users`)                          | — (reversible; rejection is undone by restoring)                                 |
 | Revoke a user's API keys                 | `revokeUserApiKeys` (`@sendcms/admin-users`)                   | ✓ (SEC-103 / ADM-009 — destructive, account-wide)                                |
 | Revoke a user's sessions                 | `revokeUserSessions` (`@sendcms/admin-users`)                  | — (reversible by signing in again)                                               |
 | Migrate a subscription to another plan   | `executeMigration` (`@sendcms/plans`)                          | — (reversible by migrating back; no data destroyed)                              |
@@ -232,6 +234,14 @@ every privileged write.
 | Change a billing provider's config       | `setProviderConfig` (`@sendcms/billing`)                       | — (reversible; a provider can be re-enabled)                                     |
 | Requeue an email job (admin)             | `requeueEmailJobForAdmin` (`@sendcms/notifications`)           | ✓ (MANAGE_JOBS + step-up — one password entry authorizes exactly one requeue)    |
 | Run the email-outbox cron manually       | `runManualEmailOutboxCron` (`@sendcms/cron`)                   | ✓ (MANAGE_JOBS + step-up — one password entry authorizes exactly one manual run) |
+
+**DOC-003 addendum (2026-11-28):** the Approve / Reject rows above
+are no scope change — both actions are reversible (suspend undoes an
+approval, restore undoes a rejection) and change no role, the same
+shape as suspend / reactivate / restore, which the owner-confirmed
+scope (SEC-104) already leaves out. If an approval is ever combined
+with a role assignment, that is a separate `setAdminRole` call with
+its own step-up — never folded into approve.
 
 **Wave 12 addendum (Phase C, 7 admin pages — Jobs page, 2026-11-27):**
 the scope above was extended with the last two rows. The Wave 2

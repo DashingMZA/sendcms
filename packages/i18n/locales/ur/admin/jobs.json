@@ -124,6 +124,7 @@
   "triggerVercelCron": "ورسیل کرون",
   "triggerWorker": "ورکر",
   "triggeredBy": "کی طرف سے {name}",
+  "typeAccountApproved": "اکاؤنٹ منظور شدہ",
   "typeAll": "تمام اقسام",
   "typeDigest": "ڈائجسٹ",
   "typeEmailVerification": "ای میل کی تصدیق",

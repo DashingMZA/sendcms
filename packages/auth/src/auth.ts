@@ -7,9 +7,11 @@ import { enqueueAuthEmailJob } from "@sendcms/notifications"
 import { createLogger } from "@sendcms/observability"
 import { logAudit, parseTrustedProxyList } from "@sendcms/security"
 import { getConfiguredOAuthProviders } from "./providers"
+import { isRegistrationEnabled } from "./registration"
 import type { AdminRole, PlatformRole } from "@sendcms/permissions"
 
-export type UserStatus = "ACTIVE" | "SUSPENDED" | "DISABLED"
+export type UserStatus =
+  "ACTIVE" | "PENDING_APPROVAL" | "SUSPENDED" | "DISABLED"
 
 const logger = createLogger("auth")
 
@@ -336,6 +338,43 @@ export function createSendcmsAuth() {
       },
       user: {
         create: {
+          // DOC-003 (D3/D4): the registration gate. The hook runs for
+          // every user creation through the adapter — email/password
+          // AND OAuth sign-ups — so all paths land pending. When the
+          // `registration` flag is OFF the hook returns false (no user
+          // is created). Returning false — not throwing — is the
+          // mechanism the §7.1 probe selected: a thrown 403 APIError
+          // is swallowed by Better Auth's generic-duplicate response
+          // (sign-up.mjs:233 — with requireEmailVerification on, a
+          // 403 from createUser returns a SUCCESS-shaped synthetic
+          // user, no error), while `return false` surfaces a mappable
+          // 400 FAILED_TO_CREATE_USER error to the client. The
+          // sign-up form maps that failure to "Registration is
+          // currently closed." (plan §7.1 fallback). Full probe
+          // evidence: ~/workspace/.audit-phase16/doc003/stream-a/.
+          //
+          // NOTE: the plan's §4.2 snippet wrote
+          // `new ApiError("Registration is currently closed.", 403)`
+          // — message first, status second. That arg order is
+          // backwards against the installed APIError (better-call
+          // 1.4.5 / @better-auth/core 1.7.25): `new APIError(status,
+          // body)` — status first. The snippet was not used: the
+          // throw itself is what the probe rejected, not just its
+          // arg order.
+          before: async (user) => {
+            if (!(await isRegistrationEnabled())) {
+              // DOC-003 §7.1 probe result (see
+              // ~/workspace/.audit-phase16/doc003/stream-a/): throwing a
+              // 403 APIError here is swallowed by Better Auth's
+              // generic-duplicate response (sign-up.mjs:233 — with
+              // requireEmailVerification on, a 403 from createUser
+              // returns a SUCCESS-shaped synthetic user, no error).
+              // Returning false surfaces a mappable 400
+              // FAILED_TO_CREATE_USER error to the client instead.
+              return false
+            }
+            return { data: { ...user, status: "PENDING_APPROVAL" } }
+          },
           after: async (user) => {
             // First user to register becomes PLATFORM_OWNER. Single-statement
             // conditional UPDATE: atomic, so two simultaneous first sign-ups
@@ -345,7 +384,7 @@ export function createSendcmsAuth() {
             // Promotion is best-effort — it must never fail registration.
             try {
               const promoted = await db.$executeRaw`
-              UPDATE "User" SET "platformRole" = 'PLATFORM_OWNER'
+              UPDATE "User" SET "platformRole" = 'PLATFORM_OWNER', "status" = 'ACTIVE'
               WHERE "id" = ${user.id}
               AND NOT EXISTS (
                 SELECT 1 FROM "User" WHERE "platformRole" = 'PLATFORM_OWNER'

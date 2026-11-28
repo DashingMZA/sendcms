@@ -70,6 +70,14 @@ export function EmailSignInForm({
         setError(
           "Your email isn't verified yet. Check your inbox for the verification link."
         )
+      } else if (code === "FAILED_TO_CREATE_SESSION") {
+        // DOC-003 (Q5, combined copy): the account is not ACTIVE —
+        // pending approval, suspended, or disabled. The endpoint
+        // cannot distinguish them without leaking account state, so
+        // one message covers all three.
+        setError(
+          "Your account isn't active. If you recently registered, an admin will review your account; if you believe this is a mistake, contact support."
+        )
       } else {
         setError(
           error.message ?? "Sign-in failed. Check your email and password."

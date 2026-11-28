@@ -387,9 +387,7 @@ one.
   The gap from ADR 0008 is closed on the live branch. The public
   submit API is also rate-limited (DB-backed: 10/min + 100/hour per
   IP, per-form daily cap).
-- Registration is enable/disable-able from dashboard settings; new
-  users are never auto-approved (the admin manually approves each
-  account); email verification after registration is mandatory.
+- Registration is enable/disable-able from the admin Features page (`registration` flag, on by default); new users are created `PENDING_APPROVAL` and never auto-approved (an admin approves each account in `/admin/all-users`); email verification after registration is mandatory, and approval does not replace it.
   Sensitive profile actions (password/email changes, 2FA changes)
   require email-OTP verification on top of password confirmation.
 - ✅ There **is** an MCP server (`POST /api/mcp`,

@@ -27,7 +27,9 @@ export const AdminPaginationQuerySchema = z.object({
 
 export const AdminUserListQuerySchema = AdminPaginationQuerySchema.extend({
   q: z.string().trim().max(200).optional(),
-  status: z.enum(["ACTIVE", "SUSPENDED", "DISABLED"]).optional(),
+  status: z
+    .enum(["ACTIVE", "SUSPENDED", "DISABLED", "PENDING_APPROVAL"])
+    .optional(),
   // "NONE" filters to users with no staff role (adminRole IS NULL).
   adminRole: z.enum(["SUPER_ADMIN", "MANAGER", "SUPPORT", "NONE"]).optional(),
   // Query params arrive as "true"/"false" strings; the transform runs
@@ -71,6 +73,15 @@ export const ReactivateUserSchema = z.object({
 
 export const RestoreUserSchema = ReactivateUserSchema
 
+// DOC-003: approve takes an optional reason (mirror of
+// ReactivateUserSchema); reject requires one (mirror of suspend —
+// reuse SuspendUserSchema, do not duplicate it).
+export const ApproveUserSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+})
+
+export const RejectUserSchema = SuspendUserSchema
+
 // null removes the staff role (plain customer again).
 export const SetAdminRoleSchema = z.object({
   adminRole: z.enum(["SUPER_ADMIN", "MANAGER", "SUPPORT"]).nullable(),
@@ -112,6 +123,8 @@ export type SuspendUserInput = z.infer<typeof SuspendUserSchema>
 export type DisableUserInput = z.infer<typeof DisableUserSchema>
 export type ReactivateUserInput = z.infer<typeof ReactivateUserSchema>
 export type RestoreUserInput = z.infer<typeof RestoreUserSchema>
+export type ApproveUserInput = z.infer<typeof ApproveUserSchema>
+export type RejectUserInput = z.infer<typeof RejectUserSchema>
 export type SetAdminRoleInput = z.infer<typeof SetAdminRoleSchema>
 export type AddAdminNoteInput = z.infer<typeof AddAdminNoteSchema>
 export type RequestDeletionInput = z.infer<typeof RequestDeletionSchema>

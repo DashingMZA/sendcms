@@ -18,6 +18,7 @@ export {
 export {
   sendPasswordResetEmail,
   sendVerificationEmail,
+  renderAccountApprovedEmail,
   redactAuthEmailUrl,
   type AuthEmailKind,
   type AuthMailerOpts,
@@ -69,3 +70,4 @@ export { Digest, digestText } from "./templates/digest"
 export { Reply, replyText } from "./templates/reply"
 export { VerifyEmail } from "./templates/verify-email"
 export { ResetPasswordEmail } from "./templates/reset-password"
+export { AccountApproved } from "./templates/account-approved"

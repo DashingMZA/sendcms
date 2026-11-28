@@ -172,11 +172,11 @@ describe("jobs bundle boundary (regression)", () => {
 })
 
 describe("jobs i18n domain", () => {
-  it("has identical en/ur key sets (144 keys)", () => {
+  it("has identical en/ur key sets (145 keys)", () => {
     const en = readJson("packages/i18n/locales/en/admin/jobs.json")
     const ur = readJson("packages/i18n/locales/ur/admin/jobs.json")
     expect(Object.keys(en).sort()).toEqual(Object.keys(ur).sort())
-    expect(Object.keys(en)).toHaveLength(144)
+    expect(Object.keys(en)).toHaveLength(145)
   })
 
   it("registers the jobs domain for server and shell loading", () => {

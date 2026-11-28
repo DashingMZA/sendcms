@@ -85,6 +85,10 @@ describe("ADM-092 — system-flag list cannot drift", () => {
         .filter(Boolean)
         .sort()
     expect(parse(uiKeys as string)).toEqual(parse(serviceKeys as string))
+    // DOC-003: three system flags — ai-spam-rescore, ai-digest, and
+    // the registration toggle.
+    expect(parse(uiKeys as string)).toHaveLength(3)
+    expect(parse(serviceKeys as string)).toHaveLength(3)
   })
 
   it("the delete route exists and the reason is required", () => {
